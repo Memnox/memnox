@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@memnox/core": ["packages/core/src"],
+      "@memnox/policy-engine": ["packages/policy-engine/src"],
+      "@memnox/content-shield": ["packages/content-shield/src"],
+      "@memnox/code-graph": ["packages/code-graph/src"],
+      "@memnox/trust-bench": ["packages/trust-bench/src"],
+      "@memnox/redis": ["packages/redis/src"],
+      "@memnox/memory": ["packages/memory/src"],
+      "@memnox/risk": ["packages/risk/src"],
+      "@memnox/runtime": ["packages/runtime/src"],
+      "@memnox/sdk": ["packages/sdk/src"],
+      "@memnox/intelligence": ["packages/intelligence/src"],
+      "@memnox/mcp-firewall": ["packages/mcp-firewall/src"],
+      "@memnox/postgres": ["packages/postgres/src"]
+    }
+  },
+  "include": ["packages/*/src", "packages/*/test"]
+}
