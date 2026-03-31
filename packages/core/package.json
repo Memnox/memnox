@@ -1,0 +1,47 @@
+{
+  "name": "@memnox/core",
+  "version": "0.1.0",
+  "description": "Memnox core domain: action events, agent identity, decisions, and store ports.",
+  "keywords": [
+    "ai-agents",
+    "governance",
+    "policy",
+    "audit",
+    "types"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/core#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  }
+}
