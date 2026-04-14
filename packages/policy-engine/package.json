@@ -1,0 +1,49 @@
+{
+  "name": "@memnox/policy-engine",
+  "version": "0.1.0",
+  "description": "Deterministic policy evaluation for AI agent actions. No LLM in the decision path.",
+  "keywords": [
+    "policy",
+    "authorization",
+    "deterministic",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/policy-engine#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/policy-engine"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  },
+  "dependencies": {
+    "@memnox/core": "0.1.0"
+  }
+}
