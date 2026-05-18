@@ -1,0 +1,63 @@
+{
+  "name": "@memnox/runtime",
+  "version": "0.1.0",
+  "description": "The Memnox runtime gateway: identity → policy → decision → audit for every AI action.",
+  "keywords": [
+    "ai-agents",
+    "governance",
+    "server",
+    "audit",
+    "approval"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/runtime#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  },
+  "dependencies": {
+    "@memnox/code-graph": "0.1.0",
+    "@memnox/content-shield": "0.1.0",
+    "@memnox/core": "0.1.0",
+    "@memnox/memory": "0.1.0",
+    "@memnox/policy-engine": "0.1.0",
+    "@memnox/risk": "0.1.0",
+    "fastify": "^4.28.0",
+    "yaml": "^2.4.0",
+    "@memnox/postgres": "0.1.0",
+    "@memnox/redis": "0.1.0",
+    "@memnox/intelligence": "0.1.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.0"
+  }
+}
