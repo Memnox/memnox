@@ -1,0 +1,54 @@
+{
+  "name": "@memnox/cli",
+  "version": "0.1.0",
+  "description": "Memnox CLI — run the trust runtime, manage policies, inspect the audit trail.",
+  "keywords": [
+    "ai-agents",
+    "governance",
+    "cli",
+    "policy",
+    "audit"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "bin": {
+    "memnox": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@memnox/core": "0.1.0",
+    "@memnox/intelligence": "0.1.0",
+    "@memnox/memory": "0.1.0",
+    "@memnox/runtime": "0.1.0",
+    "@memnox/sdk": "0.1.0",
+    "commander": "^12.1.0",
+    "@memnox/content-shield": "0.1.0",
+    "@memnox/code-graph": "0.1.0",
+    "@memnox/policy-engine": "0.1.0",
+    "yaml": "^2.4.0"
+  }
+}
