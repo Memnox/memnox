@@ -1,0 +1,181 @@
+import { readFileSync } from 'node:fs';
+import type { Command } from 'commander';
+import type { CliContext } from '../cli-context';
+import type { ActionRequest, Decision } from '@memnox/core';
+import { DECISION_EFFECT } from '@memnox/core';
+import { CONTENT_METADATA_KEY, CONTENT_SCANNED_ACTIONS } from '@memnox/content-shield';
+import {
+  CURSOR_AFTER_FILE_EDIT,
+  CURSOR_PERMISSION,
+  mapCursorPayload,
+  toCursorPermission,
+  type CursorHookPayload,
+  type CursorHookResponse,
+} from '../cursor-hook-mapping';
+import { DEFAULT_BASE_URL } from '../defaults';
+import { processHookHost, type HookHost } from '../hook-host';
+import {
+  HOOK_EXIT_BLOCK,
+  mapHookPayload,
+  type ClaudeCodeHookPayload,
+} from '../hook-mapping';
+import { shieldDenialMessage } from '../write-shield';
+
+const ENV_AGENT_TOKEN = 'MEMNOX_AGENT_TOKEN';
+const ENV_RUNTIME_URL = 'MEMNOX_URL';
+/** "true" blocks tool calls when the runtime is unreachable. Default: fail open — a hook must never brick an editor. */
+const ENV_FAIL_CLOSED = 'MEMNOX_HOOK_FAIL_CLOSED';
+
+export const HOOK_AGENT = {
+  CLAUDE_CODE: 'claude-code',
+  CURSOR: 'cursor',
+} as const;
+
+export const SUPPORTED_HOOK_AGENTS: readonly string[] = Object.values(HOOK_AGENT);
+
+interface Refusal {
+  reason: string;
+  decision: Decision | null;
+}
+
+export function registerHookCommand(
+  program: Command,
+  context: CliContext,
+  host: HookHost = processHookHost,
+): void {
+  program
+    .command('hook <agent>')
+    .description(
+      `Editor hook entry point — reads the tool call from stdin (${SUPPORTED_HOOK_AGENTS.join('|')})`,
+    )
+    .action(async (agent: string) => {
+      if (agent === HOOK_AGENT.CLAUDE_CODE) return runClaudeCodeHook(context, host);
+      if (agent === HOOK_AGENT.CURSOR) return runCursorHook(context, host);
+      throw new Error(
+        `unsupported hook agent "${agent}" — expected one of: ${SUPPORTED_HOOK_AGENTS.join(', ')}`,
+      );
+    });
+}
+
+/**
+ * Shared core: the offline shield runs first so it still blocks when the runtime
+ * is down, then the runtime decides. Null means the action may proceed.
+ */
+async function evaluate(
+  context: CliContext,
+  host: HookHost,
+  request: ActionRequest,
+  token: string,
+): Promise<Refusal | null> {
+  const shieldDenial = localShieldDenial(request);
+  if (shieldDenial) return { reason: shieldDenial, decision: null };
+
+  const client = context.client({
+    url: host.env(ENV_RUNTIME_URL) ?? DEFAULT_BASE_URL,
+    token,
+  });
+
+  try {
+    const decision = await client.check(request);
+    if (decision.effect === DECISION_EFFECT.ALLOW) return null;
+    const approvalHint = decision.approvalId
+      ? ` Ask a human to run: memnox approvals resolve ${decision.approvalId} --by <name>, then retry.`
+      : '';
+    return {
+      reason: `Memnox ${decision.effect}: ${withPeriod(decision.reason)}${approvalHint}`,
+      decision,
+    };
+  } catch (err) {
+    if (host.env(ENV_FAIL_CLOSED) === 'true') {
+      return {
+        reason: `Memnox runtime unreachable — failing closed: ${String(err)}`,
+        decision: null,
+      };
+    }
+    return null; // Default: a stopped runtime never blocks development.
+  }
+}
+
+/** Policy reasons are author-written and may or may not already be punctuated. */
+function withPeriod(reason: string): string {
+  return reason.endsWith('.') ? reason : `${reason}.`;
+}
+
+async function runClaudeCodeHook(context: CliContext, host: HookHost): Promise<void> {
+  const token = host.env(ENV_AGENT_TOKEN);
+  if (!token) return; // Not configured — never break the editor.
+
+  const payload = await readJsonInput<ClaudeCodeHookPayload>(host);
+  if (!payload) return;
+  const request = mapHookPayload(payload);
+  if (!request) return;
+
+  const refusal = await evaluate(context, host, request, token);
+  if (!refusal) return;
+
+  // Claude Code convention: exit 2 with stderr denies the tool call.
+  host.warn(refusal.reason);
+  host.exit(HOOK_EXIT_BLOCK);
+}
+
+async function runCursorHook(context: CliContext, host: HookHost): Promise<void> {
+  const allow = (): void =>
+    respondToCursor(host, { permission: CURSOR_PERMISSION.ALLOW });
+
+  const token = host.env(ENV_AGENT_TOKEN);
+  if (!token) return allow();
+
+  const payload = await readJsonInput<CursorHookPayload>(host);
+  if (!payload) return allow();
+  const request = mapCursorPayload(payload);
+  if (!request) return allow();
+
+  const refusal = await evaluate(context, host, request, token);
+  if (!refusal) return allow();
+
+  // afterFileEdit fires once the edit has landed; reporting is all that is left.
+  if (payload.hook_event_name === CURSOR_AFTER_FILE_EDIT) {
+    host.warn(refusal.reason);
+    return allow();
+  }
+
+  respondToCursor(host, {
+    permission: refusal.decision
+      ? toCursorPermission(refusal.decision.effect)
+      : CURSOR_PERMISSION.DENY,
+    agent_message: refusal.reason,
+    user_message: refusal.reason,
+  });
+}
+
+/** Cursor reads the verdict as JSON on stdout; exit 0 means "use my JSON". */
+function respondToCursor(host: HookHost, response: CursorHookResponse): void {
+  host.respond(JSON.stringify(response));
+}
+
+function localShieldDenial(request: ActionRequest): string | null {
+  if (!CONTENT_SCANNED_ACTIONS.includes(request.action)) return null;
+  const target = request.target;
+  const metadata = request.metadata;
+  const content = metadata === undefined ? undefined : metadata[CONTENT_METADATA_KEY];
+  if (!target || typeof content !== 'string' || content.length === 0) return null;
+  return shieldDenialMessage(target, content, readFileIfExists(target));
+}
+
+function readFileIfExists(filePath: string): string | null {
+  try {
+    return readFileSync(filePath, 'utf8');
+  } catch {
+    return null; // New file, or unreadable — every finding then counts as introduced.
+  }
+}
+
+async function readJsonInput<T>(host: HookHost): Promise<T | null> {
+  const raw = await host.readInput();
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null; // Unparseable hook input — fail open.
+  }
+}
