@@ -1,0 +1,52 @@
+{
+  "name": "@memnox/intelligence",
+  "version": "0.1.0",
+  "description": "Optional BYOK LLM layer: draft policies from natural language and explain decisions. Never makes enforcement decisions.",
+  "keywords": [
+    "llm",
+    "byok",
+    "anthropic",
+    "openai"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/intelligence#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/intelligence"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@memnox/policy-engine": "0.1.0",
+    "yaml": "^2.4.0",
+    "@memnox/core": "0.1.0"
+  }
+}
