@@ -1,0 +1,122 @@
+import type { CallAuthorizer, CallVerdict } from './call-authorizer';
+import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
+import { parseMessage, serializeMessage, type JsonRpcMessage } from './json-rpc';
+import type { ToolFilter } from './tool-filter';
+
+/** The two directions a proxied message can travel. */
+export interface FirewallChannel {
+  /** False means the wrapped server can no longer accept input. */
+  toServer(payload: string): boolean;
+  toClient(payload: string): void;
+}
+
+export interface FirewallSessionDeps {
+  filter: ToolFilter;
+  authorizer: CallAuthorizer;
+  channel: FirewallChannel;
+  log: (message: string) => void;
+}
+
+type MessageId = string | number;
+
+const SERVER_GONE_REASON =
+  'the wrapped MCP server is no longer running — restart the client to reconnect';
+
+function describe(message: JsonRpcMessage): string {
+  return message.method ?? 'response';
+}
+
+/**
+ * Routing for one proxied MCP connection: tools/call is gated, tools/list
+ * responses are filtered, everything else passes through untouched. Holds no
+ * process or socket, so it is driven directly in tests.
+ */
+export class FirewallSession {
+  private readonly listRequestIds = new Set<MessageId>();
+
+  constructor(private readonly deps: FirewallSessionDeps) {}
+
+  async fromClient(line: string): Promise<void> {
+    const message = parseMessage(line);
+    if (!message) return this.forwardRaw(`${line}\n`);
+
+    const id = identify(message);
+    if (message.method === METHOD_TOOLS_LIST && id !== null) {
+      this.listRequestIds.add(id);
+      return this.forward(message);
+    }
+    if (message.method !== METHOD_TOOLS_CALL) return this.forward(message);
+
+    const params = message.params;
+    const toolName = params === undefined ? '' : String(params['name'] ?? '');
+    const verdict = await this.verdictFor(toolName);
+    if (verdict.allowed) return this.forward(message);
+
+    this.deps.log(`blocked tools/call "${toolName}": ${verdict.reason}`);
+    this.deps.channel.toClient(serializeMessage(denial(message.id, verdict.reason)));
+  }
+
+  fromServer(line: string): void {
+    const message = parseMessage(line);
+    if (!message) return this.deps.channel.toClient(`${line}\n`);
+
+    const id = identify(message);
+    if (id !== null && this.listRequestIds.has(id)) {
+      this.listRequestIds.delete(id);
+      return this.deps.channel.toClient(serializeMessage(this.filterListing(message)));
+    }
+    this.deps.channel.toClient(serializeMessage(message));
+  }
+
+  private async verdictFor(toolName: string): Promise<CallVerdict> {
+    if (!this.deps.filter.isAllowed(toolName)) {
+      return {
+        allowed: false,
+        reason: `tool "${toolName}" is denied by the static filter`,
+      };
+    }
+    return this.deps.authorizer.authorize(toolName);
+  }
+
+  private filterListing(message: JsonRpcMessage): JsonRpcMessage {
+    const tools = message.result === undefined ? undefined : message.result['tools'];
+    if (!Array.isArray(tools)) return message;
+    const visible = (tools as Array<Record<string, unknown>>).filter((tool) =>
+      this.deps.filter.isAllowed(String(tool['name'] ?? '')),
+    );
+    return { ...message, result: { ...message.result, tools: visible } };
+  }
+
+  /**
+   * A dropped write must never look like success: the client is waiting on a
+   * reply that the dead server will never send, so answer it here instead.
+   */
+  private forward(message: JsonRpcMessage): void {
+    if (this.deps.channel.toServer(serializeMessage(message))) return;
+
+    this.deps.log(`wrapped server is not accepting input; dropped ${describe(message)}`);
+    if (identify(message) === null) return; // A notification expects no reply.
+    this.deps.channel.toClient(serializeMessage(denial(message.id, SERVER_GONE_REASON)));
+  }
+
+  private forwardRaw(payload: string): void {
+    if (this.deps.channel.toServer(payload)) return;
+    this.deps.log('wrapped server is not accepting input; dropped a raw line');
+  }
+}
+
+function identify(message: JsonRpcMessage): MessageId | null {
+  return message.id === undefined || message.id === null ? null : message.id;
+}
+
+/** An isError result, not a protocol error, so the model reads the denial reason. */
+function denial(id: JsonRpcMessage['id'], reason: string): JsonRpcMessage {
+  return {
+    jsonrpc: '2.0',
+    id,
+    result: {
+      content: [{ type: 'text', text: `Blocked by Memnox: ${reason}` }],
+      isError: true,
+    },
+  };
+}
