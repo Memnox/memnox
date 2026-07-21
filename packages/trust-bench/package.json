@@ -1,0 +1,57 @@
+{
+  "name": "@memnox/trust-bench",
+  "version": "0.1.0",
+  "description": "Benchmark for AI-agent governance runtimes: prompt injection, secret writes, destructive actions, policy evasion.",
+  "keywords": [
+    "benchmark",
+    "ai-safety",
+    "governance",
+    "evaluation"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/trust-bench#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "directory": "packages/trust-bench"
+  },
+  "bugs": {
+    "url": "https://github.com/memnox/memnox-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "bin": {
+    "memnox-trust-bench": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@memnox/content-shield": "0.1.0",
+    "@memnox/core": "0.1.0",
+    "@memnox/memory": "0.1.0",
+    "@memnox/policy-engine": "0.1.0",
+    "@memnox/risk": "0.1.0",
+    "@memnox/runtime": "0.1.0"
+  }
+}
