@@ -1,0 +1,23 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'ai.memnox'
+version = '0.1.0'
+
+// Targets 17 for broad compatibility while building with whatever JDK is present.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    // No runtime dependencies: an SDK that drags in Jackson creates version
+    // conflicts in exactly the enterprise apps most likely to adopt it.
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test { useJUnitPlatform() }
