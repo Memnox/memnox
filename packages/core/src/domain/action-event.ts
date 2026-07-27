@@ -37,6 +37,23 @@ export interface ActionRequest {
   dataClassification?: string;
   /** Region the action executes in, e.g. "eu", "us". */
   jurisdiction?: string;
+  /** Directory the agent is working in, e.g. "/srv/checkout". Reported by the caller. */
+  workingDirectory?: string;
+  /** Source control branch the work sits on, e.g. "main", "release/24.3". */
+  branch?: string;
+  /**
+   * The call's own arguments, flattened to strings — a tool's `command`, `path`,
+   * `query`. LOCAL ONLY: this is the raw payload, so the in-process gate matches
+   * on it and the SDK strips it before anything crosses the network. What travels
+   * instead is `signals`.
+   */
+  arguments?: Record<string, string>;
+  /**
+   * What the local gate already found, e.g. "shield:aws-access-key",
+   * "policy:no-rm-rf". Testimony, not evidence: it is audited and may escalate,
+   * and can never loosen a verdict the runtime reaches on its own.
+   */
+  signals?: string[];
 }
 
 export interface ActionEvent {
@@ -55,6 +72,8 @@ export interface ActionEvent {
   provider?: string;
   dataClassification?: string;
   jurisdiction?: string;
+  workingDirectory?: string;
+  branch?: string;
   /** What actually happened — in monitor mode this is always allow. */
   effect: DecisionEffect;
   /** Mode in force for this environment when the action was decided. */
