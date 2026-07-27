@@ -2,12 +2,24 @@ import type { DecisionEffect } from '../constants/decision.constants';
 import type { RiskLevel } from '../constants/risk.constants';
 import type { Advisory } from './advisory';
 
+/**
+ * How many times a rule may fire before it stops allowing. Counting is stateful,
+ * so the engine only carries the ceiling — the gateway owns the counter.
+ */
+export interface RateLimitSpec {
+  max: number;
+  windowSeconds: number;
+}
+
 export interface MatchedPolicy {
   name: string;
   effect: DecisionEffect;
   reason?: string;
   approvers?: string[];
   minApprovals?: number;
+  /** Set when the rule is in monitor mode: it matched, but did not decide. */
+  monitored?: boolean;
+  rateLimit?: RateLimitSpec;
 }
 
 export interface Decision {
