@@ -97,3 +97,81 @@ describe('project declaration', () => {
     );
   });
 });
+
+describe('validatePolicyDocument — argument, context and outcome fields', () => {
+  const documentWith = (
+    match: Record<string, unknown>,
+    decision: Record<string, unknown> = { effect: 'block' },
+  ): unknown => ({
+    version: 1,
+    policies: [{ name: 'rule', match: { actions: ['a'], ...match }, decision }],
+  });
+
+  it('accepts argument patterns per named argument', () => {
+    const doc = validatePolicyDocument(
+      documentWith({ arguments: { command: ['*rm -rf*'], cwd: ['/srv/*'] } }),
+    );
+
+    expect(doc.policies[0]?.match.arguments).toEqual({
+      command: ['*rm -rf*'],
+      cwd: ['/srv/*'],
+    });
+  });
+
+  it('rejects an argument whose patterns are not a string array', () => {
+    expect(() => validatePolicyDocument(documentWith({ arguments: { command: 'x' } })));
+    expect(() =>
+      validatePolicyDocument(documentWith({ arguments: { command: 'x' } })),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('rejects an empty argument map, which would silently match everything', () => {
+    expect(() => validatePolicyDocument(documentWith({ arguments: {} }))).toThrow(
+      PolicyValidationError,
+    );
+  });
+
+  it('accepts working directory and branch patterns', () => {
+    const doc = validatePolicyDocument(
+      documentWith({ workingDirectories: ['/srv/*'], branches: ['main', 'release/*'] }),
+    );
+
+    expect(doc.policies[0]?.match.workingDirectories).toEqual(['/srv/*']);
+    expect(doc.policies[0]?.match.branches).toEqual(['main', 'release/*']);
+  });
+
+  it('accepts the redact effect without demanding approvers', () => {
+    const doc = validatePolicyDocument(documentWith({}, { effect: 'redact' }));
+
+    expect(doc.policies[0]?.decision.effect).toBe('redact');
+  });
+
+  it('accepts monitor mode and rejects any other mode', () => {
+    const doc = validatePolicyDocument(
+      documentWith({}, { effect: 'block', mode: 'monitor' }),
+    );
+    expect(doc.policies[0]?.decision.mode).toBe('monitor');
+
+    expect(() =>
+      validatePolicyDocument(documentWith({}, { effect: 'block', mode: 'maybe' })),
+    ).toThrow(PolicyValidationError);
+  });
+
+  it('accepts a rate limit of two positive integers, and nothing else', () => {
+    const doc = validatePolicyDocument(
+      documentWith({}, { effect: 'allow', rateLimit: { max: 10, windowSeconds: 3600 } }),
+    );
+    expect(doc.policies[0]?.decision.rateLimit).toEqual({ max: 10, windowSeconds: 3600 });
+
+    expect(() =>
+      validatePolicyDocument(
+        documentWith({}, { effect: 'allow', rateLimit: { max: 0, windowSeconds: 60 } }),
+      ),
+    ).toThrow(PolicyValidationError);
+    expect(() =>
+      validatePolicyDocument(
+        documentWith({}, { effect: 'allow', rateLimit: { max: 5 } }),
+      ),
+    ).toThrow(PolicyValidationError);
+  });
+});

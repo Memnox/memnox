@@ -1,4 +1,4 @@
-import type { DecisionEffect } from '@memnox/core';
+import type { DecisionEffect, RateLimitSpec } from '@memnox/core';
 import type { TimeWindow } from './time-window';
 
 /** All match fields are lists of wildcard patterns; omitted fields match anything. */
@@ -11,9 +11,30 @@ export interface PolicyMatch {
   providers?: string[];
   dataClassifications?: string[];
   jurisdictions?: string[];
+  /** Directory the agent is working in, e.g. "/srv/checkout/*". */
+  workingDirectories?: string[];
+  /** Source control branch, e.g. "main", "release/*". */
+  branches?: string[];
+  /**
+   * Patterns per named argument of the call itself — `{ command: ["*rm -rf*"] }`.
+   * Every named argument must match (a rule narrows as you add them); an argument
+   * the call does not carry matches only the bare "*". Arguments are matched by
+   * the in-process gate, which is the only place the raw payload exists.
+   */
+  arguments?: Record<string, string[]>;
   /** The policy applies only inside these recurring windows. */
   windows?: TimeWindow[];
 }
+
+/** Per-rule mode. A monitored rule matches and is recorded, but never decides. */
+export const POLICY_MODE = {
+  ENFORCE: 'enforce',
+  MONITOR: 'monitor',
+} as const;
+
+export type PolicyMode = (typeof POLICY_MODE)[keyof typeof POLICY_MODE];
+
+export const DEFAULT_POLICY_MODE: PolicyMode = POLICY_MODE.ENFORCE;
 
 export interface PolicyDecision {
   effect: DecisionEffect;
@@ -21,6 +42,17 @@ export interface PolicyDecision {
   approvers?: string[];
   /** Distinct people required to approve; defaults to one. */
   minApprovals?: number;
+  /**
+   * "monitor" rolls this one rule out without enforcing it: the verdict is
+   * recorded as withheld and the action proceeds. Defaults to "enforce".
+   */
+  mode?: PolicyMode;
+  /**
+   * Caps how often this rule may fire before it stops allowing. Counted by the
+   * gateway per agent and rule, because a ceiling needs state and a clock and
+   * the engine has neither.
+   */
+  rateLimit?: RateLimitSpec;
 }
 
 export interface Policy {

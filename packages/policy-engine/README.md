@@ -48,7 +48,7 @@ it.
 
 `comparePolicySets` replays real history through a candidate rule set and reports
 what would change — flagging anything that becomes **more permissive**. The CLI
-exposes it as `memnox policy simulate --from-audit`.
+exposes it as `memnox policy simulate <file>`.
 
 ## Layout
 

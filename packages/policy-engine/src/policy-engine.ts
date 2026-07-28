@@ -9,7 +9,7 @@ import { matchesAny } from './pattern-matcher';
 import { matchesAnyTimeWindow } from './time-window';
 import { classifyRisk } from './risk-classifier';
 import { versionPolicySet } from './policy-version';
-import type { Policy } from './policy';
+import { POLICY_MODE, type Policy } from './policy';
 
 export interface EvaluationContext {
   agentName: string;
@@ -22,6 +22,8 @@ export interface EvaluationResult {
   riskLevel: RiskLevel;
   reason: string;
   matchedPolicies: MatchedPolicy[];
+  /** What the monitored rules would have decided, when that is stricter than the effect. */
+  withheldEffect?: DecisionEffect;
 }
 
 export interface PolicyEngineOptions {
@@ -88,24 +90,24 @@ export class PolicyEngine {
     const riskLevel = classifyRisk(request.action, request.environment);
     const matchedPolicies = this.candidates(request.action)
       .filter((policy) => this.matches(policy, request, context))
-      .map((policy): MatchedPolicy => ({
-        name: policy.name,
-        effect: policy.decision.effect,
-        reason: policy.decision.reason,
-        approvers: policy.decision.approvers,
-        minApprovals: policy.decision.minApprovals,
-      }));
+      .map(toMatchedPolicy);
 
-    if (matchedPolicies.length === 0) {
+    // A monitored rule is recorded but never decides, so the verdict comes from
+    // the enforcing ones alone — and their absence means no rule decided at all.
+    const enforcing = matchedPolicies.filter((policy) => policy.monitored !== true);
+    const withheldEffect = strictestMonitored(matchedPolicies);
+
+    if (enforcing.length === 0) {
       return {
         effect: this.defaultEffect,
         riskLevel,
         reason: DECISION_REASON.NO_POLICY_MATCHED,
         matchedPolicies,
+        ...withheld(this.defaultEffect, withheldEffect),
       };
     }
 
-    const winner = matchedPolicies.reduce((mostRestrictive, candidate) =>
+    const winner = enforcing.reduce((mostRestrictive, candidate) =>
       EFFECT_PRECEDENCE[candidate.effect] > EFFECT_PRECEDENCE[mostRestrictive.effect]
         ? candidate
         : mostRestrictive,
@@ -115,6 +117,7 @@ export class PolicyEngine {
       riskLevel,
       reason: winner.reason ?? `policy "${winner.name}" applied`,
       matchedPolicies,
+      ...withheld(winner.effect, withheldEffect),
     };
   }
 
@@ -142,9 +145,66 @@ export class PolicyEngine {
       matchesAny(policy.match.providers, request.provider) &&
       matchesAny(policy.match.dataClassifications, request.dataClassification) &&
       matchesAny(policy.match.jurisdictions, request.jurisdiction) &&
+      matchesAny(policy.match.workingDirectories, request.workingDirectory) &&
+      matchesAny(policy.match.branches, request.branch) &&
+      matchesAllArguments(policy.match.arguments, request.arguments) &&
       matchesAnyTimeWindow(policy.match.windows, context.now)
     );
   }
+}
+
+function toMatchedPolicy(policy: Policy): MatchedPolicy {
+  const monitored = policy.decision.mode === POLICY_MODE.MONITOR;
+  return {
+    name: policy.name,
+    effect: policy.decision.effect,
+    reason: policy.decision.reason,
+    approvers: policy.decision.approvers,
+    minApprovals: policy.decision.minApprovals,
+    ...(monitored ? { monitored } : {}),
+    ...(policy.decision.rateLimit === undefined
+      ? {}
+      : { rateLimit: policy.decision.rateLimit }),
+  };
+}
+
+function strictestMonitored(matched: MatchedPolicy[]): DecisionEffect | undefined {
+  return matched
+    .filter((policy) => policy.monitored === true)
+    .map((policy) => policy.effect)
+    .reduce<DecisionEffect | undefined>(
+      (strictest, effect) =>
+        strictest === undefined ||
+        EFFECT_PRECEDENCE[effect] > EFFECT_PRECEDENCE[strictest]
+          ? effect
+          : strictest,
+      undefined,
+    );
+}
+
+/** Reporting a withheld effect no stricter than the applied one would be noise. */
+function withheld(
+  applied: DecisionEffect,
+  monitored: DecisionEffect | undefined,
+): { withheldEffect?: DecisionEffect } {
+  if (monitored === undefined) return {};
+  if (EFFECT_PRECEDENCE[monitored] <= EFFECT_PRECEDENCE[applied]) return {};
+  return { withheldEffect: monitored };
+}
+
+/**
+ * Every named argument must match — each one narrows the rule further, so
+ * `{ command: ["*rm -rf*"], cwd: ["/srv/*"] }` fires only when both hold.
+ */
+function matchesAllArguments(
+  patterns: Record<string, string[]> | undefined,
+  values: Record<string, string> | undefined,
+): boolean {
+  if (patterns === undefined) return true;
+  const supplied = values === undefined ? {} : values;
+  return Object.entries(patterns).every(([name, allowed]) =>
+    matchesAny(allowed, supplied[name]),
+  );
 }
 
 const SEGMENT_SEPARATOR = '.';

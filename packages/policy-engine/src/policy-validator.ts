@@ -1,9 +1,10 @@
-import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
+import { DECISION_EFFECT, type DecisionEffect, type RateLimitSpec } from '@memnox/core';
 import { isValidTimeWindow, type TimeWindow } from './time-window';
-import type { Policy, PolicyDocument } from './policy';
-import { POLICY_DOCUMENT_VERSION } from './policy';
+import type { Policy, PolicyDocument, PolicyMode } from './policy';
+import { POLICY_DOCUMENT_VERSION, POLICY_MODE } from './policy';
 
 const VALID_EFFECTS: readonly string[] = Object.values(DECISION_EFFECT);
+const VALID_MODES: readonly string[] = Object.values(POLICY_MODE);
 
 export class PolicyValidationError extends Error {
   constructor(public readonly issues: string[]) {
@@ -118,6 +119,21 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         `${path}.match.jurisdictions`,
         issues,
       ),
+      workingDirectories: asOptionalStringArray(
+        match['workingDirectories'],
+        `${path}.match.workingDirectories`,
+        issues,
+      ),
+      branches: asOptionalStringArray(
+        match['branches'],
+        `${path}.match.branches`,
+        issues,
+      ),
+      arguments: asOptionalArgumentPatterns(
+        match['arguments'],
+        `${path}.match.arguments`,
+        issues,
+      ),
       windows: asOptionalWindows(match['windows'], `${path}.match.windows`, issues),
     },
     decision: {
@@ -129,8 +145,77 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         `${path}.decision.minApprovals`,
         issues,
       ),
+      mode: asOptionalMode(decision['mode'], `${path}.decision.mode`, issues),
+      rateLimit: asOptionalRateLimit(
+        decision['rateLimit'],
+        `${path}.decision.rateLimit`,
+        issues,
+      ),
     },
   };
+}
+
+/** Argument patterns are a map of argument name to the wildcards it must match. */
+function asOptionalArgumentPatterns(
+  input: unknown,
+  path: string,
+  issues: string[],
+): Record<string, string[]> | undefined {
+  if (input === undefined || input === null) return undefined;
+  const raw = asRecord(input, path, issues);
+  if (!raw) return undefined;
+
+  const entries = Object.entries(raw);
+  if (entries.length === 0) {
+    issues.push(`${path} must name at least one argument`);
+    return undefined;
+  }
+  const patterns: Record<string, string[]> = {};
+  for (const [name, value] of entries) {
+    const list = asStringArray(value, `${path}.${name}`, issues);
+    if (!list) continue;
+    if (list.length === 0) {
+      issues.push(`${path}.${name} must be a non-empty string array`);
+      continue;
+    }
+    patterns[name] = list;
+  }
+  return Object.keys(patterns).length === 0 ? undefined : patterns;
+}
+
+function asOptionalMode(
+  input: unknown,
+  path: string,
+  issues: string[],
+): PolicyMode | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input !== 'string' || !VALID_MODES.includes(input)) {
+    issues.push(`${path} must be one of: ${VALID_MODES.join(', ')}`);
+    return undefined;
+  }
+  return input as PolicyMode;
+}
+
+function asOptionalRateLimit(
+  input: unknown,
+  path: string,
+  issues: string[],
+): RateLimitSpec | undefined {
+  if (input === undefined || input === null) return undefined;
+  const raw = asRecord(input, path, issues);
+  if (!raw) return undefined;
+
+  const max = raw['max'];
+  const windowSeconds = raw['windowSeconds'];
+  if (!isPositiveInteger(max) || !isPositiveInteger(windowSeconds)) {
+    issues.push(`${path} must be { max, windowSeconds } with positive integers`);
+    return undefined;
+  }
+  return { max, windowSeconds };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) > 0;
 }
 
 function asOptionalWindows(
