@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DECISION_EFFECT } from '@memnox/core';
-import { findPolicyPack, mergePolicies, POLICY_PACKS } from '../src/policy-packs';
+import {
+  findPolicyPack,
+  mergePolicies,
+  PACK_MATURITY,
+  POLICY_PACKS,
+  POLICY_SURFACES,
+} from '../src/policy-packs';
 import { validatePolicyDocument } from '../src/policy-validator';
 import { POLICY_DOCUMENT_VERSION } from '../src/policy';
 import type { Policy } from '../src/policy';
@@ -25,6 +31,36 @@ describe('shipped policy packs', () => {
   it('finds a pack by name and reports an unknown one as null', () => {
     expect(findPolicyPack('payments')?.policies.length).toBeGreaterThan(0);
     expect(findPolicyPack('does-not-exist')).toBeNull();
+  });
+
+  // A catalogue draws itself from these, so a pack missing one lands nowhere.
+  it('files every pack under a declared surface, titled and versioned', () => {
+    const surfaces = new Set<string>(POLICY_SURFACES.map((surface) => surface.id));
+
+    for (const pack of POLICY_PACKS) {
+      expect(surfaces.has(pack.surface), `${pack.name} surface`).toBe(true);
+      expect(pack.label.length, `${pack.name} label`).toBeGreaterThan(0);
+      expect(pack.version, `${pack.name} version`).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(Object.values(PACK_MATURITY) as string[], `${pack.name} maturity`).toContain(
+        pack.maturity,
+      );
+    }
+  });
+
+  it('names each pack once, so an install path cannot be ambiguous', () => {
+    const names = POLICY_PACKS.map((pack) => pack.name);
+    expect(new Set(names).size).toBe(names.length);
+
+    const surfaceIds = POLICY_SURFACES.map((surface) => surface.id);
+    expect(new Set(surfaceIds).size).toBe(surfaceIds.length);
+  });
+
+  // Otherwise a surface renders as an empty heading in every catalogue drawing it.
+  it('leaves no surface without a pack in it', () => {
+    const used = new Set<string>(POLICY_PACKS.map((pack) => pack.surface));
+    const empty = POLICY_SURFACES.filter((surface) => !used.has(surface.id));
+
+    expect(empty.map((surface) => surface.id)).toEqual([]);
   });
 });
 

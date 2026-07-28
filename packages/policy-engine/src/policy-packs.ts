@@ -1,9 +1,138 @@
 import { DECISION_EFFECT } from '@memnox/core';
 import type { Policy } from './policy';
 
+/**
+ * What a pack is about, and the order a catalogue lists them in: what agents
+ * do first, then what governs it. A pack belongs to exactly one, because a pack
+ * filed under two is a pack that should have been two packs.
+ */
+export const POLICY_SURFACES = [
+  {
+    id: 'coding-agents',
+    label: 'AI coding agents',
+    description:
+      'Claude Code, Codex, Cursor, and the shell, repository and database work they do.',
+  },
+  {
+    id: 'browser-agents',
+    label: 'Browser agents',
+    description: 'Agents driving a real browser session, and where they may go.',
+  },
+  {
+    id: 'assistant-agents',
+    label: 'Assistant agents',
+    description: 'Agents acting on somebody’s real inbox, calendar and accounts.',
+  },
+  {
+    id: 'infrastructure',
+    label: 'Infrastructure',
+    description: 'Cloud accounts, clusters, CI, and the deploys that change them.',
+  },
+  {
+    id: 'database',
+    label: 'Database',
+    description:
+      'Production data: what may be read, what may be written, what may be dropped.',
+  },
+  {
+    id: 'secrets',
+    label: 'Secrets',
+    description: 'Credentials, keys, and the authentication code that uses them.',
+  },
+  {
+    id: 'customer-data',
+    label: 'Customer data',
+    description: 'Customer records, CRM and analytics, and bulk reads of them.',
+  },
+  {
+    id: 'financial',
+    label: 'Financial',
+    description: 'Money movement, payment code, payouts and treasury operations.',
+  },
+  {
+    id: 'human-oversight',
+    label: 'Human oversight',
+    description: 'Where an action stops and waits for a person to say yes.',
+  },
+  {
+    id: 'autonomous-workflow',
+    label: 'Autonomous workflow',
+    description: 'How far unattended work may run, and what it may leave behind it.',
+  },
+  {
+    id: 'multi-agent',
+    label: 'Multi-agent',
+    description: 'Delegation between agents, and the reach that travels with it.',
+  },
+  {
+    id: 'ai-native-threat',
+    label: 'AI-native threat',
+    description: 'Attacks on the governance itself: bypass, exfiltration, escalation.',
+  },
+  {
+    id: 'model',
+    label: 'Model and providers',
+    description: 'Which model families and inference vendors may be used.',
+  },
+  {
+    id: 'jurisdiction',
+    label: 'Jurisdiction',
+    description: 'Where data may be processed, and which regions may run the work.',
+  },
+  {
+    id: 'regulatory',
+    label: 'Regulatory',
+    description: 'Evidence and controls for HIPAA, PCI, GDPR and SOC 2.',
+  },
+] as const;
+
+export type PolicySurface = (typeof POLICY_SURFACES)[number]['id'];
+
+/**
+ * How far a pack has been taken. `stable` enforces sensible defaults the day it
+ * is installed; `beta` is real but narrower, or wants a look before it is
+ * trusted with the whole surface it names.
+ */
+export const PACK_MATURITY = {
+  STABLE: 'stable',
+  BETA: 'beta',
+} as const;
+
+export type PackMaturity = (typeof PACK_MATURITY)[keyof typeof PACK_MATURITY];
+
+/**
+ * What the pack still needs before it does anything, stated by the pack rather
+ * than guessed at by whatever is drawing it. `edit` ships example lists that
+ * are placeholders for your own; `classification` stays inert until requests
+ * carry a data classification, so installing it changes nothing on its own.
+ */
+export const PACK_CAVEAT = {
+  EDIT: 'edit',
+  CLASSIFICATION: 'classification',
+} as const;
+
+export type PackCaveat = (typeof PACK_CAVEAT)[keyof typeof PACK_CAVEAT];
+
 export interface PolicyPack {
   name: string;
+  /** The title a person reads. `name` stays the id every install path keys on. */
+  label: string;
+  surface: PolicySurface;
+  /**
+   * Semver over the pack's rules. It moves when the rules do, which is what
+   * lets a control plane tell an installation that has fallen behind from one
+   * that is current.
+   */
+  version: string;
+  maturity: PackMaturity;
   description: string;
+  /** Absent means the pack enforces as shipped. */
+  caveat?: PackCaveat;
+  /**
+   * Covers a broad surface most teams want governed on day one. A catalogue
+   * leads with these; it is a starting order, not a ranking of importance.
+   */
+  recommended?: boolean;
   policies: Policy[];
 }
 
@@ -16,6 +145,11 @@ export interface PolicyPack {
 export const POLICY_PACKS: readonly PolicyPack[] = [
   {
     name: 'production-safety',
+    label: 'Production Safety',
+    surface: 'infrastructure',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'No AI-initiated destruction or deployment in production.',
     policies: [
       {
@@ -54,6 +188,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'payments',
+    label: 'Payment Code Review',
+    surface: 'financial',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Money-handling code changes go through security review.',
     policies: [
       {
@@ -72,6 +210,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'auth-and-secrets',
+    label: 'Auth and Secrets',
+    surface: 'secrets',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Authentication code and credential files are not edited unattended.',
     policies: [
       {
@@ -102,6 +245,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'data-privacy',
+    label: 'Data Privacy',
+    surface: 'customer-data',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Bulk data leaving the system is a human decision.',
     policies: [
       {
@@ -129,6 +277,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'supply-chain',
+    label: 'Supply Chain',
+    surface: 'infrastructure',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'New third-party code and CI configuration get reviewed.',
     policies: [
       {
@@ -157,6 +309,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'repository-protection',
+    label: 'Repository Protection',
+    surface: 'coding-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Git history is evidence — rewriting it needs a human.',
     policies: [
       {
@@ -187,6 +344,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'infrastructure',
+    label: 'Infrastructure',
+    surface: 'infrastructure',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Destructive cloud and cluster operations need a human.',
     policies: [
       {
@@ -252,6 +414,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'framework-db-reset',
+    label: 'Framework DB Reset',
+    surface: 'database',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'ORM reset commands drop every table without looking like it.',
     policies: [
       {
@@ -286,6 +452,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'read-only-production',
+    label: 'Read-Only Production',
+    surface: 'database',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Freezes an environment: reads pass, writes do not.',
     policies: [
       {
@@ -309,6 +480,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'policy-bypass-protection',
+    label: 'Policy Bypass Protection',
+    surface: 'ai-native-threat',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'An agent must not be able to disable the thing governing it.',
     policies: [
       {
@@ -333,6 +509,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'agent-delegation',
+    label: 'Agent Delegation',
+    surface: 'multi-agent',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'A spawned subagent inherits reach without inheriting review.',
     policies: [
       {
@@ -348,6 +528,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'terminal-safety',
+    label: 'Terminal Safety',
+    surface: 'coding-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Shell commands that cannot be undone.',
     policies: [
       {
@@ -390,6 +575,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'human-approval',
+    label: 'Human Approval',
+    surface: 'human-oversight',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'High-stakes actions pause for an operator.',
     policies: [
       {
@@ -434,6 +624,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'autonomous-persistence',
+    label: 'Autonomous Persistence',
+    surface: 'autonomous-workflow',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'An agent must not arrange to keep acting after the session ends.',
     policies: [
       {
@@ -473,6 +667,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'claude-code',
+    label: 'Claude Code',
+    surface: 'coding-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Scoped to the Claude Code agent by name.',
     policies: [
       {
@@ -504,6 +702,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'codex',
+    label: 'Codex',
+    surface: 'coding-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Scoped to the Codex CLI agent by name.',
     policies: [
       {
@@ -535,6 +737,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'cursor',
+    label: 'Cursor',
+    surface: 'coding-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Scoped to the Cursor agent by name.',
     policies: [
       {
@@ -566,6 +772,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'assistant-agent',
+    label: 'Assistant Agent',
+    surface: 'assistant-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Personal-assistant agents that act on a real inbox and calendar.',
     policies: [
       {
@@ -591,6 +801,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'browser-agent',
+    label: 'Browser Agent',
+    surface: 'browser-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Baseline governance for agents driving a real browser session.',
     policies: [
       {
@@ -630,6 +844,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'aws',
+    label: 'AWS',
+    surface: 'infrastructure',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Destructive and privilege-changing AWS operations.',
     policies: [
       {
@@ -665,6 +883,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'cloudflare',
+    label: 'Cloudflare',
+    surface: 'infrastructure',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Destructive Wrangler operations against Cloudflare resources.',
     policies: [
       {
@@ -688,6 +910,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'data-egress',
+    label: 'Data Egress',
+    surface: 'ai-native-threat',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Agent-initiated transfers to destinations you did not approve.',
     policies: [
       {
@@ -725,8 +951,14 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'model-governance',
+    label: 'Model Governance',
+    surface: 'model',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description:
       'Restricts inference to approved model families. Edit the lists to match your own.',
+    caveat: PACK_CAVEAT.EDIT,
     policies: [
       {
         name: 'unapproved-model-block',
@@ -744,7 +976,12 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'provider-governance',
+    label: 'Provider Governance',
+    surface: 'model',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'Restricts which inference providers and vendors may be used.',
+    caveat: PACK_CAVEAT.EDIT,
     policies: [
       {
         name: 'unapproved-provider-approval',
@@ -764,8 +1001,13 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'data-residency',
+    label: 'Data Residency',
+    surface: 'jurisdiction',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description:
       'Keeps classified data in its lawful region. Inert unless requests carry a classification.',
+    caveat: PACK_CAVEAT.CLASSIFICATION,
     policies: [
       {
         name: 'eu-pii-residency',
@@ -796,8 +1038,13 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'regulated-data',
+    label: 'Regulated Data',
+    surface: 'regulatory',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description:
       'Human review for regulated categories. Inert unless requests carry a classification.',
+    caveat: PACK_CAVEAT.CLASSIFICATION,
     policies: [
       {
         name: 'cardholder-data-approval',
@@ -834,7 +1081,12 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'sovereignty',
+    label: 'Sovereignty',
+    surface: 'jurisdiction',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Isolates government and sovereign workloads to approved regions.',
+    caveat: PACK_CAVEAT.CLASSIFICATION,
     policies: [
       {
         name: 'sovereign-workload-isolation',
@@ -852,6 +1104,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'customer-data',
+    label: 'Customer Data',
+    surface: 'customer-data',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Customer records, CRM, and analytics are not read or shared in bulk.',
     policies: [
       {
@@ -880,6 +1137,11 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'money-movement',
+    label: 'Money Movement',
+    surface: 'financial',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
     description: 'Transfers, payouts, refunds, and treasury operations.',
     policies: [
       {
@@ -917,6 +1179,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'agent-chain',
+    label: 'Agent Chain',
+    surface: 'multi-agent',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Privilege escalation and message passing across agent chains.',
     policies: [
       {
@@ -943,6 +1209,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'workflow-autonomy',
+    label: 'Workflow Autonomy',
+    surface: 'autonomous-workflow',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Limits how far an unattended multi-step workflow may go.',
     policies: [
       {
@@ -969,7 +1239,12 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'browser-domains',
+    label: 'Browser Domains',
+    surface: 'browser-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.BETA,
     description: 'Where a browser agent may go. Replace the list with your own.',
+    caveat: PACK_CAVEAT.EDIT,
     policies: [
       {
         name: 'browser-domain-denylist',
@@ -992,6 +1267,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
   },
   {
     name: 'executive-approval',
+    label: 'Executive Approval',
+    surface: 'human-oversight',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
     description: 'The highest-risk actions need more than one signature.',
     policies: [
       {
