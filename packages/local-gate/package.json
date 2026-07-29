@@ -1,21 +1,21 @@
 {
-  "name": "@memnox/runtime",
+  "name": "@memnox/local-gate",
   "version": "0.1.0",
-  "description": "The Memnox runtime gateway: identity \u2192 policy \u2192 decision \u2192 audit for every AI action.",
+  "description": "In-process policy gate — matches a call's own arguments and scans its content on the machine that makes it, so the raw payload never crosses the network.",
   "keywords": [
+    "policy",
+    "authorization",
     "ai-agents",
-    "governance",
-    "server",
-    "audit",
-    "approval"
+    "security",
+    "local"
   ],
   "license": "Apache-2.0",
   "author": "Memnox",
-  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/runtime#readme",
+  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/local-gate#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/memnox/memnox-runtime.git",
-    "directory": "packages/runtime"
+    "directory": "packages/local-gate"
   },
   "bugs": {
     "url": "https://github.com/memnox/memnox-runtime/issues"
@@ -45,20 +45,9 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/code-graph": "0.1.0",
     "@memnox/content-shield": "0.1.0",
     "@memnox/core": "0.1.0",
-    "@memnox/intelligence": "0.1.0",
-    "@memnox/local-gate": "0.1.0",
-    "@memnox/memory": "0.1.0",
     "@memnox/policy-engine": "0.1.0",
-    "@memnox/postgres": "0.1.0",
-    "@memnox/redis": "0.1.0",
-    "@memnox/risk": "0.1.0",
-    "fastify": "^4.28.0",
     "yaml": "^2.4.0"
-  },
-  "devDependencies": {
-    "pg-mem": "^3.0.0"
   }
 }

@@ -11,6 +11,7 @@ export default defineConfig({
       '@memnox/core': packageSrc('core'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
       '@memnox/content-shield': packageSrc('content-shield'),
+      '@memnox/local-gate': packageSrc('local-gate'),
       '@memnox/code-graph': packageSrc('code-graph'),
       '@memnox/trust-bench': packageSrc('trust-bench'),
       '@memnox/redis': packageSrc('redis'),
