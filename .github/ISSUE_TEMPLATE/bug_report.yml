@@ -1,0 +1,54 @@
+name: Bug report
+description: A decision, command, or adapter behaved differently than documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a way to make an action bypass a policy, **stop** and follow
+        [SECURITY.md](../blob/main/SECURITY.md) instead — do not file it publicly.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The decision or output you expected, and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: >
+        The smallest policy file and command that shows it. Decisions are
+        deterministic, so a policy plus an action request is usually enough.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `memnox --version`, or the commit SHA.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage backend
+      options:
+        - Local files (default)
+        - Postgres
+        - Postgres + Redis
+    validations:
+      required: true

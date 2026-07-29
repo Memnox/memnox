@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a capability for the runtime.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Memnox **governs** agents — it understands code, and never writes or
+        reviews it. Code generation, PR review, reviewer suggestion, and
+        execution sandboxes are permanently out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can an agent do today that you cannot govern?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: >
+        What should the runtime decide, and on what input? If this is new
+        escalation logic, it should fit the `ActionAdvisor` shape — deterministic,
+        tightening only, and failing to "no escalation".
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: This keeps the decision path deterministic (no LLM, network, clock, or randomness)
+        - label: This does not require Memnox to author or review code

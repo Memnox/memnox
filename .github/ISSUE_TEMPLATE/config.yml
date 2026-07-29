@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/memnox/memnox-runtime/security/advisories/new
+    about: Policy bypasses and audit-tampering findings — never file these publicly.
+  - name: Questions and ideas
+    url: https://github.com/memnox/memnox-runtime/discussions
+    about: Ask how something works, or float an idea before opening an issue.
