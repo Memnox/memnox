@@ -13,6 +13,10 @@ import {
 export interface Style {
   bold(text: string): string;
   dim(text: string): string;
+  /** A run state working as intended — armed, reachable, installed. */
+  ok(text: string): string;
+  /** A run state worth attention that is not a verdict: observing, waiting, absent. */
+  warn(text: string): string;
   /** Colours and prefixes a verdict; plain mode returns the effect unchanged. */
   effect(effect: DecisionEffect | string, text: string): string;
   risk(level: RiskLevel | string, text: string): string;
@@ -54,6 +58,8 @@ const UNSTYLED_SYMBOL = '';
 export const plainStyle: Style = {
   bold: (text) => text,
   dim: (text) => text,
+  ok: (text) => text,
+  warn: (text) => text,
   effect: (_effect, text) => text,
   risk: (_level, text) => text,
   symbol: () => UNSTYLED_SYMBOL,
@@ -64,6 +70,8 @@ const wrap = (code: string, text: string): string => `${code}${text}${ANSI.RESET
 export const ansiStyle: Style = {
   bold: (text) => wrap(ANSI.BOLD, text),
   dim: (text) => wrap(ANSI.DIM, text),
+  ok: (text) => wrap(ANSI.GREEN, text),
+  warn: (text) => wrap(ANSI.YELLOW, text),
   effect: (effect, text) => {
     const colour = EFFECT_COLOUR[effect];
     return colour === undefined ? text : wrap(colour, text);

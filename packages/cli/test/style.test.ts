@@ -6,6 +6,8 @@ describe('plainStyle', () => {
   it('is the identity, so piped output stays byte-identical', () => {
     expect(plainStyle.bold('x')).toBe('x');
     expect(plainStyle.dim('x')).toBe('x');
+    expect(plainStyle.ok('x')).toBe('x');
+    expect(plainStyle.warn('x')).toBe('x');
     expect(plainStyle.effect(DECISION_EFFECT.BLOCK, 'BLOCK')).toBe('BLOCK');
     expect(plainStyle.risk(RISK_LEVEL.CRITICAL, 'critical')).toBe('critical');
     expect(plainStyle.symbol(DECISION_EFFECT.ALLOW)).toBe('');
@@ -19,6 +21,19 @@ describe('ansiStyle', () => {
     expect(styled).toContain('BLOCK');
     expect(styled.startsWith('\u001b[')).toBe(true);
     expect(styled.endsWith('\u001b[0m')).toBe(true);
+  });
+
+  it('colours a run state without borrowing a verdict colour', () => {
+    const ok = ansiStyle.ok('Enforcing');
+    const warn = ansiStyle.warn('Observing only');
+
+    expect(ok).toContain('Enforcing');
+    expect(warn).toContain('Observing only');
+    expect(ok).not.toBe(warn.replace('Observing only', 'Enforcing'));
+    for (const styled of [ok, warn]) {
+      expect(styled.startsWith('\u001b[')).toBe(true);
+      expect(styled.endsWith('\u001b[0m')).toBe(true);
+    }
   });
 
   it('gives each effect its own marker', () => {
