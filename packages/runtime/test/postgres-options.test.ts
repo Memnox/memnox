@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { postgresOptionsFromEnv } from '@memnox/postgres';
+import {
+  connectPostgres,
+  postgresOptionsFromEnv,
+  type PostgresOptions,
+} from '@memnox/postgres';
 
 const read = (env: Record<string, string>) =>
   postgresOptionsFromEnv(env as NodeJS.ProcessEnv, 'MEMNOX_DB_');
@@ -23,6 +27,29 @@ describe('postgresOptionsFromEnv', () => {
     expect(read({ MEMNOX_DB_SSL: '1' })).toEqual({});
   });
 
+  // Unverified TLS is encryption without authentication, so it is opt-in and
+  // never inferred from SSL being on.
+  it('accepts an unverified certificate only when asked explicitly', () => {
+    expect(
+      read({ MEMNOX_DB_SSL: 'true', MEMNOX_DB_SSL_ALLOW_UNVERIFIED: 'true' }),
+    ).toEqual({
+      ssl: true,
+      sslAllowUnverified: true,
+    });
+    expect(
+      read({ MEMNOX_DB_SSL: 'true', MEMNOX_DB_SSL_ALLOW_UNVERIFIED: 'false' }),
+    ).toEqual({
+      ssl: true,
+    });
+  });
+
+  it('reads a private CA certificate', () => {
+    expect(read({ MEMNOX_DB_SSL: 'true', MEMNOX_DB_SSL_ROOT_CERT: 'PEM' })).toEqual({
+      ssl: true,
+      sslRootCert: 'PEM',
+    });
+  });
+
   it('names the connection for whoever is reading pg_stat_activity', () => {
     expect(read({ MEMNOX_DB_APP_NAME: 'memnox-prod-3' })).toEqual({
       applicationName: 'memnox-prod-3',
@@ -43,5 +70,53 @@ describe('postgresOptionsFromEnv', () => {
         'MEMNOX_DB_',
       ),
     ).toEqual({});
+  });
+});
+
+/**
+ * The pool resolves lazily, so constructing one opens no socket and its settled
+ * options are readable. What is asserted here is the decision, not the driver.
+ */
+function sslOf(options: PostgresOptions): unknown {
+  const pool = connectPostgres(
+    'postgres://user@db.test:5432/memnox',
+    options,
+  ) as unknown as {
+    options: { ssl?: unknown };
+  };
+  return pool.options.ssl;
+}
+
+describe('connectPostgres, transport security', () => {
+  it('sends nothing about TLS when SSL is off', () => {
+    expect(sslOf({})).toBeUndefined();
+  });
+
+  /* The regression this guards: `rejectUnauthorized: false` used to be
+     unconditional, which authenticates no one — anything that can answer for
+     the database's address reads and rewrites every row, credentials included. */
+  it('verifies the certificate by default', () => {
+    expect(sslOf({ ssl: true })).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('stops verifying only when the deployment says so', () => {
+    expect(sslOf({ ssl: true, sslAllowUnverified: true })).toEqual({
+      rejectUnauthorized: false,
+    });
+  });
+
+  it('verifies against a private CA when one is given', () => {
+    expect(sslOf({ ssl: true, sslRootCert: 'PEM' })).toEqual({
+      rejectUnauthorized: true,
+      ca: 'PEM',
+    });
+  });
+
+  // A private CA is an answer to "who do I trust", not "trust nobody".
+  it('keeps verifying against a private CA even if unverified was also set', () => {
+    expect(sslOf({ ssl: true, sslRootCert: 'PEM', sslAllowUnverified: true })).toEqual({
+      rejectUnauthorized: true,
+      ca: 'PEM',
+    });
   });
 });
