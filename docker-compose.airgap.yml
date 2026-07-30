@@ -1,0 +1,21 @@
+# Verifies the air-gap claim rather than asserting it: the container is placed
+# on an internal network with no route out, so any outbound call fails.
+services:
+  memnox-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.airgap
+    ports:
+      - "7466:7466"
+    volumes:
+      - memnox-data:/data
+    networks:
+      - enclave
+    restart: unless-stopped
+
+networks:
+  enclave:
+    internal: true
+
+volumes:
+  memnox-data:

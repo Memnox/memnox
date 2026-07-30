@@ -1,0 +1,31 @@
+services:
+  memnox-runtime:
+    build: .
+    ports:
+      - "7466:7466"
+    volumes:
+      - memnox-data:/data
+    environment:
+      # Set to enable RBAC on the management API.
+      - MEMNOX_ADMIN_TOKEN=
+      # Uncomment for shared Postgres storage (required when scaling to multiple instances).
+      # - MEMNOX_DATABASE_URL=postgres://memnox:memnox@postgres:5432/memnox
+      # Encrypts stored records at rest.
+      # - MEMNOX_DATA_KEY=
+    restart: unless-stopped
+    # depends_on: [postgres]
+
+  # Uncomment to run the bundled Postgres for multi-instance deployments.
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     - POSTGRES_USER=memnox
+  #     - POSTGRES_PASSWORD=memnox
+  #     - POSTGRES_DB=memnox
+  #   volumes:
+  #     - memnox-postgres:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+volumes:
+  memnox-data:
+  # memnox-postgres:

@@ -1,0 +1,27 @@
+# Air-gapped image: no network at run time, and nothing in the decision path
+# needs one (see packages/runtime/test/air-gapped.test.ts).
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json tsconfig*.json ./
+COPY packages ./packages
+RUN npm ci && npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/packages ./packages
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Runs unprivileged; the only writable path is the data volume.
+RUN addgroup -S memnox && adduser -S memnox -G memnox && mkdir -p /data \
+  && chown -R memnox:memnox /data
+USER memnox
+VOLUME /data
+EXPOSE 7466
+
+# Local stores, local locks, no outbound calls. Add --database-url only if the
+# database is reachable inside the enclave.
+COPY --chown=memnox:memnox docker/airgap-entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["--enforcement", "default=enforce"]
