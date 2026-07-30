@@ -1,0 +1,46 @@
+version: 1
+policies:
+  - name: production-database-protection
+    description: AI agents may never destroy production data.
+    match:
+      actions: ["database.delete", "database.drop", "database.truncate"]
+      environments: ["production"]
+    decision:
+      effect: block
+      reason: No AI-initiated destructive database operations in production.
+
+  - name: production-deploy-approval
+    description: Production deployments need a human sign-off.
+    match:
+      actions: ["deploy.*"]
+      environments: ["production"]
+    decision:
+      effect: require_approval
+      approvers: ["eng-lead"]
+
+  - name: payment-code-approval
+    description: Payment logic changes need security review.
+    match:
+      actions: ["code.modify", "code.delete"]
+      targets: ["payment/*"]
+    decision:
+      effect: require_approval
+      approvers: ["security-team"]
+
+  - name: destructive-shell-protection
+    description: Obviously destructive shell commands need a human at the keyboard.
+    match:
+      actions: ["shell.execute"]
+      targets: ["*drop table*", "*drop database*", "*truncate table*", "*rm -rf /*"]
+    decision:
+      effect: block
+      reason: Destructive shell commands are blocked for AI agents.
+
+  - name: customer-data-export-block
+    description: Agents cannot exfiltrate customer data.
+    match:
+      actions: ["data.export"]
+      targets: ["customers*", "users*"]
+    decision:
+      effect: block
+      reason: Customer data export requires a human-run, logged procedure.
