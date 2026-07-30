@@ -48,16 +48,49 @@ blocks findings the edit **introduces**. Otherwise every subsequent edit to a
 file that already contains a finding would be blocked, and the developer would
 uninstall the hook. See `shieldDenialMessage` in the `memnox` CLI package.
 
+## The security baseline
+
+Scanning answers *"is there a secret in this content?"*. The baseline answers the
+question that comes earlier — *"what must a change of this kind satisfy?"* — so an
+agent can carry the requirements into its work instead of tripping over them.
+
+```ts
+import { securityRequirementsFor, SECURITY_BASELINE_VERSION } from '@memnox/content-shield';
+
+securityRequirementsFor('file.write', 'src/api/upload.ts');
+// [{ id: 'upload-validate-type', requirement: '…', why: '…' }, …]
+```
+
+A lookup table, not a model: the same action and target always produce the same
+requirements in the same order, so a briefing is cacheable, diffable, and reproducible
+against `SECURITY_BASELINE_VERSION`. Covered classes: auth/authz/session/credentials,
+upload handling, endpoints, SQL, XSS, deserialization, crypto, shell injection, supply
+chain, data export, migrations, and deploy secrets — plus two universal rules that
+always apply. An action with no side effect (`file.read`) returns nothing.
+
+The runtime surfaces these through `POST /v1/context`; see the root README.
+
+**These are requirements for a class of work, never findings about code someone
+wrote.** Memnox states what a change must satisfy; it does not review the change.
+
 ## Layout
 
 | File | Responsibility |
 |---|---|
 | `shield-rules.ts` | the rule set: patterns, severity, fix advice |
+| `security-requirements.ts` | the shipped security baseline, keyed by action and target |
 | `path-routing.ts` | path → kind, and which kinds are skipped |
 | `finding.ts` | the finding shape and redaction |
 | `scanner.ts` | `scanContent` and `scanDiff` |
 | `package-advisories.ts` | curated vulnerable-package table |
 | `content-shield-advisor.ts` | the escalation hook |
+
+## Adding a security requirement
+
+Add it to the matching `RequirementRule` in `security-requirements.ts` with a stable
+`id`, what the change must do, and one line on what goes wrong when it does not. Bump
+`SECURITY_BASELINE_VERSION`, and add a case asserting the id appears for a
+representative target. Requirements are deduplicated by id when several rules match.
 
 ## Adding a rule
 
