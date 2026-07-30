@@ -143,7 +143,7 @@ function isPlaceholderCredential(matched: string): boolean {
 }
 
 /** Luhn-validated with a public-test-number allowlist — card detection without the noise. */
-function findCardNumber(text: string): string | null {
+export function findCardNumber(text: string): string | null {
   for (const match of text.matchAll(CARD_CANDIDATE)) {
     const digits = match[0].replace(/[ -]/g, '');
     if (digits.length < CARD_MIN_DIGITS || digits.length > CARD_MAX_DIGITS) continue;
