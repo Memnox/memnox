@@ -1,3 +1,4 @@
+import type { ConnectionOptions } from 'node:tls';
 import { Pool } from 'pg';
 
 /** Fits one instance; raise it per instance when running behind PgBouncer. */
@@ -23,8 +24,33 @@ export interface PostgresOptions {
   poolMin?: number;
   /** Managed Postgres (RDS, Supabase, Neon) refuses plaintext connections. */
   ssl?: boolean;
+  /**
+   * Accepts a certificate this host cannot verify. Encryption without
+   * authentication: it stops a passive listener and not an active one, so it is
+   * for a self-signed development database and never for production. Named
+   * rather than silent, because the risk is exactly that nobody notices.
+   */
+  sslAllowUnverified?: boolean;
+  /** A private CA's certificate, for a database not signed by a public root. */
+  sslRootCert?: string;
   /** Names the connection so an operator can tell which instance owns it. */
   applicationName?: string;
+}
+
+/**
+ * Verifying by default is the whole point: `rejectUnauthorized: false` was the
+ * previous behaviour and it turns TLS into encryption against a passive
+ * listener only — anyone who can answer for the database's address reads and
+ * rewrites every row in transit, credentials included.
+ */
+function sslSettings(
+  options: PostgresOptions,
+): { ssl: ConnectionOptions } | Record<string, never> {
+  if (options.ssl !== true) return {};
+  if (options.sslRootCert !== undefined) {
+    return { ssl: { rejectUnauthorized: true, ca: options.sslRootCert } };
+  }
+  return { ssl: { rejectUnauthorized: options.sslAllowUnverified !== true } };
 }
 
 /**
@@ -44,7 +70,7 @@ export function connectPostgres(
     keepAlive: true,
     keepAliveInitialDelayMillis: KEEPALIVE_DELAY_MS,
     application_name: options.applicationName ?? 'memnox',
-    ...(options.ssl === true ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...sslSettings(options),
   });
 }
 
@@ -62,11 +88,18 @@ export function postgresOptionsFromEnv(
   const poolMax = positive('POOL_MAX');
   const poolMin = positive('POOL_MIN');
   const applicationName = env[`${prefix}APP_NAME`];
+  const sslRootCert = env[`${prefix}SSL_ROOT_CERT`];
 
   return {
     ...(poolMax === undefined ? {} : { poolMax }),
     ...(poolMin === undefined ? {} : { poolMin }),
     ...(env[`${prefix}SSL`] === 'true' ? { ssl: true } : {}),
+    // Opt-in and awkward to type on purpose: it downgrades the connection to
+    // unauthenticated encryption, so it should never be reached for absently.
+    ...(env[`${prefix}SSL_ALLOW_UNVERIFIED`] === 'true'
+      ? { sslAllowUnverified: true }
+      : {}),
+    ...(sslRootCert === undefined ? {} : { sslRootCert }),
     ...(applicationName === undefined ? {} : { applicationName }),
   };
 }
