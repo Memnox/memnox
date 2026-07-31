@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DECISION_EFFECT } from '@memnox/core';
 import {
   FirewallSession,
   ToolFilter,
@@ -7,6 +8,7 @@ import {
   type CallVerdict,
   type FirewallChannel,
   type JsonRpcMessage,
+  type ToolCall,
 } from '../src/index';
 
 class RecordingChannel implements FirewallChannel {
@@ -32,17 +34,25 @@ class RecordingChannel implements FirewallChannel {
 
 class StubAuthorizer implements CallAuthorizer {
   readonly asked: string[] = [];
+  readonly calls: ToolCall[] = [];
 
   constructor(private readonly verdict: CallVerdict) {}
 
-  async authorize(toolName: string): Promise<CallVerdict> {
-    this.asked.push(toolName);
+  async authorize(call: ToolCall): Promise<CallVerdict> {
+    this.asked.push(call.name);
+    this.calls.push(call);
     return this.verdict;
   }
 }
 
-const ALLOW: CallVerdict = { allowed: true, reason: 'permitted by policy' };
-const BLOCK: CallVerdict = { allowed: false, reason: 'writes to production' };
+const ALLOW: CallVerdict = {
+  effect: DECISION_EFFECT.ALLOW,
+  reason: 'permitted by policy',
+};
+const BLOCK: CallVerdict = {
+  effect: DECISION_EFFECT.BLOCK,
+  reason: 'writes to production',
+};
 
 interface Harness {
   session: FirewallSession;
@@ -264,7 +274,7 @@ describe('FirewallSession — the wrapped server has exited', () => {
 describe('UngovernedAuthorizer', () => {
   it('allows every call so static filters remain the only gate', async () => {
     expect(await new UngovernedAuthorizer().authorize()).toEqual({
-      allowed: true,
+      effect: DECISION_EFFECT.ALLOW,
       reason: 'no runtime configured',
     });
   });

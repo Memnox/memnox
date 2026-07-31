@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { LocalGate } from '@memnox/local-gate';
 import { MemnoxClient } from '@memnox/sdk';
 import {
+  LayeredAuthorizer,
+  LocalGateAuthorizer,
   RuntimeAuthorizer,
   UngovernedAuthorizer,
   type CallAuthorizer,
@@ -22,6 +25,11 @@ export interface FirewallOptions {
   failOpen?: boolean;
   /** Groups this proxy's calls in the audit timeline. */
   sessionId?: string;
+  /**
+   * Rules evaluated in this process, against the call's own arguments. Loading
+   * is the caller's job because it reads files; see loadLocalGate.
+   */
+  gate?: LocalGate;
   log?: (message: string) => void;
 }
 
@@ -76,10 +84,15 @@ export class McpFirewall {
   }
 
   private buildAuthorizer(): CallAuthorizer {
-    const { runtimeUrl, agentToken } = this.options;
-    if (!runtimeUrl || !agentToken) return new UngovernedAuthorizer();
+    const { runtimeUrl, agentToken, gate } = this.options;
+    const local =
+      gate === undefined
+        ? null
+        : new LocalGateAuthorizer(gate, this.options.serverName, this.options.sessionId);
 
-    return new RuntimeAuthorizer(
+    if (!runtimeUrl || !agentToken) return local ?? new UngovernedAuthorizer();
+
+    const runtime = new RuntimeAuthorizer(
       new MemnoxClient({ baseUrl: runtimeUrl, token: agentToken }),
       {
         serverName: this.options.serverName,
@@ -88,6 +101,7 @@ export class McpFirewall {
         log: this.log,
       },
     );
+    return local === null ? runtime : new LayeredAuthorizer(local, runtime);
   }
 
   private buildChannel(): FirewallChannel {

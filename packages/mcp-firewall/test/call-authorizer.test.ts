@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, RISK_LEVEL } from '@memnox/core';
 import { MemnoxClient, type HttpTransport } from '@memnox/sdk';
-import { RuntimeAuthorizer } from '../src/index';
+import { isAllowed, RuntimeAuthorizer } from '../src/index';
 
 interface Call {
   action: string;
   target?: string;
   sessionId?: string;
+  arguments?: Record<string, string>;
+  signals?: string[];
 }
+
+const call = (name: string, args: Record<string, string> = {}) => ({
+  name,
+  arguments: args,
+});
 
 const calls: Call[] = [];
 
@@ -57,8 +64,8 @@ describe('RuntimeAuthorizer', () => {
   it('allows a call the runtime allows, carrying the policy reason through', async () => {
     const { subject } = authorizer(respondWith(allowed));
 
-    expect(await subject.authorize('read_file')).toEqual({
-      allowed: true,
+    expect(await subject.authorize(call('read_file'))).toEqual({
+      effect: DECISION_EFFECT.ALLOW,
       reason: 'read-only tool',
     });
   });
@@ -67,7 +74,7 @@ describe('RuntimeAuthorizer', () => {
     calls.length = 0;
     const { subject } = authorizer(respondWith(allowed), { sessionId: 'sess-9' });
 
-    await subject.authorize('create_issue');
+    await subject.authorize(call('create_issue'));
 
     expect(calls[0]).toMatchObject({
       action: 'mcp.create_issue',
@@ -81,9 +88,9 @@ describe('RuntimeAuthorizer', () => {
       respondWith({ ...allowed, effect: DECISION_EFFECT.BLOCK, reason: 'destructive' }),
     );
 
-    const verdict = await subject.authorize('delete_repo');
+    const verdict = await subject.authorize(call('delete_repo'));
 
-    expect(verdict.allowed).toBe(false);
+    expect(isAllowed(verdict)).toBe(false);
     expect(verdict.reason).toContain('destructive');
   });
 
@@ -97,18 +104,18 @@ describe('RuntimeAuthorizer', () => {
       }),
     );
 
-    const verdict = await subject.authorize('merge_pr');
+    const verdict = await subject.authorize(call('merge_pr'));
 
-    expect(verdict.allowed).toBe(false);
+    expect(isAllowed(verdict)).toBe(false);
     expect(verdict.reason).toContain('memnox approvals resolve apr_7');
   });
 
   it('fails closed when the runtime is unreachable', async () => {
     const { subject, logs } = authorizer(unreachable);
 
-    const verdict = await subject.authorize('read_file');
+    const verdict = await subject.authorize(call('read_file'));
 
-    expect(verdict.allowed).toBe(false);
+    expect(isAllowed(verdict)).toBe(false);
     expect(verdict.reason).toContain('failing closed');
     expect(logs).toEqual([]);
   });
@@ -116,9 +123,9 @@ describe('RuntimeAuthorizer', () => {
   it('fails open only when explicitly configured, and says so in the log', async () => {
     const { subject, logs } = authorizer(unreachable, { failOpen: true });
 
-    const verdict = await subject.authorize('read_file');
+    const verdict = await subject.authorize(call('read_file'));
 
-    expect(verdict.allowed).toBe(true);
+    expect(isAllowed(verdict)).toBe(true);
     expect(verdict.reason).toContain('fail-open');
     expect(logs[0]).toContain('runtime unreachable, failing open');
   });
