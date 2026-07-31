@@ -3,10 +3,13 @@ import { McpFirewall } from './firewall';
 import {
   ENV_AGENT_TOKEN,
   ENV_FAIL_OPEN,
+  ENV_ON_SECRET,
+  ENV_POLICIES,
   ENV_RUNTIME_URL,
   ENV_TOOLS_ALLOW,
   ENV_TOOLS_DENY,
 } from './firewall.constants';
+import { loadLocalGate, localGateEnvironment } from './local-gate-loader';
 
 const USAGE = `Usage: memnox-mcp-firewall --name <server-name> -- <server command...>
 
@@ -18,20 +21,26 @@ Environment:
   ${ENV_TOOLS_ALLOW}  regex — only matching tools are exposed
   ${ENV_TOOLS_DENY}   regex — matching tools are hidden and blocked
   ${ENV_FAIL_OPEN}    "true" to forward calls when the runtime is unreachable
+  ${ENV_POLICIES}       policy files evaluated in-process, comma-separated —
+                        the only place a call's arguments are ever read
+  ${ENV_ON_SECRET}      a secret in an argument: block (default) | redact | signal
 
 Example:
   MEMNOX_AGENT_TOKEN=mnx_... memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github`;
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseFirewallArgs(process.argv.slice(2));
   if (!args) {
     process.stderr.write(`${USAGE}\n`);
     process.exit(1);
   }
 
+  const gate = await loadLocalGate(localGateEnvironment(process.env), args.serverName);
+
   new McpFirewall({
     command: args.command,
     serverName: args.serverName,
+    ...(gate === null ? {} : { gate }),
     runtimeUrl: process.env[ENV_RUNTIME_URL],
     agentToken: process.env[ENV_AGENT_TOKEN],
     allowPattern: process.env[ENV_TOOLS_ALLOW],
@@ -40,4 +49,4 @@ function main(): void {
   }).start();
 }
 
-main();
+void main();

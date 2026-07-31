@@ -1,7 +1,7 @@
 {
   "name": "@memnox/mcp-firewall",
   "version": "0.1.0",
-  "description": "Transparent MCP proxy that routes every tools/call through the Memnox runtime before it reaches the server.",
+  "description": "Transparent MCP proxy \u2014 stdio or remote HTTP \u2014 that routes every tools/call through the Memnox runtime before it reaches the server.",
   "keywords": [
     "mcp",
     "firewall",
@@ -26,7 +26,8 @@
   },
   "type": "module",
   "bin": {
-    "memnox-mcp-firewall": "dist/cli.js"
+    "memnox-mcp-firewall": "dist/cli.js",
+    "memnox-mcp-gateway": "dist/gateway-cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -49,6 +50,7 @@
   },
   "dependencies": {
     "@memnox/core": "0.1.0",
+    "@memnox/local-gate": "0.1.0",
     "@memnox/sdk": "0.1.0"
   }
 }

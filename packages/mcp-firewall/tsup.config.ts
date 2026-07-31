@@ -8,7 +8,7 @@ export default defineConfig([
     clean: true,
   },
   {
-    entry: ['src/cli.ts'],
+    entry: ['src/cli.ts', 'src/gateway-cli.ts'],
     format: ['esm'],
     banner: { js: '#!/usr/bin/env node' },
   },
