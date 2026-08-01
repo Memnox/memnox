@@ -76,6 +76,44 @@ Each named argument narrows the rule further, because every one listed must matc
 
 **Arguments are matched where the call is made, never on the wire.** The raw payload is the one thing a control plane should not collect, so [`@memnox/local-gate`](../packages/local-gate) evaluates it in-process, inside the MCP firewall and inside the editor hook. The runtime is only told the tool, the target, and the rule ids that matched (`signals`). The SDK strips `arguments` before any request leaves the machine.
 
+## Matching on how big the action is
+
+"Refunds are fine" and "refunds up to a thousand are fine" are different
+policies. A rule reads the size the caller reported, in whatever unit the action
+counts in: money refunded, rows deleted, seats granted.
+
+```yaml
+  - name: large-refunds-need-finance
+    match:
+      actions: ["payment.refund"]
+      aboveAmount: 1000
+    decision:
+      effect: require_approval
+      approvers: ["finance-manager"]
+
+  - name: no-refund-this-large
+    match:
+      actions: ["payment.refund"]
+      aboveAmount: 100000
+    decision:
+      effect: block
+      reason: A refund this size is not an agent action.
+```
+
+Two things are worth knowing about it.
+
+**Above means above.** A rule with `aboveAmount: 1000` does not apply to an
+action of exactly a thousand.
+
+**An action that never said how big it was matches.** It cannot prove it is
+under the line, and a caller that omits the number must not thereby escape the
+rule the number exists for. If you send `amount` sometimes, send it always.
+
+This is also why a size limit belongs here and not only in a control plane.
+An authority ceiling routes an action to whoever can authorize it; a rule can
+say that nothing authorizes it. Those are different answers and a company needs
+both.
+
 ## Three more outcomes
 
 ```yaml

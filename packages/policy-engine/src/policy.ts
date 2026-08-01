@@ -7,6 +7,14 @@ export interface PolicyMatch {
   targets?: string[];
   environments?: string[];
   agents?: string[];
+  /**
+   * The person the agent is acting for, e.g. `["cfo@acme.com"]`.
+   *
+   * Distinct from `agents`: one rule can govern every agent that acts for the
+   * CFO without naming any of them, which is how a delegation survives the
+   * agent being replaced.
+   */
+  principals?: string[];
   models?: string[];
   providers?: string[];
   dataClassifications?: string[];
@@ -22,6 +30,16 @@ export interface PolicyMatch {
    * the in-process gate, which is the only place the raw payload exists.
    */
   arguments?: Record<string, string[]>;
+  /**
+   * The rule applies only to an action bigger than this, in the unit the action
+   * counts in. "Refunds above a thousand need approval" is one rule with this
+   * set, rather than a rule the gate cannot express at all.
+   *
+   * **An action that does not say how big it is matches.** It cannot prove it
+   * is under the threshold, and a caller that omits the number must not thereby
+   * escape the rule that the number exists for.
+   */
+  aboveAmount?: number;
   /** The policy applies only inside these recurring windows. */
   windows?: TimeWindow[];
 }

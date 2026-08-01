@@ -103,6 +103,11 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         issues,
       ),
       agents: asOptionalStringArray(match['agents'], `${path}.match.agents`, issues),
+      principals: asOptionalStringArray(
+        match['principals'],
+        `${path}.match.principals`,
+        issues,
+      ),
       models: asOptionalStringArray(match['models'], `${path}.match.models`, issues),
       providers: asOptionalStringArray(
         match['providers'],
@@ -132,6 +137,11 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
       arguments: asOptionalArgumentPatterns(
         match['arguments'],
         `${path}.match.arguments`,
+        issues,
+      ),
+      aboveAmount: asOptionalThreshold(
+        match['aboveAmount'],
+        `${path}.match.aboveAmount`,
         issues,
       ),
       windows: asOptionalWindows(match['windows'], `${path}.match.windows`, issues),
@@ -250,6 +260,24 @@ function asOptionalQuorum(
     return undefined;
   }
   return input as number;
+}
+
+/**
+ * A size a rule triggers above. Any finite number that is not negative: sizes
+ * are not always money and not always whole, and refusing a fractional one
+ * would rule out the hours and rates that policies are genuinely written about.
+ */
+function asOptionalThreshold(
+  input: unknown,
+  path: string,
+  issues: string[],
+): number | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) {
+    issues.push(`${path} must be a number of at least 0`);
+    return undefined;
+  }
+  return input;
 }
 
 function asRecord(

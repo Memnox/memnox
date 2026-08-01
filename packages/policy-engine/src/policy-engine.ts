@@ -141,6 +141,7 @@ export class PolicyEngine {
       matchesAny(policy.match.targets, request.target) &&
       matchesAny(policy.match.environments, request.environment) &&
       matchesAny(policy.match.agents, context.agentName) &&
+      matchesAny(policy.match.principals, request.principal) &&
       matchesAny(policy.match.models, request.model) &&
       matchesAny(policy.match.providers, request.provider) &&
       matchesAny(policy.match.dataClassifications, request.dataClassification) &&
@@ -148,6 +149,7 @@ export class PolicyEngine {
       matchesAny(policy.match.workingDirectories, request.workingDirectory) &&
       matchesAny(policy.match.branches, request.branch) &&
       matchesAllArguments(policy.match.arguments, request.arguments) &&
+      matchesAmount(policy.match.aboveAmount, request.amount) &&
       matchesAnyTimeWindow(policy.match.windows, context.now)
     );
   }
@@ -196,6 +198,23 @@ function withheld(
  * Every named argument must match — each one narrows the rule further, so
  * `{ command: ["*rm -rf*"], cwd: ["/srv/*"] }` fires only when both hold.
  */
+/**
+ * Whether the action is big enough for this rule.
+ *
+ * No threshold matches everything, as every other unset condition does. An
+ * action with no stated amount also matches: it cannot prove it is under the
+ * line, and letting an unstated size slip past the rule written for size is the
+ * failure worth avoiding.
+ */
+function matchesAmount(
+  threshold: number | undefined,
+  amount: number | undefined,
+): boolean {
+  if (threshold === undefined) return true;
+  if (amount === undefined) return true;
+  return amount > threshold;
+}
+
 function matchesAllArguments(
   patterns: Record<string, string[]> | undefined,
   values: Record<string, string> | undefined,
