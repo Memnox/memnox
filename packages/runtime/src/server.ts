@@ -53,7 +53,11 @@ import { DEFAULT_ADVISOR_APPROVERS, resolveConfig, type RuntimeConfig } from './
 import { CONSOLE_LOGGER } from './console-logger';
 import { MetricsRegistry } from './metrics';
 import { FilePolicyHistory } from './policy-history';
-import { loadPoliciesFromFile, writePoliciesToFile } from './policy-loader';
+import {
+  loadPolicyFiles,
+  readPolicyRegistry,
+  writePoliciesToFile,
+} from './policy-loader';
 import { registerActionRoutes } from './routes/action.routes';
 import { registerAgentRoutes } from './routes/agent.routes';
 import { registerApprovalRoutes } from './routes/approval.routes';
@@ -115,7 +119,21 @@ export async function buildServer(
   services: ServerServices = {},
 ): Promise<MemnoxServer> {
   const config = resolveConfig(overrides);
-  const policies = config.policyFile ? await loadPoliciesFromFile(config.policyFile) : [];
+  // Boot and reload resolve sources the same way, so a reload can never see a
+  // different rule set than a restart would.
+  const policySources = async (): Promise<string[]> => {
+    const registered =
+      config.policyRegistryFile === undefined
+        ? []
+        : await readPolicyRegistry(config.policyRegistryFile);
+    const configured = [
+      ...(config.policyFile === undefined ? [] : [config.policyFile]),
+      ...(config.policyFiles ?? []),
+      ...registered,
+    ];
+    return [...new Set(configured)];
+  };
+  const policies = await loadPolicyFiles(await policySources());
   const codeGraph = config.codeGraphFile
     ? await loadCodeGraphFromFile(config.codeGraphFile, CONSOLE_LOGGER)
     : null;
@@ -151,13 +169,14 @@ export async function buildServer(
   const metrics = new MetricsRegistry();
   const planStore = new InMemoryPlanStore();
   const policyHistory = new FilePolicyHistory(config.dataDir);
+  const approvalStore = sql
+    ? new PostgresApprovalStore(sql, codec)
+    : new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE), codec);
   const gateway = new ActionGateway({
     identityStore,
     auditLog,
     metrics,
-    approvalStore: sql
-      ? new PostgresApprovalStore(sql, codec)
-      : new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE), codec),
+    approvalStore,
     policyEngine: new PolicyEngine(policies, { defaultEffect: config.defaultEffect }),
     ...(config.enforcement === undefined ? {} : { enforcement: config.enforcement }),
     ...(config.maxPendingApprovals === undefined
@@ -194,6 +213,7 @@ export async function buildServer(
   if (sql && !services.sql) app.addHook('onClose', async () => sql.end());
   const stopRetention = scheduleAuditRetention(
     auditLog,
+    approvalStore,
     lockService,
     config.auditRetentionDays,
     CONSOLE_LOGGER,
@@ -221,15 +241,16 @@ export async function buildServer(
     proxyFetch: services.proxyFetch ?? fetch,
     plans: planStore,
     policyHistory,
-    reloadPolicies: config.policyFile
-      ? async () => {
-          const reloaded = await loadPoliciesFromFile(config.policyFile ?? '');
-          gateway.usePolicyEngine(
-            new PolicyEngine(reloaded, { defaultEffect: config.defaultEffect }),
-          );
-          return reloaded;
-        }
-      : undefined,
+    reloadPolicies:
+      config.policyFile || config.policyRegistryFile
+        ? async () => {
+            const reloaded = await loadPolicyFiles(await policySources());
+            gateway.usePolicyEngine(
+              new PolicyEngine(reloaded, { defaultEffect: config.defaultEffect }),
+            );
+            return reloaded;
+          }
+        : undefined,
     applyPolicies: config.policyFile
       ? async (policies) => {
           await writePoliciesToFile(config.policyFile ?? '', policies);

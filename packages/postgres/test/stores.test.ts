@@ -136,6 +136,25 @@ describe('postgres stores', () => {
     expect((await store.findById('ap2'))?.status).toBe(APPROVAL_STATUS.APPROVED);
   });
 
+  it('approval store: prunes resolved approvals and keeps pending ones', async () => {
+    const store = new PostgresApprovalStore(sql);
+    await store.save({ ...approval('ap1', 'fp-1'), status: APPROVAL_STATUS.APPROVED });
+    await store.save({ ...approval('ap2', 'fp-2'), status: APPROVAL_STATUS.EXPIRED });
+    // Old and unanswered — a decision still owed, so retention leaves it alone.
+    await store.save(approval('ap3', 'fp-3'));
+    await store.save({
+      ...approval('ap4', 'fp-4'),
+      createdAt: '2026-08-01T00:00:00.000Z',
+      status: APPROVAL_STATUS.DENIED,
+    });
+
+    expect(await store.pruneResolvedBefore('2026-07-15T00:00:00.000Z')).toBe(2);
+    expect(await store.findById('ap1')).toBeNull();
+    expect(await store.findById('ap2')).toBeNull();
+    expect((await store.findById('ap3'))?.status).toBe(APPROVAL_STATUS.PENDING);
+    expect((await store.findById('ap4'))?.status).toBe(APPROVAL_STATUS.DENIED);
+  });
+
   it('audit log: newest-first recent, chronological filtered query', async () => {
     const log = new PostgresAuditLog(sql);
     await log.append(auditEvent('e1', '2026-07-01T00:00:00.000Z'));
@@ -155,6 +174,26 @@ describe('postgres stores', () => {
         })
       ).map((entry) => entry.id),
     ).toEqual(['e2']);
+  });
+
+  it('filters the audit timeline by project across repositories', async () => {
+    const log = new PostgresAuditLog(sql);
+    const scoped = (id: string, projectId?: string): ActionEvent => ({
+      ...auditEvent(id, `2026-07-0${id.slice(1)}T00:00:00.000Z`),
+      projectId,
+    });
+    await log.append(scoped('e1', 'acme-checkout')); // web repo
+    await log.append(scoped('e2', 'acme-checkout')); // api repo
+    await log.append(scoped('e3', 'billing-service'));
+    await log.append(scoped('e4'));
+
+    expect(
+      (await log.query({ projectId: 'acme-checkout' })).map((entry) => entry.id),
+    ).toEqual(['e1', 'e2']);
+    expect(
+      (await log.query({ projectId: 'billing-service' })).map((entry) => entry.id),
+    ).toEqual(['e3']);
+    expect((await log.query({})).map((entry) => entry.id)).toHaveLength(4);
   });
 
   it('encodes records at rest while query columns stay searchable', async () => {

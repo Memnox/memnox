@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Approval, ApprovalStatus, ApprovalStore, TextCodec } from '@memnox/core';
-import { APPROVAL_STATUS, PLAIN_TEXT_CODEC } from '@memnox/core';
+import { APPROVAL_STATUS, isApprovalPrunable, PLAIN_TEXT_CODEC } from '@memnox/core';
 
 /**
  * Approvals survive restarts — a pending human decision must not vanish with the
@@ -44,6 +44,17 @@ export class JsonFileApprovalStore implements ApprovalStore {
   async listByStatus(status: ApprovalStatus): Promise<Approval[]> {
     await this.ensureLoaded();
     return [...this.approvals.values()].filter((approval) => approval.status === status);
+  }
+
+  async pruneResolvedBefore(cutoff: string): Promise<number> {
+    await this.ensureLoaded();
+    const stale = [...this.approvals.values()].filter((approval) =>
+      isApprovalPrunable(approval, cutoff),
+    );
+    if (stale.length === 0) return 0;
+    for (const approval of stale) this.approvals.delete(approval.id);
+    await this.persist();
+    return stale.length;
   }
 
   private async ensureLoaded(): Promise<void> {

@@ -1,4 +1,4 @@
-import type { ApprovalStatus } from '../constants/approval.constants';
+import { APPROVAL_STATUS, type ApprovalStatus } from '../constants/approval.constants';
 
 export interface Approval {
   id: string;
@@ -46,4 +46,12 @@ export function applyGrant(
 
 export function isApprovalExpired(approval: Approval, now: Date = new Date()): boolean {
   return Boolean(approval.expiresAt && approval.expiresAt <= now.toISOString());
+}
+
+/**
+ * Retention: old and finished. A pending hold is never prunable no matter how
+ * old — it is a decision a human still owes, and deleting it would erase the ask.
+ */
+export function isApprovalPrunable(approval: Approval, cutoff: string): boolean {
+  return approval.status !== APPROVAL_STATUS.PENDING && approval.createdAt < cutoff;
 }

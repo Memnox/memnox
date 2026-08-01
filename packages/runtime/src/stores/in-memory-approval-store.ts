@@ -1,5 +1,5 @@
 import type { Approval, ApprovalStatus, ApprovalStore } from '@memnox/core';
-import { APPROVAL_STATUS } from '@memnox/core';
+import { APPROVAL_STATUS, isApprovalPrunable } from '@memnox/core';
 
 export class InMemoryApprovalStore implements ApprovalStore {
   private readonly approvals = new Map<string, Approval>();
@@ -26,5 +26,13 @@ export class InMemoryApprovalStore implements ApprovalStore {
 
   async listByStatus(status: ApprovalStatus): Promise<Approval[]> {
     return [...this.approvals.values()].filter((approval) => approval.status === status);
+  }
+
+  async pruneResolvedBefore(cutoff: string): Promise<number> {
+    const stale = [...this.approvals.values()].filter((approval) =>
+      isApprovalPrunable(approval, cutoff),
+    );
+    for (const approval of stale) this.approvals.delete(approval.id);
+    return stale.length;
   }
 }

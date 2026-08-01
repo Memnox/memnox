@@ -70,6 +70,24 @@ describe('JsonFileApprovalStore', () => {
     expect(await store.listByStatus(APPROVAL_STATUS.PENDING)).toHaveLength(1);
   });
 
+  it('prunes resolved approvals and persists the smaller file', async () => {
+    const path = join(dataDir, 'approvals.json');
+    const store = new JsonFileApprovalStore(path);
+    await store.save(approval({ createdAt: '2026-01-01T00:00:00.000Z' }));
+    await store.save(
+      approval({
+        id: 'app-2',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        status: APPROVAL_STATUS.APPROVED,
+      }),
+    );
+
+    expect(await store.pruneResolvedBefore('2026-06-01T00:00:00.000Z')).toBe(1);
+    // A pending hold is a decision still owed, so age alone never removes it.
+    expect(await new JsonFileApprovalStore(path).findById('app-1')).not.toBeNull();
+    expect(await new JsonFileApprovalStore(path).findById('app-2')).toBeNull();
+  });
+
   it('encrypts at rest when a codec is supplied', async () => {
     const path = join(dataDir, 'approvals.json');
     const codec = new AesGcmCodec(DATA_KEY);

@@ -32,9 +32,20 @@ export interface ApprovalNotifier {
   notify(approval: Approval): Promise<void>;
 }
 
+/**
+ * Storage only: an adapter never applies the approval TTL, because whether a
+ * hold still counts is `ApprovalService`'s call and the flow report has to see
+ * the lapsed ones. Adapters that filtered on their own disagreed with each other.
+ */
 export interface ApprovalStore {
   save(approval: Approval): Promise<void>;
   findById(id: string): Promise<Approval | null>;
   findPendingByFingerprint(fingerprint: string): Promise<Approval | null>;
   listByStatus(status: ApprovalStatus): Promise<Approval[]>;
+  /**
+   * Retention sweep. Drops approvals raised before the cutoff that have reached
+   * a terminal status, returns how many. A pending hold is never dropped: it is
+   * a human decision still owed, however old it looks.
+   */
+  pruneResolvedBefore(cutoff: string): Promise<number>;
 }

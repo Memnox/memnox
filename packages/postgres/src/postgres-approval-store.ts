@@ -6,6 +6,7 @@ import {
   type ApprovalStore,
   type TextCodec,
 } from '@memnox/core';
+import { PRUNE_BATCH_SIZE, PRUNE_MAX_BATCHES } from './prune.constants';
 import type { SqlClient, SqlRow } from './sql-client';
 
 export class PostgresApprovalStore implements ApprovalStore {
@@ -53,6 +54,24 @@ export class PostgresApprovalStore implements ApprovalStore {
       [status],
     );
     return rows.map((row) => this.decode(row));
+  }
+
+  /** Pending rows are excluded in SQL: an unanswered hold is not ours to delete. */
+  async pruneResolvedBefore(cutoff: string): Promise<number> {
+    let removed = 0;
+    for (let batch = 0; batch < PRUNE_MAX_BATCHES; batch += 1) {
+      const { rows } = await this.sql.query(
+        `DELETE FROM approvals WHERE id IN (
+           SELECT id FROM approvals
+           WHERE status <> $1 AND created_at < $2
+           ORDER BY created_at LIMIT $3
+         ) RETURNING id`,
+        [APPROVAL_STATUS.PENDING, cutoff, PRUNE_BATCH_SIZE],
+      );
+      removed += rows.length;
+      if (rows.length < PRUNE_BATCH_SIZE) break;
+    }
+    return removed;
   }
 
   private encode(approval: Approval): string {

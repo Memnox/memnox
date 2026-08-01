@@ -9,12 +9,9 @@ import {
   type AuditQuery,
   type TextCodec,
 } from '@memnox/core';
+import { PRUNE_BATCH_SIZE, PRUNE_MAX_BATCHES } from './prune.constants';
 import type { SqlClient, SqlRow } from './sql-client';
 
-/** Rows deleted per retention statement — small enough that the table is never locked for long. */
-const PRUNE_BATCH_SIZE = 5_000;
-/** Hard stop so one sweep cannot run forever on a very large backlog. */
-const PRUNE_MAX_BATCHES = 200;
 /** Chain verification streams in pages instead of loading the whole log. */
 const VERIFY_PAGE_SIZE = 1_000;
 
@@ -27,14 +24,15 @@ export class PostgresAuditLog implements AuditLog {
   async append(event: ActionEvent): Promise<void> {
     const linked = chainAuditEvent(event, await this.tipHash());
     await this.sql.query(
-      `INSERT INTO audit_events (id, occurred_at, agent_id, session_id, org_id, record)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO audit_events (id, occurred_at, agent_id, session_id, org_id, project_id, record)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         linked.id,
         linked.occurredAt,
         linked.agentId,
         linked.sessionId ?? null,
         linked.orgId ?? null,
+        linked.projectId ?? null,
         this.codec.encode(JSON.stringify(linked)),
       ],
     );
@@ -59,6 +57,7 @@ export class PostgresAuditLog implements AuditLog {
     if (filter.agentId) where('agent_id', filter.agentId);
     if (filter.sessionId) where('session_id', filter.sessionId);
     if (filter.orgId) where('org_id', filter.orgId);
+    if (filter.projectId) where('project_id', filter.projectId);
     if (filter.from) where('occurred_at', filter.from, '>=');
     if (filter.to) where('occurred_at', filter.to, '<=');
     const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
