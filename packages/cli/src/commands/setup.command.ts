@@ -192,6 +192,7 @@ export function registerSetupCommand(
         enforce?: boolean;
       }) => {
         const out = context.out;
+        const style = context.style;
         const detected = options.detect
           ? detectStack(dirname(resolve(options.file)))
           : null;
@@ -266,56 +267,68 @@ export function registerSetupCommand(
 
         out.line('');
         if (joined) {
-          out.line(`Using the runtime already on ${url}`);
+          out.line(`Using the runtime already on ${style.bold(url)}`);
         } else {
-          out.line(`Memnox runtime listening on ${url}`);
-          out.line(`Policies: ${options.file}`);
+          out.line(`Memnox runtime listening on ${style.bold(url)}`);
+          out.line(`${style.dim('Policies:')} ${options.file}`);
           out.line(
             enforcing
-              ? 'Enforcing — blocking decisions take effect now.'
-              : 'Observing only — decisions are recorded, nothing is blocked yet.',
+              ? style.ok('Enforcing — blocking decisions take effect now.')
+              : style.warn(
+                  'Observing only — decisions are recorded, nothing is blocked yet.',
+                ),
           );
         }
         if (options.project !== undefined) {
-          out.line(`Project: ${options.project}`);
+          out.line(`${style.dim('Project:')} ${options.project}`);
         }
         if (sources.length > 1) {
-          out.line(`Rule sources: ${sources.length} files`);
+          out.line(`${style.dim('Rule sources:')} ${sources.length} files`);
         }
 
-        if (!joined) out.line(`Guards: ${GUARD_SUMMARY}`);
-        if (graph !== null) out.line(`Code graph: ${graph.summary}`);
+        if (!joined) out.line(`${style.dim('Guards:')} ${GUARD_SUMMARY}`);
+        if (graph !== null) out.line(`${style.dim('Code graph:')} ${graph.summary}`);
         if (protectedPaths.length > 0) {
           out.line(
-            `Blast radius: escalating changes that reach ${protectedPaths.join(', ')}`,
+            `${style.dim('Blast radius:')} escalating changes that reach ${protectedPaths.join(', ')}`,
           );
         } else if (graph !== null) {
           // Say it plainly: the graph is built and the guard is still off.
           out.line(
-            'Blast radius: no protected paths found — name them with --protected-path to escalate on reach',
+            style.warn(
+              'Blast radius: no protected paths found — name them with --protected-path to escalate on reach',
+            ),
           );
         }
 
         out.note('');
         if (installedAny || mcpAny) {
-          out.note('→ Restart your editor to activate it.');
+          out.note(style.bold('→ Restart your editor to activate it.'));
         }
         if (!credentialed) {
-          out.note('→ Editor hooks stay inactive until an agent token is stored.');
+          out.note(
+            style.warn('→ Editor hooks stay inactive until an agent token is stored.'),
+          );
         }
         if (joined && !reloaded) {
-          out.note('→ Its rules did not reload; restart it to pick up this repository.');
+          out.note(
+            style.warn(
+              '→ Its rules did not reload; restart it to pick up this repository.',
+            ),
+          );
         }
         if (joined && enforcing) {
           out.note(
             armed
-              ? '→ Enforcing now — the running runtime took the change.'
-              : '→ Could not change its mode; it needs an admin token, or restart it to enforce.',
+              ? style.ok('→ Enforcing now — the running runtime took the change.')
+              : style.warn(
+                  '→ Could not change its mode; it needs an admin token, or restart it to enforce.',
+                ),
           );
         }
-        out.note('→ See what it decided:  memnox audit');
+        out.note(style.dim('→ See what it decided:  memnox audit'));
         if (!joined && !enforcing) {
-          out.note('→ Start blocking:       memnox setup --enforce');
+          out.note(style.dim('→ Start blocking:       memnox setup --enforce'));
         }
       },
     );
