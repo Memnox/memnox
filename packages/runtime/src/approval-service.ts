@@ -3,6 +3,7 @@ import type {
   ActionRequest,
   AgentIdentity,
   Approval,
+  ApprovalFlowSummary,
   ApprovalNotifier,
   ApprovalStore,
   AuditLog,
@@ -20,6 +21,8 @@ import {
   TAINT_NO_OVERRIDE_ACTIONS,
   applyGrant,
   evaluateConsent,
+  isApprovalExpired,
+  summarizeApprovalFlow,
 } from '@memnox/core';
 import { matchesAny } from '@memnox/policy-engine';
 import type { AgentRegistry } from './agent-registry';
@@ -97,8 +100,28 @@ export class ApprovalService {
     return this.deps.approvalStore.findById(id);
   }
 
-  pending(): Promise<Approval[]> {
-    return this.deps.approvalStore.listByStatus(APPROVAL_STATUS.PENDING);
+  /**
+   * Open holds only. Lapsed ones are filtered here rather than in the stores:
+   * an adapter is storage, and flowSummary still has to see a lapsed record to
+   * report it. Adapters that filtered on their own disagreed with each other.
+   */
+  async pending(now: Date = new Date()): Promise<Approval[]> {
+    const open = await this.deps.approvalStore.listByStatus(APPROVAL_STATUS.PENDING);
+    return open.filter((approval) => !isApprovalExpired(approval, now));
+  }
+
+  /**
+   * Where approvals stall. The store lists by status rather than in bulk, so the
+   * corpus is assembled from the four statuses instead of widening the port for
+   * a read that composes from what every adapter already implements.
+   */
+  async flowSummary(now: Date = new Date()): Promise<ApprovalFlowSummary> {
+    const byStatus = await Promise.all(
+      Object.values(APPROVAL_STATUS).map((status) =>
+        this.deps.approvalStore.listByStatus(status),
+      ),
+    );
+    return summarizeApprovalFlow(byStatus.flat(), now);
   }
 
   /**
@@ -114,7 +137,12 @@ export class ApprovalService {
   ): Promise<Approval | typeof APPROVAL_CAP_REACHED> {
     const fingerprint = fingerprintFor(agent, request);
     const open = await this.deps.approvalStore.findPendingByFingerprint(fingerprint);
-    if (open) return open;
+    if (open) {
+      if (!isApprovalExpired(open)) return open;
+      // Handing back a lapsed hold strands the agent: it can never grant consent,
+      // and reusing it means no fresh one is ever raised for anyone to act on.
+      await this.retire(open);
+    }
 
     const ceiling = this.deps.maxPendingPerAgent ?? DEFAULT_MAX_PENDING_PER_AGENT;
     const outstanding = (await this.pending()).filter(
@@ -151,13 +179,21 @@ export class ApprovalService {
     const consent = evaluateConsent(approval, fingerprintFor(agent, request));
 
     if (consent === CONSENT.EXPIRED && approval) {
-      await this.deps.approvalStore.save({
-        ...approval,
-        status: APPROVAL_STATUS.EXPIRED,
-      });
+      await this.retire(approval);
       return { consent: CONSENT.NOT_APPLICABLE, approval: null };
     }
     return { consent, approval };
+  }
+
+  /** Sweeps a lapsed hold to a terminal status so it can never be acted on again. */
+  private async retire(approval: Approval): Promise<Approval> {
+    const expired: Approval = { ...approval, status: APPROVAL_STATUS.EXPIRED };
+    await this.deps.approvalStore.save(expired);
+    this.metrics.increment(METRIC.APPROVALS_TOTAL, {
+      state: APPROVAL_METRIC_STATE.LAPSED,
+      status: APPROVAL_STATUS.EXPIRED,
+    });
+    return expired;
   }
 
   async resolve(
