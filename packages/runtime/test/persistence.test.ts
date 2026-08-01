@@ -61,11 +61,13 @@ describe('JsonFileApprovalStore', () => {
     expect(await reloaded.findPendingByFingerprint('fp-1')).not.toBeNull();
   });
 
-  it('hides expired pending approvals from fingerprint lookup and listings', async () => {
+  // Storage, not TTL policy: ApprovalService filters, and flowSummary has to see
+  // a lapsed record to report it. Filtering here made this store disagree with Postgres.
+  it('returns expired pending approvals like every other adapter', async () => {
     const store = new JsonFileApprovalStore(join(dataDir, 'approvals.json'));
     await store.save(approval({ expiresAt: '2020-01-01T00:00:00.000Z' }));
-    expect(await store.findPendingByFingerprint('fp-1')).toBeNull();
-    expect(await store.listByStatus(APPROVAL_STATUS.PENDING)).toHaveLength(0);
+    expect(await store.findPendingByFingerprint('fp-1')).not.toBeNull();
+    expect(await store.listByStatus(APPROVAL_STATUS.PENDING)).toHaveLength(1);
   });
 
   it('encrypts at rest when a codec is supplied', async () => {

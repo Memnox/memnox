@@ -1,9 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Approval, ApprovalStatus, ApprovalStore, TextCodec } from '@memnox/core';
-import { APPROVAL_STATUS, isApprovalExpired, PLAIN_TEXT_CODEC } from '@memnox/core';
+import { APPROVAL_STATUS, PLAIN_TEXT_CODEC } from '@memnox/core';
 
-/** Approvals survive restarts — a pending human decision must not vanish with the process. */
+/**
+ * Approvals survive restarts — a pending human decision must not vanish with the
+ * process. TTL is not applied here: an adapter is storage, and ApprovalService
+ * owns expiry so every backend answers the same way.
+ */
 export class JsonFileApprovalStore implements ApprovalStore {
   private approvals = new Map<string, Approval>();
   private loaded = false;
@@ -29,8 +33,7 @@ export class JsonFileApprovalStore implements ApprovalStore {
     for (const approval of this.approvals.values()) {
       if (
         approval.requestFingerprint === fingerprint &&
-        approval.status === APPROVAL_STATUS.PENDING &&
-        !isApprovalExpired(approval)
+        approval.status === APPROVAL_STATUS.PENDING
       ) {
         return approval;
       }
@@ -40,9 +43,7 @@ export class JsonFileApprovalStore implements ApprovalStore {
 
   async listByStatus(status: ApprovalStatus): Promise<Approval[]> {
     await this.ensureLoaded();
-    return [...this.approvals.values()].filter(
-      (approval) => approval.status === status && !isApprovalExpired(approval),
-    );
+    return [...this.approvals.values()].filter((approval) => approval.status === status);
   }
 
   private async ensureLoaded(): Promise<void> {
