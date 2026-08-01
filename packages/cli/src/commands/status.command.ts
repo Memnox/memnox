@@ -24,7 +24,7 @@ export function registerStatusCommand(
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
     .action(async (options: { url?: string; adminToken?: string }) => {
-      const { out } = context;
+      const { out, style } = context;
       const { client, connection } = await context.connect(options);
 
       const [policies, pending, recent] = await Promise.all([
@@ -38,27 +38,41 @@ export function registerStatusCommand(
       const policyFile = findPolicyFile(workingDirectory);
       const project = resolveProjectId(workingDirectory);
 
-      out.line(`Runtime   : ${connection.url}`);
-      out.line(`Policies  : ${policies.policies.length} (version ${policies.version})`);
-      if (project !== undefined) out.line(`Project   : ${project}`);
+      out.line(`${style.dim('Runtime   :')} ${style.bold(connection.url)}`);
       out.line(
-        `Credential: ${connection.token === undefined ? 'none — run "memnox setup"' : `stored (${connection.tokenSource})`}`,
+        `${style.dim('Policies  :')} ${policies.policies.length} (version ${policies.version})`,
       );
-      out.line(`Decisions : ${recent.length} recent`);
-      out.line(`Waiting   : ${pending.length} approval(s)`);
+      if (project !== undefined) out.line(`${style.dim('Project   :')} ${project}`);
+      out.line(
+        `${style.dim('Credential:')} ${
+          connection.token === undefined
+            ? style.warn('none — run "memnox setup"')
+            : `stored (${connection.tokenSource})`
+        }`,
+      );
+      out.line(`${style.dim('Decisions :')} ${recent.length} recent`);
+      out.line(
+        `${style.dim('Waiting   :')} ${
+          pending.length > 0
+            ? style.warn(`${pending.length} approval(s)`)
+            : `${pending.length} approval(s)`
+        }`,
+      );
 
       // The number that decides whether enforcing is safe yet.
       if (withheld.length > 0) {
-        out.line(`Observed  : ${withheld.length} would have been stopped if enforcing`);
+        out.line(
+          `${style.dim('Observed  :')} ${style.warn(`${withheld.length} would have been stopped if enforcing`)}`,
+        );
       }
 
       out.note('');
       if (connection.token === undefined) {
-        out.note(`→ Set up this project:  memnox setup`);
+        out.note(style.dim(`→ Set up this project:  memnox setup`));
         return;
       }
-      if (pending.length > 0) out.note('→ Grant one:  memnox approve <id>');
-      if (withheld.length > 0) out.note('→ See them:   memnox audit');
+      if (pending.length > 0) out.note(style.dim('→ Grant one:  memnox approve <id>'));
+      if (withheld.length > 0) out.note(style.dim('→ See them:   memnox audit'));
       // A missing file and a file that declares no project need different fixes,
       // and `memnox init` writes the second one — so the first run hits this.
       if (project === undefined) {
