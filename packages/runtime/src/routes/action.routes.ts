@@ -1,11 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import type {
-  ActionRequest,
-  ExecutionMeasurement,
-  ExecutionOutcomeReport,
-} from '@memnox/core';
+import type { ExecutionMeasurement, ExecutionOutcomeReport } from '@memnox/core';
 import { EXECUTION_STATUS, type ExecutionStatus } from '@memnox/core';
 import { METRIC } from '../metrics';
+import { readActionRequest } from './action-body';
 import { hashToken } from '../token';
 import { bearerToken, type RouteContext } from './route-context';
 
@@ -33,13 +30,13 @@ export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): v
       ctx.metrics.increment(METRIC.RATE_LIMIT_REJECTIONS_TOTAL);
       return reply.code(429).send({ error: 'rate limit exceeded — slow down' });
     }
-    const body = request.body as Partial<ActionRequest> | undefined;
-    if (!body || typeof body.action !== 'string') {
+    const action = readActionRequest(request.body);
+    if (action === null) {
       return reply.code(400).send({ error: '"action" is required' });
     }
     return token
-      ? ctx.gateway.authorize(token, body as ActionRequest)
-      : ctx.gateway.authorizeAgent(certAgent, body as ActionRequest);
+      ? ctx.gateway.authorize(token, action)
+      : ctx.gateway.authorizeAgent(certAgent, action);
   });
 
   /** Closes the loop: what the agent did after being allowed to act. */

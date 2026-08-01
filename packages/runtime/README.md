@@ -24,6 +24,12 @@ The seam that matters: whether consent *exists* is `ApprovalService`'s call and
 rests on `evaluateConsent`, a pure function in `@memnox/core`. What to *do* with
 that consent is the gateway's.
 
+A grant is claimed by **fingerprint** (`agent | action | target | environment`), not
+by id, so a caller with nowhere to carry an approval id — an editor hook, an MCP
+client — still gets unblocked when a human approves. It is spent on use: one grant
+authorizes one action. Capability bounds, suspension, and non-overridable taint
+blocks all outrank a grant and leave it unspent.
+
 Routes talk to the collaborator they need — `ctx.gateway.approvals.resolve(...)` —
 rather than a pass-through method on the gateway.
 

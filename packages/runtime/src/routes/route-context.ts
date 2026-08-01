@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type {
   AgentIdentity,
   ApiRole,
+  EnvironmentModes,
   FixedWindowRateLimiter,
   PlanStore,
 } from '@memnox/core';
@@ -37,6 +38,8 @@ export interface RouteContext {
   reloadPolicies?: () => Promise<Policy[]>;
   /** Persists a new rule set, then swaps the engine. Only when a file backs it. */
   applyPolicies?: (policies: Policy[]) => Promise<Policy[]>;
+  /** Writes the modes so a restart keeps them. Absent leaves them in memory. */
+  persistEnforcement?: (modes: EnvironmentModes) => Promise<void>;
   /** Injected so proxy tests exercise real route code against a fake upstream. */
   proxyFetch: typeof fetch;
   /** Declared plans, scoping an autonomous run one step at a time. */

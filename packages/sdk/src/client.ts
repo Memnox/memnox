@@ -1,4 +1,5 @@
 import type {
+  ActionBriefing,
   ActionEvent,
   ActionRequest,
   Approval,
@@ -7,6 +8,7 @@ import type {
   AuditQuery,
   ComplianceReport,
   Decision,
+  EnvironmentModes,
   ExecutionOutcomeReport,
   RiskAssessment,
 } from '@memnox/core';
@@ -20,6 +22,12 @@ import {
   type ExecutionOutcome,
   type GuardedExecution,
 } from './reliability-gate';
+
+/** The briefing plus its rendered form, so a caller picks structure or prose. */
+export interface ActionContextResponse {
+  briefing: ActionBriefing;
+  text: string;
+}
 
 export interface PolicyHistoryEntry {
   version: string;
@@ -136,7 +144,7 @@ export class MemnoxClient {
     return this.request<Decision>(
       'POST',
       '/v1/actions/check',
-      request,
+      overTheWire(request),
       this.options.token,
     );
   }
@@ -197,12 +205,26 @@ export class MemnoxClient {
     }
   }
 
+  /**
+   * Ask what governs an action before attempting it. Returns the declared
+   * constraints plus a plain-text rendering an agent can carry in its context.
+   * Nothing is audited and no approval is created.
+   */
+  async context(request: ActionRequest): Promise<ActionContextResponse> {
+    return this.request<ActionContextResponse>(
+      'POST',
+      '/v1/context',
+      overTheWire(request),
+      this.options.token,
+    );
+  }
+
   /** Ask what a decision would be without making it — nothing is audited. */
   async evaluateRisk(request: ActionRequest): Promise<RiskAssessment> {
     return this.request<RiskAssessment>(
       'POST',
       '/v1/evaluate-risk',
-      request,
+      overTheWire(request),
       this.options.token,
     );
   }
@@ -283,6 +305,29 @@ export class MemnoxClient {
       'PUT',
       '/v1/policies',
       { version: POLICY_DOCUMENT_VERSION, policies },
+      this.options.adminToken,
+    );
+  }
+
+  /** The enforcement mode in force, per environment. */
+  async enforcement(): Promise<EnvironmentModes> {
+    return this.request<EnvironmentModes>(
+      'GET',
+      '/v1/enforcement',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /**
+   * Sets the mode per environment. The runtime persists it before switching,
+   * and it applies from the next decision without a restart.
+   */
+  async setEnforcement(modes: EnvironmentModes): Promise<EnvironmentModes> {
+    return this.request<EnvironmentModes>(
+      'PUT',
+      '/v1/enforcement',
+      modes,
       this.options.adminToken,
     );
   }
@@ -551,4 +596,15 @@ export class MemnoxClient {
     }
     return (await response.json()) as T;
   }
+}
+
+/**
+ * Strips the fields that must never cross the network. `arguments` is the raw
+ * payload of the call — matched in-process by @memnox/local-gate, which is the
+ * only component that ever reads it. What the runtime is told instead is
+ * `signals`: the rule ids the local pass produced.
+ */
+function overTheWire(request: ActionRequest): ActionRequest {
+  const { arguments: _payload, ...rest } = request;
+  return rest;
 }

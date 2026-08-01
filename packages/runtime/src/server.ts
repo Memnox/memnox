@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
   ActionAdvisor,
   AuditLog,
@@ -31,7 +31,7 @@ import {
   type DecisionStore,
 } from '@memnox/memory';
 import { OpenAiEmbeddingProvider } from '@memnox/intelligence';
-import { PolicyEngine } from '@memnox/policy-engine';
+import { PolicyEngine, type Policy } from '@memnox/policy-engine';
 import {
   BehaviorAdvisor,
   DependencyAdvisor,
@@ -53,12 +53,13 @@ import { resolveLocalMode } from './auth';
 import { DEFAULT_ADVISOR_APPROVERS, resolveConfig, type RuntimeConfig } from './config';
 import { CONSOLE_LOGGER } from './console-logger';
 import { MetricsRegistry } from './metrics';
+import { readStoredEnforcement, writeStoredEnforcement } from './enforcement-file';
 import { FilePolicyHistory } from './policy-history';
 import {
   loadPolicyFiles,
   readPolicyRegistry,
   writePoliciesToFile,
-} from './policy-loader';
+} from '@memnox/local-gate';
 import { registerActionRoutes } from './routes/action.routes';
 import { registerAgentRoutes } from './routes/agent.routes';
 import { registerApprovalRoutes } from './routes/approval.routes';
@@ -66,6 +67,7 @@ import { registerAuditRoutes } from './routes/audit.routes';
 import { registerMemoryRoutes } from './routes/memory.routes';
 import { registerMetricsRoutes } from './routes/metrics.routes';
 import { registerDecisionRoutes } from './routes/decision.routes';
+import { registerEnforcementRoutes } from './routes/enforcement.routes';
 import { registerPolicyRoutes } from './routes/policy.routes';
 import { registerPlanRoutes } from './routes/plan.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
@@ -86,6 +88,12 @@ import { JsonFileApprovalStore } from './stores/json-file-approval-store';
 import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
+
+/** "orbit" and "/orbit/" are one prefix; Fastify wants exactly one leading slash. */
+export function normalizeBasePath(raw: string | undefined): string {
+  const trimmed = (raw ?? '').trim().replace(/^\/+|\/+$/g, '');
+  return trimmed === '' ? '' : `/${trimmed}`;
+}
 
 const AGENTS_FILE = 'agents.json';
 const AUDIT_FILE = 'audit.jsonl';
@@ -115,6 +123,23 @@ export interface ServerServices {
   proxyFetch?: typeof fetch;
 }
 
+/**
+ * An `arguments:` rule is decided by the in-process gate, because the payload it
+ * matches never reaches this process. Saying so at boot keeps such a rule from
+ * looking enforced here when nothing local is configured to enforce it.
+ */
+function reportArgumentRules(policies: readonly Policy[]): void {
+  const named = policies.filter((policy) => policy.match.arguments !== undefined);
+  if (named.length === 0) return;
+
+  CONSOLE_LOGGER.info(
+    `${named.length} rule(s) match on call arguments (${named
+      .map((policy) => policy.name)
+      .join(', ')}) — those are decided by @memnox/local-gate in the process that ` +
+      'makes the call (MEMNOX_POLICIES for the MCP firewall, the policy file for the editor hook), not here.',
+  );
+}
+
 export async function buildServer(
   overrides: Partial<RuntimeConfig> = {},
   services: ServerServices = {},
@@ -132,9 +157,12 @@ export async function buildServer(
       ...(config.policyFiles ?? []),
       ...registered,
     ];
-    return [...new Set(configured)];
+    // Absolute before deduping: `setup` passes the file relatively and registers
+    // it absolutely, and two spellings of one path loaded every rule in it twice.
+    return [...new Set(configured.map((source) => resolve(source)))];
   };
   const policies = await loadPolicyFiles(await policySources());
+  reportArgumentRules(policies);
   const codeGraph = config.codeGraphFile
     ? await loadCodeGraphFromFile(config.codeGraphFile, CONSOLE_LOGGER)
     : null;
@@ -168,16 +196,23 @@ export async function buildServer(
 
   const planStore = new InMemoryPlanStore();
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
+  // The flag wins a cold start; a stored map only fills in when none was given.
+  const startingEnforcement =
+    config.enforcement ?? (await readStoredEnforcement(config.dataDir));
   const approvalStore = sql
     ? new PostgresApprovalStore(sql, codec)
     : new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE), codec);
+  // One counter serves the HTTP limit and every per-rule rateLimit, so both are
+  // shared across pods exactly when Redis is configured and per-instance otherwise.
+  const rateLimiter = new FixedWindowRateLimiter(lockService);
   const gateway = new ActionGateway({
     identityStore,
     auditLog,
     metrics,
     approvalStore,
+    rateLimiter,
     policyEngine: new PolicyEngine(policies, { defaultEffect: config.defaultEffect }),
-    ...(config.enforcement === undefined ? {} : { enforcement: config.enforcement }),
+    ...(startingEnforcement === undefined ? {} : { enforcement: startingEnforcement }),
     ...(config.maxPendingApprovals === undefined
       ? {}
       : { maxPendingPerAgent: config.maxPendingApprovals }),
@@ -230,8 +265,7 @@ export async function buildServer(
     }),
     metrics,
     requireRole: createRequireRole(config),
-    // Shared across pods only when --redis-url is set; per-instance otherwise.
-    rateLimiter: new FixedWindowRateLimiter(lockService),
+    rateLimiter,
     resolveCertAgent: tls
       ? (request) => resolveAgentFromClientCert(peerCertificate(request), identityStore)
       : undefined,
@@ -259,17 +293,29 @@ export async function buildServer(
           return policies;
         }
       : undefined,
+    persistEnforcement: (modes) => writeStoredEnforcement(config.dataDir, modes),
   };
-  registerPlanRoutes(app, ctx);
-  registerProxyRoutes(app, ctx);
-  registerActionRoutes(app, ctx);
-  registerAgentRoutes(app, ctx);
-  registerAuditRoutes(app, ctx);
-  registerApprovalRoutes(app, ctx);
-  registerMemoryRoutes(app, ctx);
-  registerMetricsRoutes(app, ctx);
-  registerDecisionRoutes(app, ctx);
-  registerPolicyRoutes(app, ctx);
+  /* Mounted as one plugin so the prefix cannot be applied to some routes and
+     forgotten on others. `/healthz` stays at the root as well, because an
+     infrastructure probe knows the host and not the tenant. */
+  const prefix = normalizeBasePath(config.basePath);
+  const mount = async (scope: FastifyInstance): Promise<void> => {
+    // Worth having per tenant under a prefix; at the root it is already above.
+    if (prefix !== '') scope.get('/healthz', async () => ({ status: 'ok' }));
+    registerPlanRoutes(scope, ctx);
+    registerProxyRoutes(scope, ctx);
+    registerActionRoutes(scope, ctx);
+    registerAgentRoutes(scope, ctx);
+    registerAuditRoutes(scope, ctx);
+    registerApprovalRoutes(scope, ctx);
+    registerMemoryRoutes(scope, ctx);
+    registerMetricsRoutes(scope, ctx);
+    registerDecisionRoutes(scope, ctx);
+    registerPolicyRoutes(scope, ctx);
+    registerEnforcementRoutes(scope, ctx);
+  };
+
+  await app.register(mount, prefix === '' ? {} : { prefix });
 
   return { app, gateway, config, decisionStore, lockService, metrics };
 }
