@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_KIND, APPROVAL_STATUS, DECISION_EFFECT } from '@memnox/core';
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
 import { ActionGateway } from '../src/action-gateway';
+import { OVERRIDE_OUTCOME, RESOLVE_OUTCOME } from '../src/approval-service';
 import { InMemoryApprovalStore } from '../src/stores/in-memory-approval-store';
 import { InMemoryAuditLog } from '../src/stores/in-memory-audit-log';
 import { InMemoryIdentityStore } from '../src/stores/in-memory-identity-store';
@@ -89,5 +90,54 @@ describe('lapsed approvals', () => {
     const overflow = await ask(99);
     expect(overflow.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
     expect(overflow.approvalId).toBeTruthy();
+  });
+
+  it('refuses to approve a lapsed hold', async () => {
+    const first = await ask(0);
+    if (first.approvalId === undefined) throw new Error('expected an approval');
+    await lapse(first.approvalId);
+
+    const result = await gateway.approvals.resolve(first.approvalId, true, 'lead');
+    expect(result.outcome).toBe(RESOLVE_OUTCOME.EXPIRED);
+    expect(result.approval?.status).toBe(APPROVAL_STATUS.EXPIRED);
+    expect(result.approval?.grants).toHaveLength(0);
+  });
+
+  // Approving past the TTL used to stick, because consent never re-checks expiry.
+  it('leaves a lapsed hold unable to authorize the action it was raised for', async () => {
+    const first = await ask(0);
+    if (first.approvalId === undefined) throw new Error('expected an approval');
+    await lapse(first.approvalId);
+    await gateway.approvals.resolve(first.approvalId, true, 'lead');
+
+    const retry = await gateway.authorize(token, {
+      action: 'review.item0',
+      approvalId: first.approvalId,
+    });
+    expect(retry.effect).not.toBe(DECISION_EFFECT.ALLOW);
+  });
+
+  it('refuses to break the glass on a lapsed hold', async () => {
+    const first = await ask(0);
+    if (first.approvalId === undefined) throw new Error('expected an approval');
+    await lapse(first.approvalId);
+
+    const result = await gateway.approvals.override(
+      first.approvalId,
+      'admin',
+      'incident',
+    );
+    expect(result.outcome).toBe(OVERRIDE_OUTCOME.EXPIRED);
+    expect(result.approval?.status).toBe(APPROVAL_STATUS.EXPIRED);
+    expect(result.approval?.override).toBeUndefined();
+  });
+
+  it('still resolves a hold that has not lapsed', async () => {
+    const first = await ask(0);
+    if (first.approvalId === undefined) throw new Error('expected an approval');
+
+    const result = await gateway.approvals.resolve(first.approvalId, true, 'lead');
+    expect(result.outcome).toBe(RESOLVE_OUTCOME.APPROVED);
+    expect(result.approval?.status).toBe(APPROVAL_STATUS.APPROVED);
   });
 });

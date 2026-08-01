@@ -36,6 +36,8 @@ export const RESOLVE_OUTCOME = {
   PENDING: 'pending',
   DENIED: 'denied',
   ALREADY_RESOLVED: 'already_resolved',
+  /** Lapsed before anyone acted — retired rather than resolved. */
+  EXPIRED: 'expired',
   NOT_FOUND: 'not_found',
 } as const;
 
@@ -50,6 +52,8 @@ export const OVERRIDE_OUTCOME = {
   OVERRIDDEN: 'overridden',
   NOT_FOUND: 'not_found',
   NOT_PENDING: 'not_pending',
+  /** Lapsed before the glass was broken — the agent must re-request. */
+  EXPIRED: 'expired',
   /** The action class is exempt from break-glass entirely. */
   FORBIDDEN: 'forbidden',
 } as const;
@@ -206,6 +210,11 @@ export class ApprovalService {
     if (approval.status !== APPROVAL_STATUS.PENDING) {
       return { outcome: RESOLVE_OUTCOME.ALREADY_RESOLVED, approval };
     }
+    // Approving a lapsed hold would resurrect it: consent reads "approved" and
+    // never re-checks the TTL, so the expiry would silently stop meaning anything.
+    if (isApprovalExpired(approval)) {
+      return { outcome: RESOLVE_OUTCOME.EXPIRED, approval: await this.retire(approval) };
+    }
     const at = new Date().toISOString();
 
     if (!approved) {
@@ -243,6 +252,11 @@ export class ApprovalService {
     if (!approval) return { outcome: OVERRIDE_OUTCOME.NOT_FOUND, approval: null };
     if (approval.status !== APPROVAL_STATUS.PENDING) {
       return { outcome: OVERRIDE_OUTCOME.NOT_PENDING, approval };
+    }
+    // Break-glass grants consent for the request that raised the hold; once that
+    // request has lapsed there is nothing left to consent to.
+    if (isApprovalExpired(approval)) {
+      return { outcome: OVERRIDE_OUTCOME.EXPIRED, approval: await this.retire(approval) };
     }
     // Break-glass skips the named approvers; for irreversible actions there is no skip at all.
     if (matchesAny([...TAINT_NO_OVERRIDE_ACTIONS], approval.action)) {

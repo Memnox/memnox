@@ -21,6 +21,12 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: RouteContext):
     return ctx.gateway.approvals.pending();
   });
 
+  /** Where approvals stall: resolve times, what lapsed, and how often break-glass ran. */
+  app.get('/v1/approvals/health', async (request, reply) => {
+    if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
+    return ctx.gateway.approvals.flowSummary();
+  });
+
   /**
    * Lets a blocked agent poll the approval it was handed. Readable by an API
    * principal or by the agent that raised it — never by another agent, since the
@@ -62,6 +68,11 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: RouteContext):
     if (result.outcome === RESOLVE_OUTCOME.ALREADY_RESOLVED) {
       return reply.code(409).send({ error: 'approval is already resolved' });
     }
+    if (result.outcome === RESOLVE_OUTCOME.EXPIRED) {
+      return reply.code(409).send({
+        error: 'approval lapsed before it was resolved; the agent must re-request',
+      });
+    }
     return result.approval;
   });
 
@@ -79,6 +90,11 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: RouteContext):
     }
     if (result.outcome === OVERRIDE_OUTCOME.NOT_PENDING) {
       return reply.code(409).send({ error: 'approval is not pending' });
+    }
+    if (result.outcome === OVERRIDE_OUTCOME.EXPIRED) {
+      return reply.code(409).send({
+        error: 'approval lapsed before it was overridden; the agent must re-request',
+      });
     }
     if (result.outcome === OVERRIDE_OUTCOME.FORBIDDEN) {
       return reply.code(403).send({
@@ -124,6 +140,11 @@ function registerSlackInteractions(
     const approval = result.approval;
     if (!approval) {
       return { text: 'Approval not found — it may have been resolved already.' };
+    }
+    if (result.outcome === RESOLVE_OUTCOME.EXPIRED) {
+      return {
+        text: 'This approval lapsed before anyone acted on it. The agent has to ask again.',
+      };
     }
     if (result.outcome === RESOLVE_OUTCOME.PENDING) {
       const remaining = approval.minApprovals - approval.grants.length;
