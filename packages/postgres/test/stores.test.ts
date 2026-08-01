@@ -99,6 +99,28 @@ describe('postgres stores', () => {
     await ensureRuntimeSchema(sql);
   });
 
+  // Only audit_events filters on org_id; the other three carried an index no query used.
+  it('schema bootstrap sheds the org indexes nothing queries', async () => {
+    const statements: string[] = [];
+    const recorder: SqlClient = {
+      query: async (text: string) => {
+        statements.push(text);
+        return { rows: [] };
+      },
+      end: async () => undefined,
+    };
+
+    await ensureRuntimeSchema(recorder);
+    const issued = statements.join('\n');
+
+    expect(issued).toContain('DROP INDEX IF EXISTS agents_org');
+    expect(issued).toContain('DROP INDEX IF EXISTS decisions_org_decided_at');
+    expect(issued).toContain('DROP INDEX IF EXISTS approvals_org');
+    expect(issued).not.toContain('CREATE INDEX IF NOT EXISTS approvals_org');
+    // The one org index a query actually uses stays.
+    expect(issued).toContain('CREATE INDEX IF NOT EXISTS audit_events_org_time');
+  });
+
   it('identity store: upsert, lookup by id and token hash, ordered list', async () => {
     const store = new PostgresIdentityStore(sql);
     await store.save(agent('a1'));

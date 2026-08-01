@@ -6,6 +6,8 @@ interface TableSchema {
   /** Additive `ADD COLUMN IF NOT EXISTS` statements — how existing tables migrate. */
   columns?: string[];
   indexes: string[];
+  /** `DROP INDEX IF EXISTS` for indexes nothing queries any more. Never drops data. */
+  droppedIndexes?: string[];
 }
 
 /**
@@ -14,7 +16,8 @@ interface TableSchema {
  * record shape can evolve without a migration.
  *
  * `org_id` is nullable everywhere: null = single-tenant, which is every
- * deployment that has not opted into multi-tenancy.
+ * deployment that has not opted into multi-tenancy. Only `audit_events` filters
+ * on it, so only that table indexes it — the rest carried an index no query used.
  */
 const RUNTIME_TABLES: TableSchema[] = [
   {
@@ -27,10 +30,8 @@ const RUNTIME_TABLES: TableSchema[] = [
       record TEXT NOT NULL
     )`,
     columns: [`ALTER TABLE agents ADD COLUMN IF NOT EXISTS org_id TEXT`],
-    indexes: [
-      `CREATE INDEX IF NOT EXISTS agents_token_hash ON agents (token_hash)`,
-      `CREATE INDEX IF NOT EXISTS agents_org ON agents (org_id)`,
-    ],
+    indexes: [`CREATE INDEX IF NOT EXISTS agents_token_hash ON agents (token_hash)`],
+    droppedIndexes: [`DROP INDEX IF EXISTS agents_org`],
   },
   {
     name: 'decisions',
@@ -43,8 +44,8 @@ const RUNTIME_TABLES: TableSchema[] = [
     columns: [`ALTER TABLE decisions ADD COLUMN IF NOT EXISTS org_id TEXT`],
     indexes: [
       `CREATE INDEX IF NOT EXISTS decisions_decided_at ON decisions (decided_at)`,
-      `CREATE INDEX IF NOT EXISTS decisions_org_decided_at ON decisions (org_id, decided_at)`,
     ],
+    droppedIndexes: [`DROP INDEX IF EXISTS decisions_org_decided_at`],
   },
   {
     name: 'decision_vectors',
@@ -68,8 +69,8 @@ const RUNTIME_TABLES: TableSchema[] = [
     indexes: [
       `CREATE INDEX IF NOT EXISTS approvals_pending ON approvals (status, fingerprint)`,
       `CREATE INDEX IF NOT EXISTS approvals_status_created_at ON approvals (status, created_at)`,
-      `CREATE INDEX IF NOT EXISTS approvals_org ON approvals (org_id)`,
     ],
+    droppedIndexes: [`DROP INDEX IF EXISTS approvals_org`],
   },
   {
     name: 'audit_events',
@@ -81,10 +82,12 @@ const RUNTIME_TABLES: TableSchema[] = [
       agent_id TEXT NOT NULL,
       session_id TEXT,
       org_id TEXT,
+      project_id TEXT,
       record TEXT NOT NULL
     )`,
     columns: [
       `ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS org_id TEXT`,
+      `ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS project_id TEXT`,
       `ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS seq BIGSERIAL`,
     ],
     indexes: [
@@ -93,6 +96,7 @@ const RUNTIME_TABLES: TableSchema[] = [
       `CREATE INDEX IF NOT EXISTS audit_events_agent_time ON audit_events (agent_id, occurred_at DESC)`,
       `CREATE INDEX IF NOT EXISTS audit_events_session_time ON audit_events (session_id, occurred_at DESC)`,
       `CREATE INDEX IF NOT EXISTS audit_events_org_time ON audit_events (org_id, occurred_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS audit_events_project_time ON audit_events (project_id, occurred_at DESC)`,
     ],
   },
 ];
@@ -112,6 +116,9 @@ export async function ensureTables(sql: SqlClient, tables: TableSchema[]): Promi
     }
     for (const index of table.indexes) {
       await sql.query(index);
+    }
+    for (const dropped of table.droppedIndexes ?? []) {
+      await sql.query(dropped);
     }
   }
 }
