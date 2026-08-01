@@ -189,6 +189,8 @@ interface Outcome {
   matchedPolicies?: MatchedPolicy[];
   advisories?: Advisory[];
   approvalId?: string;
+  /** Who the action was routed to, when it was routed to anybody. */
+  approvers?: string[];
   enforcementMode?: EnforcementMode;
   /** Set when the mode kept a non-allow verdict from being applied. */
   withheldEffect?: DecisionEffect;
@@ -572,6 +574,7 @@ export class ActionGateway {
         matchedPolicies: evaluation.matchedPolicies,
         advisories,
         approvalId: approval.id,
+        approvers,
         enforcementMode: mode,
       });
     }
@@ -743,6 +746,7 @@ export class ActionGateway {
       environment: request.environment,
       sessionId: request.sessionId,
       projectId: request.projectId,
+      principal: request.principal,
       taint: request.taint,
       model: request.model,
       provider: request.provider,
@@ -765,6 +769,9 @@ export class ActionGateway {
         ...(request.signals ?? []).map((signal) => `${LOCAL_SIGNAL_SOURCE}:${signal}`),
       ],
       reason: outcome.reason,
+      ...(outcome.approvers === undefined || outcome.approvers.length === 0
+        ? {}
+        : { approvers: outcome.approvers }),
       orgId: agent === null ? undefined : agent.orgId,
     });
 
