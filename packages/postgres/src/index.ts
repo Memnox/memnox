@@ -7,3 +7,4 @@ export * from './postgres-audit-log';
 export * from './postgres-vector-index';
 export * from './pgvector-index';
 export * from './vector-index-factory';
+export * from './rewrap';
