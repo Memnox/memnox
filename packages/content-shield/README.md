@@ -46,7 +46,7 @@ split lives in `shield-rules.ts` — `isBlocking` is the single place that decid
 The editor hook compares the proposed content against what is on disk and only
 blocks findings the edit **introduces**. Otherwise every subsequent edit to a
 file that already contains a finding would be blocked, and the developer would
-uninstall the hook. See `shieldDenialMessage` in `@memnox/cli`.
+uninstall the hook. See `shieldDenialMessage` in the `memnox` CLI package.
 
 ## Layout
 

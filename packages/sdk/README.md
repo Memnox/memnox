@@ -71,6 +71,25 @@ await runGuarded(client, request, {
 The outcome is reported to `POST /v1/actions/outcome`, so the audit log shows
 whether a permitted action succeeded — the gap most governance tools leave open.
 
+A condition may return a measurement instead of a bare boolean, so the record
+carries the number the check actually saw:
+
+```ts
+postconditions: [
+  {
+    description: 'no downtime',
+    check: async () => {
+      const seconds = await measureDowntime();
+      return { held: seconds === 0, measurement: { name: 'downtime', value: seconds, unit: 's' } };
+    },
+  },
+];
+```
+
+Measurements are the caller's testimony, recorded verbatim. The runtime cannot
+observe downtime or customer impact and never derives them — it stores what the
+caller measured and shows a decision whose outcome never arrived.
+
 ## Custom transport
 
 Pass `fetch` to route requests through a proxy, a custom agent, or a test double:

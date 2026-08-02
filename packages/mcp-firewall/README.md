@@ -49,7 +49,7 @@ If the runtime is unreachable, calls are **blocked**. A firewall that opens when
 its policy source disappears is not a firewall. `MEMNOX_MCP_FAIL_OPEN=true`
 inverts this for development, and every fail-open decision is logged.
 
-This is the opposite of the editor hooks in `@memnox/cli`, which fail *open* —
+This is the opposite of the editor hooks in the `memnox` CLI package, which fail *open* —
 a hook that bricks your editor gets uninstalled, and an uninstalled hook enforces
 nothing. A proxy has no such problem.
 

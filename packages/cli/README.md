@@ -1,4 +1,4 @@
-# @memnox/cli
+# memnox
 
 The `memnox` command: run the runtime, manage policies, inspect the audit trail,
 and install editor hooks.
@@ -19,7 +19,7 @@ npx memnox serve     # start the runtime
 | `audit` / `audit verify` | recent decisions; verify the hash chain |
 | `replay <sessionId>` | every decision in one agent session, in order |
 | `agents` | register, list, suspend, activate, rotate |
-| `approvals` | list, resolve, break-glass override |
+| `approvals` | list, resolve, break-glass override, flow health |
 | `memory` | record team decisions as machine-checkable constraints |
 | `policy` | version, simulate, packs, install |
 | `graph` | build the import graph; explain a file's blast radius |

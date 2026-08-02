@@ -5,7 +5,7 @@ Each item names the seam where it plugs in, so contributors can start without sp
 ## Understanding the action
 
 - [x] **Blast radius** — `@memnox/code-graph` builds a file-level import graph (`memnox graph build`) and `BlastRadiusAdvisor` escalates a `code.modify` whose transitive reach hits a `--protected-path`. Deliberately file-level: regex-derived call edges were too imprecise to escalate on. Open: language coverage beyond TS/JS/Python/Go/Ruby/Rust.
-- [x] **Verified execution** — `runGuarded()` (`@memnox/sdk`) runs preconditions → action → postconditions → rollback, and `POST /v1/actions/outcome` audits what actually happened, so the log records outcomes and not just permissions. Open: no sweep flags decisions that never reported an outcome.
+- [x] **Verified execution** — `runGuarded()` (`@memnox/sdk`) runs preconditions → action → postconditions → rollback, and `POST /v1/actions/outcome` audits what actually happened, so the log records outcomes and not just permissions. The compliance report's verification coverage names the decisions still awaiting testimony (separating "too recent to be overdue" from unreported), and `serve --verification-guard` escalates an agent's destructive actions while its trail stays unverified.
 
 ## Policy lifecycle
 

@@ -2,8 +2,8 @@
 
 Deterministic risk signals that escalate an action without ever allowing one.
 
-Three advisors, each answering a different question about a request that policy
-alone would let through.
+Each advisor answers a different question about a request that policy alone
+would let through.
 
 ## BehaviorAdvisor — is this normal for this agent?
 
@@ -31,6 +31,22 @@ new TrustAdvisor(['eng-lead']);
 
 Trust is earned by a clean history and lost by blocks. It never grants
 permission — it only withholds the benefit of the doubt.
+
+## VerificationAdvisor — did this agent ever say what happened?
+
+An agent that keeps being allowed to act and never reports an outcome leaves an
+unverified trail behind it. Once enough allowed decisions are past the reporting
+grace period with no testimony, its next *destructive* action goes to a human
+instead of inheriting that trust.
+
+```ts
+new VerificationAdvisor(auditLog, ['eng-lead']);
+```
+
+Enabled with `serve --verification-guard`. Scoped to destructive verbs on
+purpose: silence is a missing record, not evidence of harm, so escalating
+ordinary reads because a caller never wired up `runGuarded` would wedge
+everyday work.
 
 ## DependencyAdvisor — is this package safe to add?
 

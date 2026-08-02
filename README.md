@@ -19,22 +19,51 @@ It is a **gate, not a reviewer**: it answers *"does this violate a rule?"*, neve
 ## Quick start
 
 ```bash
+npx memnox setup
+```
+
+One command does all four steps: scaffolds a policy file from **what it detects in the
+repository**, registers a local agent and stores its token at `~/.memnox/config.json` (mode
+`0600`), installs hooks for whichever editors you actually have, and starts the runtime.
+**Restart your editor and it is governed.**
+
+```
+Wrote starter policies to memnox.policies.yaml (project: acme-checkout)
+Detected: payments, database migrations, CI/CD, infrastructure as code
+Packs: production-safety, terminal-safety, payments, money-movement, data-privacy, supply-chain, infrastructure
+```
+
+Detection is deterministic and offline — dependency names and file existence, no model and
+no network, so the same repository always scaffolds the same rules. It only ever *adds*
+packs; `--no-detect` scaffolds the generic starter instead.
+
+The token goes to disk on purpose. A GUI-launched editor inherits no shell environment, so
+an exported `MEMNOX_AGENT_TOKEN` never reaches it — and a hook with no credential allows
+everything, which looks exactly like being protected. The environment still wins when it is
+set, which is how CI and the MCP firewall pass a token.
+
+The first run **observes without blocking** — a rule you have not read yet must not wedge
+your editor on minute one:
+
+```bash
+memnox audit
+# 2026-07-31T23:03:24Z  BLOCK  local-editor: shell.execute rm -rf / — Destructive shell commands are blocked for AI agents.
+# 2026-07-31T23:03:24Z  ALLOW  local-editor: shell.execute ls -la — no policy matched
+```
+
+Re-run as `memnox setup --enforce` once the decisions look right. `--no-hook` skips the
+editor hooks; `--no-serve` scaffolds without binding a port.
+
+The runtime has to stay up for the hook to reach it. If you stop it, the hook fails **open**
+— a dead runtime never blocks development, so governance simply stops rather than bricking
+your editor.
+
+Working from a clone rather than npm:
+
+```bash
 npm install
-npm test
-
-# 1. Create a starter policy file
-npx memnox init
-
-# 2. Start the runtime
-npx memnox serve --policies memnox.policies.yaml
-
-# 3. Register an agent (prints a token, shown once)
-npx memnox agents register --name claude-code --kind claude-code
-
-# 4. Ask for a decision
-npx memnox check --token mnx_... --action database.delete --target users --env production
-# Decision : BLOCK
-# Reason   : No AI-initiated destructive database operations in production.
+npm run build     # the CLI runs from dist/, which is not committed
+npx memnox setup
 ```
 
 Or from code:
@@ -98,7 +127,7 @@ const tools = governTools(memnox, { readFile, writeFile, runShell }, {
 | [`@memnox/intelligence`](packages/intelligence) | Optional BYOK layer (Anthropic/OpenAI): draft policies from plain language, explain decisions, classify intent, embed decisions. Never decides. |
 | [`@memnox/postgres`](packages/postgres) | Postgres adapters for the storage ports — shared state, indexed queries, batched retention. |
 | [`@memnox/redis`](packages/redis) | Redis adapter for the `LockService` port — one rate-limit budget and one retention sweeper across pods. |
-| [`@memnox/cli`](packages/cli) | `init · serve · validate · check · audit · agents · approvals · memory · replay · report · insights · draft · hook · protect · ci · explain · graph · policy · intent` |
+| [`memnox`](packages/cli) | `setup · init · serve · validate · check · audit · agents · approvals · memory · replay · report · insights · draft · hook · protect · ci · explain · graph · policy · intent` |
 | [`sdks/python`](sdks/python), [`sdks/go`](sdks/go) | Thin dependency-free clients for Python and Go. |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how each layer of the product vision maps to code.
@@ -152,11 +181,47 @@ reproduces the same verdict.
 
 See [examples/policies/baseline.yaml](examples/policies/baseline.yaml) for a fuller starting point.
 
+### One project, several repositories
+
+A repository is not the unit of governance — a project is. A frontend and a backend that
+belong to one product declare the same project, and share one policy and memory scope:
+
+```yaml
+# web/memnox.policies.yaml            # api/memnox.policies.yaml
+project: acme-checkout                project: acme-checkout
+version: 1                            version: 1
+policies:                             policies:
+  - name: payment-ui-review             - name: migration-approval
+    match:                                match:
+      targets: ["src/payment/*"]            targets: ["migrations/*"]
+```
+
+```bash
+cd web && npx memnox setup --project acme-checkout   # starts the runtime
+cd api && npx memnox setup --project acme-checkout   # joins it, adds its rules
+```
+
+The identifier is **declared, never inferred**: the editor reports its working directory,
+Memnox walks up to the nearest policy file, and reads the project from it. Two repos that
+say `acme-checkout` resolve to one scope; anything else stays separate.
+
+One runtime serves every project on the machine. The second `setup` joins the runtime
+already listening instead of fighting it for the port, registers its rule file in
+`~/.memnox/policies.json`, and asks for a reload — **paths travel, rule content never
+does**, so every rule stays reviewable in the diff of the repo that owns it.
+
+You do not duplicate a rule set across repos. Each contributes rules about its own surface
+and they compose under the existing most-restrictive-wins semantics, scoped so one
+project's rules never decide another's. Rules that must be identical everywhere belong in a
+shared pack (`memnox policy install production-safety`).
+
+`memnox audit --project acme-checkout` then spans both repositories.
+
 ## How a decision is made
 
 1. **Identity** — the agent authenticates with its token (or, opt-in, an mTLS client certificate whose subject CN is the agent name — `--tls-cert/--tls-key/--tls-ca`). Unknown tokens are blocked and audited as critical (fail closed). Suspended agents are blocked. An agent registered with `capabilities` (wildcard action patterns) is blocked for any action outside them, before policy runs.
 2. **Policy** — every matching policy is collected; the most restrictive effect wins. No matches → the configured default effect (`allow` by default for monitor-first onboarding; run with `--default-effect block` for strict mode).
-3. **Advisors** — deterministic escalators: recorded team decisions (`memnox memory add`), behavioral signals (`--behavior-guard`), low trust scores on risky actions (`--trust-guard`), and provenance (taint) can tighten a decision, never loosen it.
+3. **Advisors** — deterministic escalators: recorded team decisions (`memnox memory add`), behavioral signals (`--behavior-guard`), low trust scores on risky actions (`--trust-guard`), unreported execution outcomes (`--verification-guard`), and provenance (taint) can tighten a decision, never loosen it.
 4. **Approval** — `require_approval` creates a pending approval bound to the exact action fingerprint (agent + action + target + environment), so a granted approval cannot be replayed for a different action. A human resolves it via CLI, API, or SDK; a Slack-compatible webhook can announce it (`--approval-webhook`). Admins can break-glass a pending approval (`memnox approvals override <id> --reason <text>`) — the override requires a reason and is audited as critical. Irreversible actions (`project.delete`, `database.drop`) are the exception: break-glass is refused with 403 and audited.
 5. **Audit** — every request appends exactly one event to an append-only, hash-chained audit log: who, what, decision, risk, matched policies, advisory signals, session. Replay a session with `memnox replay <sessionId>`; generate governance evidence with `memnox report`.
 
