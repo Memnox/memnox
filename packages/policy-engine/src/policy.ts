@@ -28,10 +28,22 @@ export interface Policy {
   description?: string;
   match: PolicyMatch;
   decision: PolicyDecision;
+  /**
+   * Governance unit this rule belongs to, inherited from the file that declared
+   * it. Unset = every project, so a single-project deployment is unaffected.
+   */
+  project?: string;
 }
 
 export interface PolicyDocument {
   version: number;
+  /**
+   * The governance unit this file contributes rules to. Several repositories
+   * may declare the same project — a frontend and a backend that both say
+   * `project: acme-checkout` share one policy and memory scope, and their rule
+   * sets compose under the existing most-restrictive-wins semantics.
+   */
+  project?: string;
   policies: Policy[];
 }
 

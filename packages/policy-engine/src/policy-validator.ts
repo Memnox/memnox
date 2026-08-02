@@ -23,6 +23,8 @@ export function validatePolicyDocument(input: unknown): PolicyDocument {
   if (doc['version'] !== POLICY_DOCUMENT_VERSION) {
     issues.push(`"version" must be ${POLICY_DOCUMENT_VERSION}`);
   }
+  const project = validateProject(doc['project'], issues);
+
   const rawPolicies = Array.isArray(doc['policies']) ? doc['policies'] : null;
   if (!rawPolicies) issues.push('"policies" must be an array');
 
@@ -37,7 +39,20 @@ export function validatePolicyDocument(input: unknown): PolicyDocument {
   }
 
   if (issues.length > 0) throw new PolicyValidationError(issues);
-  return { version: POLICY_DOCUMENT_VERSION, policies };
+  return { version: POLICY_DOCUMENT_VERSION, project, policies };
+}
+
+/**
+ * The project is an identifier repositories agree on by hand, so a typo must be
+ * rejected rather than silently splitting one project into two scopes.
+ */
+function validateProject(input: unknown, issues: string[]): string | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input !== 'string' || input.trim().length === 0) {
+    issues.push('"project" must be a non-empty string when present');
+    return undefined;
+  }
+  return input.trim();
 }
 
 function validatePolicy(input: unknown, path: string, issues: string[]): Policy | null {

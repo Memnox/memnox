@@ -59,6 +59,11 @@ export interface DecisionRecord {
   reviewAfter?: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
   orgId?: string;
+  /**
+   * Governance unit this decision binds. Unset = every project, which is what a
+   * decision recorded before projects existed must keep meaning.
+   */
+  projectId?: string;
 }
 
 export function isEnforcing(record: DecisionRecord): boolean {

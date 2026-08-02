@@ -1,5 +1,6 @@
 import type { DecisionEffect } from '../constants/decision.constants';
 import type { EnforcementMode } from '../constants/enforcement.constants';
+import type { ExecutionStatus } from '../constants/execution.constants';
 import type { RiskLevel } from '../constants/risk.constants';
 import type { TaintAssessment } from './taint';
 
@@ -15,6 +16,12 @@ export interface ActionRequest {
   environment?: string;
   /** Groups actions into one agent session for replay and reporting. */
   sessionId?: string;
+  /**
+   * The governance unit this action belongs to. Declared in a policy file, not
+   * inferred from the repository — a frontend and a backend repo that declare
+   * the same project share one policy and memory scope.
+   */
+  projectId?: string;
   /** Untrusted sources that influenced the agent's context, reported by the caller. */
   taint?: TaintAssessment;
   /** The agent's stated intent — recorded verbatim for the audit trail. */
@@ -41,6 +48,8 @@ export interface ActionEvent {
   target?: string;
   environment?: string;
   sessionId?: string;
+  /** Governance unit the action resolved to; spans every repo that declares it. */
+  projectId?: string;
   taint?: TaintAssessment;
   model?: string;
   provider?: string;
@@ -61,6 +70,16 @@ export interface ActionEvent {
   reason: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
   orgId?: string;
+  /**
+   * Present only on execution.outcome events — the caller's testimony about an
+   * action already allowed, carried verbatim so a decision can be joined to what
+   * it actually did. See ExecutionOutcomeReport.
+   */
+  decisionEventId?: string;
+  executionStatus?: ExecutionStatus;
+  rolledBack?: boolean;
+  /** The compensating action itself failed, so the resulting state is unknown. */
+  rollbackFailed?: boolean;
   /** Tamper evidence, set by the audit log at append time (see audit-chain). */
   prevHash?: string;
   hash?: string;
@@ -70,6 +89,7 @@ export interface AuditQuery {
   sessionId?: string;
   agentId?: string;
   orgId?: string;
+  projectId?: string;
   from?: string;
   to?: string;
   /** Most recent N matching events, still returned chronologically. Unset = all. */

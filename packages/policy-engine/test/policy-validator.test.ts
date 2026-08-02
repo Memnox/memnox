@@ -63,3 +63,37 @@ describe('validatePolicyDocument', () => {
     expect(() => validatePolicyDocument('nope')).toThrow(PolicyValidationError);
   });
 });
+
+describe('project declaration', () => {
+  const doc = (project: unknown): Record<string, unknown> => ({
+    version: 1,
+    project,
+    policies: [],
+  });
+
+  it('accepts a declared project so several repos can share one scope', () => {
+    expect(validatePolicyDocument(doc('acme-checkout')).project).toBe('acme-checkout');
+  });
+
+  it('trims it, so whitespace cannot split one project into two', () => {
+    expect(validatePolicyDocument(doc('  acme-checkout  ')).project).toBe(
+      'acme-checkout',
+    );
+  });
+
+  it('leaves it unset when absent', () => {
+    expect(validatePolicyDocument({ version: 1, policies: [] }).project).toBeUndefined();
+  });
+
+  it('rejects a blank project rather than scoping to an empty name', () => {
+    expect(() => validatePolicyDocument(doc('   '))).toThrow(
+      /"project" must be a non-empty string/,
+    );
+  });
+
+  it('rejects a non-string project', () => {
+    expect(() => validatePolicyDocument(doc(42))).toThrow(
+      /"project" must be a non-empty string/,
+    );
+  });
+});

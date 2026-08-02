@@ -138,6 +138,7 @@ export function matchesAuditQuery(event: ActionEvent, filter: AuditQuery): boole
   if (filter.sessionId && event.sessionId !== filter.sessionId) return false;
   if (filter.agentId && event.agentId !== filter.agentId) return false;
   if (filter.orgId && event.orgId !== filter.orgId) return false;
+  if (filter.projectId && event.projectId !== filter.projectId) return false;
   if (filter.from && event.occurredAt < filter.from) return false;
   if (filter.to && event.occurredAt > filter.to) return false;
   return true;

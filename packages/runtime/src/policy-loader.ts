@@ -18,7 +18,49 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
     }
     throw err;
   }
-  return validatePolicyDocument(parse(raw)).policies;
+  const document = validatePolicyDocument(parse(raw));
+  if (document.project === undefined) return document.policies;
+  // Rules inherit their file's project so the engine can keep one repo's rules
+  // from deciding another project's actions.
+  return document.policies.map((policy) => ({ ...policy, project: document.project }));
+}
+
+/**
+ * Loads every configured rule source into one set. A project spanning several
+ * repositories contributes one file per repository; they compose here, and the
+ * engine's most-restrictive-wins does the rest.
+ */
+export async function loadPolicyFiles(filePaths: readonly string[]): Promise<Policy[]> {
+  const policies: Policy[] = [];
+  for (const filePath of filePaths) {
+    policies.push(...(await loadPoliciesFromFile(filePath)));
+  }
+  return policies;
+}
+
+interface PolicyRegistry {
+  files?: string[];
+}
+
+/**
+ * The registry is how a second repository's rules reach a runtime that is
+ * already running: `memnox setup` appends the path, then asks for a reload.
+ * Paths only — rule content never travels over the API, so every rule stays
+ * reviewable in the diff of the repository that owns it.
+ */
+export async function readPolicyRegistry(filePath: string): Promise<string[]> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, 'utf8');
+  } catch (err) {
+    // No registry yet is the normal single-repository case, not an error.
+    if (isMissingFile(err)) return [];
+    throw err;
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null) return [];
+  const files = (parsed as PolicyRegistry).files;
+  return Array.isArray(files) ? files.filter((file) => typeof file === 'string') : [];
 }
 
 function isMissingFile(err: unknown): boolean {

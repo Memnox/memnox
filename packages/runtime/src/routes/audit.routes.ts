@@ -10,6 +10,7 @@ interface AuditQueryString {
   session?: string;
   agent?: string;
   org?: string;
+  project?: string;
   from?: string;
   to?: string;
 }
@@ -28,12 +29,20 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): vo
       sessionId: query.session,
       agentId: query.agent,
       orgId: query.org,
+      projectId: query.project,
       from: query.from,
       to: query.to,
       // A timeline query without an explicit limit still gets the ceiling — never an unbounded scan.
       limit: query.limit ? bounded : MAX_AUDIT_LIMIT,
     };
-    if (filter.sessionId || filter.agentId || filter.orgId || filter.from || filter.to) {
+    if (
+      filter.sessionId ||
+      filter.agentId ||
+      filter.orgId ||
+      filter.projectId ||
+      filter.from ||
+      filter.to
+    ) {
       return ctx.gateway.queryAuditEvents(filter);
     }
     return ctx.gateway.recentAuditEvents(bounded);

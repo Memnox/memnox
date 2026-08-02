@@ -5,7 +5,7 @@ import {
   DECISION_EFFECT,
   EMPTY_AGENT_STATS,
 } from '@memnox/core';
-import type { AgentIdentity } from '@memnox/core';
+import type { Advisory, AdvisoryContext, AgentIdentity } from '@memnox/core';
 import { DecisionMemoryAdvisor } from '../src/decision-memory-advisor';
 import {
   DECISION_ENFORCEMENT,
@@ -96,5 +96,46 @@ describe('DecisionMemoryAdvisor', () => {
     );
     expect(advisories).toHaveLength(1);
     expect(advisories[0]?.escalateTo).toBeUndefined();
+  });
+});
+
+describe('project scope', () => {
+  const scoped = (projectId?: string): DecisionRecord => ({
+    id: 'dec-project',
+    title: 'No schema migrations mid-quarter',
+    statement: 'Migrations wait for the release window.',
+    owner: 'dana',
+    decidedAt: '2026-01-01T00:00:00.000Z',
+    actions: ['database.migrate'],
+    enforcement: DECISION_ENFORCEMENT.BLOCK,
+    projectId,
+  });
+
+  const adviseFor = async (
+    record: DecisionRecord,
+    projectId?: string,
+  ): Promise<Advisory[]> => {
+    const store = new InMemoryDecisionStore();
+    await store.save(record);
+    return new DecisionMemoryAdvisor(store, ['eng-lead']).advise(
+      { action: 'database.migrate', projectId },
+      {} as AdvisoryContext,
+    );
+  };
+
+  it('enforces a scoped decision inside its own project', async () => {
+    expect(await adviseFor(scoped('acme-checkout'), 'acme-checkout')).toHaveLength(1);
+  });
+
+  it('leaves another project alone', async () => {
+    expect(await adviseFor(scoped('acme-checkout'), 'billing-service')).toEqual([]);
+  });
+
+  it('leaves an unscoped action alone when the decision names a project', async () => {
+    expect(await adviseFor(scoped('acme-checkout'), undefined)).toEqual([]);
+  });
+
+  it('keeps an unscoped decision org-wide, as it meant before projects existed', async () => {
+    expect(await adviseFor(scoped(undefined), 'billing-service')).toHaveLength(1);
   });
 });

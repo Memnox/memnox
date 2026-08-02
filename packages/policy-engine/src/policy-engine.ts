@@ -118,12 +118,22 @@ export class PolicyEngine {
     };
   }
 
+  /**
+   * A rule contributed by one project never decides another project's action.
+   * An unscoped rule is the shared baseline and applies to everything.
+   */
+  private inScope(policy: Policy, request: ActionRequest): boolean {
+    if (policy.project === undefined) return true;
+    return policy.project === request.projectId;
+  }
+
   private matches(
     policy: Policy,
     request: ActionRequest,
     context: EvaluationContext,
   ): boolean {
     return (
+      this.inScope(policy, request) &&
       matchesAny(policy.match.actions, request.action) &&
       matchesAny(policy.match.targets, request.target) &&
       matchesAny(policy.match.environments, request.environment) &&

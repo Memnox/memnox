@@ -38,10 +38,17 @@ export class DecisionMemoryAdvisor implements ActionAdvisor {
 
   private conflicts(record: DecisionRecord, request: ActionRequest): boolean {
     return (
+      this.inScope(record, request) &&
       matchesAny(record.actions, request.action) &&
       matchesAny(record.targets, request.target) &&
       matchesAny(record.environments, request.environment)
     );
+  }
+
+  /** A decision scoped to one project never constrains another; an unscoped one is org-wide. */
+  private inScope(record: DecisionRecord, request: ActionRequest): boolean {
+    if (record.projectId === undefined) return true;
+    return record.projectId === request.projectId;
   }
 
   private toAdvisory(record: DecisionRecord): Advisory {

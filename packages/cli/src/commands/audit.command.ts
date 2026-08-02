@@ -7,17 +7,30 @@ interface AuditOptions {
   adminToken?: string;
 }
 
+/** Two repositories of one project share a scope, so the timeline has to span both. */
+const PROJECT_FLAG = '--project <name>';
+
 export function registerAuditCommand(program: Command, context: CliContext): void {
   const audit = program
     .command('audit')
     .description('Show the most recent action decisions')
     .option('--limit <n>', 'number of events', String(DEFAULT_CLI_AUDIT_LIMIT))
+    .option(PROJECT_FLAG, 'only actions belonging to this project')
     .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (options: AuditOptions & { limit: string }) => {
-      const events = await context.client(options).recentAudit(Number(options.limit));
+    .action(async (options: AuditOptions & { limit: string; project?: string }) => {
+      const limit = Number(options.limit);
+      const client = context.client(options);
+      const events =
+        options.project === undefined
+          ? await client.recentAudit(limit)
+          : (await client.queryAudit({ projectId: options.project, limit })).reverse();
       if (events.length === 0) {
-        context.out.line('No audited actions yet.');
+        context.out.line(
+          options.project === undefined
+            ? 'No audited actions yet.'
+            : `No audited actions for project "${options.project}" yet.`,
+        );
         return;
       }
       for (const event of events) {
