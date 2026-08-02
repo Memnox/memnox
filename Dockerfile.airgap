@@ -22,6 +22,6 @@ EXPOSE 7466
 
 # Local stores, local locks, no outbound calls. Add --database-url only if the
 # database is reachable inside the enclave.
-COPY --chown=memnox:memnox docker/airgap-entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=memnox:memnox --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["--enforcement", "default=enforce"]
