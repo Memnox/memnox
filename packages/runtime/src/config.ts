@@ -1,5 +1,6 @@
 import type { ApiRole, DecisionEffect, EnvironmentModes } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
+import type { EncryptionMode, Keyring } from './stores/keyring-codec';
 
 export const DEFAULT_PORT = 7466;
 export const DEFAULT_HOST = '127.0.0.1';
@@ -27,6 +28,10 @@ export interface RuntimeConfig {
   /** Directory for local persistence (audit log, agent registry, decision memory). */
   dataDir: string;
   policyFile?: string;
+  /** Extra rule sources, e.g. a second repository of the same project. */
+  policyFiles?: string[];
+  /** JSON file listing rule sources; re-read on reload so a new repo can join a live runtime. */
+  policyRegistryFile?: string;
   defaultEffect: DecisionEffect;
   /** Per-environment enforcement; unset means every environment is monitored. */
   enforcement?: EnvironmentModes;
@@ -34,10 +39,14 @@ export interface RuntimeConfig {
   apiKeys: ApiKeyConfig[];
   /** Legacy single admin token — equivalent to an apiKeys entry with role "admin". */
   adminToken?: string;
+  /** Serve management routes unauthenticated when no keys are set. Loopback grants this itself. */
+  allowLocalAdmin: boolean;
   /** Enables the deterministic behavioral advisor (novel actions, bursts, probing). */
   behaviorGuard: boolean;
   /** Requires human approval for high/critical actions from low-trust agents. */
   trustGuard: boolean;
+  /** Sends an agent's destructive actions to a human while its outcomes go unreported. */
+  verificationGuard: boolean;
   /** Enables decision memory: team decisions constrain actions. */
   memoryEnabled: boolean;
   /** Scans written content for secrets/PII before allowing file writes. */
@@ -52,8 +61,19 @@ export interface RuntimeConfig {
   approvalWebhookUrl?: string;
   /** Enables the Slack interactive-approval endpoint when set. */
   slackSigningSecret?: string;
-  /** Encrypts local stores (agents, approvals, decisions, audit) at rest when set. */
+  /**
+   * Encrypts local stores (agents, approvals, decisions, audit) at rest.
+   * @deprecated Unsalted derivation and no rotation path — use keyringFile.
+   */
   dataEncryptionKey?: string;
+  /** Reads the same secret from a file, so it never appears in argv or `ps`. */
+  dataKeyFile?: string;
+  /** JSON keyring: an active key plus retired keys kept for reads. */
+  keyringFile?: string;
+  /** Inline keyring, for programmatic embedders that never touch a file. */
+  keyring?: Keyring;
+  /** What to do with a record carrying no envelope; defaults to strict once keys exist. */
+  dataEncryptionMode?: EncryptionMode;
   /** Accept HS256 agent JWTs signed with this value (sub = agent ID). */
   agentJwtSecret?: string;
   agentJwtIssuer?: string;
@@ -90,8 +110,10 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   dataDir: DEFAULT_DATA_DIR,
   defaultEffect: DECISION_EFFECT.ALLOW,
   apiKeys: [],
+  allowLocalAdmin: false,
   behaviorGuard: false,
   trustGuard: false,
+  verificationGuard: false,
   memoryEnabled: true,
   contentShield: true,
   shellGuard: true,

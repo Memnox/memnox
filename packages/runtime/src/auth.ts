@@ -1,4 +1,4 @@
-import type { ApiRole } from '@memnox/core';
+import type { ApiRole, Logger } from '@memnox/core';
 import { API_ROLE, roleSatisfies } from '@memnox/core';
 import type { RuntimeConfig } from './config';
 import { hashToken } from './token';
@@ -6,17 +6,38 @@ import { hashToken } from './token';
 const LOCAL_MODE_PRINCIPAL = 'local-admin';
 const PRINCIPAL_FINGERPRINT_LENGTH = 8;
 const UNKNOWN_ROLE = 'unknown';
+/** Addresses nothing off this machine can reach, so a keyless runtime stays private. */
+const LOOPBACK_HOSTS: readonly string[] = ['127.0.0.1', '::1', 'localhost'];
+
+function hasManagementKeys(config: RuntimeConfig): boolean {
+  return config.apiKeys.length > 0 || Boolean(config.adminToken);
+}
 
 /**
- * Resolves the role behind a bearer token. A runtime with no keys configured
- * is in local mode: every management request is treated as admin.
+ * Keyless local mode is only safe when nothing else can reach the port: a
+ * routable bind with no credentials serves every admin route to the network.
+ */
+export function resolveLocalMode(config: RuntimeConfig, logger: Logger): RuntimeConfig {
+  if (hasManagementKeys(config) || config.allowLocalAdmin) return config;
+  if (!LOOPBACK_HOSTS.includes(config.host)) {
+    throw new Error(
+      `refusing to start: no adminToken or apiKeys configured and host "${config.host}" is routable. ` +
+        'Set --admin-token (or $MEMNOX_ADMIN_TOKEN), or pass --allow-local-admin to accept an unauthenticated runtime.',
+    );
+  }
+  logger.warn('no management keys configured — admin routes are open on loopback');
+  return { ...config, allowLocalAdmin: true };
+}
+
+/**
+ * Resolves the role behind a bearer token. A runtime that opted into local mode
+ * has no keys, so every management request is treated as admin.
  */
 export function resolveApiRole(
   token: string | null,
   config: RuntimeConfig,
 ): ApiRole | null {
-  const hasKeys = config.apiKeys.length > 0 || Boolean(config.adminToken);
-  if (!hasKeys) return API_ROLE.ADMIN;
+  if (!hasManagementKeys(config)) return config.allowLocalAdmin ? API_ROLE.ADMIN : null;
   if (!token) return null;
   if (config.adminToken && token === config.adminToken) return API_ROLE.ADMIN;
   const match = config.apiKeys.find((key) => key.token === token);

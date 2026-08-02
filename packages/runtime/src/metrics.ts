@@ -8,6 +8,7 @@ export const METRIC = {
   PROXY_BLOCKED_TOTAL: 'memnox_proxy_blocked_total',
   PROXY_TOKENS_TOTAL: 'memnox_proxy_tokens_total',
   PROXY_OUTPUT_BLOCKED_TOTAL: 'memnox_proxy_output_blocked_total',
+  PLAINTEXT_RECORDS_READ_TOTAL: 'memnox_plaintext_records_read_total',
 } as const;
 
 export type MetricName = (typeof METRIC)[keyof typeof METRIC];
@@ -25,11 +26,15 @@ const METRIC_HELP: MetricCatalog<MetricName> = {
   [METRIC.PROXY_TOKENS_TOTAL]: 'Tokens reported by upstream providers via the proxy.',
   [METRIC.PROXY_OUTPUT_BLOCKED_TOTAL]:
     'Model responses withheld for containing credentials.',
+  [METRIC.PLAINTEXT_RECORDS_READ_TOTAL]:
+    'Unencrypted records read while encryption is permissive. Reaching zero is the signal to switch to strict.',
 };
 
 export const APPROVAL_METRIC_STATE = {
   PENDING: 'pending',
   RESOLVED: 'resolved',
+  /** Retired unread past its TTL — nobody ever decided it. */
+  LAPSED: 'lapsed',
 } as const;
 
 export type MetricLabels = Record<string, string>;

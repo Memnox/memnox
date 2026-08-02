@@ -13,7 +13,6 @@ import {
   InMemoryPlanStore,
   InMemorySessionTaintStore,
   InProcessLockService,
-  PLAIN_TEXT_CODEC,
 } from '@memnox/core';
 import {
   assertRedisReachable,
@@ -43,12 +42,14 @@ import {
   ShellIndirectionAdvisor,
   TokenBudgetAdvisor,
   TrustAdvisor,
+  VerificationAdvisor,
 } from '@memnox/risk';
 import { ActionGateway } from './action-gateway';
 import { DecisionMemoryService } from './decision-memory-service';
 import { scheduleAuditRetention } from './audit-retention';
 import { loadCodeGraphFromFile } from './code-graph-loader';
 import { peerCertificate, resolveAgentFromClientCert } from './client-cert';
+import { resolveLocalMode } from './auth';
 import { DEFAULT_ADVISOR_APPROVERS, resolveConfig, type RuntimeConfig } from './config';
 import { CONSOLE_LOGGER } from './console-logger';
 import { MetricsRegistry } from './metrics';
@@ -69,7 +70,7 @@ import { registerPolicyRoutes } from './routes/policy.routes';
 import { registerPlanRoutes } from './routes/plan.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
 import { createRequireRole, type RouteContext } from './routes/route-context';
-import { AesGcmCodec } from './stores/aes-codec';
+import { buildCodec } from './keyring-loader';
 import {
   connectPostgres,
   postgresOptionsFromEnv,
@@ -118,7 +119,7 @@ export async function buildServer(
   overrides: Partial<RuntimeConfig> = {},
   services: ServerServices = {},
 ): Promise<MemnoxServer> {
-  const config = resolveConfig(overrides);
+  const config = resolveLocalMode(resolveConfig(overrides), CONSOLE_LOGGER);
   // Boot and reload resolve sources the same way, so a reload can never see a
   // different rule set than a restart would.
   const policySources = async (): Promise<string[]> => {
@@ -138,9 +139,8 @@ export async function buildServer(
     ? await loadCodeGraphFromFile(config.codeGraphFile, CONSOLE_LOGGER)
     : null;
 
-  const codec = config.dataEncryptionKey
-    ? new AesGcmCodec(config.dataEncryptionKey)
-    : PLAIN_TEXT_CODEC;
+  const metrics = new MetricsRegistry();
+  const codec = await buildCodec(config, metrics, CONSOLE_LOGGER);
   // Postgres = shared state for horizontally scaled deployments; files = zero-infrastructure default.
   const sql: SqlClient | null =
     services.sql ??
@@ -166,9 +166,8 @@ export async function buildServer(
 
   const { lockService, sessionTaintStore } = await resolveCoordination(config, services);
 
-  const metrics = new MetricsRegistry();
   const planStore = new InMemoryPlanStore();
-  const policyHistory = new FilePolicyHistory(config.dataDir);
+  const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   const approvalStore = sql
     ? new PostgresApprovalStore(sql, codec)
     : new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE), codec);
@@ -356,6 +355,9 @@ function buildAdvisors(
   }
   if (config.trustGuard) {
     advisors.push(new TrustAdvisor([...DEFAULT_ADVISOR_APPROVERS]));
+  }
+  if (config.verificationGuard) {
+    advisors.push(new VerificationAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));
   }
   advisors.push(new PlanScopeAdvisor(plans));
   if (config.shellGuard) {
