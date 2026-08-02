@@ -1,0 +1,13 @@
+# Review is required on everything; these paths are the ones an auditor samples.
+*                                   @moise10r
+
+# The decision path and its guarantees.
+/packages/core/                     @moise10r
+/packages/policy-engine/            @moise10r
+/packages/runtime/src/auth.ts       @moise10r
+/packages/runtime/src/stores/       @moise10r
+
+# Security posture and the claims made about it.
+/SECURITY.md                        @moise10r
+/.github/workflows/                 @moise10r
+/packages/core/src/domain/control-mapping.ts  @moise10r

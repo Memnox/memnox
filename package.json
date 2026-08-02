@@ -2,7 +2,7 @@
   "name": "memnox-runtime-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Memnox — the execution trust layer for AI agents. Deterministic identity, policy, approval, and audit for every AI action.",
+  "description": "Memnox \u2014 the execution trust layer for AI agents. Deterministic identity, policy, approval, and audit for every AI action.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -12,14 +12,15 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @memnox/core -w @memnox/policy-engine -w @memnox/content-shield -w @memnox/code-graph -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w @memnox/sdk -w @memnox/intelligence -w @memnox/mcp-firewall -w @memnox/trust-bench -w @memnox/cli",
+    "build": "npm run build -w @memnox/core -w @memnox/policy-engine -w @memnox/content-shield -w @memnox/code-graph -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w @memnox/sdk -w @memnox/intelligence -w @memnox/mcp-firewall -w @memnox/trust-bench -w memnox",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
-    "deadcode": "knip"
+    "deadcode": "knip",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
