@@ -1,5 +1,11 @@
-import type { ActionEvent, ComplianceReport } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
+import type { ActionEvent, ComplianceReport, VerificationCoverage } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  EXECUTION_OUTCOME_ACTION,
+  EXECUTION_OUTCOME_GRACE_MS,
+  EXECUTION_STATUS,
+} from '@memnox/core';
+import { BOOKKEEPING_ACTIONS } from '@memnox/risk';
 
 const TOP_LIST_SIZE = 10;
 
@@ -9,6 +15,7 @@ export type { ComplianceReport };
 export function buildComplianceReport(
   events: ActionEvent[],
   period: { from?: string; to?: string },
+  now: Date = new Date(),
 ): ComplianceReport {
   const riskBreakdown: Record<string, number> = {};
   const blockedActions = new Map<string, number>();
@@ -41,7 +48,7 @@ export function buildComplianceReport(
   }
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: now.toISOString(),
     period,
     totals: { actions: events.length, allowed, blocked, approvalsRequired },
     riskBreakdown,
@@ -55,6 +62,76 @@ export function buildComplianceReport(
       .slice(0, TOP_LIST_SIZE)
       .map(([agent, stats]) => ({ agent, ...stats })),
     advisorySignals: topEntries(signals).map(([signal, count]) => ({ signal, count })),
+    verification: buildVerificationCoverage(events, now),
+  };
+}
+
+/**
+ * Joins reported outcomes onto the decisions that authorized them. A decision
+ * with no outcome is unreported, never "failed" — the runtime only ever holds
+ * the caller's testimony, and silence is not evidence of harm.
+ *
+ * `now` is passed in rather than read so the same events always produce the
+ * same coverage, the discipline every other time-aware fold here follows.
+ */
+function buildVerificationCoverage(
+  events: ActionEvent[],
+  now: Date,
+): VerificationCoverage {
+  const overdueBefore = now.getTime() - EXECUTION_OUTCOME_GRACE_MS;
+  const outcomes = new Map<string, ActionEvent>();
+  for (const event of events) {
+    if (event.action !== EXECUTION_OUTCOME_ACTION) continue;
+    if (event.decisionEventId === undefined) continue;
+    outcomes.set(event.decisionEventId, event);
+  }
+
+  const unreportedActions = new Map<string, number>();
+  let allowed = 0;
+  let reported = 0;
+  let unreported = 0;
+  let inFlight = 0;
+  let succeeded = 0;
+  let failed = 0;
+  let rolledBack = 0;
+  let rollbackFailed = 0;
+
+  for (const event of events) {
+    if (event.effect !== DECISION_EFFECT.ALLOW) continue;
+    if (BOOKKEEPING_ACTIONS.includes(event.action)) continue;
+    allowed += 1;
+
+    const outcome = outcomes.get(event.id);
+    if (outcome === undefined) {
+      // Too recent to be overdue: the action may still be running.
+      if (Date.parse(event.occurredAt) > overdueBefore) {
+        inFlight += 1;
+        continue;
+      }
+      unreported += 1;
+      unreportedActions.set(event.action, (unreportedActions.get(event.action) ?? 0) + 1);
+      continue;
+    }
+    reported += 1;
+    if (outcome.executionStatus === EXECUTION_STATUS.SUCCEEDED) succeeded += 1;
+    else failed += 1;
+    if (outcome.rolledBack === true) rolledBack += 1;
+    if (outcome.rollbackFailed === true) rollbackFailed += 1;
+  }
+
+  return {
+    allowed,
+    reported,
+    unreported,
+    inFlight,
+    succeeded,
+    failed,
+    rolledBack,
+    rollbackFailed,
+    unreportedActions: topEntries(unreportedActions).map(([action, count]) => ({
+      action,
+      count,
+    })),
   };
 }
 
@@ -77,6 +154,33 @@ export function renderComplianceReportMarkdown(report: ComplianceReport): string
       ([level, count]) => `- ${level}: ${count}`,
     ),
   ];
+
+  const { verification } = report;
+  if (verification.allowed > 0) {
+    lines.push(
+      '',
+      '## Execution verification',
+      '',
+      `${verification.reported} of ${verification.allowed} allowed decisions reported an outcome.`,
+      '',
+      `- succeeded: ${verification.succeeded}`,
+      `- failed or unverified: ${verification.failed}`,
+      `- rolled back: ${verification.rolledBack}`,
+      `- rollback failed (state unknown): ${verification.rollbackFailed}`,
+      `- no outcome reported: ${verification.unreported}`,
+      `- too recent to be overdue: ${verification.inFlight}`,
+      '',
+      'An unreported decision means no outcome was reported for it, not that the action failed.',
+    );
+    if (verification.unreportedActions.length > 0) {
+      lines.push('', '### Awaiting an outcome', '');
+      lines.push(
+        ...verification.unreportedActions.map(
+          (entry) => `- ${entry.action}: ${entry.count}`,
+        ),
+      );
+    }
+  }
 
   if (report.topBlockedActions.length > 0) {
     lines.push('', '## Top blocked actions', '');

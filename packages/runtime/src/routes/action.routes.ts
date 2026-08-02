@@ -1,5 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import type { ActionRequest, ExecutionOutcomeReport } from '@memnox/core';
+import type {
+  ActionRequest,
+  ExecutionMeasurement,
+  ExecutionOutcomeReport,
+} from '@memnox/core';
 import { EXECUTION_STATUS, type ExecutionStatus } from '@memnox/core';
 import { METRIC } from '../metrics';
 import { hashToken } from '../token';
@@ -56,10 +60,18 @@ export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): v
         .send({ error: `"status" must be one of: ${VALID_STATUSES.join(', ')}` });
     }
 
+    const measurements = parseMeasurements(body.measurements);
+    if (measurements === null) {
+      return reply
+        .code(400)
+        .send({ error: '"measurements" must be [{ name, value, unit? }]' });
+    }
+
     const recorded = await ctx.gateway.recordOutcome(token, {
       ...body,
       status: body.status,
       rolledBack: body.rolledBack === true,
+      ...(measurements.length > 0 ? { measurements } : {}),
     } as ExecutionOutcomeReport);
     if (!recorded) return reply.code(401).send({ error: 'unauthorized' });
     return reply.code(202).send({ recorded: true });
@@ -70,4 +82,25 @@ const VALID_STATUSES: readonly ExecutionStatus[] = Object.values(EXECUTION_STATU
 
 function isExecutionStatus(value: unknown): value is ExecutionStatus {
   return typeof value === 'string' && VALID_STATUSES.includes(value as ExecutionStatus);
+}
+
+/**
+ * Caller-supplied numbers, so every field is checked rather than trusted.
+ * Absent means "nothing measured" ([]); a malformed list is rejected (null)
+ * instead of silently dropped — a caller that meant to testify should hear so.
+ */
+function parseMeasurements(value: unknown): ExecutionMeasurement[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const measurements: ExecutionMeasurement[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) return null;
+    const { name, value: reading, unit } = entry as Record<string, unknown>;
+    if (typeof name !== 'string' || name.length === 0) return null;
+    if (typeof reading !== 'number' || !Number.isFinite(reading)) return null;
+    if (unit !== undefined && typeof unit !== 'string') return null;
+    measurements.push({ name, value: reading, ...(unit === undefined ? {} : { unit }) });
+  }
+  return measurements;
 }

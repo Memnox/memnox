@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
+import { formatDuration } from '../duration';
 
 export function registerInsightsCommand(program: Command, context: CliContext): void {
   program
@@ -15,6 +16,22 @@ export function registerInsightsCommand(program: Command, context: CliContext): 
       context.out.line(`Allowed           : ${report.totals.allowed}`);
       context.out.line(`Blocked           : ${report.totals.blocked}`);
       context.out.line(`Sent to approval  : ${report.totals.approvalsRequired}`);
+
+      const { verification } = report;
+      if (verification.allowed > 0) {
+        context.out.line(
+          `\nOutcomes reported : ${verification.reported}/${verification.allowed} allowed decisions` +
+            ` (${verification.failed} failed, ${verification.rollbackFailed} rollback failed)`,
+        );
+        // Silence is missing testimony, not a failure — say so rather than let a
+        // large number read as an incident.
+        if (verification.unreported > 0) {
+          context.out.line(
+            `  ${verification.unreported} reported no outcome — those callers did not use guarded execution.`,
+          );
+        }
+      }
+
       if (report.topBlockedActions.length > 0) {
         context.out.line('\nMost blocked actions:');
         for (const entry of report.topBlockedActions) {
@@ -25,6 +42,22 @@ export function registerInsightsCommand(program: Command, context: CliContext): 
         context.out.line('\nBehavioral signals:');
         for (const entry of report.advisorySignals) {
           context.out.line(`  - ${entry.signal} (${entry.count})`);
+        }
+      }
+
+      const approvals = await client.approvalHealth();
+      if (approvals.total > 0) {
+        context.out.line('\nApproval flow:');
+        context.out.line(`  Waiting now     : ${approvals.pending}`);
+        context.out.line(`  Lapsed unread   : ${approvals.lapsed}`);
+        context.out.line(`  Break-glass     : ${approvals.overrides}`);
+        context.out.line(
+          `  Time to resolve : ${formatDuration(approvals.medianResolveMinutes)} median, ${formatDuration(approvals.p90ResolveMinutes)} p90`,
+        );
+        if (approvals.oldestPendingMinutes !== null) {
+          context.out.line(
+            `  Oldest waiting  : ${formatDuration(approvals.oldestPendingMinutes)}`,
+          );
         }
       }
     });

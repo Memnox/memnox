@@ -17,6 +17,7 @@ import type {
   DecisionEffect,
   EnforcementMode,
   EnvironmentModes,
+  ExecutionMeasurement,
   ExecutionOutcomeReport,
   IdentityStore,
   Logger,
@@ -87,7 +88,17 @@ function describeOutcome(report: ExecutionOutcomeReport): string {
   if (report.rollbackError) parts.push(`rollback FAILED: ${report.rollbackError}`);
   else if (report.rolledBack) parts.push('rolled back');
   else if (report.status !== EXECUTION_STATUS.SUCCEEDED) parts.push('not rolled back');
+  // The caller's numbers ride along in the reason: they are testimony about the
+  // outcome, not a field the runtime derived or could verify.
+  if (report.measurements !== undefined && report.measurements.length > 0) {
+    parts.push(report.measurements.map(describeMeasurement).join(', '));
+  }
   return parts.join(' — ');
+}
+
+function describeMeasurement(measurement: ExecutionMeasurement): string {
+  const unit = measurement.unit === undefined ? '' : measurement.unit;
+  return `${measurement.name}=${measurement.value}${unit}`;
 }
 
 /** The one advisory class an approval cannot satisfy. */
@@ -234,6 +245,10 @@ export class ActionGateway {
       advisories: [],
       reason: describeOutcome(report),
       orgId: agent.orgId,
+      decisionEventId: report.decisionEventId,
+      executionStatus: report.status,
+      rolledBack: report.rolledBack,
+      rollbackFailed: report.rollbackError !== undefined,
     });
     return true;
   }
@@ -560,6 +575,7 @@ export class ActionGateway {
       target: request.target,
       environment: request.environment,
       sessionId: request.sessionId,
+      projectId: request.projectId,
       taint: request.taint,
       model: request.model,
       provider: request.provider,

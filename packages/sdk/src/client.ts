@@ -2,6 +2,7 @@ import type {
   ActionEvent,
   ActionRequest,
   Approval,
+  ApprovalFlowSummary,
   AuditChainVerification,
   AuditQuery,
   ComplianceReport,
@@ -244,6 +245,7 @@ export class MemnoxClient {
     if (filter.sessionId) query.set('session', filter.sessionId);
     if (filter.agentId) query.set('agent', filter.agentId);
     if (filter.orgId) query.set('org', filter.orgId);
+    if (filter.projectId) query.set('project', filter.projectId);
     if (filter.from) query.set('from', filter.from);
     if (filter.to) query.set('to', filter.to);
     if (filter.limit !== undefined) query.set('limit', String(filter.limit));
@@ -360,11 +362,33 @@ export class MemnoxClient {
     );
   }
 
+  /** Approval flow health — resolve times, lapsed holds, break-glass frequency. */
+  async approvalHealth(): Promise<ApprovalFlowSummary> {
+    return this.request<ApprovalFlowSummary>(
+      'GET',
+      '/v1/approvals/health',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
   async listAgents(): Promise<AgentSummary[]> {
     return this.request<AgentSummary[]>(
       'GET',
       '/v1/agents',
       undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** Asks a running runtime to re-read its rule sources. Paths move, rule content never does. */
+  async reloadPolicies(): Promise<{ reloaded: boolean; version: string }> {
+    // An empty object, not undefined: the transport sets a JSON content-type and
+    // the server rejects a body-less request that claims to carry JSON.
+    return this.request<{ reloaded: boolean; version: string }>(
+      'POST',
+      '/v1/policies/reload',
+      {},
       this.options.adminToken,
     );
   }

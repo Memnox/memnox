@@ -1,6 +1,19 @@
 import type { ExecutionStatus } from '../constants/execution.constants';
 
 /**
+ * Something the caller measured while verifying its own action — rows written,
+ * seconds of downtime, requests dropped. The runtime cannot observe any of it,
+ * so a measurement is testimony with a number attached, never a fact the
+ * runtime checked. Naming and units are the caller's; nothing here is derived.
+ */
+export interface ExecutionMeasurement {
+  name: string;
+  value: number;
+  /** Free-form ("s", "rows", "%"); shown beside the value, never converted. */
+  unit?: string;
+}
+
+/**
  * Reported by a caller after acting on an allowed decision. The runtime records
  * it verbatim — it is a caller's testimony about its own execution, not a
  * verdict the runtime derived.
@@ -21,4 +34,6 @@ export interface ExecutionOutcomeReport {
   rollbackError?: string;
   /** Milliseconds spent inside the guarded action. */
   durationMs?: number;
+  /** What the caller's own checks measured. Omitted when nothing was measured. */
+  measurements?: ExecutionMeasurement[];
 }

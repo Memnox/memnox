@@ -10,12 +10,15 @@ export const REPEATED_BLOCK_THRESHOLD = 3;
 export const REPEATED_BLOCK_WINDOW_MS = 10 * 60_000;
 /** Trust score below which high/critical-risk actions need a human. */
 export const TRUST_SCORE_APPROVAL_THRESHOLD = 60;
+/** Overdue outcomes an agent may accumulate before its trail counts as unverified. */
+export const UNREPORTED_OUTCOME_THRESHOLD = 5;
 
 export const RISK_SIGNAL = {
   NOVEL_DESTRUCTIVE_ACTION: 'novel-destructive-action',
   ACTION_BURST: 'action-burst',
   REPEATED_BLOCKS: 'repeated-blocks',
   LOW_TRUST_SCORE: 'low-trust-score',
+  UNVERIFIED_EXECUTION: 'unverified-execution',
 } as const;
 
 export type RiskSignal = (typeof RISK_SIGNAL)[keyof typeof RISK_SIGNAL];

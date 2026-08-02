@@ -127,6 +127,43 @@ describe('runGuarded — a throwing action', () => {
   });
 });
 
+describe('runGuarded — measurements', () => {
+  const measures = (description: string, held: boolean, value: number): Condition => ({
+    description,
+    check: async () => ({ held, measurement: { name: 'downtime', value, unit: 's' } }),
+  });
+
+  it('collects what the conditions measured', async () => {
+    const outcome = await runGuarded({
+      postconditions: [measures('no downtime', true, 0)],
+      execute: async () => 'done',
+    });
+
+    expect(outcome.status).toBe(EXECUTION_STATUS.SUCCEEDED);
+    expect(outcome.measurements).toEqual([{ name: 'downtime', value: 0, unit: 's' }]);
+  });
+
+  it('keeps the number from the check that failed', async () => {
+    const outcome = await runGuarded({
+      postconditions: [measures('no downtime', false, 42)],
+      execute: async () => 'done',
+    });
+
+    expect(outcome.status).toBe(EXECUTION_STATUS.POSTCONDITION_FAILED);
+    // The failing measurement is the one worth having on the record.
+    expect(outcome.measurements).toEqual([{ name: 'downtime', value: 42, unit: 's' }]);
+  });
+
+  it('omits the field entirely when nothing was measured', async () => {
+    const outcome = await runGuarded({
+      postconditions: [holds('PR was created')],
+      execute: async () => 'done',
+    });
+
+    expect('measurements' in outcome).toBe(false);
+  });
+});
+
 describe('toOutcomeReport', () => {
   it('carries the decision id and omits fields the request did not set', () => {
     const report = toOutcomeReport(
@@ -148,5 +185,21 @@ describe('toOutcomeReport', () => {
       durationMs: 12,
     });
     expect('environment' in report).toBe(false);
+    expect('measurements' in report).toBe(false);
+  });
+
+  it('passes measurements through to the report', () => {
+    const report = toOutcomeReport(
+      { eventId: 'evt-1' } as never,
+      { action: 'database.migrate' },
+      {
+        status: EXECUTION_STATUS.SUCCEEDED,
+        rolledBack: false,
+        durationMs: 12,
+        measurements: [{ name: 'rows', value: 1_200 }],
+      },
+    );
+
+    expect(report.measurements).toEqual([{ name: 'rows', value: 1_200 }]);
   });
 });

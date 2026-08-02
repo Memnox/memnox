@@ -23,3 +23,10 @@ export const UNVERIFIED_EXECUTION_STATUSES: readonly ExecutionStatus[] = [
 
 /** Audited action name for a reported execution outcome. */
 export const EXECUTION_OUTCOME_ACTION = 'execution.outcome';
+
+/**
+ * How long an allowed decision may go without testimony before the silence
+ * counts against it. An action authorized seconds ago is still running, and
+ * treating that as a missing report would make the number mostly noise.
+ */
+export const EXECUTION_OUTCOME_GRACE_MS = 5 * 60_000;
