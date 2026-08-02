@@ -9,6 +9,13 @@ services:
       - "7466:7466"
     volumes:
       - memnox-data:/data
+      - ${MEMNOX_KEYRING_FILE:?set MEMNOX_KEYRING_FILE}:/run/secrets/keyring.json:ro
+    environment:
+      # An internal network is not an authorization boundary — everything in the
+      # enclave can still reach the management API.
+      - MEMNOX_ADMIN_TOKEN=${MEMNOX_ADMIN_TOKEN:?set MEMNOX_ADMIN_TOKEN}
+      - MEMNOX_KEYRING_FILE=/run/secrets/keyring.json
+      - MEMNOX_ENCRYPTION_MODE=${MEMNOX_ENCRYPTION_MODE:-permissive}
     networks:
       - enclave
     restart: unless-stopped

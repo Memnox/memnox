@@ -9,3 +9,9 @@ coverage/
 .memnox/
 __pycache__/
 *.pyc
+sessions/
+
+# Encryption keyrings. Losing one loses every record written under it —
+# back them up somewhere that is not this repository.
+memnox-keyring*.json
+*.keyring.json

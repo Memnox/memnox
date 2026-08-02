@@ -10,7 +10,14 @@ ENV NODE_ENV=production
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/packages ./packages
 RUN npm ci --omit=dev && npm cache clean --force
+
+# Runs unprivileged; the only writable path is the data volume.
+RUN addgroup -S memnox && adduser -S memnox -G memnox && mkdir -p /data \
+  && chown -R memnox:memnox /data
+USER memnox
+COPY --chown=memnox:memnox --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 VOLUME /data
 EXPOSE 7466
-ENTRYPOINT ["node", "packages/cli/dist/index.js"]
-CMD ["serve", "--host", "0.0.0.0", "--data-dir", "/data", "--policies", "/data/memnox.policies.yaml"]
+# The entrypoint seeds a policy file on a fresh volume; without it the first
+# "docker compose up" crash-loops on a file the volume cannot yet contain.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

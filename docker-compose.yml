@@ -5,13 +5,15 @@ services:
       - "7466:7466"
     volumes:
       - memnox-data:/data
+      # Read-only: the runtime never writes the keyring, only reads it.
+      - ${MEMNOX_KEYRING_FILE:?set MEMNOX_KEYRING_FILE — run "memnox keys generate --keyring-file memnox-keyring.json"}:/run/secrets/keyring.json:ro
     environment:
-      # Set to enable RBAC on the management API.
-      - MEMNOX_ADMIN_TOKEN=
+      # The container binds 0.0.0.0, so the runtime refuses to start without this.
+      - MEMNOX_ADMIN_TOKEN=${MEMNOX_ADMIN_TOKEN:?set MEMNOX_ADMIN_TOKEN — the management API is exposed on 0.0.0.0}
+      - MEMNOX_KEYRING_FILE=/run/secrets/keyring.json
+      - MEMNOX_ENCRYPTION_MODE=${MEMNOX_ENCRYPTION_MODE:-permissive}
       # Uncomment for shared Postgres storage (required when scaling to multiple instances).
       # - MEMNOX_DATABASE_URL=postgres://memnox:memnox@postgres:5432/memnox
-      # Encrypts stored records at rest.
-      # - MEMNOX_DATA_KEY=
     restart: unless-stopped
     # depends_on: [postgres]
 
