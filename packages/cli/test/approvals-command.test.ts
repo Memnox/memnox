@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { APPROVAL_STATUS } from '@memnox/core';
+import { APPROVAL_STATUS, type ApprovalFlowSummary } from '@memnox/core';
 import { FakeRuntime, runCli } from './cli-harness';
 
 const APPROVALS_PATH = '/v1/approvals';
+const HEALTH_PATH = '/v1/approvals/health';
+
+const health = (over: Partial<ApprovalFlowSummary> = {}): ApprovalFlowSummary => ({
+  total: 8,
+  pending: 2,
+  approved: 4,
+  denied: 1,
+  lapsed: 1,
+  overrides: 1,
+  medianResolveMinutes: 45,
+  p90ResolveMinutes: 180,
+  oldestPendingMinutes: 2_880,
+  approverActivity: [{ approver: 'alice', grants: 4 }],
+  ...over,
+});
 
 const approval = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'apr_1',
@@ -43,6 +58,36 @@ describe('memnox approvals list', () => {
     const { out } = await runCli(['approvals', 'list'], runtime);
 
     expect(out.text).toBe('No pending approvals.');
+  });
+});
+
+describe('memnox approvals health', () => {
+  it('reports where approvals stall', async () => {
+    const runtime = new FakeRuntime().on('GET', HEALTH_PATH, health());
+
+    const { out } = await runCli(['approvals', 'health'], runtime);
+
+    expect(out.text).toContain('Pending        : 2');
+    expect(out.text).toContain('Lapsed unread  : 1');
+    expect(out.text).toContain('Break-glass    : 1');
+    expect(out.text).toContain('Median resolve : 45m');
+    expect(out.text).toContain('p90 resolve    : 3h');
+    expect(out.text).toContain('Oldest pending : 2d');
+    expect(out.text).toContain('- alice (4)');
+  });
+
+  it('shows an em dash when nothing has been resolved yet', async () => {
+    const runtime = new FakeRuntime().on(
+      'GET',
+      HEALTH_PATH,
+      health({ medianResolveMinutes: null, p90ResolveMinutes: null }),
+    );
+
+    const { out } = await runCli(['approvals', 'health'], runtime);
+
+    // Never "0m" — that would claim the approvals resolved instantly.
+    expect(out.text).toContain('Median resolve : —');
+    expect(out.text).toContain('p90 resolve    : —');
   });
 });
 

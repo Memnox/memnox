@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
+import { formatDuration } from '../duration';
 
 export function registerApprovalsCommand(program: Command, context: CliContext): void {
   const approvals = program.command('approvals').description('Review pending approvals');
@@ -50,6 +51,34 @@ export function registerApprovalsCommand(program: Command, context: CliContext):
         context.out.line(
           `Resolved : by ${approval.resolvedBy}${approval.override ? ' (override)' : ''}`,
         );
+      }
+    });
+
+  approvals
+    .command('health')
+    .description('Where approvals stall: resolve times, what lapsed, break-glass use')
+    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--admin-token <token>', 'admin token if the runtime requires one')
+    .action(async (options: { url: string; adminToken?: string }) => {
+      const summary = await context.client(options).approvalHealth();
+      context.out.line(`Approvals      : ${summary.total}`);
+      context.out.line(`Pending        : ${summary.pending}`);
+      context.out.line(`Approved       : ${summary.approved}`);
+      context.out.line(`Denied         : ${summary.denied}`);
+      context.out.line(`Lapsed unread  : ${summary.lapsed}`);
+      context.out.line(`Break-glass    : ${summary.overrides}`);
+      context.out.line(
+        `Median resolve : ${formatDuration(summary.medianResolveMinutes)}`,
+      );
+      context.out.line(`p90 resolve    : ${formatDuration(summary.p90ResolveMinutes)}`);
+      context.out.line(
+        `Oldest pending : ${formatDuration(summary.oldestPendingMinutes)}`,
+      );
+      if (summary.approverActivity.length > 0) {
+        context.out.line('\nGrants per approver:');
+        for (const entry of summary.approverActivity) {
+          context.out.line(`  - ${entry.approver} (${entry.grants})`);
+        }
       }
     });
 
