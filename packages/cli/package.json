@@ -1,5 +1,5 @@
 {
-  "name": "@memnox/cli",
+  "name": "memnox",
   "version": "0.1.0",
   "description": "Memnox CLI — run the trust runtime, manage policies, inspect the audit trail.",
   "keywords": [
@@ -49,6 +49,7 @@
     "@memnox/content-shield": "0.1.0",
     "@memnox/code-graph": "0.1.0",
     "@memnox/policy-engine": "0.1.0",
+    "@memnox/postgres": "0.1.0",
     "yaml": "^2.4.0"
   }
 }

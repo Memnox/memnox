@@ -5,12 +5,14 @@ import { registerAgentsCommand } from './commands/agents.command';
 import { registerApprovalsCommand } from './commands/approvals.command';
 import { registerAuditCommand } from './commands/audit.command';
 import { registerCheckCommand } from './commands/check.command';
+import { registerComplianceCommand } from './commands/compliance.command';
 import { registerCiCommand } from './commands/ci.command';
 import { registerDraftCommand } from './commands/draft.command';
 import { registerExplainCommand } from './commands/explain.command';
 import { registerGraphCommand } from './commands/graph.command';
 import { registerHookCommand } from './commands/hook.command';
 import { registerInitCommand } from './commands/init.command';
+import { registerKeysCommand } from './commands/keys.command';
 import { registerInsightsCommand } from './commands/insights.command';
 import { registerIntentCommand } from './commands/intent.command';
 import { registerMemoryCommand } from './commands/memory.command';
@@ -20,6 +22,7 @@ import { registerQuickstartCommand } from './commands/quickstart.command';
 import { registerReplayCommand } from './commands/replay.command';
 import { registerReportCommand } from './commands/report.command';
 import { registerServeCommand } from './commands/serve.command';
+import { registerSetupCommand } from './commands/setup.command';
 import { registerValidateCommand } from './commands/validate.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -29,6 +32,7 @@ export function buildProgram(context: CliContext): Command {
     .description('Memnox — the execution trust layer for AI agents')
     .version(CLI_VERSION);
 
+  registerSetupCommand(program, context);
   registerQuickstartCommand(program, context);
   registerInitCommand(program, context);
   registerServeCommand(program, context);
@@ -48,6 +52,8 @@ export function buildProgram(context: CliContext): Command {
   registerExplainCommand(program, context);
   registerGraphCommand(program, context);
   registerPolicyCommand(program, context);
+  registerKeysCommand(program, context);
+  registerComplianceCommand(program, context);
   registerIntentCommand(program, context);
 
   return program;

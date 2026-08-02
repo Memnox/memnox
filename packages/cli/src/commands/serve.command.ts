@@ -5,7 +5,9 @@ import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  ENCRYPTION_MODE,
   startServer,
+  type EncryptionMode,
   type MemnoxServer,
   type RuntimeConfig,
 } from '@memnox/runtime';
@@ -25,6 +27,9 @@ const ENV_ADMIN_TOKEN = 'MEMNOX_ADMIN_TOKEN';
 const ENV_DATABASE_URL = 'MEMNOX_DATABASE_URL';
 const ENV_REDIS_URL = 'MEMNOX_REDIS_URL';
 const ENV_DATA_KEY = 'MEMNOX_DATA_KEY';
+const ENV_DATA_KEY_FILE = 'MEMNOX_DATA_KEY_FILE';
+const ENV_KEYRING_FILE = 'MEMNOX_KEYRING_FILE';
+const ENV_ENCRYPTION_MODE = 'MEMNOX_ENCRYPTION_MODE';
 const ENV_TLS_CERT = 'MEMNOX_TLS_CERT';
 const ENV_TLS_KEY = 'MEMNOX_TLS_KEY';
 const ENV_TLS_CA = 'MEMNOX_TLS_CA';
@@ -32,6 +37,40 @@ const ENV_EMBEDDING_KEY = 'MEMNOX_EMBEDDING_KEY';
 
 const envOr = (value: string | undefined, name: string): string | undefined =>
   value ?? (process.env[name] || undefined);
+
+const VALID_ENCRYPTION_MODES: string[] = [
+  ENCRYPTION_MODE.OFF,
+  ENCRYPTION_MODE.PERMISSIVE,
+  ENCRYPTION_MODE.STRICT,
+];
+
+/** States both cases: an operator must never have to guess whether keys are on. */
+function encryptionBanner(config: RuntimeConfig): string {
+  const configured =
+    config.keyringFile !== undefined ||
+    config.keyring !== undefined ||
+    config.dataKeyFile !== undefined ||
+    config.dataEncryptionKey !== undefined;
+  if (!configured) {
+    return 'Encryption at rest: off (set --keyring-file to encrypt local stores)';
+  }
+  const legacy = config.keyringFile === undefined && config.keyring === undefined;
+  const mode = config.dataEncryptionMode ?? (legacy ? 'permissive' : 'strict');
+  return legacy
+    ? `Encryption at rest: AES-256-GCM, legacy unsalted key (${mode}) — run "memnox keys rewrap"`
+    : `Encryption at rest: AES-256-GCM, keyring (${mode})`;
+}
+
+/** A typo here would silently downgrade at-rest guarantees, so it is fatal. */
+function encryptionMode(value: string | undefined): EncryptionMode | undefined {
+  if (value === undefined) return undefined;
+  if (!VALID_ENCRYPTION_MODES.includes(value)) {
+    throw new Error(
+      `--encryption-mode must be one of: ${VALID_ENCRYPTION_MODES.join(', ')}`,
+    );
+  }
+  return value as EncryptionMode;
+}
 
 export function registerServeCommand(
   program: Command,
@@ -43,11 +82,24 @@ export function registerServeCommand(
     .description('Start the Memnox runtime gateway')
     .option('-p, --port <port>', 'port to listen on', String(DEFAULT_PORT))
     .option('-H, --host <host>', 'host to bind', DEFAULT_HOST)
-    .option('--policies <path>', 'YAML policy file')
+    .option(
+      '--policies <path>',
+      'YAML policy file (repeatable — one project may span several repositories)',
+      (path: string, previous: string[]) => [...previous, path],
+      [] as string[],
+    )
     .option('--data-dir <path>', 'local data directory')
     .option('--admin-token <token>', 'require this bearer token on admin routes')
+    .option(
+      '--allow-local-admin',
+      'serve admin routes unauthenticated when no token is set (loopback binds do this already)',
+    )
     .option('--behavior-guard', 'enable the deterministic behavioral advisor')
     .option('--trust-guard', 'require approval for risky actions from low-trust agents')
+    .option(
+      '--verification-guard',
+      'require approval for destructive actions while an agent leaves outcomes unreported',
+    )
     .option(
       '--tls-cert <path>',
       'TLS server certificate (enables mTLS with --tls-key/--tls-ca)',
@@ -58,7 +110,22 @@ export function registerServeCommand(
     .option('--no-shell-guard', 'disable reading past shell indirection')
     .option('--token-budget <tokens>', 'cap cumulative llm.spend tokens per session')
     .option('--slack-signing-secret <secret>', 'enable Slack interactive approvals')
-    .option('--data-key <key>', 'encrypt local stores at rest with this key')
+    .option(
+      '--data-key <key>',
+      'encrypt local stores at rest with this key (deprecated: unsalted, cannot rotate — prefer --keyring-file)',
+    )
+    .option(
+      '--data-key-file <path>',
+      'read --data-key from a file so it never reaches argv',
+    )
+    .option(
+      '--keyring-file <path>',
+      'JSON keyring: an active key plus retired keys kept for reads',
+    )
+    .option(
+      '--encryption-mode <mode>',
+      'how to treat records with no envelope: off | permissive | strict',
+    )
     .option(
       '--agent-jwt-secret <secret>',
       'accept HS256 agent JWTs signed with this value',
@@ -125,11 +192,13 @@ export function registerServeCommand(
       async (options: {
         port: string;
         host: string;
-        policies?: string;
+        policies: string[];
         dataDir?: string;
         adminToken?: string;
+        allowLocalAdmin?: boolean;
         behaviorGuard?: boolean;
         trustGuard?: boolean;
+        verificationGuard?: boolean;
         tlsCert?: string;
         tlsKey?: string;
         tlsCa?: string;
@@ -147,6 +216,9 @@ export function registerServeCommand(
         approvalWebhook?: string;
         slackSigningSecret?: string;
         dataKey?: string;
+        dataKeyFile?: string;
+        keyringFile?: string;
+        encryptionMode?: string;
         agentJwtSecret?: string;
         agentJwtIssuer?: string;
         rateLimit?: string;
@@ -164,11 +236,14 @@ export function registerServeCommand(
         const server = await launch({
           port: Number(options.port),
           host: options.host,
-          policyFile: options.policies,
+          policyFile: options.policies[0],
+          policyFiles: options.policies.slice(1),
           dataDir: options.dataDir,
           adminToken: envOr(options.adminToken, ENV_ADMIN_TOKEN),
+          allowLocalAdmin: options.allowLocalAdmin ?? false,
           behaviorGuard: options.behaviorGuard ?? false,
           trustGuard: options.trustGuard ?? false,
+          verificationGuard: options.verificationGuard ?? false,
           tlsCertFile: envOr(options.tlsCert, ENV_TLS_CERT),
           tlsKeyFile: envOr(options.tlsKey, ENV_TLS_KEY),
           tlsCaFile: envOr(options.tlsCa, ENV_TLS_CA),
@@ -190,6 +265,11 @@ export function registerServeCommand(
           approvalWebhookUrl: options.approvalWebhook,
           slackSigningSecret: options.slackSigningSecret,
           dataEncryptionKey: envOr(options.dataKey, ENV_DATA_KEY),
+          dataKeyFile: envOr(options.dataKeyFile, ENV_DATA_KEY_FILE),
+          keyringFile: envOr(options.keyringFile, ENV_KEYRING_FILE),
+          dataEncryptionMode: encryptionMode(
+            envOr(options.encryptionMode, ENV_ENCRYPTION_MODE),
+          ),
           agentJwtSecret: options.agentJwtSecret,
           agentJwtIssuer: options.agentJwtIssuer,
           databaseUrl: envOr(options.databaseUrl, ENV_DATABASE_URL),
@@ -219,8 +299,17 @@ export function registerServeCommand(
             ? `Policies: ${server.config.policyFile}`
             : 'No policy file loaded — every action gets the default effect. Run "memnox init".',
         );
+        context.out.line(
+          server.config.allowLocalAdmin
+            ? 'Management auth: OPEN — no token required on admin routes'
+            : 'Management auth: bearer token required',
+        );
+        context.out.line(encryptionBanner(server.config));
         if (server.config.behaviorGuard) context.out.line('Behavior guard: enabled');
         if (server.config.trustGuard) context.out.line('Trust guard: enabled');
+        if (server.config.verificationGuard) {
+          context.out.line('Verification guard: enabled');
+        }
         context.out.line(
           server.config.embeddingApiKey
             ? 'Decision search: hybrid (keyword + embeddings)'
