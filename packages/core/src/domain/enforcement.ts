@@ -25,6 +25,48 @@ export function isEnforcementMode(value: unknown): value is EnforcementMode {
   );
 }
 
+/**
+ * Validates a mode map off the wire. Shared so the management route and the
+ * CLI flag agree on what a legal map is, rather than each deciding.
+ */
+export function parseEnvironmentModes(value: unknown): EnvironmentModes | string {
+  if (typeof value !== 'object' || value === null) {
+    return 'body must be an object with "default" and/or "environments"';
+  }
+
+  const body = value as { default?: unknown; environments?: unknown };
+  const modes: EnvironmentModes = {};
+
+  if (body.default !== undefined) {
+    if (!isEnforcementMode(body.default)) {
+      return `"default" must be one of: ${Object.values(ENFORCEMENT_MODE).join(', ')}`;
+    }
+    modes.default = body.default;
+  }
+
+  if (body.environments !== undefined) {
+    if (typeof body.environments !== 'object' || body.environments === null) {
+      return '"environments" must be an object of name to mode';
+    }
+    const environments: Record<string, EnforcementMode> = {};
+    for (const [name, mode] of Object.entries(
+      body.environments as Record<string, unknown>,
+    )) {
+      if (name.trim().length === 0) return 'an environment name cannot be empty';
+      if (!isEnforcementMode(mode)) {
+        return `mode for "${name}" must be one of: ${Object.values(ENFORCEMENT_MODE).join(', ')}`;
+      }
+      environments[name] = mode;
+    }
+    modes.environments = environments;
+  }
+
+  if (modes.default === undefined && modes.environments === undefined) {
+    return 'nothing to set: give "default", "environments", or both';
+  }
+  return modes;
+}
+
 /** Environment names are compared case-insensitively; "PROD" and "prod" are one environment. */
 export function resolveEnforcementMode(
   modes: EnvironmentModes,

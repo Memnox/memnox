@@ -21,3 +21,6 @@ export const ENFORCEMENT_REASON = {
   /** Prefix; the withheld verdict's own reason follows. */
   OBSERVED: 'observed only',
 } as const;
+
+/** Audited action name for a change to the enforcement mode itself. */
+export const ENFORCEMENT_SET_ACTION = 'governance.enforcement';
