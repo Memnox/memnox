@@ -136,7 +136,8 @@ describe('memnox protect (detection)', () => {
 
     expect(out.text).toContain('claude-code');
     expect(out.text).toContain('cursor');
-    expect(out.text).toContain('Set MEMNOX_AGENT_TOKEN');
+    expect(out.text).toContain('stays inactive until it has a token');
+    expect(out.text).toContain('memnox setup');
   });
 
   it('rejects an agent it does not support', async () => {

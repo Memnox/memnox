@@ -1,17 +1,10 @@
-import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { EditorHookInstaller } from '../editor-hook-installer';
-import { DEFAULT_POLICY_FILE, STARTER_POLICY_FILE } from '../defaults';
+import { DEFAULT_POLICY_FILE } from '../defaults';
+import { ensurePolicyFile, hookCommandFor } from '../project-setup';
 import { SUPPORTED_HOOK_AGENTS } from './hook.command';
-
-/** GUI-launched editors do not inherit the shell PATH, so both paths are absolute. */
-function hookCommandFor(agent: string): string {
-  return `${process.execPath} ${fileURLToPath(import.meta.url)} hook ${agent}`;
-}
 
 const DEFAULT_AGENT = 'claude-code';
 
@@ -39,13 +32,7 @@ export function registerQuickstartCommand(
           );
         }
 
-        // Never overwrite rules someone already wrote.
-        if (existsSync(options.file)) {
-          context.out.note(`Keeping the policy file already at ${options.file}`);
-        } else {
-          await writeFile(options.file, STARTER_POLICY_FILE, 'utf8');
-          context.out.line(`Wrote starter policies to ${options.file}`);
-        }
+        await ensurePolicyFile(options.file, context.out, {});
 
         if (options.hook) {
           await installer.install(target);

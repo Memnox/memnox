@@ -39,8 +39,11 @@ export function registerProtectCommand(
             : `  already    ${report.agent} → ${report.path}`,
         );
       }
+      // A hook with no credential allows everything, which looks just like being protected.
       context.out.line(
-        '\nSet MEMNOX_AGENT_TOKEN (from "memnox agents register") and restart your editor.',
+        '\nThe hook stays inactive until it has a token. Either run "memnox setup",' +
+          '\nwhich registers one and stores it, or set MEMNOX_AGENT_TOKEN yourself.' +
+          '\nThen restart your editor.',
       );
     });
 }

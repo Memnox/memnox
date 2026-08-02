@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import type { ActionRequest, Decision } from '@memnox/core';
@@ -12,8 +13,10 @@ import {
   type CursorHookPayload,
   type CursorHookResponse,
 } from '../cursor-hook-mapping';
+import { readAgentConfig, type AgentConfig } from '../agent-config';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { processHookHost, type HookHost } from '../hook-host';
+import { resolveProjectId } from '../project-identity';
 import {
   HOOK_EXIT_BLOCK,
   mapHookPayload,
@@ -38,10 +41,36 @@ interface Refusal {
   decision: Decision | null;
 }
 
+/** How the hook reaches credentials its environment does not carry. Injected so tests never read $HOME. */
+type StoredConfigReader = () => Promise<AgentConfig>;
+
+const storedConfig: StoredConfigReader = () => readAgentConfig(homedir());
+
+interface HookCredentials {
+  token: string;
+  url: string;
+}
+
+/**
+ * Environment first — that is how CI and the MCP firewall pass a token. The
+ * config file is the fallback that makes the hook work at all inside a
+ * GUI-launched editor, which starts with no environment to inherit.
+ */
+async function resolveCredentials(
+  host: HookHost,
+  readStored: StoredConfigReader,
+): Promise<HookCredentials | null> {
+  const stored = await readStored();
+  const token = host.env(ENV_AGENT_TOKEN) ?? stored.token;
+  if (!token) return null;
+  return { token, url: host.env(ENV_RUNTIME_URL) ?? stored.url ?? DEFAULT_BASE_URL };
+}
+
 export function registerHookCommand(
   program: Command,
   context: CliContext,
   host: HookHost = processHookHost,
+  readStored: StoredConfigReader = storedConfig,
 ): void {
   program
     .command('hook <agent>')
@@ -49,8 +78,10 @@ export function registerHookCommand(
       `Editor hook entry point — reads the tool call from stdin (${SUPPORTED_HOOK_AGENTS.join('|')})`,
     )
     .action(async (agent: string) => {
-      if (agent === HOOK_AGENT.CLAUDE_CODE) return runClaudeCodeHook(context, host);
-      if (agent === HOOK_AGENT.CURSOR) return runCursorHook(context, host);
+      if (agent === HOOK_AGENT.CLAUDE_CODE) {
+        return runClaudeCodeHook(context, host, readStored);
+      }
+      if (agent === HOOK_AGENT.CURSOR) return runCursorHook(context, host, readStored);
       throw new Error(
         `unsupported hook agent "${agent}" — expected one of: ${SUPPORTED_HOOK_AGENTS.join(', ')}`,
       );
@@ -65,15 +96,12 @@ async function evaluate(
   context: CliContext,
   host: HookHost,
   request: ActionRequest,
-  token: string,
+  credentials: HookCredentials,
 ): Promise<Refusal | null> {
   const shieldDenial = localShieldDenial(request);
   if (shieldDenial) return { reason: shieldDenial, decision: null };
 
-  const client = context.client({
-    url: host.env(ENV_RUNTIME_URL) ?? DEFAULT_BASE_URL,
-    token,
-  });
+  const client = context.client({ url: credentials.url, token: credentials.token });
 
   try {
     const decision = await client.check(request);
@@ -96,21 +124,40 @@ async function evaluate(
   }
 }
 
+/**
+ * Stamps the governance unit onto a request. The editor already reports its
+ * working directory; the project it belongs to is declared in the policy file
+ * found from there, so two repos of one project resolve to one scope.
+ */
+function withProject(
+  request: ActionRequest | null,
+  cwd: string | undefined,
+): ActionRequest | null {
+  if (request === null) return null;
+  const projectId = resolveProjectId(cwd);
+  if (projectId === undefined) return request;
+  return { ...request, projectId };
+}
+
 /** Policy reasons are author-written and may or may not already be punctuated. */
 function withPeriod(reason: string): string {
   return reason.endsWith('.') ? reason : `${reason}.`;
 }
 
-async function runClaudeCodeHook(context: CliContext, host: HookHost): Promise<void> {
-  const token = host.env(ENV_AGENT_TOKEN);
-  if (!token) return; // Not configured — never break the editor.
+async function runClaudeCodeHook(
+  context: CliContext,
+  host: HookHost,
+  readStored: StoredConfigReader,
+): Promise<void> {
+  const credentials = await resolveCredentials(host, readStored);
+  if (!credentials) return; // Not configured — never break the editor.
 
   const payload = await readJsonInput<ClaudeCodeHookPayload>(host);
   if (!payload) return;
-  const request = mapHookPayload(payload);
+  const request = withProject(mapHookPayload(payload), payload.cwd);
   if (!request) return;
 
-  const refusal = await evaluate(context, host, request, token);
+  const refusal = await evaluate(context, host, request, credentials);
   if (!refusal) return;
 
   // Claude Code convention: exit 2 with stderr denies the tool call.
@@ -118,19 +165,23 @@ async function runClaudeCodeHook(context: CliContext, host: HookHost): Promise<v
   host.exit(HOOK_EXIT_BLOCK);
 }
 
-async function runCursorHook(context: CliContext, host: HookHost): Promise<void> {
+async function runCursorHook(
+  context: CliContext,
+  host: HookHost,
+  readStored: StoredConfigReader,
+): Promise<void> {
   const allow = (): void =>
     respondToCursor(host, { permission: CURSOR_PERMISSION.ALLOW });
 
-  const token = host.env(ENV_AGENT_TOKEN);
-  if (!token) return allow();
+  const credentials = await resolveCredentials(host, readStored);
+  if (!credentials) return allow();
 
   const payload = await readJsonInput<CursorHookPayload>(host);
   if (!payload) return allow();
-  const request = mapCursorPayload(payload);
+  const request = withProject(mapCursorPayload(payload), payload.cwd);
   if (!request) return allow();
 
-  const refusal = await evaluate(context, host, request, token);
+  const refusal = await evaluate(context, host, request, credentials);
   if (!refusal) return allow();
 
   // afterFileEdit fires once the edit has landed; reporting is all that is left.

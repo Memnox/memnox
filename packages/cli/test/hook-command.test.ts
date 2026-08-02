@@ -1,9 +1,10 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, RISK_LEVEL } from '@memnox/core';
 import { registerHookCommand } from '../src/commands/hook.command';
+import type { AgentConfig } from '../src/agent-config';
 import { HOOK_EXIT_BLOCK } from '../src/hook-mapping';
 import type { HookHost } from '../src/hook-host';
 import { CURSOR_PERMISSION } from '../src/cursor-hook-mapping';
@@ -71,9 +72,10 @@ async function runHook(
   agent: string,
   host: FakeHost,
   runtime: FakeRuntime,
+  stored: AgentConfig = {},
 ): Promise<void> {
   await runCommand(
-    (program, context) => registerHookCommand(program, context, host),
+    (program, context) => registerHookCommand(program, context, host, async () => stored),
     ['hook', agent],
     runtime,
   );
@@ -311,5 +313,138 @@ describe('memnox hook — unsupported agent', () => {
     await expect(runHook('emacs', host, new FakeRuntime())).rejects.toThrow(
       /unsupported hook agent "emacs"/,
     );
+  });
+});
+
+describe('memnox hook — stored credentials', () => {
+  it('authenticates from the config file when the editor carries no environment', async () => {
+    const host = new FakeHost(bashCall('ls')); // no env at all, as under a GUI editor
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime, { token: 'mnx_stored' });
+
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.authorization).toBe('Bearer mnx_stored');
+  });
+
+  it('reaches the runtime URL recorded at setup time', async () => {
+    const host = new FakeHost(bashCall('ls'));
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime, {
+      token: 'mnx_stored',
+      url: 'http://127.0.0.1:7479',
+    });
+
+    expect(runtime.requests[0]?.url).toBe(`http://127.0.0.1:7479${CHECK_PATH}`);
+  });
+
+  it('lets the environment win over the stored token', async () => {
+    const host = new FakeHost(bashCall('ls'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime, { token: 'mnx_stored' });
+
+    expect(runtime.requests[0]?.authorization).toBe('Bearer mnx_hook');
+  });
+
+  it('blocks a denied call that only the stored token could authenticate', async () => {
+    const host = new FakeHost(bashCall('rm -rf /'));
+    const runtime = new FakeRuntime().on(
+      'POST',
+      CHECK_PATH,
+      decision({ effect: DECISION_EFFECT.BLOCK, reason: 'destructive shell' }),
+    );
+
+    await expect(
+      runHook('claude-code', host, runtime, { token: 'mnx_stored' }),
+    ).rejects.toThrow(new RegExp(`exit ${HOOK_EXIT_BLOCK}`));
+    expect(host.stderr.join('\n')).toContain('destructive shell');
+  });
+
+  it('still allows when neither the environment nor the config has a token', async () => {
+    const host = new FakeHost(bashCall('rm -rf /'));
+    const runtime = new FakeRuntime();
+
+    await runHook('cursor', host, runtime, {});
+
+    expect(host.cursorResponse().permission).toBe(CURSOR_PERMISSION.ALLOW);
+    expect(runtime.requests).toHaveLength(0);
+  });
+});
+
+describe('memnox hook — project scope', () => {
+  let root: string;
+
+  const repoAt = async (name: string, project: string): Promise<string> => {
+    const dir = join(root, name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'memnox.policies.yaml'),
+      `project: ${project}\nversion: 1\npolicies: []\n`,
+      'utf8',
+    );
+    return dir;
+  };
+
+  const callFrom = (cwd: string): string =>
+    JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'memnox-hook-project-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('stamps the declared project onto the request', async () => {
+    const web = await repoAt('web', 'acme-checkout');
+    const host = new FakeHost(callFrom(web), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(runtime.requests[0]?.body).toMatchObject({ projectId: 'acme-checkout' });
+  });
+
+  it('gives a frontend and a backend repo one shared scope', async () => {
+    const web = await repoAt('web', 'acme-checkout');
+    const api = await repoAt('api', 'acme-checkout');
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', new FakeHost(callFrom(web), WITH_TOKEN), runtime);
+    await runHook('claude-code', new FakeHost(callFrom(api), WITH_TOKEN), runtime);
+
+    const scopes = runtime.requests.map(
+      (request) => (request.body as { projectId?: string }).projectId,
+    );
+    expect(scopes).toEqual(['acme-checkout', 'acme-checkout']);
+  });
+
+  it('keeps unrelated projects apart', async () => {
+    const web = await repoAt('web', 'acme-checkout');
+    const other = await repoAt('other', 'billing-service');
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', new FakeHost(callFrom(web), WITH_TOKEN), runtime);
+    await runHook('claude-code', new FakeHost(callFrom(other), WITH_TOKEN), runtime);
+
+    const scopes = runtime.requests.map(
+      (request) => (request.body as { projectId?: string }).projectId,
+    );
+    expect(scopes).toEqual(['acme-checkout', 'billing-service']);
+  });
+
+  it('omits the project when the editor reports no working directory', async () => {
+    const host = new FakeHost(
+      JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } }),
+      WITH_TOKEN,
+    );
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(runtime.requests[0]?.body).not.toHaveProperty('projectId');
   });
 });
