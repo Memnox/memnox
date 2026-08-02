@@ -2,6 +2,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PLAINTEXT_KEY_ID } from '@memnox/postgres';
 import type { KeyringCodec } from './stores/keyring-codec';
+import { isFileMissing } from './file-errors';
 
 /** JSON stores encode their whole body; the audit log encodes per line. Mixing them corrupts the file. */
 const FILE_LAYOUT = {
@@ -112,13 +113,7 @@ async function readIfPresent(path: string): Promise<string | null> {
     return await readFile(path, 'utf8');
   } catch (error) {
     // A store that was never written is not an error — nothing to rewrap.
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      (error as { code?: unknown }).code === 'ENOENT'
-    ) {
-      return null;
-    }
+    if (isFileMissing(error)) return null;
     throw error;
   }
 }

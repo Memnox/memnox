@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { PLAIN_TEXT_CODEC, type TextCodec } from '@memnox/core';
 import type { Policy } from '@memnox/policy-engine';
 import { versionPolicySet } from '@memnox/policy-engine';
+import { isFileMissing } from './file-errors';
 
 const HISTORY_FILE = 'policy-history.json';
 /** Enough to roll back through a bad afternoon without unbounded growth. */
@@ -92,9 +93,4 @@ export class FilePolicyHistory implements PolicyHistory {
       'utf8',
     );
   }
-}
-
-function isFileMissing(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  return (error as { code?: unknown }).code === 'ENOENT';
 }

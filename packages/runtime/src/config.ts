@@ -27,6 +27,12 @@ export interface RuntimeConfig {
   host: string;
   /** Directory for local persistence (audit log, agent registry, decision memory). */
   dataDir: string;
+  /**
+   * Serves every /v1 route under this prefix, e.g. "/orbit". One runtime is one
+   * tenant, so a control plane that reaches many of them behind one host tells
+   * them apart by path. Absent serves at the root, which is the default.
+   */
+  basePath?: string;
   policyFile?: string;
   /** Extra rule sources, e.g. a second repository of the same project. */
   policyFiles?: string[];

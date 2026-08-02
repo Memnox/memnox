@@ -5,7 +5,6 @@ export * from './reporting';
 export * from './console-logger';
 export * from './webhook-approval-notifier';
 export * from './slack-interactions';
-export * from './policy-loader';
 export * from './action-gateway';
 export * from './agent-registry';
 export * from './approval-service';
