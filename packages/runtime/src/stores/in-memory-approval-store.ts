@@ -1,5 +1,5 @@
 import type { Approval, ApprovalStatus, ApprovalStore } from '@memnox/core';
-import { APPROVAL_STATUS, isApprovalPrunable } from '@memnox/core';
+import { APPROVAL_STATUS, isApprovalPrunable, isUnspentGrant } from '@memnox/core';
 
 export class InMemoryApprovalStore implements ApprovalStore {
   private readonly approvals = new Map<string, Approval>();
@@ -20,6 +20,13 @@ export class InMemoryApprovalStore implements ApprovalStore {
       ) {
         return approval;
       }
+    }
+    return null;
+  }
+
+  async findGrantedByFingerprint(fingerprint: string): Promise<Approval | null> {
+    for (const approval of this.approvals.values()) {
+      if (isUnspentGrant(approval, fingerprint)) return approval;
     }
     return null;
   }

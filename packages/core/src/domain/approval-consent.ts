@@ -28,6 +28,8 @@ export function evaluateConsent(
   if (approval.status === APPROVAL_STATUS.PENDING) {
     return isApprovalExpired(approval, now) ? CONSENT.EXPIRED : CONSENT.NOT_APPLICABLE;
   }
+  // A spent grant is not consent: it already authorized the action it was for.
+  if (approval.consumedAt !== undefined) return CONSENT.NOT_APPLICABLE;
   if (approval.status === APPROVAL_STATUS.APPROVED) return CONSENT.GRANTED;
   if (approval.status === APPROVAL_STATUS.DENIED) return CONSENT.DENIED;
   return CONSENT.NOT_APPLICABLE;

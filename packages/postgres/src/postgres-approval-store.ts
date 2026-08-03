@@ -1,5 +1,6 @@
 import {
   APPROVAL_STATUS,
+  isUnspentGrant,
   PLAIN_TEXT_CODEC,
   type Approval,
   type ApprovalStatus,
@@ -46,6 +47,22 @@ export class PostgresApprovalStore implements ApprovalStore {
       [APPROVAL_STATUS.PENDING, fingerprint],
     );
     return rows.length > 0 ? this.decode(rows[0] as SqlRow) : null;
+  }
+
+  /** Newest first: a re-raised grant supersedes an older one for the same action. */
+  async findGrantedByFingerprint(fingerprint: string): Promise<Approval | null> {
+    const { rows } = await this.sql.query(
+      `SELECT record FROM approvals
+       WHERE status = $1 AND fingerprint = $2
+       ORDER BY created_at DESC`,
+      [APPROVAL_STATUS.APPROVED, fingerprint],
+    );
+    for (const row of rows) {
+      const approval = this.decode(row as SqlRow);
+      // consumedAt lives inside the encrypted record, so it cannot be a WHERE clause.
+      if (isUnspentGrant(approval, fingerprint)) return approval;
+    }
+    return null;
   }
 
   async listByStatus(status: ApprovalStatus): Promise<Approval[]> {

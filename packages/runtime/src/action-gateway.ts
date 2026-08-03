@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   ActionAdvisor,
+  ActionBriefing,
   ActionEvent,
   ActionRequest,
   Advisory,
@@ -19,6 +20,7 @@ import type {
   EnvironmentModes,
   ExecutionMeasurement,
   ExecutionOutcomeReport,
+  FixedWindowRateLimiter,
   IdentityStore,
   Logger,
   MatchedPolicy,
@@ -27,6 +29,7 @@ import type {
 } from '@memnox/core';
 import {
   AGENT_STATUS,
+  buildActionBriefing,
   APPROVAL_STATUS,
   APPROVAL_TTL_MS,
   CONSENT,
@@ -36,6 +39,7 @@ import {
   EMPTY_AGENT_STATS,
   ENFORCEMENT_MODE,
   ENFORCEMENT_REASON,
+  ENFORCEMENT_SET_ACTION,
   applyEnforcementMode,
   resolveEnforcementMode,
   AGENT_ROTATE_ACTION,
@@ -50,6 +54,10 @@ import {
   TAINT_NO_OVERRIDE_ACTIONS,
   UNVERIFIED_EXECUTION_STATUSES,
 } from '@memnox/core';
+import {
+  SECURITY_BASELINE_VERSION,
+  securityRequirementsFor,
+} from '@memnox/content-shield';
 import { LLM_SPEND_ACTION } from '@memnox/risk';
 import {
   classifyRisk,
@@ -68,7 +76,50 @@ import {
 import { APPROVAL_METRIC_STATE, METRIC, MetricsRegistry } from './metrics';
 import { fingerprintRequest } from './token';
 
+/** "default=monitor, production=enforce", or "unset" when nothing is declared. */
+function describeModes(modes: EnvironmentModes): string {
+  const parts = [
+    ...(modes.default === undefined ? [] : [`default=${modes.default}`]),
+    ...Object.entries(modes.environments ?? {}).map(([name, mode]) => `${name}=${mode}`),
+  ];
+  return parts.length === 0 ? 'unset' : parts.join(', ');
+}
+
+/** True when any environment ends up applying less than it did. */
+function weakens(before: EnvironmentModes, after: EnvironmentModes): boolean {
+  const strength: Record<EnforcementMode, number> = {
+    [ENFORCEMENT_MODE.OFF]: 0,
+    [ENFORCEMENT_MODE.MONITOR]: 1,
+    [ENFORCEMENT_MODE.ENFORCE]: 2,
+  };
+  const names = new Set([
+    ...Object.keys(before.environments ?? {}),
+    ...Object.keys(after.environments ?? {}),
+  ]);
+  for (const name of names) {
+    const was = resolveEnforcementMode(before, name);
+    const now = resolveEnforcementMode(after, name);
+    if (strength[now] < strength[was]) return true;
+  }
+  return (
+    strength[resolveEnforcementMode(after, undefined)] <
+    strength[resolveEnforcementMode(before, undefined)]
+  );
+}
+
 const UNKNOWN_AGENT_ID = 'unknown';
+const RATE_LIMIT_RULE_PREFIX = 'rule';
+const LOCAL_SIGNAL_SOURCE = 'local';
+
+/** The stricter of two withheld verdicts, or whichever one exists. */
+function stricter(
+  left: DecisionEffect | undefined,
+  right: DecisionEffect | undefined,
+): DecisionEffect | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return EFFECT_PRECEDENCE[right] > EFFECT_PRECEDENCE[left] ? right : left;
+}
 
 /**
  * A failed rollback is the worst case: the action ran, could not be verified, and
@@ -125,6 +176,11 @@ export interface ActionGatewayDeps {
   enforcement?: EnvironmentModes;
   /** Open holds one agent may accumulate before further ones are refused. */
   maxPendingPerAgent?: number;
+  /**
+   * Counts per-rule rate limits. Shared with the HTTP limiter so one Redis-backed
+   * counter serves every process; without it, `rateLimit` rules are inert.
+   */
+  rateLimiter?: FixedWindowRateLimiter;
 }
 
 interface Outcome {
@@ -213,6 +269,39 @@ export class ActionGateway {
     this.deps.policyEngine = engine;
   }
 
+  /** The modes in force, per environment. Read-only, for the management API. */
+  enforcement(): EnvironmentModes {
+    return this.deps.enforcement ?? {};
+  }
+
+  /**
+   * Swaps the modes at runtime. Resolved per request, so this takes effect on
+   * the next decision without a restart or an engine rebuild.
+   *
+   * Audited: weakening governance is the most consequential thing anybody can
+   * do here, and a chain that records every blocked action but not the moment
+   * blocking was turned off proves the wrong thing.
+   */
+  async useEnforcement(modes: EnvironmentModes): Promise<void> {
+    const before = this.deps.enforcement ?? {};
+    this.deps.enforcement = modes;
+
+    await this.appendEvent({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      agentId: UNKNOWN_AGENT_ID,
+      agentName: 'management',
+      action: ENFORCEMENT_SET_ACTION,
+      target: describeModes(modes),
+      effect: DECISION_EFFECT.ALLOW,
+      riskLevel: weakens(before, modes) ? RISK_LEVEL.HIGH : RISK_LEVEL.MEDIUM,
+      matchedPolicies: [],
+      advisories: [],
+      reason: `enforcement changed from ${describeModes(before)} to ${describeModes(modes)}`,
+    });
+  }
+
+  /** Pipeline entry for a bearer token — resolves the agent, then runs the same path. */
   async authorize(agentToken: string, request: ActionRequest): Promise<Decision> {
     return this.authorizeAgent(await this.resolveAgent(agentToken), request);
   }
@@ -284,6 +373,18 @@ export class ActionGateway {
       orgId: agent.orgId,
     });
     return true;
+  }
+
+  /**
+   * What governs this action, asked before attempting it. Same pipeline as
+   * `assess`, rendered as the constraints themselves rather than a verdict — so
+   * an agent can read the rules up front instead of discovering them by refusal.
+   */
+  async brief(agentToken: string, request: ActionRequest): Promise<ActionBriefing> {
+    return buildActionBriefing(request, await this.assess(agentToken, request), {
+      requirements: securityRequirementsFor(request.action, request.target),
+      version: SECURITY_BASELINE_VERSION,
+    });
   }
 
   /** What the decision would be, without making it — nothing is recorded. */
@@ -407,14 +508,38 @@ export class ActionGateway {
           ? evaluation.reason
           : escalation.reason;
 
-    const applied = applyEnforcementMode(verdict, mode);
+    const limited = await this.applyRateLimits(
+      agent,
+      evaluation.matchedPolicies,
+      verdict,
+      verdictReason,
+    );
+    const applied = applyEnforcementMode(limited.effect, mode);
     const effect = applied.effect;
     const reason =
       applied.withheldEffect === undefined
-        ? verdictReason
-        : `${ENFORCEMENT_REASON.OBSERVED}: ${verdictReason}`;
+        ? limited.reason
+        : `${ENFORCEMENT_REASON.OBSERVED}: ${limited.reason}`;
+    // Two things can withhold a verdict — the environment's mode and a rule of
+    // its own in monitor mode — and the audit should name the stricter of them.
+    const withheldEffect = stricter(applied.withheldEffect, evaluation.withheldEffect);
 
     if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
+      // Claimed only here, so the extra lookup stays off the allow path. No veto
+      // check is needed: a non-overridable advisory escalates to block, and
+      // combineEffects would have made that the verdict instead of this branch.
+      const granted = await this.approvals.claimGrantFor(agent, request);
+      if (granted) {
+        return this.finalize(agent, request, {
+          effect: DECISION_EFFECT.ALLOW,
+          reason: `${DECISION_REASON.APPROVAL_GRANTED} by ${granted.resolvedBy}`,
+          matchedPolicies: evaluation.matchedPolicies,
+          advisories,
+          approvalId: granted.id,
+          enforcementMode: mode,
+        });
+      }
+
       const approvers = [
         ...evaluation.matchedPolicies.flatMap((policy) => policy.approvers ?? []),
         ...advisories.flatMap((advisory) => advisory.approvers ?? []),
@@ -457,10 +582,50 @@ export class ActionGateway {
       matchedPolicies: evaluation.matchedPolicies,
       advisories,
       enforcementMode: mode,
-      ...(applied.withheldEffect === undefined
-        ? {}
-        : { withheldEffect: applied.withheldEffect }),
+      ...(withheldEffect === undefined ? {} : { withheldEffect }),
     });
+  }
+
+  /**
+   * A ceiling on how often a rule may fire. Only an action that is actually
+   * proceeding consumes a slot — a blocked one never happened, and counting it
+   * would let refused calls exhaust the budget of the calls that succeed.
+   *
+   * A limiter that cannot answer does not block: the counter is a budget, not
+   * an identity check, and an unreachable Redis must not stop every agent.
+   */
+  private async applyRateLimits(
+    agent: AgentIdentity,
+    matched: MatchedPolicy[],
+    verdict: DecisionEffect,
+    verdictReason: string,
+  ): Promise<{ effect: DecisionEffect; reason: string }> {
+    const unchanged = { effect: verdict, reason: verdictReason };
+    const limiter = this.deps.rateLimiter;
+    if (limiter === undefined) return unchanged;
+    if (EFFECT_PRECEDENCE[verdict] > EFFECT_PRECEDENCE[DECISION_EFFECT.REDACT]) {
+      return unchanged;
+    }
+
+    for (const policy of matched) {
+      const spec = policy.rateLimit;
+      if (spec === undefined || policy.monitored === true) continue;
+      try {
+        const allowed = await limiter.allow(
+          `${RATE_LIMIT_RULE_PREFIX}:${policy.name}:${agent.id}`,
+          spec.max,
+          spec.windowSeconds,
+        );
+        if (allowed) continue;
+        return {
+          effect: DECISION_EFFECT.BLOCK,
+          reason: `${DECISION_REASON.RATE_LIMIT}: "${policy.name}" allows ${spec.max} per ${spec.windowSeconds}s`,
+        };
+      } catch (err) {
+        this.logger.warn(`rate limit check failed for "${policy.name}": ${String(err)}`);
+      }
+    }
+    return unchanged;
   }
 
   private resolveAgent(token: string): Promise<AgentIdentity | null> {
@@ -524,6 +689,8 @@ export class ActionGateway {
     if (consent === CONSENT.GRANTED) {
       // Consent is not a bypass: a non-overridable block outranks any approval.
       const veto = nonOverridableBlock(advisories);
+      // Spent either way — a vetoed grant must not stay claimable for a later try.
+      await this.approvals.consume(approval);
       return this.finalize(agent, request, {
         effect: veto ? DECISION_EFFECT.BLOCK : DECISION_EFFECT.ALLOW,
         reason: veto
@@ -581,15 +748,22 @@ export class ActionGateway {
       provider: request.provider,
       dataClassification: request.dataClassification,
       jurisdiction: request.jurisdiction,
+      workingDirectory: request.workingDirectory,
+      branch: request.branch,
       effect: outcome.effect,
       enforcementMode: outcome.enforcementMode,
       withheldEffect: outcome.withheldEffect,
       riskLevel,
       matchedPolicies: (outcome.matchedPolicies ?? []).map((policy) => policy.name),
       policyVersion: this.deps.policyEngine.version,
-      advisories: advisories.flatMap((advisory) =>
-        advisory.signals.map((signal) => `${advisory.source}:${signal}`),
-      ),
+      advisories: [
+        ...advisories.flatMap((advisory) =>
+          advisory.signals.map((signal) => `${advisory.source}:${signal}`),
+        ),
+        // What the caller's own gate found. Kept apart by prefix: it is testimony
+        // about a payload this process never saw, not a finding it made.
+        ...(request.signals ?? []).map((signal) => `${LOCAL_SIGNAL_SOURCE}:${signal}`),
+      ],
       reason: outcome.reason,
       orgId: agent === null ? undefined : agent.orgId,
     });
@@ -615,7 +789,10 @@ export class ActionGateway {
 
   private async recordStats(agent: AgentIdentity, effect: DecisionEffect): Promise<void> {
     const stats = { ...agent.stats };
-    if (effect === DECISION_EFFECT.ALLOW) stats.allowed += 1;
+    // A redacted call did run, so it counts as allowed — masked, not refused.
+    if (effect === DECISION_EFFECT.ALLOW || effect === DECISION_EFFECT.REDACT) {
+      stats.allowed += 1;
+    }
     if (effect === DECISION_EFFECT.BLOCK) stats.blocked += 1;
     if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) stats.approvalsRequested += 1;
     await this.agents.recordDecisionStats(agent, stats);

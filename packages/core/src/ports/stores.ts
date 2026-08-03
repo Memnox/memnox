@@ -41,6 +41,13 @@ export interface ApprovalStore {
   save(approval: Approval): Promise<void>;
   findById(id: string): Promise<Approval | null>;
   findPendingByFingerprint(fingerprint: string): Promise<Approval | null>;
+  /**
+   * The unspent grant for this exact action, if a human has already given one.
+   * This is how an approval reaches a caller that cannot echo an approval id
+   * back — an editor hook builds its request from a tool call and has nowhere
+   * to put one, so without this lookup an approved action retries forever.
+   */
+  findGrantedByFingerprint(fingerprint: string): Promise<Approval | null>;
   listByStatus(status: ApprovalStatus): Promise<Approval[]>;
   /**
    * Retention sweep. Drops approvals raised before the cutoff that have reached

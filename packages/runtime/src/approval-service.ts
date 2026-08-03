@@ -82,15 +82,15 @@ export interface ApprovalServiceDeps {
   maxPendingPerAgent?: number;
 }
 
+export const APPROVAL_CAP_REACHED = 'approval_cap_reached';
+/** Beyond this many open holds for one agent, something is wrong with the rules. */
+export const DEFAULT_MAX_PENDING_PER_AGENT = 10;
+
 /**
  * The approval lifecycle: raising one, reading consent, resolving it against a
  * quorum, and breaking the glass. Deciding what to *do* with consent belongs to
  * the gateway; deciding whether consent exists belongs here.
  */
-export const APPROVAL_CAP_REACHED = 'approval_cap_reached';
-/** Beyond this many open holds for one agent, something is wrong with the rules. */
-export const DEFAULT_MAX_PENDING_PER_AGENT = 10;
-
 export class ApprovalService {
   private readonly metrics: MetricsRegistry;
   private readonly logger: Logger;
@@ -175,6 +175,33 @@ export class ApprovalService {
     });
     await this.notify(approval);
     return approval;
+  }
+
+  /**
+   * Spends the grant a human already gave for this exact action, if there is
+   * one. Returns null when there is not.
+   *
+   * This is what lets an editor hook or the MCP firewall be unblocked at all:
+   * both build their request from a tool call and have nowhere to carry an
+   * approval id, so without a fingerprint lookup an approved action re-raises a
+   * fresh hold on every retry and never proceeds.
+   */
+  async claimGrantFor(
+    agent: AgentIdentity,
+    request: ActionRequest,
+  ): Promise<Approval | null> {
+    const grant = await this.deps.approvalStore.findGrantedByFingerprint(
+      fingerprintFor(agent, request),
+    );
+    if (!grant) return null;
+    return this.consume(grant);
+  }
+
+  /** One grant authorizes one action; spending it is what makes that true. */
+  async consume(approval: Approval): Promise<Approval> {
+    const spent: Approval = { ...approval, consumedAt: new Date().toISOString() };
+    await this.deps.approvalStore.save(spent);
+    return spent;
   }
 
   /** A lapsed pending approval is retired here so it can never be mistaken for consent. */

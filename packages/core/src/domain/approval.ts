@@ -19,6 +19,13 @@ export interface Approval {
   expiresAt?: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  /**
+   * When this grant was spent. A grant authorizes one action: a human approving
+   * "write this file" agreed to that write, not to every write of it until the
+   * TTL runs out. Absent on records written before single-use grants shipped,
+   * which therefore stay reusable rather than retroactively failing closed.
+   */
+  consumedAt?: string;
   /** Set when an admin break-glass override approved this without the named approvers. */
   override?: boolean;
   /** Owning org/workspace; unset = single-tenant deployment. */
@@ -46,6 +53,20 @@ export function applyGrant(
 
 export function isApprovalExpired(approval: Approval, now: Date = new Date()): boolean {
   return Boolean(approval.expiresAt && approval.expiresAt <= now.toISOString());
+}
+
+/**
+ * A grant that still authorizes this exact action: approved, for this
+ * fingerprint, and not already spent. Expiry is deliberately not checked — the
+ * TTL bounds how long a *pending* hold waits for a human, and a grant a human
+ * actually gave should not evaporate while the agent is retrying.
+ */
+export function isUnspentGrant(approval: Approval, fingerprint: string): boolean {
+  return (
+    approval.status === APPROVAL_STATUS.APPROVED &&
+    approval.requestFingerprint === fingerprint &&
+    approval.consumedAt === undefined
+  );
 }
 
 /**

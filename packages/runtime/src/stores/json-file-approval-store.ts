@@ -1,7 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Approval, ApprovalStatus, ApprovalStore, TextCodec } from '@memnox/core';
-import { APPROVAL_STATUS, isApprovalPrunable, PLAIN_TEXT_CODEC } from '@memnox/core';
+import {
+  APPROVAL_STATUS,
+  isApprovalPrunable,
+  isUnspentGrant,
+  PLAIN_TEXT_CODEC,
+} from '@memnox/core';
 
 /**
  * Approvals survive restarts — a pending human decision must not vanish with the
@@ -37,6 +42,14 @@ export class JsonFileApprovalStore implements ApprovalStore {
       ) {
         return approval;
       }
+    }
+    return null;
+  }
+
+  async findGrantedByFingerprint(fingerprint: string): Promise<Approval | null> {
+    await this.ensureLoaded();
+    for (const approval of this.approvals.values()) {
+      if (isUnspentGrant(approval, fingerprint)) return approval;
     }
     return null;
   }
