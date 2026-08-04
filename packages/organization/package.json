@@ -1,0 +1,47 @@
+{
+  "name": "@memnox/organization",
+  "version": "0.2.0",
+  "description": "Ask your organization before your agent acts — context, authority and one decision, from any AI.",
+  "keywords": [
+    "ai-agents",
+    "organization",
+    "authorization",
+    "context",
+    "governance"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/organization#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Memnox/memnox.git",
+    "directory": "packages/organization"
+  },
+  "bugs": {
+    "url": "https://github.com/Memnox/memnox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  }
+}
