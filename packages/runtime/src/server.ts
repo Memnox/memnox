@@ -62,6 +62,7 @@ import {
 } from '@memnox/local-gate';
 import { registerActionRoutes } from './routes/action.routes';
 import { registerAgentRoutes } from './routes/agent.routes';
+import { registerDashboardRoutes } from './routes/dashboard.routes';
 import { registerApprovalRoutes } from './routes/approval.routes';
 import { registerAuditRoutes } from './routes/audit.routes';
 import { registerMemoryRoutes } from './routes/memory.routes';
@@ -308,6 +309,7 @@ export async function buildServer(
   const mount = async (scope: FastifyInstance): Promise<void> => {
     // Worth having per tenant under a prefix; at the root it is already above.
     if (prefix !== '') scope.get('/healthz', async () => ({ status: 'ok' }));
+    registerDashboardRoutes(scope, ctx);
     registerPlanRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);
