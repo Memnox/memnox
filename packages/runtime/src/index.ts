@@ -11,6 +11,7 @@ export * from './approval-service';
 export * from './decision-memory-service';
 export * from './audit-retention';
 export * from './metrics';
+export * from './runtime-status';
 export * from './server';
 export * from './stores/json-file-identity-store';
 export * from './stores/jsonl-audit-log';
