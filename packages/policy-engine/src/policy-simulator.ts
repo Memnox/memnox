@@ -8,6 +8,12 @@ export interface SimulationCase {
   target?: string;
   environment?: string;
   agentName?: string;
+  /**
+   * Without this a project-scoped rule matches nothing, and the comparison
+   * reports a confident "no change" for exactly the rule sets `memnox setup
+   * --project` writes.
+   */
+  projectId?: string;
 }
 
 export interface CaseOutcome {
@@ -38,6 +44,7 @@ const UNKNOWN_AGENT = 'simulated-agent';
 
 const emptyTotals = (): Record<DecisionEffect, number> => ({
   [DECISION_EFFECT.ALLOW]: 0,
+  [DECISION_EFFECT.REDACT]: 0,
   [DECISION_EFFECT.BLOCK]: 0,
   [DECISION_EFFECT.REQUIRE_APPROVAL]: 0,
 });
@@ -55,6 +62,7 @@ export function simulate(
         ...(simulationCase.environment
           ? { environment: simulationCase.environment }
           : {}),
+        ...(simulationCase.projectId ? { projectId: simulationCase.projectId } : {}),
       },
       { agentName: simulationCase.agentName ?? UNKNOWN_AGENT },
     );

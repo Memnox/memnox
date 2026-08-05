@@ -92,3 +92,40 @@ describe('comparePolicySets', () => {
     expect(comparison.unchanged).toBe(4);
   });
 });
+
+describe('project-scoped rules', () => {
+  const SCOPED: Policy = {
+    name: 'auth-code-review',
+    project: 'memnox-client',
+    match: { actions: ['file.write'], targets: ['*/auth/*'] },
+    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, reason: 'auth needs review' },
+  };
+
+  it('applies a scoped rule to a case that names the same project', () => {
+    const [outcome] = simulate(new PolicyEngine([SCOPED]), [
+      { action: 'file.write', target: 'app/auth/login.ts', projectId: 'memnox-client' },
+    ]);
+
+    expect(outcome?.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(outcome?.matchedPolicies).toEqual(['auth-code-review']);
+  });
+
+  it('reports the change instead of a false all-clear', () => {
+    const comparison = comparePolicySets(
+      new PolicyEngine([]),
+      new PolicyEngine([SCOPED]),
+      [{ action: 'file.write', target: 'app/auth/login.ts', projectId: 'memnox-client' }],
+    );
+
+    expect(comparison.changes).toHaveLength(1);
+    expect(comparison.changes[0]?.stricter).toBe(true);
+  });
+
+  it('leaves another project\u2019s actions alone', () => {
+    const [outcome] = simulate(new PolicyEngine([SCOPED]), [
+      { action: 'file.write', target: 'app/auth/login.ts', projectId: 'other-app' },
+    ]);
+
+    expect(outcome?.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});

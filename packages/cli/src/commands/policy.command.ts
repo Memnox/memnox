@@ -1,9 +1,10 @@
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import type { CliOutput } from '../cli-output';
 import { stringify } from 'yaml';
-import type { ActionEvent, DecisionEffect } from '@memnox/core';
+import type { DecisionEffect } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import {
   comparePolicySets,
@@ -16,21 +17,13 @@ import {
   type Policy,
   type SimulationCase,
 } from '@memnox/policy-engine';
-import { loadPoliciesFromFile } from '@memnox/runtime';
+import { loadPoliciesFromFile } from '@memnox/local-gate';
 import { DEFAULT_BASE_URL, DEFAULT_POLICY_FILE } from '../defaults';
+import { casesFromAudit } from '../simulation-cases';
+import { registerPolicyUiCommand } from './policy-ui.command';
 
 const DEFAULT_SIMULATION_SAMPLE = 500;
 const MAX_LISTED_CHANGES = 20;
-
-/** Real actions make a far better test set than invented ones. */
-function casesFromAudit(events: readonly ActionEvent[]): SimulationCase[] {
-  return events.map((event) => ({
-    action: event.action,
-    ...(event.target ? { target: event.target } : {}),
-    ...(event.environment ? { environment: event.environment } : {}),
-    agentName: event.agentName,
-  }));
-}
 
 const describeCase = (item: SimulationCase): string =>
   [item.action, item.target, item.environment].filter(Boolean).join(' ');
@@ -100,60 +93,97 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
       for (const name of summary.policyNames) context.out.line(`  - ${name}`);
     });
 
-  policy
-    .command('simulate')
-    .description('Show what a candidate policy set would decide differently')
-    .requiredOption('-f, --file <path>', 'candidate policy file')
-    .option('--against <path>', 'baseline policy file (default: no policies)')
-    .option('--from-audit', 'draw cases from the running runtime audit history')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
-    .option('--admin-token <token>', 'admin token for reading audit history')
-    .option('--limit <n>', 'audit events to replay', String(DEFAULT_SIMULATION_SAMPLE))
-    .option(
-      '--default-effect <effect>',
-      'effect when no policy matches',
-      DECISION_EFFECT.ALLOW,
-    )
-    .action(
-      async (options: {
-        file: string;
-        against?: string;
-        fromAudit?: boolean;
-        url: string;
-        adminToken?: string;
-        limit: string;
-        defaultEffect: string;
-      }) => {
-        if (!options.fromAudit) {
-          throw new Error(
-            '--from-audit is required: simulating against real history is the point',
-          );
-        }
-        const cases = casesFromAudit(
-          await context.client(options).recentAudit(Number(options.limit)),
-        );
-        if (cases.length === 0) {
-          context.out.line('No audit history yet — nothing to simulate against.');
-          return;
-        }
+  interface SimulateOptions {
+    file?: string;
+    against?: string;
+    url?: string;
+    adminToken?: string;
+    limit: string;
+    defaultEffect: string;
+  }
 
-        const defaultEffect = options.defaultEffect as DecisionEffect;
-        const candidatePolicies = await loadPoliciesFromFile(options.file);
-        const baselinePolicies = options.against
-          ? await loadPoliciesFromFile(options.against)
-          : [];
+  const runSimulation = async (
+    candidateFile: string | undefined,
+    options: SimulateOptions,
+  ): Promise<void> => {
+    const candidate = candidateFile ?? options.file;
+    if (candidate === undefined) {
+      throw new Error('Which file? Try:  memnox simulate candidate.yaml');
+    }
 
-        reportComparison(
-          context.out,
-          comparePolicySets(
-            new PolicyEngine(baselinePolicies, { defaultEffect }),
-            new PolicyEngine(candidatePolicies, { defaultEffect }),
-            cases,
-          ),
-          versionPolicySet(candidatePolicies).version,
-        );
-      },
+    const { client } = await context.connect(options);
+    const cases = casesFromAudit(await client.recentAudit(Number(options.limit)));
+    if (cases.length === 0) {
+      context.out.line('No audit history yet — nothing to simulate against.');
+      context.out.note('');
+      context.out.note('→ Let it observe first:  memnox setup, then use your editor.');
+      return;
+    }
+
+    const defaultEffect = options.defaultEffect as DecisionEffect;
+    const candidatePolicies = await loadPoliciesFromFile(candidate);
+    // The rules in force are what you are comparing against; asking for them
+    // every time was a flag that only ever had one useful value.
+    const baseline = options.against ?? DEFAULT_POLICY_FILE;
+    const baselinePolicies = existsSync(baseline)
+      ? await loadPoliciesFromFile(baseline)
+      : [];
+
+    reportComparison(
+      context.out,
+      comparePolicySets(
+        new PolicyEngine(baselinePolicies, { defaultEffect }),
+        new PolicyEngine(candidatePolicies, { defaultEffect }),
+        cases,
+      ),
+      versionPolicySet(candidatePolicies).version,
     );
+  };
+
+  const simulateFlags = (command: Command): Command =>
+    command
+      .option('-f, --file <path>', 'candidate policy file')
+      .option(
+        '--against <path>',
+        `baseline policy file (default: ${DEFAULT_POLICY_FILE})`,
+      )
+      .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
+      .option('--admin-token <token>', 'admin token for reading audit history')
+      .option('--limit <n>', 'audit events to replay', String(DEFAULT_SIMULATION_SAMPLE))
+      .option(
+        '--default-effect <effect>',
+        'effect when no policy matches',
+        DECISION_EFFECT.ALLOW,
+      );
+
+  simulateFlags(
+    policy
+      .command('simulate [file]')
+      .description('Show what a candidate policy set would decide differently'),
+  ).action(async (file: string | undefined, options: SimulateOptions) =>
+    runSimulation(file, options),
+  );
+
+  // Top-level alias: this is the step that makes a policy change safe to ship,
+  // so it should not be three words deep.
+  simulateFlags(
+    program
+      .command('simulate [file]')
+      .description('Replay real history through candidate rules before shipping them'),
+  ).action(async (file: string | undefined, options: SimulateOptions) =>
+    runSimulation(file, options),
+  );
+
+  program
+    .command('reload')
+    .description('Re-read the policy files without restarting the runtime')
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
+    .option('--admin-token <token>', 'admin token if the runtime requires one')
+    .action(async (options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
+      const result = await client.reloadPolicies();
+      context.out.line(`Policies reloaded — version ${result.version}`);
+    });
 
   policy
     .command('packs')
@@ -201,4 +231,9 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
         `\nAdded ${merged.added.length} policies to ${options.file} (version ${versionPolicySet(merged.policies).version})`,
       );
     });
+
+  registerPolicyUiCommand(policy, context);
+  // Top-level as well: "I would rather not write YAML" is the reason someone
+  // reaches for this, and that answer should not be three words deep.
+  registerPolicyUiCommand(program, context);
 }
