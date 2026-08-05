@@ -2,7 +2,7 @@
   "name": "memnox-runtime-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Memnox — the execution trust layer for AI agents. Deterministic identity, policy, approval, and audit for every AI action.",
+  "description": "Memnox \u2014 the execution trust layer for AI agents. Deterministic identity, policy, approval, and audit for every AI action.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @memnox/core -w @memnox/policy-engine -w @memnox/code-graph -w @memnox/content-shield -w @memnox/intelligence -w @memnox/local-gate -w @memnox/sdk -w @memnox/mcp-firewall -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w @memnox/trust-bench -w memnox",
+    "build": "npm run build -w @memnox/core -w @memnox/policy-engine -w @memnox/org-graph -w @memnox/code-graph -w @memnox/content-shield -w @memnox/intelligence -w @memnox/local-gate -w @memnox/sdk -w @memnox/organization -w @memnox/mcp-firewall -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w @memnox/trust-bench -w memnox",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
