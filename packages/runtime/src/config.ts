@@ -11,6 +11,15 @@ export const SIMULATION_SAMPLE_LIMIT = 1_000;
 export const DEFAULT_AUDIT_LIMIT = 50;
 /** Per-agent ceiling on the check endpoint; 0 disables. Generous — it stops floods, not work. */
 export const DEFAULT_CHECK_RATE_LIMIT_PER_MINUTE = 600;
+/**
+ * Organizational questions per agent per minute.
+ *
+ * A tenth of the check budget, because the two calls cost different things: a
+ * check is a policy match, and an `evaluate` walks the corpus, filters it by
+ * clearance, runs the same gate, and appends an audit event. The tighter
+ * number is the honest one to defend the expensive endpoint with.
+ */
+export const DEFAULT_ASK_RATE_LIMIT_PER_MINUTE = 60;
 export const MAX_AUDIT_LIMIT = 500;
 /** Days of audit history kept by the retention sweep; 0 = keep everything. */
 export const DEFAULT_AUDIT_RETENTION_DAYS = 0;
@@ -20,6 +29,13 @@ export const DEFAULT_ADVISOR_APPROVERS: readonly string[] = ['team-lead'];
 export interface ApiKeyConfig {
   token: string;
   role: ApiRole;
+  /**
+   * The one workspace this key may manage. Unset means every workspace, which
+   * is what a single-tenant deployment needs and what every existing key
+   * already means — so scoping is something an operator opts into rather than
+   * a migration that locks them out of their own runtime.
+   */
+  workspace?: string;
 }
 
 export interface RuntimeConfig {
@@ -85,6 +101,8 @@ export interface RuntimeConfig {
   agentJwtIssuer?: string;
   /** Per-agent requests/minute on /v1/actions/check; 0 disables. */
   checkRateLimitPerMinute: number;
+  /** Per-agent ceiling on the organization protocol; see the constant for why it differs. */
+  askRateLimitPerMinute: number;
   /** Postgres connection string; unset = local JSON/JSONL file stores. */
   databaseUrl?: string;
   /** Redis connection string; unset = per-process locks and rate limits. */
@@ -124,6 +142,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   contentShield: true,
   shellGuard: true,
   checkRateLimitPerMinute: DEFAULT_CHECK_RATE_LIMIT_PER_MINUTE,
+  askRateLimitPerMinute: DEFAULT_ASK_RATE_LIMIT_PER_MINUTE,
   auditRetentionDays: DEFAULT_AUDIT_RETENTION_DAYS,
   protectedPaths: [],
   dependencyGuard: false,

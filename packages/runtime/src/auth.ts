@@ -44,6 +44,29 @@ export function resolveApiRole(
   return match === undefined ? null : match.role;
 }
 
+/**
+ * Whether this credential may manage this workspace.
+ *
+ * The check the role alone cannot make: `admin` says what a key may do, never
+ * to whom. A key that names a workspace is confined to it; one that names none
+ * is a single-tenant key and reaches everything, which is what it already did.
+ *
+ * Local mode has no keys and therefore no scope — it is a loopback runtime with
+ * admin routes deliberately open, and pretending otherwise here would suggest a
+ * boundary that is not there.
+ */
+export function isScopedToWorkspace(
+  token: string | null,
+  config: RuntimeConfig,
+  workspace: string,
+): boolean {
+  if (!hasManagementKeys(config)) return true;
+  if (config.adminToken && token === config.adminToken) return true;
+  const match = config.apiKeys.find((key) => key.token === token);
+  if (match === undefined) return false;
+  return match.workspace === undefined || match.workspace === workspace;
+}
+
 export function isAuthorizedFor(
   token: string | null,
   config: RuntimeConfig,
