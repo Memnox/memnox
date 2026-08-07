@@ -44,3 +44,4 @@ policies:
       effect: block
       reason: Destructive shell commands are blocked for AI agents.
 `;
+export const DEFAULT_CLOUD_URL = 'https://cloud.memnox.dev';

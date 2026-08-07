@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { CloudConfig } from './cloud-connection';
 
 /**
  * Where the editor hook finds its credentials.
@@ -12,6 +13,8 @@ import { dirname, join } from 'node:path';
 export interface AgentConfig {
   token?: string;
   url?: string;
+  /** Set by `memnox login`; absent until a developer joins a control plane. */
+  cloud?: CloudConfig;
 }
 
 const CONFIG_DIR = '.memnox';
