@@ -2,7 +2,8 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { AGENT_KIND, ENFORCEMENT_MODE } from '@memnox/core';
-import { DEFAULT_HOST, DEFAULT_PORT, startServer } from '@memnox/runtime';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/runtime';
+import { createDetachedLauncher, daemonPaths, readDaemonPid } from '../runtime-daemon';
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-config';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
@@ -147,7 +148,7 @@ export function registerSetupCommand(
   program: Command,
   context: CliContext,
   installer = new EditorHookInstaller(homedir(), hookCommandFor),
-  launch: ServerLauncher = startServer,
+  launch: ServerLauncher = createDetachedLauncher(homedir()),
   homeDir: string = homedir(),
   probe: ServerProbe = probeRuntime,
   mcpInstaller = new McpInstaller(homedir()),
@@ -270,6 +271,13 @@ export function registerSetupCommand(
           out.line(`Using the runtime already on ${style.bold(url)}`);
         } else {
           out.line(`Memnox runtime listening on ${style.bold(url)}`);
+          // The prompt comes back, so say where it went and how to end it.
+          const paths = daemonPaths(homeDir);
+          const pid = await readDaemonPid(paths);
+          if (pid !== null) {
+            out.line(`${style.dim('Running in the background:')} pid ${pid}`);
+            out.line(`${style.dim('Logs:')} ${paths.logFile}`);
+          }
           out.line(`${style.dim('Policies:')} ${options.file}`);
           out.line(
             enforcing
@@ -330,6 +338,7 @@ export function registerSetupCommand(
         if (!joined && !enforcing) {
           out.note(style.dim('→ Start blocking:       memnox setup --enforce'));
         }
+        if (!joined) out.note(style.dim('→ Stop it:             memnox stop'));
       },
     );
 }
