@@ -32,7 +32,9 @@ import {
 } from '@memnox/memory';
 import { OpenAiEmbeddingProvider } from '@memnox/intelligence';
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
+import type { AuthorityStore } from '@memnox/org-graph';
 import {
+  AuthorityAdvisor,
   BehaviorAdvisor,
   DependencyAdvisor,
   NpmRegistryLicenseResolver,
@@ -69,10 +71,19 @@ import { registerMemoryRoutes } from './routes/memory.routes';
 import { registerMetricsRoutes } from './routes/metrics.routes';
 import { registerDecisionRoutes } from './routes/decision.routes';
 import { registerEnforcementRoutes } from './routes/enforcement.routes';
+import { registerOrganizationAdminRoutes } from './routes/organization-admin.routes';
+import { registerOrganizationRoutes } from './routes/organization.routes';
 import { registerPolicyRoutes } from './routes/policy.routes';
 import { registerPlanRoutes } from './routes/plan.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
-import { createRequireRole, type RouteContext } from './routes/route-context';
+import {
+  createRequireRole,
+  createRequireWorkspace,
+  type RouteContext,
+} from './routes/route-context';
+import { OrganizationService } from './organization-service';
+import { JsonFileStatedStore } from './stores/json-file-stated-store';
+import { JsonFileAuthorityStore } from './stores/json-file-authority-store';
 import { buildCodec } from './keyring-loader';
 import {
   connectPostgres,
@@ -100,6 +111,8 @@ const AGENTS_FILE = 'agents.json';
 const AUDIT_FILE = 'audit.jsonl';
 const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
+const STATED_FILE = 'organization.json';
+const AUTHORITY_FILE = 'authority.json';
 
 export interface MemnoxServer {
   app: FastifyInstance;
@@ -197,6 +210,15 @@ export async function buildServer(
     ? new PostgresIdentityStore(sql, codec)
     : new JsonFileIdentityStore(join(config.dataDir, AGENTS_FILE), codec);
 
+  /* File-backed on every deployment for now: what the organization states is
+     small, reviewed by hand, and argued about in a diff. It moves behind a SQL
+     adapter when a tenant outgrows that, not before. */
+  const statedStore = new JsonFileStatedStore(join(config.dataDir, STATED_FILE), codec);
+  const authorityStore = new JsonFileAuthorityStore(
+    join(config.dataDir, AUTHORITY_FILE),
+    codec,
+  );
+
   const semanticSearch = await buildSemanticSearch(config, sql);
 
   const { lockService, sessionTaintStore } = await resolveCoordination(config, services);
@@ -230,6 +252,7 @@ export async function buildServer(
       sessionTaintStore,
       codeGraph,
       planStore,
+      authorityStore,
     ),
     notifier: config.approvalWebhookUrl
       ? new WebhookApprovalNotifier(config.approvalWebhookUrl)
@@ -262,16 +285,24 @@ export async function buildServer(
   app.addHook('onClose', async () => stopRetention());
   app.get('/healthz', async () => ({ status: 'ok' }));
 
+  const decisionMemory = new DecisionMemoryService({
+    store: decisionStore,
+    auditEvents: () => gateway.queryAuditEvents({}),
+    semanticSearch,
+  });
   const ctx: RouteContext = {
     gateway,
     config,
-    decisionMemory: new DecisionMemoryService({
-      store: decisionStore,
-      auditEvents: () => gateway.queryAuditEvents({}),
-      semanticSearch,
+    decisionMemory,
+    organization: new OrganizationService({
+      gateway,
+      statements: statedStore,
+      grants: authorityStore,
+      decisions: decisionMemory,
     }),
     metrics,
     requireRole: createRequireRole(config),
+    requireWorkspace: createRequireWorkspace(config),
     rateLimiter,
     resolveCertAgent: tls
       ? (request) => resolveAgentFromClientCert(peerCertificate(request), identityStore)
@@ -321,6 +352,8 @@ export async function buildServer(
     registerDecisionRoutes(scope, ctx);
     registerPolicyRoutes(scope, ctx);
     registerEnforcementRoutes(scope, ctx);
+    registerOrganizationRoutes(scope, ctx);
+    registerOrganizationAdminRoutes(scope, ctx);
   };
 
   await app.register(mount, prefix === '' ? {} : { prefix });
@@ -386,8 +419,13 @@ function buildAdvisors(
   sessionTaintStore: SessionTaintStore,
   codeGraph: CodeGraph | null,
   plans: PlanStore,
+  grants: AuthorityStore,
 ): ActionAdvisor[] {
   const advisors: ActionAdvisor[] = [];
+  /* Always on, and free when nothing is delegated: with no grant recorded for a
+     principal the advisor returns nothing, so switching it on cannot stop work
+     that was running the day before. */
+  advisors.push(new AuthorityAdvisor(grants));
   if (config.contentShield) {
     advisors.push(new ContentShieldAdvisor());
   }

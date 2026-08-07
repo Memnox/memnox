@@ -1,7 +1,7 @@
 {
   "name": "@memnox/runtime",
   "version": "0.2.0",
-  "description": "The Memnox runtime gateway: identity → policy → decision → audit for every AI action.",
+  "description": "The Memnox runtime gateway: identity \u2192 policy \u2192 decision \u2192 audit for every AI action.",
   "keywords": [
     "ai-agents",
     "governance",
@@ -51,6 +51,7 @@
     "@memnox/intelligence": "0.2.0",
     "@memnox/local-gate": "0.2.0",
     "@memnox/memory": "0.2.0",
+    "@memnox/org-graph": "0.2.0",
     "@memnox/policy-engine": "0.2.0",
     "@memnox/postgres": "0.2.0",
     "@memnox/redis": "0.2.0",
