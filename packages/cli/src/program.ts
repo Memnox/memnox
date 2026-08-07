@@ -30,6 +30,7 @@ import { registerReportCommand } from './commands/report.command';
 import { registerServeCommand } from './commands/serve.command';
 import { registerStatusCommand } from './commands/status.command';
 import { registerSetupCommand } from './commands/setup.command';
+import { registerStopCommand } from './commands/stop.command';
 import { registerValidateCommand } from './commands/validate.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -43,6 +44,7 @@ export function buildProgram(context: CliContext): Command {
   registerQuickstartCommand(program, context);
   registerInitCommand(program, context);
   registerServeCommand(program, context);
+  registerStopCommand(program, context);
   registerStatusCommand(program, context);
   registerLoginCommand(program, context);
   registerCloudCommand(program, context);
