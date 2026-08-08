@@ -3,6 +3,7 @@ export * from './bookkeeping';
 export * from './behavior-advisor';
 export * from './verification-advisor';
 export * from './trust-advisor';
+export * from './authority-advisor';
 export * from './taint-advisor';
 export * from './token-budget-advisor';
 export * from './dependency.constants';
