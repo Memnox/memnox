@@ -1,7 +1,7 @@
 {
   "name": "@memnox/risk",
   "version": "0.2.0",
-  "description": "Deterministic behavioral risk signals for AI agents — baseline deviation, bursts, and escalation patterns.",
+  "description": "Deterministic behavioral risk signals for AI agents \u2014 baseline deviation, bursts, and escalation patterns.",
   "keywords": [
     "dependency",
     "license",
@@ -46,6 +46,7 @@
   "dependencies": {
     "@memnox/content-shield": "0.2.0",
     "@memnox/core": "0.2.0",
+    "@memnox/org-graph": "0.2.0",
     "@memnox/policy-engine": "0.2.0"
   }
 }
