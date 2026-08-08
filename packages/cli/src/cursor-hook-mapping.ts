@@ -1,6 +1,8 @@
 import type { ActionRequest, DecisionEffect } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import { CONTENT_METADATA_KEY } from '@memnox/content-shield';
+import { readBranch } from './git-branch';
+import { hookArguments, type BranchReader } from './hook-mapping';
 
 /** Cursor hook events that can still refuse an action. */
 export const CURSOR_BLOCKING_EVENTS = {
@@ -51,9 +53,14 @@ export interface CursorHookResponse {
   user_message?: string;
 }
 
-/** Memnox's three effects are Cursor's three permissions, one for one. */
+/**
+ * Memnox's effects in Cursor's vocabulary. Redact denies: the hook answers with
+ * a permission and cannot hand back a rewritten call, so the one thing it must
+ * not do is let the unmasked payload through — see REDACT_FALLBACK_EFFECT.
+ */
 export function toCursorPermission(effect: DecisionEffect): CursorPermission {
   if (effect === DECISION_EFFECT.BLOCK) return CURSOR_PERMISSION.DENY;
+  if (effect === DECISION_EFFECT.REDACT) return CURSOR_PERMISSION.DENY;
   if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) return CURSOR_PERMISSION.ASK;
   return CURSOR_PERMISSION.ALLOW;
 }
@@ -111,12 +118,36 @@ function fromPreToolUse(payload: CursorHookPayload): ActionRequest | null {
 }
 
 /** Maps a Cursor hook invocation onto the universal action event. */
-export function mapCursorPayload(payload: CursorHookPayload): ActionRequest | null {
+export function mapCursorPayload(
+  payload: CursorHookPayload,
+  branchOf: BranchReader = readBranch,
+): ActionRequest | null {
   const request = mapEvent(payload);
   if (!request) return null;
-  return payload.conversation_id
-    ? { ...request, sessionId: payload.conversation_id }
-    : request;
+
+  const branch = branchOf(payload.cwd);
+  return {
+    ...request,
+    arguments: cursorArguments(payload),
+    ...(payload.conversation_id === undefined
+      ? {}
+      : { sessionId: payload.conversation_id }),
+    ...(payload.cwd === undefined ? {} : { workingDirectory: payload.cwd }),
+    ...(branch === undefined ? {} : { branch }),
+  };
+}
+
+/**
+ * Cursor spreads the call across the payload — a shell command sits beside the
+ * tool input, not inside it — so both are folded into one argument map for the
+ * rules to match on.
+ */
+function cursorArguments(payload: CursorHookPayload): Record<string, string> {
+  return {
+    ...hookArguments(parseToolInput(payload.tool_input)),
+    ...(payload.command === undefined ? {} : { command: payload.command }),
+    ...(payload.file_path === undefined ? {} : { file_path: payload.file_path }),
+  };
 }
 
 function mapEvent(payload: CursorHookPayload): ActionRequest | null {

@@ -5,6 +5,7 @@ import type { CliContext } from '../cli-context';
 import type { ActionRequest, Decision } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import { CONTENT_METADATA_KEY, CONTENT_SCANNED_ACTIONS } from '@memnox/content-shield';
+import { LocalGate, SECRET_RESPONSE, type LocalVerdict } from '@memnox/local-gate';
 import {
   CURSOR_AFTER_FILE_EDIT,
   CURSOR_PERMISSION,
@@ -16,7 +17,7 @@ import {
 import { readAgentConfig, type AgentConfig } from '../agent-config';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { processHookHost, type HookHost } from '../hook-host';
-import { resolveProjectId } from '../project-identity';
+import { findPolicyFile, resolveProjectId } from '../project-identity';
 import {
   HOOK_EXIT_BLOCK,
   mapHookPayload,
@@ -24,6 +25,8 @@ import {
 } from '../hook-mapping';
 import { shieldDenialMessage } from '../write-shield';
 
+/** Names the hook to rules that match on `agents:`. */
+const HOOK_AGENT_NAME = 'editor-hook';
 const ENV_AGENT_TOKEN = 'MEMNOX_AGENT_TOKEN';
 const ENV_RUNTIME_URL = 'MEMNOX_URL';
 /** "true" blocks tool calls when the runtime is unreachable. Default: fail open — a hook must never brick an editor. */
@@ -90,7 +93,8 @@ export function registerHookCommand(
 
 /**
  * Shared core: the offline shield runs first so it still blocks when the runtime
- * is down, then the runtime decides. Null means the action may proceed.
+ * is down, then the local rules — which are the only ones that see the call's
+ * arguments — and the runtime decides last. Null means the action may proceed.
  */
 async function evaluate(
   context: CliContext,
@@ -101,10 +105,20 @@ async function evaluate(
   const shieldDenial = localShieldDenial(request);
   if (shieldDenial) return { reason: shieldDenial, decision: null };
 
+  const local = await localVerdict(request, host);
+  if (local !== null && local.effect !== DECISION_EFFECT.ALLOW) {
+    return {
+      reason: `Memnox ${local.effect}: ${withPeriod(local.reason)}`,
+      decision: null,
+    };
+  }
+
   const client = context.client({ url: credentials.url, token: credentials.token });
 
   try {
-    const decision = await client.check(request);
+    const decision = await client.check(
+      withSignals(request, local === null ? [] : local.signals),
+    );
     if (decision.effect === DECISION_EFFECT.ALLOW) return null;
     const approvalHint = decision.approvalId
       ? ` Ask a human to run: memnox approvals resolve ${decision.approvalId} --by <name>, then retry.`
@@ -202,6 +216,59 @@ async function runCursorHook(
 /** Cursor reads the verdict as JSON on stdout; exit 0 means "use my JSON". */
 function respondToCursor(host: HookHost, response: CursorHookResponse): void {
   host.respond(JSON.stringify(response));
+}
+
+/**
+ * Rules evaluated here, against the call's own arguments, from the policy file
+ * that governs this working directory. It is the only place those arguments are
+ * ever read — the SDK strips them, so an `arguments:` rule has no other home.
+ *
+ * A secret found in an argument only reports by default: a hook that blocks on
+ * its own scanner would fail the editor closed, which this hook never does. Set
+ * MEMNOX_ON_SECRET=block to change that.
+ */
+async function localVerdict(
+  request: ActionRequest,
+  host: HookHost,
+): Promise<LocalVerdict | null> {
+  const cwd = request.workingDirectory;
+  if (cwd === undefined) return null; // Nothing to resolve rules from.
+
+  const policyFile = findPolicyFile(cwd);
+  if (policyFile === undefined) return null;
+
+  try {
+    const gate = await LocalGate.fromFiles([policyFile], {
+      agentName: HOOK_AGENT_NAME,
+      onSecret: SECRET_RESPONSE.SIGNAL,
+    });
+    return gate.evaluate(request);
+  } catch (err) {
+    // An invalid rule file is `memnox validate`'s error to report, not a blocked editor.
+    host.warn(`Memnox local rules skipped: ${String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * What travels: the action, its target, the context — and rule ids for what the
+ * local pass found. The arguments and the written content stay on this machine.
+ */
+function withSignals(request: ActionRequest, signals: string[]): ActionRequest {
+  const { arguments: _payload, metadata, ...rest } = request;
+  const withoutContent =
+    metadata === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(metadata).filter(([key]) => key !== CONTENT_METADATA_KEY),
+        );
+  return {
+    ...rest,
+    ...(withoutContent === undefined || Object.keys(withoutContent).length === 0
+      ? {}
+      : { metadata: withoutContent }),
+    ...(signals.length === 0 ? {} : { signals }),
+  };
 }
 
 function localShieldDenial(request: ActionRequest): string | null {

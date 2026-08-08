@@ -1,12 +1,20 @@
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Command } from 'commander';
-import { AGENT_KIND } from '@memnox/core';
+import { AGENT_KIND, ENFORCEMENT_MODE } from '@memnox/core';
 import { DEFAULT_HOST, DEFAULT_PORT, startServer } from '@memnox/runtime';
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-config';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { CodeGraph, graphifyToSnapshot, isGraphifyDocument } from '@memnox/code-graph';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { GRAPHIFY_OUTPUT } from '../graphify-runner';
+import { readRepoSources } from '../repo-walk';
+import { DEFAULT_CODE_GRAPH_FILE } from '../defaults';
 import { EditorHookInstaller } from '../editor-hook-installer';
+import { McpInstaller } from '../mcp-installer';
 import { parseEnforcement } from '../enforcement-args';
 import { policyRegistryPath, registerPolicyFile } from '../policy-registry';
 import {
@@ -15,10 +23,96 @@ import {
   hookCommandFor,
 } from '../project-setup';
 import { detectStack } from '../stack-detection';
+import { detectProtectedPaths } from '../protected-paths';
 import type { ServerLauncher } from './serve.command';
 
 /** A first run observes; a wrong rule must not wedge someone's editor on minute one. */
 const FIRST_RUN_ENFORCEMENT = 'monitor';
+
+/**
+ * Every deterministic guard, on, for a local install.
+ *
+ * Safe precisely because the first run observes: a guard that fires is a line in
+ * the audit trail, not a blocked editor, so someone can read what it caught
+ * before deciding to enforce. `memnox serve` keeps its explicit-flag contract —
+ * a server deployment should not silently gain three audit queries per request
+ * because a default moved.
+ */
+const LOCAL_GUARDS = {
+  behaviorGuard: true,
+  trustGuard: true,
+  verificationGuard: true,
+  dependencyGuard: true,
+} as const;
+
+/**
+ * Blast radius needed two manual steps nobody took — `graph build`, then
+ * `serve --code-graph`. A guard that requires homework is a guard nobody has.
+ */
+interface BuiltGraph {
+  path: string;
+  /** Reported so nobody has to guess which producer was used. */
+  summary: string;
+  /** Every graphed path, so protected patterns are derived from what is really here. */
+  files: string[];
+}
+
+async function buildCodeGraph(
+  root: string,
+  out: string,
+  output: CliContext['out'],
+): Promise<BuiltGraph | null> {
+  try {
+    // A Graphify graph is tree-sitter across 36 languages; the walker below is
+    // regex over a handful. Prefer the better one when the repository has it.
+    const fromGraphify = await readGraphifySnapshot(root);
+    if (fromGraphify !== null) {
+      await writeSnapshot(out, fromGraphify.snapshot);
+      return {
+        path: out,
+        summary: `${out} (Graphify — ${fromGraphify.snapshot.files.length} files, ${fromGraphify.edgeCount} edges)`,
+        files: fromGraphify.snapshot.files,
+      };
+    }
+
+    const sources = await readRepoSources(root);
+    if (sources.length === 0) return null;
+    const snapshot = CodeGraph.build(sources).toSnapshot();
+    await writeSnapshot(out, snapshot);
+    return {
+      path: out,
+      summary: `${out} (${sources.length} files)`,
+      files: snapshot.files,
+    };
+  } catch (err) {
+    // Never fatal: a repository we cannot walk still deserves a governed editor.
+    output.note(`Could not build the code graph: ${String(err)}`);
+    return null;
+  }
+}
+
+async function writeSnapshot(path: string, snapshot: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(snapshot), 'utf8');
+}
+
+/** Null when Graphify has not been run here — the normal case. */
+async function readGraphifySnapshot(
+  root: string,
+): Promise<ReturnType<typeof graphifyToSnapshot> | null> {
+  try {
+    const parsed: unknown = JSON.parse(
+      await readFile(join(root, GRAPHIFY_OUTPUT), 'utf8'),
+    );
+    return isGraphifyDocument(parsed) ? graphifyToSnapshot(parsed) : null;
+  } catch {
+    return null; // Absent or unreadable; the built-in walker still runs.
+  }
+}
+
+/** Named so the report and the flag description cannot drift apart. */
+const GUARD_SUMMARY =
+  'content shield, shell indirection, taint, decision memory, behavior, trust, verification, dependencies';
 /** One machine-local identity shared by every editor hook on this machine. */
 const LOCAL_AGENT_NAME = 'local-editor';
 /** Cheap, always-present route; an auth challenge still proves something is listening. */
@@ -56,6 +150,7 @@ export function registerSetupCommand(
   launch: ServerLauncher = startServer,
   homeDir: string = homedir(),
   probe: ServerProbe = probeRuntime,
+  mcpInstaller = new McpInstaller(homedir()),
 ): void {
   program
     .command('setup')
@@ -68,11 +163,19 @@ export function registerSetupCommand(
       'governance unit this repository belongs to; repos sharing a name share one scope',
     )
     .option('--no-hook', 'skip installing editor hooks')
+    .option('--no-mcp', 'skip registering the Memnox MCP server with your agent')
+    .option('--no-graph', 'skip building the code graph blast radius needs')
     .option('--no-serve', 'scaffold policies and hooks without starting the runtime')
     .option('--enforce', 'block from the first request instead of observing first')
     .option(
       '--no-detect',
       'scaffold the generic starter rules instead of detecting the stack',
+    )
+    .option(
+      '--protected-path <pattern>',
+      'escalate changes that reach this path (repeatable; overrides detection)',
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
     )
     .action(
       async (options: {
@@ -81,8 +184,11 @@ export function registerSetupCommand(
         host: string;
         project?: string;
         hook: boolean;
+        mcp: boolean;
+        graph: boolean;
         serve: boolean;
         detect: boolean;
+        protectedPath: string[];
         enforce?: boolean;
       }) => {
         const out = context.out;
@@ -103,6 +209,7 @@ export function registerSetupCommand(
 
         if (!options.serve) {
           if (options.hook) await installHooks(installer, out);
+          if (options.mcp) await installMcp(mcpInstaller, out);
           out.line('');
           out.line(`memnox serve --policies ${options.file}`);
           out.note('');
@@ -118,6 +225,23 @@ export function registerSetupCommand(
         // this repository's rules are one of its sources.
         const sources = await registerPolicyFile(homeDir, options.file);
 
+        const graph = options.graph
+          ? await buildCodeGraph(
+              dirname(resolve(options.file)),
+              DEFAULT_CODE_GRAPH_FILE,
+              out,
+            )
+          : null;
+
+        // The advisor only registers when it is given paths, so a graph without
+        // these is a guard that silently never fires.
+        const protectedPaths =
+          options.protectedPath.length > 0
+            ? options.protectedPath
+            : graph === null
+              ? []
+              : detectProtectedPaths(graph.files);
+
         let url = requested;
         if (!joined) {
           const server = await launch({
@@ -126,13 +250,19 @@ export function registerSetupCommand(
             policyFile: options.file,
             policyRegistryFile: policyRegistryPath(homeDir),
             enforcement: enforcing ? undefined : parseEnforcement(FIRST_RUN_ENFORCEMENT),
+            ...LOCAL_GUARDS,
+            ...(graph === null ? {} : { codeGraphFile: graph.path }),
+            ...(protectedPaths.length === 0 ? {} : { protectedPaths }),
           });
           url = `http://${server.config.host}:${server.config.port}`;
         }
 
         const credentialed = await ensureAgentToken(context, homeDir, url);
         const reloaded = joined ? await reloadRunningRuntime(context, url) : false;
+        // A joined runtime used to be stuck in the mode it started in.
+        const armed = joined && enforcing ? await enforceOnRunning(context, url) : false;
         const installedAny = options.hook ? await installHooks(installer, out) : false;
+        const mcpAny = options.mcp ? await installMcp(mcpInstaller, out) : false;
 
         out.line('');
         if (joined) {
@@ -153,8 +283,23 @@ export function registerSetupCommand(
           out.line(`Rule sources: ${sources.length} files`);
         }
 
+        if (!joined) out.line(`Guards: ${GUARD_SUMMARY}`);
+        if (graph !== null) out.line(`Code graph: ${graph.summary}`);
+        if (protectedPaths.length > 0) {
+          out.line(
+            `Blast radius: escalating changes that reach ${protectedPaths.join(', ')}`,
+          );
+        } else if (graph !== null) {
+          // Say it plainly: the graph is built and the guard is still off.
+          out.line(
+            'Blast radius: no protected paths found — name them with --protected-path to escalate on reach',
+          );
+        }
+
         out.note('');
-        if (installedAny) out.note('→ Restart your editor to activate the hook.');
+        if (installedAny || mcpAny) {
+          out.note('→ Restart your editor to activate it.');
+        }
         if (!credentialed) {
           out.note('→ Editor hooks stay inactive until an agent token is stored.');
         }
@@ -162,8 +307,11 @@ export function registerSetupCommand(
           out.note('→ Its rules did not reload; restart it to pick up this repository.');
         }
         if (joined && enforcing) {
-          // We did not start it, so we cannot change the mode it is running in.
-          out.note('→ The running runtime keeps its mode; restart it to enforce.');
+          out.note(
+            armed
+              ? '→ Enforcing now — the running runtime took the change.'
+              : '→ Could not change its mode; it needs an admin token, or restart it to enforce.',
+          );
         }
         out.note('→ See what it decided:  memnox audit');
         if (!joined && !enforcing) {
@@ -178,6 +326,17 @@ export function registerSetupCommand(
  * be told to re-read its sources. Only paths reached it — the rules themselves
  * stay in the file this repository owns.
  */
+/** Arms a runtime this command did not start, which used to need a restart. */
+async function enforceOnRunning(context: CliContext, url: string): Promise<boolean> {
+  try {
+    await context.client({ url }).setEnforcement({ default: ENFORCEMENT_MODE.ENFORCE });
+    return true;
+  } catch {
+    // Almost always an unauthenticated caller against a runtime with a token.
+    return false;
+  }
+}
+
 async function reloadRunningRuntime(context: CliContext, url: string): Promise<boolean> {
   try {
     await context.client({ url }).reloadPolicies();
@@ -206,6 +365,30 @@ async function installHooks(
       report.installed
         ? `Installed the ${report.agent} hook`
         : `The ${report.agent} hook was already installed`,
+    );
+  }
+  return installedAny;
+}
+
+/**
+ * Registers Memnox as an MCP server so the agent can ask what the rules are
+ * before it writes. Without this the security baseline is installed but nothing
+ * ever asks for it, which looks exactly like having no baseline at all.
+ */
+async function installMcp(
+  mcpInstaller: McpInstaller,
+  out: CliContext['out'],
+): Promise<boolean> {
+  const reports = await mcpInstaller.installDetected();
+  if (reports.length === 0) return false;
+
+  let installedAny = false;
+  for (const report of reports) {
+    if (report.installed) installedAny = true;
+    out.line(
+      report.installed
+        ? `Registered the Memnox MCP server with ${report.client}`
+        : `${report.client} already has the Memnox MCP server`,
     );
   }
   return installedAny;

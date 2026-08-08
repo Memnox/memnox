@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,8 @@ import { RecordedOutput } from '../src/cli-output';
 import { registerSetupCommand } from '../src/commands/setup.command';
 import type { ServerLauncher } from '../src/commands/serve.command';
 import type { EditorHookInstaller } from '../src/editor-hook-installer';
+import { McpInstaller, MEMNOX_SERVER_KEY } from '../src/mcp-installer';
+import { DEFAULT_CODE_GRAPH_FILE } from '../src/defaults';
 import { parse } from 'yaml';
 import { validatePolicyDocument } from '@memnox/policy-engine';
 import { FakeRuntime } from './cli-harness';
@@ -60,6 +62,7 @@ describe('memnox setup', () => {
         probed.push(url);
         return alreadyRunning;
       },
+      new McpInstaller(home),
     );
     await program.parseAsync(['node', 'memnox', 'setup', ...args]);
   };
@@ -279,10 +282,23 @@ describe('memnox setup — a second repository', () => {
     expect(validatePolicyDocument(parsed).project).toBe('acme-checkout');
   });
 
-  it('says --enforce had no effect on a runtime it did not start', async () => {
+  it('arms a runtime it did not start, rather than asking for a restart', async () => {
+    runtime.on('PUT', '/v1/enforcement', { applied: true });
+
     await run(['--file', join(workspace, 'policies.yaml'), '--enforce']);
 
-    expect(out.notes.join('\n')).toContain('keeps its mode');
+    const change = runtime.requests.find(
+      (request) => request.method === 'PUT' && request.path === '/v1/enforcement',
+    );
+    expect(change?.body).toEqual({ default: 'enforce' });
+    expect(out.notes.join('\n')).toContain('Enforcing now');
+  });
+
+  it('says so when it cannot change the mode, instead of claiming it did', async () => {
+    // No stub for the route, so the runtime refuses it, as a tokened one would.
+    await run(['--file', join(workspace, 'policies.yaml'), '--enforce']);
+
+    expect(out.notes.join('\n')).toContain('Could not change its mode');
   });
 
   it('starts a runtime when nothing answers', async () => {
@@ -310,5 +326,177 @@ describe('memnox setup — a second repository', () => {
     await run(['--file', file, '--project', 'acme-checkout']);
 
     expect(out.notes.join('\n')).toContain('add "project: acme-checkout"');
+  });
+});
+
+describe('security a local install gets by default', () => {
+  let workspace: string;
+  let home: string;
+  let out: RecordedOutput;
+  let launched: Partial<RuntimeConfig>[];
+  let runtime: FakeRuntime;
+
+  const run = async (args: string[]): Promise<void> => {
+    const program = new Command();
+    program.exitOverride();
+    const installer = {
+      installDetected: async () => [],
+    } as unknown as EditorHookInstaller;
+    const launch: ServerLauncher = async (overrides) => {
+      launched.push(overrides);
+      return {
+        config: {
+          host: overrides.host ?? '127.0.0.1',
+          port: overrides.port ?? 7466,
+        } as RuntimeConfig,
+      };
+    };
+    registerSetupCommand(
+      program,
+      new CliContext(out, runtime.transport),
+      installer,
+      launch,
+      home,
+      async () => false,
+      new McpInstaller(home),
+    );
+    await program.parseAsync(['node', 'memnox', 'setup', ...args]);
+  };
+
+  const mcpServers = async (): Promise<Record<string, unknown>> => {
+    const config = JSON.parse(await readFile(join(home, '.claude.json'), 'utf8')) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    return config.mcpServers ?? {};
+  };
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'memnox-guards-'));
+    home = await mkdtemp(join(tmpdir(), 'memnox-guards-home-'));
+    out = new RecordedOutput();
+    launched = [];
+    runtime = new FakeRuntime().on('POST', AGENTS_PATH, registration('mnx_new'));
+    // A client config is the only signal the installer has that a client exists.
+    await writeFile(join(home, '.claude.json'), '{}', 'utf8');
+    process.chdir(workspace);
+  });
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('turns on every deterministic guard', async () => {
+    await run([]);
+
+    // Safe because the first run observes: a guard that fires is an audit line,
+    // not a blocked editor.
+    expect(launched[0]).toMatchObject({
+      behaviorGuard: true,
+      trustGuard: true,
+      verificationGuard: true,
+      dependencyGuard: true,
+    });
+  });
+
+  it('reports what is guarding, so nobody has to guess', async () => {
+    await run([]);
+
+    expect(out.text).toContain('Guards:');
+    expect(out.text).toContain('dependencies');
+  });
+
+  it('registers the MCP server, so the agent can ask before it writes', async () => {
+    await run([]);
+
+    expect((await mcpServers())[MEMNOX_SERVER_KEY]).toBeDefined();
+    expect(out.text).toContain('Registered the Memnox MCP server');
+  });
+
+  it('skips the MCP server when asked', async () => {
+    await run(['--no-mcp']);
+
+    expect((await mcpServers())[MEMNOX_SERVER_KEY]).toBeUndefined();
+  });
+
+  it('still registers it when scaffolding without a runtime', async () => {
+    await run(['--no-serve']);
+
+    expect((await mcpServers())[MEMNOX_SERVER_KEY]).toBeDefined();
+    expect(launched).toHaveLength(0);
+  });
+
+  it('builds the code graph and hands it to the runtime', async () => {
+    await writeFile(join(workspace, 'money.ts'), 'export const round = 1;\n', 'utf8');
+    await writeFile(
+      join(workspace, 'checkout.ts'),
+      "import { round } from './money';\n",
+      'utf8',
+    );
+
+    await run([]);
+
+    // Blast radius is unreachable without both halves; setup does both.
+    expect(launched[0]?.codeGraphFile).toBe(DEFAULT_CODE_GRAPH_FILE);
+    expect(out.text).toContain('Code graph:');
+    const snapshot = JSON.parse(
+      await readFile(join(workspace, DEFAULT_CODE_GRAPH_FILE), 'utf8'),
+    ) as { files?: unknown[]; edges?: unknown[] };
+    expect(snapshot.files).toHaveLength(2);
+    expect(snapshot.edges).toHaveLength(1);
+  });
+
+  it('skips the graph when asked, and still starts', async () => {
+    await run(['--no-graph']);
+
+    expect(launched[0]?.codeGraphFile).toBeUndefined();
+    expect(launched).toHaveLength(1);
+  });
+
+  it('starts anyway when there is nothing to graph', async () => {
+    await run([]);
+
+    // An empty repository is not a reason to refuse to govern it.
+    expect(launched).toHaveLength(1);
+    expect(launched[0]?.codeGraphFile).toBeUndefined();
+  });
+
+  it('arms blast radius on the sensitive directories it graphed', async () => {
+    await mkdir(join(workspace, 'payment'), { recursive: true });
+    await writeFile(join(workspace, 'payment', 'charge.ts'), 'export const c = 1;\n');
+    await writeFile(join(workspace, 'app.ts'), "import './payment/charge';\n");
+
+    await run([]);
+
+    // A graph without protected paths registers no advisor at all: the guard
+    // looks configured and can never fire.
+    expect(launched[0]?.protectedPaths).toEqual(['*payment/*']);
+    expect(out.text).toContain('*payment/*');
+  });
+
+  it('lets --protected-path override what it detected', async () => {
+    await mkdir(join(workspace, 'payment'), { recursive: true });
+    await writeFile(join(workspace, 'payment', 'charge.ts'), 'export const c = 1;\n');
+
+    await run(['--protected-path', 'app/*']);
+
+    expect(launched[0]?.protectedPaths).toEqual(['app/*']);
+  });
+
+  it('collects a repeated --protected-path', async () => {
+    await writeFile(join(workspace, 'app.ts'), 'export const a = 1;\n');
+
+    await run(['--protected-path', 'app/*', '--protected-path', 'db/*']);
+
+    expect(launched[0]?.protectedPaths).toEqual(['app/*', 'db/*']);
+  });
+
+  it('says the guard is off rather than implying a graph is enough', async () => {
+    await writeFile(join(workspace, 'app.ts'), 'export const a = 1;\n');
+
+    await run([]);
+
+    expect(launched[0]?.protectedPaths).toBeUndefined();
+    expect(out.text).toContain('no protected paths found');
   });
 });

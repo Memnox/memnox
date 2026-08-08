@@ -448,3 +448,103 @@ describe('memnox hook — project scope', () => {
     expect(runtime.requests[0]?.body).not.toHaveProperty('projectId');
   });
 });
+
+describe('memnox hook — rules decided on this machine', () => {
+  let root: string;
+
+  /** A repository whose policy file the hook will find by walking up from cwd. */
+  const repoWith = async (rules: string): Promise<string> => {
+    const dir = join(root, 'repo');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'memnox.policies.yaml'), rules, 'utf8');
+    return dir;
+  };
+
+  const callFrom = (cwd: string, command: string): string =>
+    JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd });
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'memnox-hook-local-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const NO_RM_RF = `version: 1
+policies:
+  - name: no-recursive-delete
+    match:
+      actions: ["shell.execute"]
+      arguments:
+        command: ["*rm -rf*"]
+    decision:
+      effect: block
+      reason: recursive delete is not an agent action
+`;
+
+  it('blocks on the call arguments, which the runtime is never sent', async () => {
+    const repo = await repoWith(NO_RM_RF);
+    const host = new FakeHost(callFrom(repo, 'rm -rf /srv'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await expect(runHook('claude-code', host, runtime)).rejects.toThrow(ExitCalled);
+
+    expect(host.stderr[0]).toContain('recursive delete is not an agent action');
+    // Blocked locally, so the call never became a request at all.
+    expect(runtime.requests).toHaveLength(0);
+  });
+
+  it('lets a call no local rule matches go on to the runtime', async () => {
+    const repo = await repoWith(NO_RM_RF);
+    const host = new FakeHost(callFrom(repo, 'ls -la'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(host.stderr).toEqual([]);
+    expect(runtime.requests).toHaveLength(1);
+  });
+
+  it('never puts the call arguments on the wire', async () => {
+    const repo = await repoWith(NO_RM_RF);
+    const host = new FakeHost(callFrom(repo, 'ls -la'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(runtime.requests[0]?.body).not.toHaveProperty('arguments');
+    expect(runtime.requests[0]?.body).toMatchObject({
+      action: 'shell.execute',
+      workingDirectory: repo,
+    });
+  });
+
+  it('sends what the local pass found as signals, not as content', async () => {
+    const repo = await repoWith(`version: 1
+policies:
+  - name: watched-shell
+    match: { actions: ["shell.execute"] }
+    decision: { effect: allow }
+`);
+    const host = new FakeHost(callFrom(repo, 'ls -la'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(runtime.requests[0]?.body).toMatchObject({
+      signals: ['policy:watched-shell'],
+    });
+  });
+
+  it('skips unusable local rules rather than breaking the editor', async () => {
+    const repo = await repoWith('version: 1\npolicies: [ { name: broken } ]\n');
+    const host = new FakeHost(callFrom(repo, 'ls'), WITH_TOKEN);
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    await runHook('claude-code', host, runtime);
+
+    expect(host.stderr[0]).toContain('local rules skipped');
+    expect(runtime.requests).toHaveLength(1);
+  });
+});
