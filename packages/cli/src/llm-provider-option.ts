@@ -7,6 +7,23 @@ import {
 const PROVIDER_ANTHROPIC = 'anthropic';
 const PROVIDER_OPENAI = 'openai';
 const ENV_OPENAI_API_KEY = 'OPENAI_API_KEY';
+const ENV_ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY';
+/** The SDK accepts either; a user who set the token should not be told to set the key. */
+const ENV_ANTHROPIC_AUTH_TOKEN = 'ANTHROPIC_AUTH_TOKEN';
+
+/**
+ * Every BYOK command is optional and none of them can decide anything, so a
+ * missing key is a setup step, not a failure of the runtime. Saying which
+ * variable to set beats the provider SDK's own "could not resolve
+ * authentication method", which names neither the variable nor the command.
+ */
+function missingKey(variable: string, provider: string): Error {
+  return new Error(
+    `${variable} is required for the ${provider} provider.\n` +
+      `This command calls an LLM to draft or explain; it never decides anything.\n` +
+      `Set ${variable}, or pass --provider to use a different one.`,
+  );
+}
 
 export const PROVIDER_CHOICES: readonly string[] = [PROVIDER_ANTHROPIC, PROVIDER_OPENAI];
 
@@ -17,9 +34,13 @@ export type LlmProviderFactory = (provider: string, model?: string) => LlmProvid
 export const buildLlmProvider: LlmProviderFactory = (provider, model) => {
   if (provider === PROVIDER_OPENAI) {
     const apiKey = process.env[ENV_OPENAI_API_KEY];
-    if (!apiKey)
-      throw new Error(`${ENV_OPENAI_API_KEY} is required for the openai provider`);
+    if (!apiKey) throw missingKey(ENV_OPENAI_API_KEY, PROVIDER_OPENAI);
     return new OpenAiProvider(apiKey, model);
+  }
+  // The SDK defers this to the first call, which surfaces as a stack trace
+  // several commands deep instead of a missing-key message here.
+  if (!process.env[ENV_ANTHROPIC_API_KEY] && !process.env[ENV_ANTHROPIC_AUTH_TOKEN]) {
+    throw missingKey(ENV_ANTHROPIC_API_KEY, PROVIDER_ANTHROPIC);
   }
   return new AnthropicProvider({ model });
 };
