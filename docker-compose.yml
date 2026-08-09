@@ -31,3 +31,21 @@ services:
 volumes:
   memnox-data:
   # memnox-postgres:
+
+  # Memnox plus Graphify in one image — no host Python, nothing to reconcile.
+  # Mount the repository you want understood; read-only is enough.
+  #   docker compose up memnox-allinone
+  # memnox-allinone:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.allinone
+  #   ports:
+  #     - "7466:7466"
+  #   volumes:
+  #     - memnox-data:/data
+  #     - ${MEMNOX_REPO_PATH:-./}:/repo:ro
+  #   environment:
+  #     - MEMNOX_ADMIN_TOKEN=${MEMNOX_ADMIN_TOKEN:?the management API is exposed on 0.0.0.0}
+  #     # Builds the code graph from /repo on start; omit to serve without one.
+  #     - MEMNOX_REPO=/repo
+  #   restart: unless-stopped
