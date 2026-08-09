@@ -20,8 +20,8 @@ async function runCi(
   return runCommand(
     (program, context) =>
       registerCiCommand(program, context, (selection) => {
-        onSelect?.(selection);
-        return diff;
+        if (onSelect !== undefined) onSelect(selection);
+        return { diff, base: 'HEAD~1' };
       }),
     ['ci', ...args],
   );

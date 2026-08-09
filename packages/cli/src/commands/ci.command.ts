@@ -22,11 +22,12 @@ export function registerCiCommand(
     .option('--no-fail', 'report findings but always exit 0')
     .action(
       (options: { base?: string; staged?: boolean; json?: boolean; fail: boolean }) => {
-        const result = scanDiff(readDiff(options));
+        const source = readDiff(options);
+        const result = scanDiff(source.diff);
         if (options.json) {
-          context.out.line(JSON.stringify(result, null, 2));
+          context.out.line(JSON.stringify({ ...result, base: source.base }, null, 2));
         } else {
-          printResult(context.out, result);
+          printResult(context.out, result, source.base);
         }
         if (options.fail && result.blocked) {
           process.exitCode = EXIT_BLOCKED;
@@ -35,7 +36,7 @@ export function registerCiCommand(
     );
 }
 
-function printResult(out: CliOutput, result: ShieldScanResult): void {
+function printResult(out: CliOutput, result: ShieldScanResult, base: string): void {
   for (const finding of result.findings) {
     out.line(
       `${finding.file}:${finding.line} [${finding.severity}] ${finding.rule} — ${finding.message}`,
@@ -46,6 +47,6 @@ function printResult(out: CliOutput, result: ShieldScanResult): void {
   const blocking = result.findings.filter(isBlocking).length;
   const verdict = result.blocked ? `BLOCKED — ${blocking} blocking finding(s)` : 'CLEAN';
   out.line(
-    `memnox ci: ${verdict} (${result.findings.length} finding(s) across ${result.scannedFiles} changed file(s), ruleset v${result.rulesetVersion})`,
+    `memnox ci: ${verdict} (${result.findings.length} finding(s) across ${result.scannedFiles} changed file(s) vs ${base}, ruleset v${result.rulesetVersion})`,
   );
 }
