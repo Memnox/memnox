@@ -24,6 +24,7 @@ const VALID_DEFAULT_EFFECTS: readonly string[] = [
 
 /** Container deployments configure secrets via environment; flags win when both are set. */
 const ENV_ADMIN_TOKEN = 'MEMNOX_ADMIN_TOKEN';
+const ENV_BASE_PATH = 'MEMNOX_BASE_PATH';
 const ENV_DATABASE_URL = 'MEMNOX_DATABASE_URL';
 const ENV_REDIS_URL = 'MEMNOX_REDIS_URL';
 const ENV_DATA_KEY = 'MEMNOX_DATA_KEY';
@@ -87,6 +88,12 @@ export function registerServeCommand(
       'YAML policy file (repeatable — one project may span several repositories)',
       (path: string, previous: string[]) => [...previous, path],
       [] as string[],
+    )
+    // Explicit, like every other guard here: a server must not start loading
+    // rules from a developer's home directory because a default moved.
+    .option(
+      '--policy-registry <path>',
+      'also load the rule files registered in this file (see "memnox pull")',
     )
     .option('--data-dir <path>', 'local data directory')
     .option('--admin-token <token>', 'require this bearer token on admin routes')
@@ -188,12 +195,18 @@ export function registerServeCommand(
       '--enforcement <spec>',
       'per-environment mode, e.g. "default=monitor,production=enforce"',
     )
+    .option(
+      '--base-path <path>',
+      'serve every /v1 route under this prefix, e.g. "/orbit", so several runtimes share one host',
+    )
     .action(
       async (options: {
         port: string;
         host: string;
         policies: string[];
+        policyRegistry?: string;
         dataDir?: string;
+        basePath?: string;
         adminToken?: string;
         allowLocalAdmin?: boolean;
         behaviorGuard?: boolean;
@@ -238,7 +251,11 @@ export function registerServeCommand(
           host: options.host,
           policyFile: options.policies[0],
           policyFiles: options.policies.slice(1),
+          ...(options.policyRegistry === undefined
+            ? {}
+            : { policyRegistryFile: options.policyRegistry }),
           dataDir: options.dataDir,
+          basePath: envOr(options.basePath, ENV_BASE_PATH),
           adminToken: envOr(options.adminToken, ENV_ADMIN_TOKEN),
           allowLocalAdmin: options.allowLocalAdmin ?? false,
           behaviorGuard: options.behaviorGuard ?? false,

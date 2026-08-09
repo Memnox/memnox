@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import type { HttpTransport } from '@memnox/sdk';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
+import { plainStyle } from '../src/style';
 import { buildProgram } from '../src/program';
 
 interface RecordedRequest {
@@ -46,6 +47,11 @@ export class FakeRuntime {
   }
 }
 
+/** Tests never read $HOME: stored credentials and environment are supplied here. */
+function testContext(out: RecordedOutput, runtime: FakeRuntime): CliContext {
+  return new CliContext(out, runtime.transport, plainStyle, async () => ({}), {});
+}
+
 interface CliRun {
   out: RecordedOutput;
   runtime: FakeRuntime;
@@ -57,7 +63,7 @@ export async function runCli(
   runtime = new FakeRuntime(),
 ): Promise<CliRun> {
   const out = new RecordedOutput();
-  const program = buildProgram(new CliContext(out, runtime.transport));
+  const program = buildProgram(testContext(out, runtime));
   await program.parseAsync(args, { from: 'user' });
   return { out, runtime };
 }
@@ -73,7 +79,7 @@ export async function runCommand(
 ): Promise<CliRun> {
   const out = new RecordedOutput();
   const program = new Command();
-  register(program, new CliContext(out, runtime.transport));
+  register(program, testContext(out, runtime));
   await program.parseAsync(args, { from: 'user' });
   return { out, runtime };
 }

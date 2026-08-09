@@ -44,7 +44,7 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
     )
     .option('--supersedes <id>', 'existing decision this one replaces')
     .option('--source-ref <url>', 'permalink to the evidence (Slack thread, PR, doc)')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
     .action(
       async (options: {
@@ -60,10 +60,10 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
         source: string;
         sourceRef?: string;
         supersedes?: string;
-        url: string;
+        url?: string;
         adminToken?: string;
       }) => {
-        const client = context.client(options);
+        const { client } = await context.connect(options);
         const record = await client.addDecision({
           title: options.title,
           statement: options.statement,
@@ -87,10 +87,10 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
   memory
     .command('list')
     .description('List recorded decisions')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const decisions = await client.listDecisions();
       if (decisions.length === 0) {
         context.out.line('No decisions recorded. Add one with "memnox memory add".');
@@ -108,10 +108,10 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
   memory
     .command('health')
     .description('Decision-corpus health: stale, frequently-violated, never-referenced')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const health = await client.decisionHealth();
       context.out.line(`Health score      : ${health.score}/100`);
       context.out.line(`Active decisions  : ${health.activeDecisions}`);
@@ -137,20 +137,20 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
     .description(
       'Prompt-injectable digest of the active constraints for agent preloading',
     )
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       context.out.line(await client.decisionDigest());
     });
 
   memory
     .command('retire <id>')
     .description('Retire a decision — it stops enforcing but stays in history')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (id: string, options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (id: string, options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const decision = await client.setDecisionStatus(id, DECISION_STATUS.RETIRED);
       context.out.line(`Decision "${decision.title}" is now ${decision.status}.`);
     });
@@ -158,10 +158,10 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
   memory
     .command('remove <id>')
     .description('Delete a recorded decision')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (id: string, options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (id: string, options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       await client.removeDecision(id);
       context.out.line(`Decision ${id} removed.`);
     });

@@ -20,16 +20,16 @@ export function registerExplainCommand(
     .description(
       'Explain an audit decision in plain language (BYOK LLM; defaults to the most recent event)',
     )
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
     .option('--provider <provider>', PROVIDER_CHOICES.join('|'), PROVIDER_CHOICES[0])
     .option('--model <model>', 'override the provider default model')
     .action(
       async (
         eventId: string | undefined,
-        options: { url: string; adminToken?: string; provider: string; model?: string },
+        options: { url?: string; adminToken?: string; provider: string; model?: string },
       ) => {
-        const client = context.client(options);
+        const { client } = await context.connect(options);
         const events = await client.recentAudit(EXPLAIN_SEARCH_WINDOW);
         const event = eventId
           ? events.find((candidate) => candidate.id === eventId)

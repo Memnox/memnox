@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
-import { loadPoliciesFromFile } from '@memnox/runtime';
+import { loadPoliciesFromFile } from '@memnox/local-gate';
 import { DEFAULT_POLICY_FILE } from '../defaults';
 
 export function registerValidateCommand(program: Command, context: CliContext): void {

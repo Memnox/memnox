@@ -15,16 +15,16 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
       `agent kind (${Object.values(AGENT_KIND).join('|')})`,
       AGENT_KIND.CUSTOM,
     )
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
     .action(
       async (options: {
         name: string;
         kind: string;
-        url: string;
+        url?: string;
         adminToken?: string;
       }) => {
-        const client = context.client(options);
+        const { client } = await context.connect(options);
         const registration = await client.registerAgent(options.name, options.kind);
         context.out.line(
           `Agent registered: ${registration.agent.name} (${registration.agent.id})`,
@@ -37,10 +37,10 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
   agents
     .command('list')
     .description('List agents with trust scores')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const list = await client.listAgents();
       if (list.length === 0) {
         context.out.line('No agents registered.');
@@ -56,10 +56,10 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
   agents
     .command('suspend <id>')
     .description('Suspend an agent — every action it attempts is blocked')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (id: string, options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (id: string, options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const agent = await client.setAgentStatus(id, AGENT_STATUS.SUSPENDED);
       context.out.line(`Agent ${agent.name} is now ${agent.status}.`);
     });
@@ -67,10 +67,10 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
   agents
     .command('activate <id>')
     .description('Re-activate a suspended agent')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (id: string, options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (id: string, options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const agent = await client.setAgentStatus(id, AGENT_STATUS.ACTIVE);
       context.out.line(`Agent ${agent.name} is now ${agent.status}.`);
     });
@@ -78,10 +78,10 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
   agents
     .command('rotate <id>')
     .description('Issue a new token for an agent and retire the old one')
-    .option('--url <url>', 'runtime base URL', DEFAULT_BASE_URL)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
-    .action(async (id: string, options: { url: string; adminToken?: string }) => {
-      const client = context.client(options);
+    .action(async (id: string, options: { url?: string; adminToken?: string }) => {
+      const { client } = await context.connect(options);
       const rotated = await client.rotateAgent(id);
       context.out.line(
         `Rotated ${rotated.agent.name}. The previous token no longer works.`,
