@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Command } from 'commander';
-import { AGENT_KIND, ENFORCEMENT_MODE } from '@memnox/core';
+import { AGENT_KIND, DECISION_REASON, ENFORCEMENT_MODE } from '@memnox/core';
 import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/runtime';
 import { createDetachedLauncher, daemonPaths, readDaemonPid } from '../runtime-daemon';
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-config';
@@ -116,6 +116,13 @@ const GUARD_SUMMARY =
   'content shield, shell indirection, taint, decision memory, behavior, trust, verification, dependencies';
 /** One machine-local identity shared by every editor hook on this machine. */
 const LOCAL_AGENT_NAME = 'local-editor';
+/**
+ * Verifying the stored token asks what a benign action would be judged as, which
+ * records nothing and raises no approval — the one identity check that does not
+ * pollute the audit trail on every run.
+ */
+const TOKEN_PROBE_ACTION = 'memnox.identity.verify';
+
 /** Cheap, always-present route; an auth challenge still proves something is listening. */
 const PROBE_PATH = '/v1/policies';
 const PROBE_TIMEOUT_MS = 1500;
@@ -417,6 +424,30 @@ async function installMcp(
 }
 
 /**
+ * Whether this runtime still recognises the stored token. A stored token used to
+ * be trusted on sight, so a token issued by an earlier runtime — a different data
+ * directory, a wiped `.memnox/` — reported "using the agent token already at …"
+ * and then blocked every edit as an unknown agent, with the CLI reporting success.
+ */
+async function tokenIsKnown(
+  context: CliContext,
+  url: string,
+  token: string,
+): Promise<boolean> {
+  try {
+    const assessment = await context
+      .client({ url, token })
+      .evaluateRisk({ action: TOKEN_PROBE_ACTION });
+    return assessment.reason !== DECISION_REASON.UNKNOWN_AGENT;
+  } catch (err) {
+    // Unreachable or an unexpected shape: keep the token rather than churn
+    // identities on a runtime that simply did not answer.
+    context.out.note(`Could not verify the stored agent token: ${String(err)}`);
+    return true;
+  }
+}
+
+/**
  * Registers the machine-local agent once and stores its token. Reuses an
  * existing token rather than minting a second identity on every run — the
  * audit trail should show one editor, not one per invocation.
@@ -427,11 +458,18 @@ async function ensureAgentToken(
   url: string,
 ): Promise<boolean> {
   const stored = await readAgentConfig(homeDir);
-  if (stored.token !== undefined) {
+  if (stored.token !== undefined && (await tokenIsKnown(context, url, stored.token))) {
     // The port may have moved since the token was issued; keep the URL current.
     if (stored.url !== url) await writeAgentConfig(homeDir, { ...stored, url });
     context.out.note(`Using the agent token already at ${agentConfigPath(homeDir)}`);
     return true;
+  }
+  if (stored.token !== undefined) {
+    // A token minted against a previous runtime's identity store reports success
+    // here and then blocks every editor action as an unknown agent.
+    context.out.note(
+      'The stored agent token is not known to this runtime — registering again.',
+    );
   }
 
   try {

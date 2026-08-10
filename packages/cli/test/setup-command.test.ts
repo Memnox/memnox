@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Command } from 'commander';
+import { DECISION_REASON } from '@memnox/core';
 import type { RuntimeConfig } from '@memnox/runtime';
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../src/agent-config';
 import { CliContext } from '../src/cli-context';
@@ -128,9 +129,35 @@ describe('memnox setup', () => {
 
     await run(['--file', join(workspace, 'policies.yaml')]);
 
-    expect(runtime.requests).toHaveLength(0);
+    // It verifies the token, and registers nothing when it is still good.
+    expect(runtime.requests.map((request) => request.path)).toEqual([
+      '/v1/evaluate-risk',
+    ]);
     expect((await readAgentConfig(home)).token).toBe('mnx_existing');
     expect(out.notes.join('\n')).toContain('Using the agent token already at');
+  });
+
+  it('registers again when the runtime does not know the stored token', async () => {
+    // The scar: a token from an earlier runtime's identity store reported success
+    // here and then blocked every edit as an unknown agent.
+    await writeAgentConfig(home, { token: 'mnx_stale', url: 'http://127.0.0.1:7466' });
+    runtime.on('POST', '/v1/evaluate-risk', {
+      effect: 'block',
+      riskLevel: 'critical',
+      reason: DECISION_REASON.UNKNOWN_AGENT,
+      matchedPolicies: [],
+      advisories: [],
+      trustScore: 0,
+    });
+    runtime.on('POST', '/v1/agents', {
+      token: 'mnx_fresh',
+      agent: { id: 'a1', name: 'local-editor' },
+    });
+
+    await run(['--file', join(workspace, 'policies.yaml')]);
+
+    expect((await readAgentConfig(home)).token).toBe('mnx_fresh');
+    expect(out.notes.join('\n')).toContain('not known to this runtime');
   });
 
   it('refreshes the stored URL when the runtime moves port', async () => {
