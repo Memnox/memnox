@@ -107,4 +107,4 @@ dependency belongs in the constructor instead.
 
 ## Verify before committing
 
-`npm run format && npm run typecheck && npm test && npm run deadcode` — CI enforces all four plus the build, a publish dry run, and the Python/Go SDK suites.
+`npm run format && npm run typecheck && npm test && npm run deadcode` — CI enforces all four plus the build, a publish dry run, and the Python, Go, Rust, Java, and Swift SDK suites.

@@ -4,25 +4,43 @@ The `memnox` command: run the runtime, manage policies, inspect the audit trail,
 and install editor hooks.
 
 ```bash
-npx memnox init      # write a starter policy file
-npx memnox serve     # start the runtime
+npx memnox setup     # policies, agent token, editor hooks, running runtime
+npx memnox status    # is it on, what is in force, what would it have stopped
 ```
+
+`setup` is the local install: policies, an agent token, editor hooks, the MCP server, and
+a runtime with every deterministic guard on — content shield, shell indirection, taint,
+decision memory, behavior, trust, verification, and dependencies. The first run observes
+rather than blocks. `--no-hook`, `--no-mcp`, `--no-serve` and `--no-detect` opt out of the
+individual steps.
+
+Most commands need no connection flags: the agent token and runtime URL come from
+`MEMNOX_AGENT_TOKEN`/`MEMNOX_URL` or the config `memnox setup` wrote to
+`~/.memnox/config.json`. An explicit flag always wins.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `init` | write a starter policy file |
+| `ui` (`policy ui`) | edit the policy file in a local browser UI instead of YAML |
 | `serve` | start the runtime gateway |
 | `validate [file]` | check a policy file and list what it enforces |
-| `check` | ask for a decision on one action |
+| `status` | is the runtime up, which rules are in force, what is waiting |
+| `context <action> [target]` | what governs an action — ask before doing it |
+| `mcp` / `mcp install` | run Memnox as an MCP server; register it with a client |
+| `check [action] [target]` | ask for a decision on one action |
+| `approve <id>` / `deny <id>` | resolve a pending approval (`--by` defaults to `$USER`) |
+| `simulate [file]` | replay real history through candidate rules |
+| `reload` | re-read policy files without restarting the runtime |
 | `audit` / `audit verify` | recent decisions; verify the hash chain |
 | `replay <sessionId>` | every decision in one agent session, in order |
 | `agents` | register, list, suspend, activate, rotate |
-| `approvals` | list, resolve, break-glass override, flow health |
+| `approvals` | list pending (bare), status, resolve, break-glass override, flow health |
 | `memory` | record team decisions as machine-checkable constraints |
-| `policy` | version, simulate, packs, install |
+| `policy` | version, simulate, packs, install, ui |
 | `graph` | build the import graph; explain a file's blast radius |
+| `graphify` | install/build/use [Graphify](https://github.com/Graphify-Labs/graphify) for deeper reachability |
 | `ci` | scan a diff for secrets and PII in CI |
 | `hook` | editor hook entry point (reads a tool call on stdin) |
 | `protect` | install the hook into Claude Code and/or Cursor |

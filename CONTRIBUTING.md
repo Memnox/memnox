@@ -29,17 +29,23 @@ packages/
   redis/          # Redis adapters for locks and session taint
   sdk/            # TypeScript client
   mcp-firewall/   # transparent MCP proxy
+  local-gate/     # in-process gate — arguments and content never leave the machine
   intelligence/   # optional BYOK LLM layer — drafts and explains, never decides
-  cli/            # memnox command (incl. editor hooks + protect)
+  cli/            # memnox command (editor hooks, protect, and the MCP server)
   trust-bench/    # public governance benchmark
 sdks/
-  python/, go/    # thin dependency-free clients
+  python/, go/, rust/, java/, swift/   # thin dependency-free clients
 examples/
   policies/       # ready-to-use policy files
+  governed-agent/ # a minimal agent running behind the gate
 ```
 
 Every package has its own README covering what it does, how it is laid out, and
 what to touch when extending it. Read that one first.
+
+For how the product behaves from the outside — which is what you are changing —
+see [docs/getting-started.md](docs/getting-started.md) and
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 Dependency direction is strict (see [ARCHITECTURE.md](ARCHITECTURE.md) for the full graph): `core` depends on nothing; `policy-engine` only on `core`; everything else composes those. Never import from another package's internals — only from its `index.ts`.
 
@@ -57,6 +63,11 @@ Dependency direction is strict (see [ARCHITECTURE.md](ARCHITECTURE.md) for the f
 8. **Audit everything.** Any new path through the gateway must append exactly one audit event.
 9. **Take your dependencies as arguments.** Nothing reaches for `console`, the clock, the network, or `process.*` in the middle of its logic. That is what keeps the code testable — see below.
 10. **No dead code.** `npm run deadcode` (knip) fails CI on an unused export. Delete it; git remembers.
+11. **Gate, not reviewer.** Memnox decides whether an action is permitted and states what
+    a class of change must satisfy. It never generates code, never opines on code someone
+    already wrote, and never reviews or comments on a pull request. A briefing quotes a
+    declared rule or a shipped requirement — if you find yourself writing a branch that
+    *invents* a statement, the feature belongs somewhere else.
 
 ## Testing without processes or sockets
 
@@ -77,6 +88,19 @@ const { out } = await runCli(['check', '--token', 't', '--action', 'x'], runtime
 from process plumbing (`McpFirewall`, which owns the child process and stdio).
 Tests drive the session directly — no `spawn`, no stdin.
 
+**The MCP server** (`memnox mcp`) follows the same split: `McpServer.handle()` is
+message-in, message-out and owns no sockets, so a test drives the real protocol
+without stdin. The `StdioHost` seam lives in the command, not the server.
+
+```ts
+const reply = await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+```
+
+**Anything reading $HOME** — the editor-hook installer, the MCP installer, the stored
+agent token — takes the home directory as an argument rather than calling `homedir()`
+in the middle of its logic, so tests write into a scratch directory and assert on the
+JSON that lands there.
+
 **HTTP** is stubbed by passing `fetch` to `MemnoxClient`, so tests exercise the
 real client code rather than a hand-written double of it.
 
@@ -96,7 +120,7 @@ is hidden. Pass it in rather than mocking a module.
 ## Pull requests
 
 - Keep PRs focused — one behavior change per PR.
-- `npm run format && npm run typecheck && npm test && npm run deadcode` must all pass. CI enforces those four plus the build, a publish dry run, and the Python/Go SDK suites.
+- `npm run format && npm run typecheck && npm test && npm run deadcode` must all pass. CI enforces those four plus the build, a publish dry run, and the Python, Go, Rust, Java, and Swift SDK suites.
 - Explain the failure mode your change prevents or the capability it adds, in two or three sentences.
 
 ## Security
