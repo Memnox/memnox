@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL, DEFAULT_POLICY_FILE } from '../defaults';
-import { resolveProjectId } from '../project-identity';
+import { findPolicyFile, resolveProjectId } from '../project-identity';
 
 const RECENT_WINDOW_EVENTS = 200;
 
@@ -34,7 +34,9 @@ export function registerStatusCommand(
       ]);
 
       const withheld = recent.filter((event) => event.withheldEffect !== undefined);
-      const project = resolveProjectId(cwd());
+      const workingDirectory = cwd();
+      const policyFile = findPolicyFile(workingDirectory);
+      const project = resolveProjectId(workingDirectory);
 
       out.line(`Runtime   : ${connection.url}`);
       out.line(`Policies  : ${policies.policies.length} (version ${policies.version})`);
@@ -57,9 +59,13 @@ export function registerStatusCommand(
       }
       if (pending.length > 0) out.note('→ Grant one:  memnox approve <id>');
       if (withheld.length > 0) out.note('→ See them:   memnox audit');
+      // A missing file and a file that declares no project need different fixes,
+      // and `memnox init` writes the second one — so the first run hits this.
       if (project === undefined) {
         out.note(
-          `→ No ${DEFAULT_POLICY_FILE} here — project-scoped rules will not apply.`,
+          policyFile === undefined
+            ? `→ No ${DEFAULT_POLICY_FILE} here — create one:  memnox init`
+            : `→ ${DEFAULT_POLICY_FILE} declares no "project:" — project-scoped rules will not apply.`,
         );
       }
     });
