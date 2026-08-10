@@ -64,6 +64,65 @@ export interface PolicyRollbackResult {
   error?: string;
 }
 
+/** What a person supplies when entering a statement; the runtime stamps the rest. */
+export interface StatedPayload {
+  kind: 'decision' | 'policy' | 'authority' | 'responsibility' | 'relationship';
+  statement: string;
+  subject: string;
+  principal?: string;
+  /** Comma-separated action patterns, on an authority statement. */
+  capability?: string;
+  limit?: number;
+  object?: string;
+  sourceRef?: string;
+  /** Principal patterns cleared to read this. Unset means anyone the workspace admits. */
+  clearance?: string[];
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  recordedBy?: string;
+  /** ID of the statement this one replaces. */
+  supersedes?: string;
+}
+
+export interface StatedResponse extends StatedPayload {
+  id: string;
+  workspaceId: string;
+  provenance: string;
+  status: string;
+  version: number;
+  evidence: string[];
+  confidence: number;
+  detectedAt: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  supersedesId?: string;
+}
+
+/** What one extraction run added, and what the workspace already held. */
+export interface ProposeResult {
+  stored: number;
+  /** Claims already on file, including ones a person rejected. */
+  duplicates: number;
+}
+
+export interface AuthorityGrantPayload {
+  principal: string;
+  actions: string[];
+  agents?: string[];
+  limit?: number;
+  overLimit?: 'require_approval' | 'block';
+  approvers?: string[];
+  expiresAt?: string;
+  grantedBy?: string;
+}
+
+export interface AuthorityGrantResponse extends AuthorityGrantPayload {
+  id: string;
+  workspaceId: string;
+  grantedBy: string;
+  grantedAt: string;
+}
+
 export interface DecisionRecordPayload {
   title: string;
   statement: string;
@@ -456,6 +515,93 @@ export class MemnoxClient {
     );
   }
 
+  /** Everything the organization states, candidates included, for review. */
+  async listStatements(workspace?: string): Promise<StatedResponse[]> {
+    return this.request<StatedResponse[]>(
+      'GET',
+      `/v1/organization/statements${workspaceQuery(workspace)}`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** Records a statement a person entered. Verified on arrival — a person said it. */
+  async recordStatement(
+    payload: StatedPayload,
+    workspace?: string,
+  ): Promise<StatedResponse> {
+    return this.request<StatedResponse>(
+      'POST',
+      `/v1/organization/statements${workspaceQuery(workspace)}`,
+      payload,
+      this.options.adminToken,
+    );
+  }
+
+  /**
+   * Files candidates an extractor produced. They bind nothing until verified,
+   * which is the whole reason this is a different call from `recordStatement`.
+   */
+  async proposeStatements(
+    candidates: readonly unknown[],
+    workspace?: string,
+  ): Promise<ProposeResult> {
+    return this.request<ProposeResult>(
+      'POST',
+      `/v1/organization/candidates${workspaceQuery(workspace)}`,
+      { candidates },
+      this.options.adminToken,
+    );
+  }
+
+  async verifyStatement(
+    id: string,
+    by?: string,
+    workspace?: string,
+  ): Promise<StatedResponse> {
+    return this.request<StatedResponse>(
+      'POST',
+      `/v1/organization/statements/${id}/verify${workspaceQuery(workspace)}`,
+      by === undefined ? {} : { by },
+      this.options.adminToken,
+    );
+  }
+
+  async rejectStatement(
+    id: string,
+    by?: string,
+    workspace?: string,
+  ): Promise<StatedResponse> {
+    return this.request<StatedResponse>(
+      'POST',
+      `/v1/organization/statements/${id}/reject${workspaceQuery(workspace)}`,
+      by === undefined ? {} : { by },
+      this.options.adminToken,
+    );
+  }
+
+  async listAuthority(workspace?: string): Promise<AuthorityGrantResponse[]> {
+    return this.request<AuthorityGrantResponse[]>(
+      'GET',
+      `/v1/organization/authority${workspaceQuery(workspace)}`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** Records what one person has delegated to the agents acting for them. */
+  async delegateAuthority(
+    payload: AuthorityGrantPayload,
+    workspace?: string,
+  ): Promise<AuthorityGrantResponse> {
+    return this.request<AuthorityGrantResponse>(
+      'POST',
+      `/v1/organization/authority${workspaceQuery(workspace)}`,
+      payload,
+      this.options.adminToken,
+    );
+  }
+
   async listDecisions(): Promise<DecisionRecordResponse[]> {
     return this.request<DecisionRecordResponse[]>(
       'GET',
@@ -604,6 +750,11 @@ export class MemnoxClient {
  * only component that ever reads it. What the runtime is told instead is
  * `signals`: the rule ids the local pass produced.
  */
+/** Absent on a single-tenant runtime, which resolves the workspace itself. */
+function workspaceQuery(workspace: string | undefined): string {
+  return workspace === undefined ? '' : `?workspace=${encodeURIComponent(workspace)}`;
+}
+
 function overTheWire(request: ActionRequest): ActionRequest {
   const { arguments: _payload, ...rest } = request;
   return rest;
