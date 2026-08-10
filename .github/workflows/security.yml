@@ -18,6 +18,9 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # analyze reads its own run to attach results; without this a private repo
+      # fails at the last step with "Resource not accessible by integration".
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
