@@ -10,14 +10,14 @@
   ],
   "license": "Apache-2.0",
   "author": "Memnox",
-  "homepage": "https://github.com/memnox/memnox-runtime/tree/main/packages/trust-bench#readme",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/trust-bench#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/memnox/memnox-runtime.git",
+    "url": "git+https://github.com/Memnox/memnox.git",
     "directory": "packages/trust-bench"
   },
   "bugs": {
-    "url": "https://github.com/memnox/memnox-runtime/issues"
+    "url": "https://github.com/Memnox/memnox/issues"
   },
   "publishConfig": {
     "access": "public",
