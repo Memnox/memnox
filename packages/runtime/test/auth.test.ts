@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import { API_ROLE, SILENT_LOGGER, type Logger } from '@memnox/core';
 import { isAuthorizedFor, resolveApiRole, resolveLocalMode } from '../src/auth';
 import { resolveConfig } from '../src/config';
 
-function recordingLogger(): Logger & { warn: ReturnType<typeof vi.fn> } {
-  return { ...SILENT_LOGGER, warn: vi.fn() };
+function recordingLogger(): Logger & { warn: Mock<Logger['warn']> } {
+  return { ...SILENT_LOGGER, warn: vi.fn<Logger['warn']>() };
 }
 
 describe('api auth', () => {
