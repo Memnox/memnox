@@ -1,0 +1,106 @@
+name: Changelog Release
+
+# Ported from EddieHubCommunity/BioDrop. Conventional commits on main decide the next
+# version; the tag it pushes is what `release.yml` publishes to npm.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+  workflow_dispatch:
+
+# Two releases in flight would each bump from a stale version.
+concurrency:
+  group: main-branch
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  changelog:
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      # A PAT is what makes the pushed tag start release.yml; GITHUB_TOKEN pushes never
+      # trigger another workflow. Without it the release still lands, unpublished.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Release info is written to a throwaway branch so main is never pushed to directly.
+      - name: Create the release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "release-from-${GITHUB_SHA}" "${GITHUB_SHA}"
+
+      # Every workspace ships in lockstep, so a new package is picked up without editing this file.
+      - name: Collect the version manifests
+        id: manifests
+        run: |
+          files="./package.json,./package-lock.json"
+          for manifest in packages/*/package.json; do
+            files="${files},./${manifest}"
+          done
+          echo "files=${files}" >> "$GITHUB_OUTPUT"
+          echo "${files}"
+
+      # output-file is off: CHANGELOG.md is hand-written in Keep a Changelog form, and the
+      # generated log is only wanted as the GitHub release body.
+      - name: Conventional Changelog Action
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-file: ${{ steps.manifests.outputs.files }}
+          output-file: "false"
+          git-branch: release-from-${{ github.sha }}
+          skip-git-pull: true
+          git-push: false
+
+      # version-file leaves the lockfile's per-workspace entries behind, and `npm ci` refuses
+      # to install once they disagree with the manifests. Amend rather than add a second commit
+      # so the tag the action just cut still describes the tree that gets published.
+      - name: Re-lock and push the release commit
+        if: steps.changelog.outputs.skipped == 'false'
+        env:
+          TAG: ${{ steps.changelog.outputs.tag }}
+        run: |
+          npm install --package-lock-only
+          git add package-lock.json
+          git commit --amend --no-edit
+          git tag --force "$TAG"
+          git push origin "release-from-${GITHUB_SHA}"
+          git push origin "$TAG"
+
+      - name: Open the release PR
+        if: steps.changelog.outputs.skipped == 'false'
+        run: |
+          gh pr create --base main --head "release-from-${GITHUB_SHA}" \
+            --title "chore(release): ${{ steps.changelog.outputs.tag }}" \
+            --body 'Created by the Changelog Release workflow.'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Merge the release PR
+        if: steps.changelog.outputs.skipped == 'false'
+        run: gh pr merge "release-from-${GITHUB_SHA}" --admin --merge --subject 'Merge release info'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Create the GitHub release
+        if: steps.changelog.outputs.skipped == 'false'
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.changelog.outputs.tag }}
+          name: ${{ steps.changelog.outputs.tag }}
+          body: ${{ steps.changelog.outputs.clean_changelog }}

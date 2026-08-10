@@ -1,0 +1,44 @@
+name: Labels
+
+# Ported from EddieHubCommunity/support. Their gh-action-open-source-labels is archived and
+# floats on @main, so the label set is vendored here and ghlbl is pinned instead.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.json
+      - .github/workflows/labels.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# Two concurrent imports would race on the same label names.
+concurrency:
+  group: labels
+
+jobs:
+  import:
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/labels.json
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Import only: existing labels are left alone, matching upstream's force: false.
+      - name: Import open source standard labels
+        run: >-
+          npx --yes --package github-label-template@0.0.2 --
+          ghlbl -o "$OWNER" -r "$REPO" -t "$GITHUB_TOKEN" -i .github/labels.json
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
