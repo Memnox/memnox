@@ -121,6 +121,12 @@ export interface ServerServices {
   redis?: RedisLike;
   /** Injected so proxy tests exercise real route code against a fake upstream. */
   proxyFetch?: typeof fetch;
+  /**
+   * Startup probe budget. The default spends 5s proving an unreachable Redis
+   * really is unreachable, which is right at boot and far too long for a test
+   * asserting only that the failure propagates.
+   */
+  redisProbe?: { attempts: number; delayMs: number };
 }
 
 /**
@@ -338,7 +344,9 @@ async function resolveCoordination(
   }
   const client = services.redis ?? connectRedis(config.redisUrl ?? '');
   const locks = new RedisLockService(client, CONSOLE_LOGGER);
-  await assertRedisReachable(locks);
+  const probe = services.redisProbe;
+  if (probe === undefined) await assertRedisReachable(locks);
+  else await assertRedisReachable(locks, probe.attempts, probe.delayMs);
   return {
     lockService: locks,
     sessionTaintStore: new RedisSessionTaintStore(client, locks, CONSOLE_LOGGER),
