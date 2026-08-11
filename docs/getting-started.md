@@ -20,17 +20,12 @@ setup ──▶ restart editor ──▶ observe ──▶ tune ──▶ enforc
 npx memnox setup
 ```
 
-> **Not published yet.** Until it is, work from a clone:
->
-> ```bash
-> git clone <repo> && cd memnox-runtime
-> npm install
-> npm run build          # the CLI runs from dist/, which is not committed
-> alias memnox="$PWD/node_modules/.bin/memnox"
-> ```
->
-> Do not `npm link` if you already have a different package claiming the
-> `memnox` binary — see [troubleshooting](troubleshooting.md#the-memnox-command-runs-the-wrong-program).
+Or install it once: `npm install -g memnox`.
+
+> If `memnox` runs something other than this CLI, a package claiming the same
+> binary name is shadowing it — most often one installed into a `node_modules`
+> above your working directory. `npx memnox@latest` pins past it; see
+> [troubleshooting](troubleshooting.md#the-memnox-command-runs-the-wrong-program).
 
 Node 20+. No account, no API key, no signup.
 
@@ -51,8 +46,19 @@ Registered agent "local-editor" — token saved to ~/.memnox/config.json
 Installed the claude-code hook
 
 Memnox runtime listening on http://127.0.0.1:7466
+Running in the background: pid 4821
+Logs: ~/.memnox/runtime.log
 Observing only — decisions are recorded, nothing is blocked yet.
+
+→ Stop it:             memnox stop
 ```
+
+The prompt comes back — the runtime keeps serving in the background, so
+`memnox status` and `memnox audit` work in the same terminal. `memnox serve`
+still runs in the foreground and is stopped with Ctrl+C; only `setup` detaches.
+
+Open <http://127.0.0.1:7466> for the same numbers as a page: mode, rule count,
+what is waiting, and the last decisions.
 
 Five things happened:
 
@@ -432,11 +438,13 @@ your-project/
 
 ~/.memnox/config.json      ← agent token, mode 0600
 ~/.memnox/policies.json    ← rule-file registry for multi-repo projects
+~/.memnox/runtime.pid      ← what "memnox stop" signals
+~/.memnox/runtime.log      ← what the background runtime printed
 ~/.claude/settings.json    ← one PreToolUse hook entry
 ~/.cursor/hooks.json       ← four hook entries
 ```
 
-**Backing out** is deleting those hook entries and stopping the process. Nothing
+**Backing out** is `memnox stop`, then deleting those hook entries. Nothing
 phones home; there is nothing to cancel.
 
 ---
