@@ -159,8 +159,12 @@ describe('serve --redis-url', () => {
   it('refuses to start when the configured Redis is unreachable', async () => {
     const redis = new StubRedis();
     redis.failing = true;
+    // The retry budget itself is covered above; here only the propagation is.
     await expect(
-      buildServer({ dataDir, redisUrl: REDIS_URL }, { redis }),
+      buildServer(
+        { dataDir, redisUrl: REDIS_URL },
+        { redis, redisProbe: { attempts: 2, delayMs: 0 } },
+      ),
     ).rejects.toThrow(/Redis is unreachable/);
     server = await buildServer({ dataDir });
   });
