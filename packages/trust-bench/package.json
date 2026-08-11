@@ -1,6 +1,6 @@
 {
   "name": "@memnox/trust-bench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Benchmark for AI-agent governance runtimes: prompt injection, secret writes, destructive actions, policy evasion.",
   "keywords": [
     "benchmark",
@@ -47,11 +47,11 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/content-shield": "0.1.0",
-    "@memnox/core": "0.1.0",
-    "@memnox/memory": "0.1.0",
-    "@memnox/policy-engine": "0.1.0",
-    "@memnox/risk": "0.1.0",
-    "@memnox/runtime": "0.1.0"
+    "@memnox/content-shield": "0.2.0",
+    "@memnox/core": "0.2.0",
+    "@memnox/memory": "0.2.0",
+    "@memnox/policy-engine": "0.2.0",
+    "@memnox/risk": "0.2.0",
+    "@memnox/runtime": "0.2.0"
   }
 }

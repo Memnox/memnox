@@ -1,6 +1,6 @@
 {
   "name": "@memnox/code-graph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic file-level import graph and blast-radius analysis — what a code change can actually reach.",
   "keywords": [
     "import-graph",
@@ -43,7 +43,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.1.0",
-    "@memnox/policy-engine": "0.1.0"
+    "@memnox/core": "0.2.0",
+    "@memnox/policy-engine": "0.2.0"
   }
 }
