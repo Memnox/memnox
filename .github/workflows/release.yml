@@ -33,6 +33,19 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      - run: npm publish --workspaces --access public
+      # Dependency order, not the alphabetical order --workspaces uses. npm does
+      # not resolve dependencies at publish time, so the wrong order still
+      # succeeds — it just leaves a window where `npm i -g memnox` resolves a CLI
+      # whose ten @memnox/* dependencies are not on the registry yet.
+      - name: Publish in dependency order
+        run: |
+          for pkg in @memnox/core @memnox/content-shield @memnox/policy-engine \
+                     @memnox/redis @memnox/code-graph @memnox/intelligence \
+                     @memnox/local-gate @memnox/memory @memnox/risk @memnox/sdk \
+                     @memnox/mcp-firewall @memnox/postgres @memnox/runtime \
+                     @memnox/trust-bench memnox; do
+            echo "publishing $pkg"
+            npm publish -w "$pkg" --access public
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
