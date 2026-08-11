@@ -1,31 +1,32 @@
 name: Changelog Release
 
-# Ported from EddieHubCommunity/BioDrop. Conventional commits on main decide the next
-# version; the tag it pushes is what `release.yml` publishes to npm.
+# Releasing is a decision, so this only ever runs when someone makes it. On every
+# push to main it cut a release out of a Dockerfile fix, and failed six times
+# before anyone had chosen to release anything.
+#
+# Adapted from EddieHubCommunity/BioDrop. Their temporary-branch-and-merge dance
+# exists because their main is protected; here it only added two ways to fail —
+# `gh pr create` needs "Allow GitHub Actions to create and approve pull requests",
+# off by default, and `gh pr merge --admin` needs rights GITHUB_TOKEN does not have.
+# The release commit goes straight to the branch instead.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - docs/**
-      - "**/*.md"
   workflow_dispatch:
 
 # Two releases in flight would each bump from a stale version.
 concurrency:
-  group: main-branch
+  group: release
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  changelog:
+  release:
     if: github.event.repository.fork == false
     runs-on: ubuntu-latest
 
     steps:
-      # A PAT is what makes the pushed tag start release.yml; GITHUB_TOKEN pushes never
-      # trigger another workflow. Without it the release still lands, unpublished.
+      # A PAT here is what makes the pushed tag start release.yml; a GITHUB_TOKEN
+      # push never triggers another workflow, so npm publish stays manual without it.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -35,14 +36,8 @@ jobs:
         with:
           node-version: 20
 
-      # Release info is written to a throwaway branch so main is never pushed to directly.
-      - name: Create the release branch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch --create "release-from-${GITHUB_SHA}" "${GITHUB_SHA}"
-
-      # Every workspace ships in lockstep, so a new package is picked up without editing this file.
+      # Every workspace ships in lockstep, so a new package is picked up without
+      # editing this file.
       - name: Collect the version manifests
         id: manifests
         run: |
@@ -53,8 +48,8 @@ jobs:
           echo "files=${files}" >> "$GITHUB_OUTPUT"
           echo "${files}"
 
-      # output-file is off: CHANGELOG.md is hand-written in Keep a Changelog form, and the
-      # generated log is only wanted as the GitHub release body.
+      # output-file is off: CHANGELOG.md is hand-written in Keep a Changelog form,
+      # and the generated log is only wanted as the GitHub release body.
       - name: Conventional Changelog Action
         id: changelog
         uses: TriPSs/conventional-changelog-action@v5
@@ -62,39 +57,30 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version-file: ${{ steps.manifests.outputs.files }}
           output-file: "false"
-          git-branch: release-from-${{ github.sha }}
+          git-branch: ${{ github.ref_name }}
           skip-git-pull: true
           git-push: false
 
-      # version-file leaves the lockfile's per-workspace entries behind, and `npm ci` refuses
-      # to install once they disagree with the manifests. Amend rather than add a second commit
-      # so the tag the action just cut still describes the tree that gets published.
+      - name: Report that nothing is releasable
+        if: steps.changelog.outputs.skipped == 'true'
+        run: echo "No conventional commits since the last tag — nothing to release."
+
+      # version-file leaves the lockfile's per-workspace entries behind, and `npm ci`
+      # refuses to install once they disagree with the manifests. Amend rather than
+      # add a second commit so the tag still describes the tree that gets published.
       - name: Re-lock and push the release commit
         if: steps.changelog.outputs.skipped == 'false'
         env:
           TAG: ${{ steps.changelog.outputs.tag }}
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           npm install --package-lock-only
           git add package-lock.json
           git commit --amend --no-edit
           git tag --force "$TAG"
-          git push origin "release-from-${GITHUB_SHA}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
           git push origin "$TAG"
-
-      - name: Open the release PR
-        if: steps.changelog.outputs.skipped == 'false'
-        run: |
-          gh pr create --base main --head "release-from-${GITHUB_SHA}" \
-            --title "chore(release): ${{ steps.changelog.outputs.tag }}" \
-            --body 'Created by the Changelog Release workflow.'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Merge the release PR
-        if: steps.changelog.outputs.skipped == 'false'
-        run: gh pr merge "release-from-${GITHUB_SHA}" --admin --merge --subject 'Merge release info'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Create the GitHub release
         if: steps.changelog.outputs.skipped == 'false'
