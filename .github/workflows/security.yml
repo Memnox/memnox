@@ -15,6 +15,15 @@ jobs:
   codeql:
     name: CodeQL
     runs-on: ubuntu-latest
+    # Code scanning is free on a public repository and needs paid Advanced
+    # Security on a private one. The analysis itself runs fine either way — it is
+    # the upload that is refused — so skip rather than fail a scan nobody can
+    # read, and pick it back up on its own if this repository ever goes public.
+    #
+    # Compared as a string on purpose: GitHub coerces both false and null to 0,
+    # so `== false` also matches an event whose payload carries no repository,
+    # and the job would come back to fail on the weekly schedule.
+    if: format('{0}', github.event.repository.private) == 'false'
     permissions:
       contents: read
       security-events: write
