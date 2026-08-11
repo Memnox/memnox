@@ -21,6 +21,7 @@ import { registerInsightsCommand } from './commands/insights.command';
 import { registerIntentCommand } from './commands/intent.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerMemoryCommand } from './commands/memory.command';
+import { registerOrgCommand } from './commands/org.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerProtectCommand } from './commands/protect.command';
 import { registerPullCommand } from './commands/pull.command';
@@ -57,6 +58,7 @@ export function buildProgram(context: CliContext): Command {
   registerApprovalsCommand(program, context);
   registerMcpCommand(program, context);
   registerMemoryCommand(program, context);
+  registerOrgCommand(program, context);
   registerReplayCommand(program, context);
   registerReportCommand(program, context);
   registerInsightsCommand(program, context);
