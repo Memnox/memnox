@@ -1,6 +1,6 @@
 {
   "name": "@memnox/runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Memnox runtime gateway: identity → policy → decision → audit for every AI action.",
   "keywords": [
     "ai-agents",
@@ -45,16 +45,16 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/code-graph": "0.1.0",
-    "@memnox/content-shield": "0.1.0",
-    "@memnox/core": "0.1.0",
-    "@memnox/intelligence": "0.1.0",
-    "@memnox/local-gate": "0.1.0",
-    "@memnox/memory": "0.1.0",
-    "@memnox/policy-engine": "0.1.0",
-    "@memnox/postgres": "0.1.0",
-    "@memnox/redis": "0.1.0",
-    "@memnox/risk": "0.1.0",
+    "@memnox/code-graph": "0.2.0",
+    "@memnox/content-shield": "0.2.0",
+    "@memnox/core": "0.2.0",
+    "@memnox/intelligence": "0.2.0",
+    "@memnox/local-gate": "0.2.0",
+    "@memnox/memory": "0.2.0",
+    "@memnox/policy-engine": "0.2.0",
+    "@memnox/postgres": "0.2.0",
+    "@memnox/redis": "0.2.0",
+    "@memnox/risk": "0.2.0",
     "fastify": "^5.11.3",
     "yaml": "^2.4.0"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@memnox/content-shield",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic secret/PII scanning for content AI agents write — an escalation-only advisor.",
   "keywords": [
     "secret-scanning",
@@ -44,6 +44,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.1.0"
+    "@memnox/core": "0.2.0"
   }
 }
