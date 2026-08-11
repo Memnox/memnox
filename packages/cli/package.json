@@ -1,7 +1,7 @@
 {
   "name": "memnox",
   "version": "0.2.0",
-  "description": "Memnox CLI — run the trust runtime, manage policies, inspect the audit trail.",
+  "description": "Memnox CLI \u2014 run the trust runtime, manage policies, inspect the audit trail.",
   "keywords": [
     "ai-agents",
     "governance",
@@ -46,6 +46,7 @@
     "@memnox/intelligence": "0.2.0",
     "@memnox/local-gate": "0.2.0",
     "@memnox/memory": "0.2.0",
+    "@memnox/org-graph": "0.2.0",
     "@memnox/policy-engine": "0.2.0",
     "@memnox/postgres": "0.2.0",
     "@memnox/runtime": "0.2.0",
