@@ -24,6 +24,7 @@ This is the Memnox runtime monorepo. It contains:
 - [`memnox`](packages/cli): the CLI — set up, observe, tune, enforce, and approve from your shell
 - [`@memnox/sdk`](packages/sdk): TypeScript SDK, plus [Python, Go, Rust, Java, and Swift](#client-sdks) clients
 - [`@memnox/runtime`](packages/runtime): the decision gateway and HTTP API you run locally or for a team
+- [`@memnox/organization`](packages/organization): the open client for asking an organization whether an action should happen, and who authorizes it
 - [`@memnox/mcp-firewall`](packages/mcp-firewall): a transparent MCP proxy, so every `tools/call` is gated
 - **Editor hooks** for Claude Code and Cursor, and adapters for OpenAI Agents, LangChain, and [more](docs/governing-agents.md)
 
@@ -85,9 +86,31 @@ Everything runs on your machine. No account, no API key, and no network call.
 
 ## Beyond one machine
 
-The runtime governs the agents on your laptop or in your cluster, free and Apache-2.0, forever. What it cannot do is read your Slack and tell you what your team already decided — that needs to watch systems you didn't write. That is Memnox Cloud, and it is free for one person.
+The runtime governs the agents on your laptop or in your cluster, free and Apache-2.0, forever. It answers one question completely: **does this action break a rule?**
 
-**→ [Connecting a runtime to a control plane](docs/connecting-a-control-plane.md)** · **→ [Running more than one runtime](docs/deploying-many.md)**
+There is a second question it cannot answer, because the answer is not in your repository. *Nothing forbids this refund, and it is still somebody's to authorize.* Who owns this system. What the company already decided last quarter. How much of the evidence this particular agent is entitled to see. Those are facts about an organization, gathered from systems you didn't write, and they are what **Memnox Cloud** holds. It is free for one person.
+
+The two compose in one direction only: the runtime's refusal is final and the organization never widens it. The organization may only tighten an allow into an escalation — the case no policy file can express.
+
+```ts
+import { MemnoxOrganization, mayProceed } from '@memnox/organization';
+
+const org = new MemnoxOrganization({ token: process.env.MEMNOX_GRANT!, workspace: 'acme' });
+
+const answer = await org.evaluate({
+  action: 'payment.refund',
+  principal: 'sarah@acme.test',
+  amount: 4500,
+});
+
+// answer.decision is allow · deny · ask · escalate · delegate · clarify,
+// alongside the context this agent may use and the constraints it must respect.
+if (mayProceed(answer)) await issueRefund();
+```
+
+That package is Apache-2.0 and deliberately thin: the protocol and nothing else, no tools, no execution, no copy of the organization. It never fails open — a call that cannot reach Memnox throws rather than returning a permissive default.
+
+**→ [Connecting a runtime to a control plane](docs/connecting-a-control-plane.md)** · **→ [Running more than one runtime](docs/deploying-many.md)** · **→ [`@memnox/organization`](packages/organization)**
 
 ## Use it from code
 
