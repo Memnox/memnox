@@ -8,21 +8,17 @@ import type { ToolCall } from './tool-call';
 export interface CallVerdict {
   effect: DecisionEffect;
   reason: string;
-  /** Set when the effect is redact: forward these instead of the call's own arguments. */
-  redactedArguments?: Record<string, string>;
   /** What the local pass found — rule ids only, safe to send onward. */
   signals?: string[];
 }
 
-/** Decides whether one tool call may reach the wrapped server, and in what shape. */
+/** Decides whether one tool call may reach the wrapped server. */
 export interface CallAuthorizer {
   authorize(call: ToolCall): Promise<CallVerdict>;
 }
 
 export function isAllowed(verdict: CallVerdict): boolean {
-  return (
-    verdict.effect === DECISION_EFFECT.ALLOW || verdict.effect === DECISION_EFFECT.REDACT
-  );
+  return verdict.effect === DECISION_EFFECT.ALLOW;
 }
 
 /** No runtime configured — the static tool filters are the only gate. */
@@ -34,8 +30,8 @@ export class UngovernedAuthorizer implements CallAuthorizer {
 
 /**
  * Policy decided on this machine, on the call's own arguments. It is what makes
- * argument-level rules and the secret scanner possible without shipping the
- * payload anywhere — see LocalGate.
+ * argument-level rules possible without shipping the payload anywhere — see
+ * LocalGate.
  */
 export class LocalGateAuthorizer implements CallAuthorizer {
   constructor(
@@ -55,9 +51,6 @@ export class LocalGateAuthorizer implements CallAuthorizer {
       effect: verdict.effect,
       reason: verdict.reason,
       signals: verdict.signals,
-      ...(verdict.redactedArguments === undefined
-        ? {}
-        : { redactedArguments: verdict.redactedArguments }),
     };
   }
 }

@@ -3,12 +3,12 @@ import { dirname, join } from 'node:path';
 import type { CloudConfig } from './cloud-connection';
 
 /**
- * Where the editor hook finds its credentials.
+ * Where a locally launched agent finds its credentials.
  *
- * A GUI-launched editor inherits no shell environment, so an exported
+ * A GUI-launched MCP client inherits no shell environment, so an exported
  * MEMNOX_AGENT_TOKEN never reaches it — the token has to live somewhere on disk
- * that the hook can read on its own. Takes the home directory rather than
- * reading it, so tests write into a scratch directory.
+ * it can read on its own. Takes the home directory rather than reading it, so
+ * tests write into a scratch directory.
  */
 export interface AgentConfig {
   token?: string;

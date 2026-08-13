@@ -7,7 +7,6 @@ export const METRIC = {
   PROXY_CALLS_TOTAL: 'memnox_proxy_calls_total',
   PROXY_BLOCKED_TOTAL: 'memnox_proxy_blocked_total',
   PROXY_TOKENS_TOTAL: 'memnox_proxy_tokens_total',
-  PROXY_OUTPUT_BLOCKED_TOTAL: 'memnox_proxy_output_blocked_total',
   PLAINTEXT_RECORDS_READ_TOTAL: 'memnox_plaintext_records_read_total',
 } as const;
 
@@ -24,8 +23,6 @@ const METRIC_HELP: MetricCatalog<MetricName> = {
   [METRIC.PROXY_CALLS_TOTAL]: 'Inference calls relayed through the BYOK proxy.',
   [METRIC.PROXY_BLOCKED_TOTAL]: 'Inference calls the proxy refused to relay.',
   [METRIC.PROXY_TOKENS_TOTAL]: 'Tokens reported by upstream providers via the proxy.',
-  [METRIC.PROXY_OUTPUT_BLOCKED_TOTAL]:
-    'Model responses withheld for containing credentials.',
   [METRIC.PLAINTEXT_RECORDS_READ_TOTAL]:
     'Unencrypted records read while encryption is permissive. Reaching zero is the signal to switch to strict.',
 };

@@ -3,9 +3,6 @@
   "version": "0.2.0",
   "description": "Deterministic behavioral risk signals for AI agents \u2014 baseline deviation, bursts, and escalation patterns.",
   "keywords": [
-    "dependency",
-    "license",
-    "vulnerability",
     "risk"
   ],
   "license": "Apache-2.0",
@@ -44,7 +41,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/content-shield": "0.2.0",
     "@memnox/core": "0.2.0",
     "@memnox/org-graph": "0.2.0",
     "@memnox/policy-engine": "0.2.0"

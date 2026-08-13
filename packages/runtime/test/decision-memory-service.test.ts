@@ -250,7 +250,7 @@ describe('DecisionMemoryService.health', () => {
         save: async () => {},
         remove: async () => true,
       },
-      auditEvents: async () => [auditEvent('taint', 'blast-radius')],
+      auditEvents: async () => [auditEvent('taint', 'behavior')],
     });
 
     const report = await withEvents.health();

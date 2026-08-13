@@ -45,7 +45,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/content-shield": "0.2.0",
     "@memnox/core": "0.2.0",
     "@memnox/policy-engine": "0.2.0",
     "yaml": "^2.4.0"

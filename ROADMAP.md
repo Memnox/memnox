@@ -4,7 +4,6 @@ Each item names the seam where it plugs in, so contributors can start without sp
 
 ## Understanding the action
 
-- [x] **Blast radius** — `@memnox/code-graph` builds a file-level import graph (`memnox graph build`) and `BlastRadiusAdvisor` escalates a `code.modify` whose transitive reach hits a `--protected-path`. Deliberately file-level: regex-derived call edges were too imprecise to escalate on. Open: language coverage beyond TS/JS/Python/Go/Ruby/Rust.
 - [x] **Verified execution** — `runGuarded()` (`@memnox/sdk`) runs preconditions → action → postconditions → rollback, and `POST /v1/actions/outcome` audits what actually happened, so the log records outcomes and not just permissions. The compliance report's verification coverage names the decisions still awaiting testimony (separating "too recent to be overdue" from unreported), and `serve --verification-guard` escalates an agent's destructive actions while its trail stays unverified.
 
 ## Policy lifecycle
@@ -29,7 +28,6 @@ Each item names the seam where it plugs in, so contributors can start without sp
 
 ## Interception adapters (one thin repo each on publish — see Publication layout)
 
-- [x] **Cursor hook** — `memnox hook cursor` + `memnox protect cursor`; the three effects map onto Cursor's `allow`/`deny`/`ask`. `memnox protect` with no argument detects both editors.
 - [x] **Framework wrappers** — `governTool` / `governTools` (`@memnox/sdk`) wrap any function-calling registry, covering OpenAI Agents SDK, Codex, LangGraph, and CrewAI without a package each.
 - [ ] **Java SDK** — port `sdks/go/memnox.go` (the simplest reference client).
 
@@ -39,14 +37,12 @@ Each item names the seam where it plugs in, so contributors can start without sp
 - [x] **Semantic decision search** — `DecisionSemanticSearch` fuses keyword and embedding results; BYOK embeddings via `--embedding-key`, degrading to keyword when unavailable.
 - [x] **Intent classification** — `memnox intent "<goal>"` expands a stated goal into candidate actions, each rated by the deterministic classifier rather than the model.
 - [x] **Search over decisions** — deterministic keyword search, with hybrid embedding retrieval layered on top behind the same signature.
-- [x] **Dependency governance advisor** — `DependencyAdvisor` (`@memnox/risk`) checks blocked/review licenses and the shield's curated vulnerability table for `dependency.add`; enable with `serve --dependency-guard`. Licenses resolve through a `LicenseResolver` port: offline `StaticLicenseResolver` by default, opt-in `NpmRegistryLicenseResolver` behind `--dependency-license-lookup`. Escalation-only — an unknown license or an unreachable registry raises nothing.
 - [x] **Compliance export formats** (audit CSV evidence export) — SOC2/ISO evidence packaging beyond the current markdown/JSON report (`packages/runtime/src/reporting.ts`).
 
 ## Distribution
 
 - [ ] Publish `@memnox/*` to npm *(external: registry credentials)*, `memnox` to PyPI, tag for Go modules.
 - [x] Dockerfile + docker-compose for the runtime.
-- [x] **trust-bench** (`@memnox/trust-bench`: 10 scenarios, reference runtime 100/100 enforced by test) — a public benchmark repo (prompt-injection corpus, secret-write corpus, policy-evasion scenarios) scoring agent-governance runtimes. Supermemory's `memorybench` shows a published benchmark is a category-defining distribution play.
 
 ## Publication layout (modeled on github.com/supermemoryai)
 
@@ -57,11 +53,8 @@ Planned Memnox equivalent:
 | Repo | Contents | Source today |
 |---|---|---|
 | `memnox-runtime` (flagship) | this monorepo | as-is |
-| `claude-memnox` | Claude Code hook + protect installer | extract from `packages/cli` |
-| `cursor-memnox` | Cursor adapter | extract from `packages/cli` |
 | `memnox-mcp-firewall` | standalone firewall binary | extract `packages/mcp-firewall` |
 | `memnox-sdk-python` / `-go` / `-java` | SDK repos | extract `sdks/*` |
-| `trust-bench` | governance benchmark | new |
 | `governed-agent-template` | starter showing a fully governed agent | new |
 
 Keep the packages developed here in the monorepo; the split repos are publish-time mirrors (subtree or copy) so the community finds them where they search.

@@ -78,7 +78,6 @@ export async function readRuntimeStatus(
 /** Same names and order the CLI prints, so one list cannot drift from the other. */
 function enabledGuards(config: RuntimeConfig): string[] {
   const guards: string[] = [];
-  if (config.contentShield) guards.push('content shield');
   if (config.shellGuard) guards.push('shell indirection');
   // Escalates only when callers report taint, so it is always registered.
   guards.push('taint');
@@ -86,9 +85,5 @@ function enabledGuards(config: RuntimeConfig): string[] {
   if (config.behaviorGuard) guards.push('behavior');
   if (config.trustGuard) guards.push('trust');
   if (config.verificationGuard) guards.push('verification');
-  if (config.dependencyGuard) guards.push('dependencies');
-  if (config.codeGraphFile !== undefined && config.protectedPaths.length > 0) {
-    guards.push('blast radius');
-  }
   return guards;
 }

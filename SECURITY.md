@@ -34,18 +34,12 @@ Anything that breaks one of the runtime's guarantees:
 | Identity is fail-closed | an unknown, revoked, or suspended token is honoured |
 | Consent is bound | an approval is reused for a different action than it was granted for |
 | Audit is tamper-evident | the chain verifies after a record is altered or removed |
-| Secrets stay out | the content shield leaks a matched secret into a log or response |
 
 Bypasses of the MCP firewall (a `tools/call` reaching the wrapped server after a
-deny) and of the editor hooks are in scope.
+deny) are in scope.
 
 ## What does not count
 
-- **Fail-open editor hooks.** When the runtime is unreachable, the Claude Code and
-  Cursor hooks allow the action by default. This is deliberate: a hook that bricks
-  someone's editor when a background service stops would simply be uninstalled, and
-  an uninstalled hook enforces nothing. Set `MEMNOX_HOOK_FAIL_CLOSED=true` to
-  invert it. The MCP firewall and the HTTP API both fail **closed**.
 - **A permissive policy file.** Memnox enforces the rules it is given. A rule set
   that allows something dangerous is a configuration issue.
 - **`--default-effect allow`.** Allowing unmatched actions is opt-in behaviour and

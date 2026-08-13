@@ -28,33 +28,12 @@ export interface BriefingConstraint {
 }
 
 /**
- * A security requirement for a class of work, from the baseline Memnox ships.
- *
- * The shape lives here; the table lives in `@memnox/content-shield`, which owns
- * security knowledge. Each entry is a rule looked up deterministically from the
- * action and target — no model, no inference, and never a judgement about code
- * that has already been written.
- */
-export interface SecurityRequirement {
-  /** Stable id so a requirement can be cited, suppressed, and diffed. */
-  id: string;
-  /** What this class of change must do. */
-  requirement: string;
-  /** What goes wrong when it does not. */
-  why: string;
-}
-
-/**
  * What governs an action, answered before the action is attempted.
  *
  * This is the pre-flight counterpart to a decision: an agent asks "what applies
  * here?" and gets back the rules that already exist, rather than discovering
- * them by being refused.
- *
- * Two kinds of knowledge, kept separate on purpose. `constraints` are what this
- * organization declared, quoted verbatim. `security` is the baseline Memnox
- * ships for this class of work. Neither is generated, and the reader can always
- * tell which is which.
+ * them by being refused. Every constraint is something this organization
+ * declared, quoted verbatim — nothing is generated.
  */
 export interface ActionBriefing {
   action: string;
@@ -64,9 +43,6 @@ export interface ActionBriefing {
   /** The verdict this action would receive right now. */
   wouldBe: DecisionEffect;
   constraints: BriefingConstraint[];
-  security: SecurityRequirement[];
-  /** Version of the shipped security baseline, so a briefing is reproducible. */
-  securityBaseline?: string;
 }
 
 const UNCONSTRAINED =
@@ -75,25 +51,17 @@ const UNCONSTRAINED =
 
 /**
  * The boundary, stated in the output itself: Memnox reports the constraints an
- * organization declared. It does not review a change or advise how to write one.
+ * organization declared. It does not review the work or advise how to do it.
  */
 const SCOPE_NOTE =
-  'None of this is a review of your code — Memnox has not read it. The rules ' +
-  'above are your organization’s; the checklist ships with Memnox.';
+  'None of this is a judgement on the work itself — the rules above are your ' +
+  'organization’s, quoted as declared.';
 
-/** Each heading says what the section does to you, because the two differ. */
 const RULES_HEADING = 'Rules that apply — these decide whether this proceeds:';
-const SECURITY_HEADING = 'Not enforced, but worth checking for this kind of change';
-
-export interface SecurityBaseline {
-  requirements: SecurityRequirement[];
-  version: string;
-}
 
 export function buildActionBriefing(
   request: ActionRequest,
   assessment: RiskAssessment,
-  security?: SecurityBaseline,
 ): ActionBriefing {
   return {
     action: request.action,
@@ -105,8 +73,6 @@ export function buildActionBriefing(
       ...assessment.matchedPolicies.map(fromPolicy),
       ...assessment.advisories.map(fromAdvisory),
     ],
-    security: security === undefined ? [] : security.requirements,
-    ...(security === undefined ? {} : { securityBaseline: security.version }),
   };
 }
 
@@ -133,7 +99,7 @@ function fromAdvisory(advisory: Advisory): BriefingConstraint {
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'be allowed',
-  [DECISION_EFFECT.REDACT]: 'proceed only with its sensitive content masked',
+  [DECISION_EFFECT.REDACT]: 'proceed with part of its supporting context withheld',
   [DECISION_EFFECT.BLOCK]: 'be BLOCKED',
   [DECISION_EFFECT.REQUIRE_APPROVAL]: 'need human approval before it proceeds',
 };
@@ -147,7 +113,7 @@ const SOURCE_LABEL: Record<ConstraintSource, string> = {
 /** What one constraint does on its own, in words rather than the stored enum. */
 const CONSTRAINT_EFFECT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'allows',
-  [DECISION_EFFECT.REDACT]: 'masks sensitive content',
+  [DECISION_EFFECT.REDACT]: 'withholds part of the context',
   [DECISION_EFFECT.BLOCK]: 'blocks',
   [DECISION_EFFECT.REQUIRE_APPROVAL]: 'requires approval',
 };
@@ -177,7 +143,6 @@ export function renderActionBriefing(briefing: ActionBriefing): string {
 
   if (briefing.constraints.length === 0) {
     lines.push(...wrapped(UNCONSTRAINED, ''));
-    appendSecurity(lines, briefing);
     appendScopeNote(lines);
     return lines.join('\n');
   }
@@ -190,28 +155,8 @@ export function renderActionBriefing(briefing: ActionBriefing): string {
       lines.push(`${DETAIL}approvers: ${constraint.approvers.join(', ')}`);
     }
   }
-  appendSecurity(lines, briefing);
   appendScopeNote(lines);
   return lines.join('\n');
-}
-
-/**
- * Listed after the declared rules: an organization's own words come first. The
- * id leads each entry because it is what a reader cites or suppresses it by,
- * and the baseline version is stated once so the list can be reproduced.
- */
-function appendSecurity(lines: string[], briefing: ActionBriefing): void {
-  if (briefing.security.length === 0) return;
-  const stamp =
-    briefing.securityBaseline === undefined
-      ? ''
-      : ` (baseline ${briefing.securityBaseline})`;
-  lines.push('', `${SECURITY_HEADING}${stamp}:`);
-  for (const requirement of briefing.security) {
-    lines.push(`${BULLET}${requirement.id}`);
-    lines.push(...wrapped(requirement.requirement, DETAIL));
-    lines.push(...wrapped(`why: ${requirement.why}`, DETAIL));
-  }
 }
 
 function appendScopeNote(lines: string[]): void {

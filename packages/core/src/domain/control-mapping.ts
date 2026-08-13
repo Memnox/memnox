@@ -100,10 +100,7 @@ export const CONTROL_MAPPINGS: readonly ControlMapping[] = [
     framework: FRAMEWORK.SOC2,
     requirement: 'Vulnerabilities are identified and remediated.',
     status: CONTROL_STATUS.PARTIAL,
-    evidence: [
-      `${RUNTIME}/.github/workflows/security.yml`,
-      `${RUNTIME}/packages/content-shield/src/scanner.ts`,
-    ],
+    evidence: [`${RUNTIME}/.github/workflows/security.yml`],
     gap: 'SBOM is produced per run but not signed or attached to a release.',
   },
   {

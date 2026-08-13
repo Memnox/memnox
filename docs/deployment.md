@@ -11,7 +11,7 @@ The same binary serves one developer and a whole organization. The difference is
 | **Audit** | hash-chained JSONL | shared and verifiable | plus CSV/compliance export and retention |
 | **Multi-org** | not applicable | not applicable | `orgId` on every record |
 
-Solo genuinely means zero infrastructure: no account, no API key, and no network call. A developer can protect their editor in two commands and never talk to a server that is not on their laptop. Everything above that is additive, so nothing about the solo path changes when a team adopts it.
+Solo genuinely means zero infrastructure: no account, no API key, and no network call. A developer can govern their agents in two commands and never talk to a server that is not on their laptop. Everything above that is additive, so nothing about the solo path changes when a team adopts it.
 
 ## Running it at scale
 
@@ -39,14 +39,13 @@ Running more than one runtime has its own guide: [deploying many](deploying-many
 
 ## Containers
 
-Five build artifacts, one per deployment shape. All of them run unprivileged, keep `/data` as the only writable path, and refuse to start on a routable host without an admin token.
+Four build artifacts, one per deployment shape. All of them run unprivileged, keep `/data` as the only writable path, and refuse to start on a routable host without an admin token.
 
 | Artifact | Runs |
 |---|---|
 | [`Dockerfile`](../Dockerfile) | The runtime alone. This is what `docker-compose.yml` builds. |
-| [`Dockerfile.allinone`](../Dockerfile.allinone) | Runtime plus Graphify in one image, giving deeper blast radius with no host Python to reconcile. Mount the repository read-only, since the graph is written to `/data` and never into your working tree. |
 | [`Dockerfile.airgap`](../Dockerfile.airgap) | The runtime with `--enforcement default=enforce` and nothing in the decision path that reaches the network. |
-| [`docker-compose.yml`](../docker-compose.yml) | One runtime, a data volume, and a read-only keyring mount. Postgres and the all-in-one service ship commented out, so uncomment either one to enable it. |
+| [`docker-compose.yml`](../docker-compose.yml) | One runtime, a data volume, and a read-only keyring mount. Postgres ships commented out, so uncomment it when you scale past one instance. |
 | [`docker-compose.airgap.yml`](../docker-compose.airgap.yml) | The same, on an `internal: true` network with no route out, so the air-gap claim is verified by the topology instead of asserted. |
 
 Copy [`.env.example`](../.env.example) first, because both compose files refuse to start until the admin token and the keyring path are set, since the container binds `0.0.0.0`:
@@ -57,7 +56,7 @@ memnox keys generate --keyring-file memnox-keyring.json
 docker compose up
 ```
 
-The keyring is mounted read-only and never committed. Losing it loses every record written under it, so back it up somewhere that is not this repository. The all-in-one image bundles Graphify, so it carries both licences at `/app/THIRD-PARTY-NOTICES.md`.
+The keyring is mounted read-only and never committed. Losing it loses every record written under it, so back it up somewhere that is not this repository.
 
 ## Audit verification
 

@@ -226,7 +226,7 @@ describe('BYOK inference proxy', () => {
   });
 });
 
-describe('proxy spend caps and output guard', () => {
+describe('proxy spend caps', () => {
   let dataDir: string;
   let server: MemnoxServer;
   let agentToken: string;
@@ -311,17 +311,6 @@ describe('proxy spend caps and output guard', () => {
 
     expect((await infer('s1')).statusCode).toBe(200);
     expect((await infer('s1')).statusCode).toBe(200);
-  });
-
-  // A model can echo a secret it was shown; relaying it would log the secret.
-  it('withholds a response that contains a credential', async () => {
-    const leaked = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
-    await start({ body: JSON.stringify({ text: `aws_access_key_id = ${leaked}` }) });
-
-    const response = await infer('s1');
-
-    expect(response.statusCode).toBe(502);
-    expect(response.payload).not.toContain(leaked);
   });
 
   it('relays a clean response untouched', async () => {

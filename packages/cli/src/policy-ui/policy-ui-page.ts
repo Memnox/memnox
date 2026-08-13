@@ -497,7 +497,7 @@ function argumentsField(match) {
   return el('div', { class: 'field' }, [
     el('label', { class: 'label' }, [
       'Call arguments',
-      el('span', { class: 'hint', text: 'matched in-process by the editor hook and MCP firewall' }, []),
+      el('span', { class: 'hint', text: 'matched in-process by the MCP firewall' }, []),
     ]),
     ...rows,
     el('button', {

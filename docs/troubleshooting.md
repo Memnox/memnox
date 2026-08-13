@@ -24,10 +24,10 @@ The runtime is a process. If you closed the terminal it was running in, it is
 gone. Start it again with `memnox setup` (which reuses your existing policy file
 and token) or `memnox serve --policies memnox.policies.yaml`.
 
-**Your editor is not blocked by this.** The hook fails **open** on purpose — a
-dead runtime stops governance rather than bricking your editor. The MCP firewall
-does the opposite and fails **closed**, because a firewall that fails open is not
-a firewall.
+**The MCP firewall fails closed** when it cannot reach the runtime, because a
+firewall that fails open is not a firewall. It says so in the refusal, and
+`MEMNOX_MCP_FAIL_OPEN=true` inverts it if you would rather keep working than keep
+governing.
 
 ---
 
@@ -70,7 +70,7 @@ memnox check repository.force_push main
 # Decision : ALLOW — no policy matched      ← wrong
 ```
 
-The CLI and the editor hook resolve the project by walking up to the nearest
+The CLI and the MCP server resolve the project by walking up to the nearest
 `memnox.policies.yaml`, so run them from inside the repository, or say it
 explicitly:
 
@@ -178,9 +178,9 @@ Working from a clone, prefer an explicit path over `npm link`:
 alias memnox="/path/to/memnox-runtime/node_modules/.bin/memnox"
 ```
 
-Installed editor hooks and MCP entries are unaffected — they are written with
-**absolute** paths to the interpreter and the CLI, precisely so a GUI-launched
-editor that inherits no `PATH` still runs the right binary.
+Installed MCP entries are unaffected — they are written with **absolute** paths
+to the interpreter and the CLI, precisely so a GUI-launched client that inherits
+no `PATH` still runs the right binary.
 
 ---
 
@@ -239,32 +239,24 @@ pinned image being talked down remotely.
 
 ---
 
-## The editor hook is not firing
+## The agent does not see the Memnox tools
 
-1. **Restart the editor.** Hook config is read at launch.
-2. **Check it is installed:**
+1. **Restart the client.** MCP server config is read at launch.
+2. **Check it is registered:**
    ```bash
-   grep -A5 PreToolUse ~/.claude/settings.json
+   grep -A5 '"memnox"' ~/.claude.json      # or ~/.cursor/mcp.json
    ```
-   The command should end in `hook claude-code`.
-3. **Reinstall:** `memnox protect claude-code`
-4. **Check a credential exists** — a hook with no token allows everything, which
-   looks exactly like being protected. `memnox status` reports the credential.
+   The entry is a `stdio` server whose command ends in `mcp`.
+3. **Reinstall:** `memnox mcp install claude-code`
+4. **Check a credential exists** — the server needs an agent token to ask the
+   runtime anything. `memnox status` reports whether one was found.
 
-The installer appends rather than replacing, so an existing unrelated hook entry
-stays. It also will not add a second Memnox entry if one is already present.
+The installer writes only its own `memnox` key, so unrelated servers in the same
+config stay. It also will not overwrite an existing Memnox entry.
 
----
-
-## A write is blocked even though nothing is enforcing
-
-The offline content shield runs in the hook **before** the runtime is consulted,
-so a write containing something credential-shaped is refused regardless of
-enforcement mode or whether the runtime is up. That is deliberate: it still
-protects you when the runtime is down.
-
-In tests, assemble credential-shaped strings at runtime — `['AKIA','…'].join('')`
-— rather than writing a literal.
+Remember that these tools are how an agent *asks*. An agent that never calls them
+is not governed by them — that is what the MCP firewall and the SDK wrappers are
+for.
 
 ---
 

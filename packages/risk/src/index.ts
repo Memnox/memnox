@@ -6,8 +6,5 @@ export * from './trust-advisor';
 export * from './authority-advisor';
 export * from './taint-advisor';
 export * from './token-budget-advisor';
-export * from './dependency.constants';
-export * from './license-resolver';
-export * from './dependency-advisor';
 export * from './plan-scope-advisor';
 export * from './shell-indirection-advisor';

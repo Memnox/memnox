@@ -39,7 +39,7 @@ it gets.
 
 **Without a token the proxy does not gate against policy.** It falls back to
 whatever local filtering you configured — `MEMNOX_POLICIES`, the allow/deny
-regexes, secret scanning — and if you configured none of that, it forwards every
+regexes — and if you configured none of that, it forwards every
 call untouched. A firewall with no credential is a pipe, so treat a missing token
 as an outage rather than a degraded mode.
 
@@ -53,7 +53,6 @@ as an outage rather than a degraded mode.
 | `MEMNOX_TOOLS_DENY` | regex — matching tools are hidden and blocked |
 | `MEMNOX_MCP_FAIL_OPEN` | `"true"` forwards calls when the runtime is unreachable |
 | `MEMNOX_POLICIES` | policy files evaluated in-process, comma-separated — the only place a call's arguments are read |
-| `MEMNOX_ON_SECRET` | a secret found in an argument: `block` (default), `redact`, `signal` |
 | `MEMNOX_AGENT_NAME` | name the local rules match on `agents:`; defaults to `mcp:<server>` |
 
 Tool names reach the runtime as `mcp.<tool_name>`, targeted at the server name, so
@@ -76,11 +75,6 @@ own arguments, before it asks the runtime anything:
 The runtime is still asked, and the stricter of the two verdicts applies — but what it
 receives is the tool name, the server, and the rule ids that matched (`signals`). The
 arguments themselves never leave the process.
-
-A rule with `effect: redact`, or `MEMNOX_ON_SECRET=redact`, masks the secrets in the
-arguments and forwards the call with the masked values in place. The client is not told
-which ones were masked. If masking cannot be applied faithfully — a secret inside a
-structured argument — the call is blocked rather than forwarded in the clear.
 
 ## Governing an agent you do not host
 
@@ -137,10 +131,6 @@ by the static filter, the runtime is never consulted.
 If the runtime is unreachable, calls are **blocked**. A firewall that opens when
 its policy source disappears is not a firewall. `MEMNOX_MCP_FAIL_OPEN=true`
 inverts this for development, and every fail-open decision is logged.
-
-This is the opposite of the editor hooks in the `memnox` CLI package, which fail *open* —
-a hook that bricks your editor gets uninstalled, and an uninstalled hook enforces
-nothing. A proxy has no such problem.
 
 ## Layout
 

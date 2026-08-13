@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,9 +10,7 @@ import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { registerSetupCommand } from '../src/commands/setup.command';
 import type { ServerLauncher } from '../src/commands/serve.command';
-import type { EditorHookInstaller } from '../src/editor-hook-installer';
 import { McpInstaller, MEMNOX_SERVER_KEY } from '../src/mcp-installer';
-import { DEFAULT_CODE_GRAPH_FILE } from '../src/defaults';
 import { parse } from 'yaml';
 import { validatePolicyDocument } from '@memnox/policy-engine';
 import { FakeRuntime } from './cli-harness';
@@ -28,9 +26,7 @@ describe('memnox setup', () => {
   let workspace: string;
   let home: string;
   let out: RecordedOutput;
-  let detectCalls: number;
   let launched: Partial<RuntimeConfig>[];
-  let detected: { agent: string; path: string; installed: boolean }[];
   let runtime: FakeRuntime;
   let alreadyRunning: boolean;
   let probed: string[];
@@ -38,12 +34,6 @@ describe('memnox setup', () => {
   const run = async (args: string[]): Promise<void> => {
     const program = new Command();
     program.exitOverride();
-    const installer = {
-      installDetected: async () => {
-        detectCalls += 1;
-        return detected;
-      },
-    } as unknown as EditorHookInstaller;
     const launch: ServerLauncher = async (overrides) => {
       launched.push(overrides);
       return {
@@ -56,7 +46,6 @@ describe('memnox setup', () => {
     registerSetupCommand(
       program,
       new CliContext(out, runtime.transport),
-      installer,
       launch,
       home,
       async (url) => {
@@ -78,9 +67,7 @@ describe('memnox setup', () => {
     workspace = await mkdtemp(join(tmpdir(), 'memnox-setup-'));
     home = await mkdtemp(join(tmpdir(), 'memnox-home-'));
     out = new RecordedOutput();
-    detectCalls = 0;
     launched = [];
-    detected = [{ agent: 'claude-code', path: '/fake', installed: true }];
     runtime = new FakeRuntime().on('POST', AGENTS_PATH, registration('mnx_new'));
     alreadyRunning = false;
     probed = [];
@@ -91,18 +78,16 @@ describe('memnox setup', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('scaffolds policies, installs detected hooks, and starts the runtime', async () => {
+  it('scaffolds policies and starts the runtime', async () => {
     const file = join(workspace, 'policies.yaml');
     await run(['--file', file]);
 
     expect(await readFile(file, 'utf8')).toContain('production-database-protection');
-    expect(detectCalls).toBe(1);
     expect(onlyLaunch().policyFile).toBe(file);
-    expect(out.text).toContain('Installed the claude-code hook');
     expect(out.text).toContain('Memnox runtime listening on');
   });
 
-  it('registers an agent and stores the token where the hook can read it', async () => {
+  it('registers an agent and stores the token where local tooling can read it', async () => {
     await run(['--file', join(workspace, 'policies.yaml')]);
 
     const stored = await readAgentConfig(home);
@@ -116,12 +101,6 @@ describe('memnox setup', () => {
 
     const mode = (await stat(agentConfigPath(home))).mode & 0o777;
     expect(mode).toBe(0o600);
-  });
-
-  it('tells the user to restart the editor it just hooked', async () => {
-    await run(['--file', join(workspace, 'policies.yaml')]);
-
-    expect(out.notes.join('\n')).toContain('Restart your editor');
   });
 
   it('reuses an existing token instead of minting a second identity', async () => {
@@ -139,7 +118,7 @@ describe('memnox setup', () => {
 
   it('registers again when the runtime does not know the stored token', async () => {
     // The scar: a token from an earlier runtime's identity store reported success
-    // here and then blocked every edit as an unknown agent.
+    // here and then blocked every action as an unknown agent.
     await writeAgentConfig(home, { token: 'mnx_stale', url: 'http://127.0.0.1:7466' });
     runtime.on('POST', '/v1/evaluate-risk', {
       effect: 'block',
@@ -177,8 +156,8 @@ describe('memnox setup', () => {
 
     expect(launched).toHaveLength(1);
     expect(out.text).toContain('Memnox runtime listening on');
-    expect(out.notes.join('\n')).toContain('Could not register the editor agent');
-    expect(out.notes.join('\n')).toContain('hooks stay inactive');
+    expect(out.notes.join('\n')).toContain('Could not register the local agent');
+    expect(out.notes.join('\n')).toContain('stays inactive');
   });
 
   it('observes rather than blocks on a first run', async () => {
@@ -220,22 +199,6 @@ describe('memnox setup', () => {
 
     expect(probed).toEqual(['http://127.0.0.1:7479']);
   });
-
-  it('skips editor hooks under --no-hook', async () => {
-    await run(['--file', join(workspace, 'policies.yaml'), '--no-hook']);
-
-    expect(detectCalls).toBe(0);
-    expect(launched).toHaveLength(1);
-  });
-
-  it('says so when no editor is installed rather than failing', async () => {
-    detected = [];
-    await run(['--file', join(workspace, 'policies.yaml')]);
-
-    expect(out.notes.join('\n')).toContain('No Claude Code or Cursor config found');
-    expect(out.notes.join('\n')).not.toContain('Restart your editor');
-    expect(launched).toHaveLength(1);
-  });
 });
 
 describe('memnox setup — a second repository', () => {
@@ -249,11 +212,6 @@ describe('memnox setup — a second repository', () => {
   const run = async (args: string[]): Promise<void> => {
     const program = new Command();
     program.exitOverride();
-    const installer = {
-      installDetected: async () => [
-        { agent: 'claude-code', path: '/fake', installed: false },
-      ],
-    } as unknown as EditorHookInstaller;
     const launch: ServerLauncher = async (overrides) => {
       launched.push(overrides);
       return {
@@ -263,7 +221,6 @@ describe('memnox setup — a second repository', () => {
     registerSetupCommand(
       program,
       new CliContext(out, runtime.transport),
-      installer,
       launch,
       home,
       async () => alreadyRunning,
@@ -366,9 +323,6 @@ describe('security a local install gets by default', () => {
   const run = async (args: string[]): Promise<void> => {
     const program = new Command();
     program.exitOverride();
-    const installer = {
-      installDetected: async () => [],
-    } as unknown as EditorHookInstaller;
     const launch: ServerLauncher = async (overrides) => {
       launched.push(overrides);
       return {
@@ -381,7 +335,6 @@ describe('security a local install gets by default', () => {
     registerSetupCommand(
       program,
       new CliContext(out, runtime.transport),
-      installer,
       launch,
       home,
       async () => false,
@@ -417,12 +370,11 @@ describe('security a local install gets by default', () => {
     await run([]);
 
     // Safe because the first run observes: a guard that fires is an audit line,
-    // not a blocked editor.
+    // not a blocked agent.
     expect(launched[0]).toMatchObject({
       behaviorGuard: true,
       trustGuard: true,
       verificationGuard: true,
-      dependencyGuard: true,
     });
   });
 
@@ -430,10 +382,10 @@ describe('security a local install gets by default', () => {
     await run([]);
 
     expect(out.text).toContain('Guards:');
-    expect(out.text).toContain('dependencies');
+    expect(out.text).toContain('verification');
   });
 
-  it('registers the MCP server, so the agent can ask before it writes', async () => {
+  it('registers the MCP server, so the agent can ask before it acts', async () => {
     await run([]);
 
     expect((await mcpServers())[MEMNOX_SERVER_KEY]).toBeDefined();
@@ -451,79 +403,5 @@ describe('security a local install gets by default', () => {
 
     expect((await mcpServers())[MEMNOX_SERVER_KEY]).toBeDefined();
     expect(launched).toHaveLength(0);
-  });
-
-  it('builds the code graph and hands it to the runtime', async () => {
-    await writeFile(join(workspace, 'money.ts'), 'export const round = 1;\n', 'utf8');
-    await writeFile(
-      join(workspace, 'checkout.ts'),
-      "import { round } from './money';\n",
-      'utf8',
-    );
-
-    await run([]);
-
-    // Blast radius is unreachable without both halves; setup does both.
-    expect(launched[0]?.codeGraphFile).toBe(DEFAULT_CODE_GRAPH_FILE);
-    expect(out.text).toContain('Code graph:');
-    const snapshot = JSON.parse(
-      await readFile(join(workspace, DEFAULT_CODE_GRAPH_FILE), 'utf8'),
-    ) as { files?: unknown[]; edges?: unknown[] };
-    expect(snapshot.files).toHaveLength(2);
-    expect(snapshot.edges).toHaveLength(1);
-  });
-
-  it('skips the graph when asked, and still starts', async () => {
-    await run(['--no-graph']);
-
-    expect(launched[0]?.codeGraphFile).toBeUndefined();
-    expect(launched).toHaveLength(1);
-  });
-
-  it('starts anyway when there is nothing to graph', async () => {
-    await run([]);
-
-    // An empty repository is not a reason to refuse to govern it.
-    expect(launched).toHaveLength(1);
-    expect(launched[0]?.codeGraphFile).toBeUndefined();
-  });
-
-  it('arms blast radius on the sensitive directories it graphed', async () => {
-    await mkdir(join(workspace, 'payment'), { recursive: true });
-    await writeFile(join(workspace, 'payment', 'charge.ts'), 'export const c = 1;\n');
-    await writeFile(join(workspace, 'app.ts'), "import './payment/charge';\n");
-
-    await run([]);
-
-    // A graph without protected paths registers no advisor at all: the guard
-    // looks configured and can never fire.
-    expect(launched[0]?.protectedPaths).toEqual(['*payment/*']);
-    expect(out.text).toContain('*payment/*');
-  });
-
-  it('lets --protected-path override what it detected', async () => {
-    await mkdir(join(workspace, 'payment'), { recursive: true });
-    await writeFile(join(workspace, 'payment', 'charge.ts'), 'export const c = 1;\n');
-
-    await run(['--protected-path', 'app/*']);
-
-    expect(launched[0]?.protectedPaths).toEqual(['app/*']);
-  });
-
-  it('collects a repeated --protected-path', async () => {
-    await writeFile(join(workspace, 'app.ts'), 'export const a = 1;\n');
-
-    await run(['--protected-path', 'app/*', '--protected-path', 'db/*']);
-
-    expect(launched[0]?.protectedPaths).toEqual(['app/*', 'db/*']);
-  });
-
-  it('says the guard is off rather than implying a graph is enough', async () => {
-    await writeFile(join(workspace, 'app.ts'), 'export const a = 1;\n');
-
-    await run([]);
-
-    expect(launched[0]?.protectedPaths).toBeUndefined();
-    expect(out.text).toContain('no protected paths found');
   });
 });

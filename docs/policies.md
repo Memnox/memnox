@@ -1,6 +1,6 @@
 # Writing policies
 
-Policies are plain YAML, so they stay reviewable, diffable, and enforced deterministically. All match fields take wildcard patterns (`*` matches anything), and any field you leave out matches everything. When several policies match the same action, the most restrictive effect wins: `block` beats `require_approval`, which beats `redact`, which beats `allow`.
+Policies are plain YAML, so they stay reviewable, diffable, and enforced deterministically. All match fields take wildcard patterns (`*` matches anything), and any field you leave out matches everything. When several policies match the same action, the most restrictive effect wins: `block` beats `require_approval`, which beats `allow`.
 
 ```yaml
 version: 1
@@ -74,7 +74,7 @@ A rule can match the call's own arguments, the directory it runs in, and the bra
 
 Each named argument narrows the rule further, because every one listed must match. An argument the call does not carry matches only the bare `"*"`.
 
-**Arguments are matched where the call is made, never on the wire.** The raw payload is the one thing a control plane should not collect, so [`@memnox/local-gate`](../packages/local-gate) evaluates it in-process, inside the MCP firewall and inside the editor hook. The runtime is only told the tool, the target, and the rule ids that matched (`signals`). The SDK strips `arguments` before any request leaves the machine.
+**Arguments are matched where the call is made, never on the wire.** The raw payload is the one thing a control plane should not collect, so [`@memnox/local-gate`](../packages/local-gate) evaluates it in-process, inside the MCP firewall. The runtime is only told the tool, the target, and the rule ids that matched (`signals`). The SDK strips `arguments` before any request leaves the machine.
 
 ## Matching on how big the action is
 
@@ -114,14 +114,9 @@ An authority ceiling routes an action to whoever can authorize it; a rule can
 say that nothing authorizes it. Those are different answers and a company needs
 both.
 
-## Three more outcomes
+## Two more outcomes
 
 ```yaml
-  - name: mask-secrets-in-outbound-calls
-    match: { actions: ["mcp.*"] }
-    decision:
-      effect: redact          # mask the secret, forward the call
-
   - name: candidate-rule
     match: { actions: ["deploy.*"] }
     decision:
@@ -134,8 +129,6 @@ both.
       effect: allow
       rateLimit: { max: 10, windowSeconds: 3600 }   # the 11th in an hour is blocked
 ```
-
-**redact** masks the secrets in a call's arguments and lets it through. The enforcement point applies it, so it needs one that can rewrite the payload. The MCP firewall can do that, whereas an editor hook only answers allow or deny, so it blocks instead of forwarding the call unmasked. Masked text is re-scanned before it is accepted, and if a finding survives, the call is blocked.
 
 **mode: monitor** rolls one rule out without enforcing it. The action proceeds and the audit event records the verdict it withheld, alongside the per-environment `--enforcement` modes.
 
@@ -160,7 +153,7 @@ cd web && npx memnox setup --project acme-checkout   # starts the runtime
 cd api && npx memnox setup --project acme-checkout   # joins it, adds its rules
 ```
 
-The identifier is **declared, never inferred**. The editor reports its working directory, Memnox walks up to the nearest policy file, and reads the project from it. Two repos that say `acme-checkout` resolve to one scope, and anything else stays separate.
+The identifier is **declared, never inferred**. The CLI and the MCP server both start from the directory they were launched in, walk up to the nearest policy file, and read the project from it. Two repos that say `acme-checkout` resolve to one scope, and anything else stays separate.
 
 One runtime serves every project on the machine. The second `setup` joins the runtime already listening instead of fighting it for the port, registers its rule file in `~/.memnox/policies.json`, and asks for a reload. **Paths travel, rule content never does**, so every rule stays reviewable in the diff of the repo that owns it.
 
@@ -184,7 +177,7 @@ Policies stay file-sourced on purpose, because a rule set that is mutable over H
 
 ## Writing rules without writing YAML
 
-`memnox ui` (or `memnox policy ui`) opens the same rule set in a local editor: a form
+`memnox ui` (or `memnox policy ui`) opens the same rule set in your browser: a form
 per rule, the effect as a picker, patterns as chips, live validation as you type, a
 preview of the exact YAML it will write, and the simulate panel replaying real history
 against what you have edited.

@@ -25,7 +25,7 @@ export interface ResolvedConnection {
 /**
  * Flag, then environment, then the token `memnox setup` stored on disk. Pasting
  * a token into every invocation is the single thing that made the CLI tedious,
- * and the file is already how the editor hook authenticates.
+ * and the file is already how a locally launched agent authenticates.
  *
  * Environment beats the file on purpose: that is how CI and the MCP firewall
  * override a developer's machine-local identity.

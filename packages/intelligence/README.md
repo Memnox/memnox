@@ -32,7 +32,7 @@ memnox validate candidate.yaml
 ```
 
 **Explain a decision.** Turns a decision plus its matched policies into plain
-language for a Slack message or a PR comment. The decision already happened; this
+language for a Slack message or an audit summary. The decision already happened; this
 only narrates it.
 
 **Classify intent.** `IntentClassifier` expands a stated goal into the candidate

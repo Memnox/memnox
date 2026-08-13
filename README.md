@@ -17,7 +17,7 @@
 
 # Memnox
 
-Memnox gives your AI agents a deterministic policy gate, human approvals, tamper-evident audit, secret and PII scanning, and prompt-injection defense — so you can let agents act on real systems without hoping they behave.
+Memnox gives your AI agents a deterministic policy gate, human approvals, tamper-evident audit, delegated authority, and prompt-injection defense — so you can let agents act on real systems without hoping they behave.
 
 This is the Memnox runtime monorepo. It contains:
 
@@ -26,7 +26,7 @@ This is the Memnox runtime monorepo. It contains:
 - [`@memnox/runtime`](packages/runtime): the decision gateway and HTTP API you run locally or for a team
 - [`@memnox/organization`](packages/organization): the open client for asking an organization whether an action should happen, and who authorizes it
 - [`@memnox/mcp-firewall`](packages/mcp-firewall): a transparent MCP proxy, so every `tools/call` is gated
-- **Editor hooks** for Claude Code and Cursor, and adapters for OpenAI Agents, LangChain, and [more](docs/governing-agents.md)
+- **Adapters** for MCP clients, OpenAI Agents, LangChain, and [more](docs/governing-agents.md)
 
 ## What it does
 
@@ -42,7 +42,7 @@ Three things make that decision worth trusting.
 
 **It is deterministic.** There is no LLM in the decision path, so the same input always produces the same decision. Security decisions need guarantees rather than probabilities.
 
-**It is a gate, not a reviewer.** It answers *"does this violate a rule?"* and never *"is this good code?"*. Memnox reads your repository, your diffs, and your tool calls, and it never generates, edits, or commits anything, never reviews pull requests, and runs no sandbox. Governing an agent and being an agent do not belong in the same trust boundary.
+**It is a gate, not a worker.** It answers *"is this allowed, and who authorizes it?"* and never does the work itself. Memnox reads an action request and decides on it; it never generates, edits, or commits anything, and runs no sandbox. Governing an agent and being an agent do not belong in the same trust boundary.
 
 **It leaves proof.** Every decision appends one event to a hash-chained audit log, so you can replay any session and show exactly what was allowed, what was stopped, and under which rule.
 
@@ -52,9 +52,9 @@ Three things make that decision worth trusting.
 npx memnox setup
 ```
 
-That one command scaffolds a policy file from what it detects in your repository, registers a local agent, installs hooks for whichever editors you have, registers the MCP server (Model Context Protocol — how AI assistants connect to external tools) so your agent can ask about rules before it writes, and starts the runtime. **Restart your editor and it is governed.**
+That one command scaffolds a policy file from what it detects in your repository, registers a local agent, registers the MCP server (Model Context Protocol — how AI assistants connect to external tools) so your agent can ask about rules before it acts, and starts the runtime. **Restart your agent and it is governed.**
 
-New to this? [Concepts and vocabulary](docs/concepts.md) explains agents, actions, hooks, and the rest in five minutes.
+New to this? [Concepts and vocabulary](docs/concepts.md) explains agents, actions, approvals, and the rest in five minutes.
 
 ```
 Wrote starter policies to memnox.policies.yaml (project: acme-checkout)
@@ -62,7 +62,7 @@ Detected: payments, database migrations, CI/CD, infrastructure as code
 Packs: production-safety, terminal-safety, payments, money-movement, data-privacy, supply-chain
 ```
 
-The first run **observes without blocking**, because a rule you have not read yet should not wedge your editor on minute one. Watch what it would have done:
+The first run **observes without blocking**, because a rule you have not read yet should not wedge your agent on minute one. Watch what it would have done:
 
 ```bash
 memnox status   # is it on, what is in force, what would it have stopped
@@ -147,10 +147,10 @@ Rules are plain YAML that you commit and review like any other code:
 | Guide | What it covers |
 |---|---|
 | [Concepts and vocabulary](docs/concepts.md) | New here? The mental model and every term the other guides assume |
-| [Getting started](docs/getting-started.md) | From nothing to a governed editor, then observing, tuning, and enforcing |
-| [Governing your agents](docs/governing-agents.md) | Claude Code, Cursor, MCP clients, and agent frameworks. How an agent asks what the rules are |
+| [Getting started](docs/getting-started.md) | From nothing to a governed agent, then observing, tuning, and enforcing |
+| [Governing your agents](docs/governing-agents.md) | MCP clients, SDK callers, and agent frameworks. How an agent asks what the rules are |
 | [Writing policies](docs/policies.md) | YAML rules, quorum, time windows, argument matching, and multi-repo projects |
-| [How a decision is made](docs/how-it-works.md) | The five-step pipeline, approvals, blast radius, provenance, and the platform API |
+| [How a decision is made](docs/how-it-works.md) | The five-step pipeline, approvals, provenance, and the platform API |
 | [Deployment](docs/deployment.md) | Solo through enterprise, scaling flags, containers, audit verification, and metrics |
 | [Running more than one](docs/deploying-many.md) | A runtime is one tenant; how several are deployed and reached together |
 | [Connecting a control plane](docs/connecting-a-control-plane.md) | Reading across runtimes, mirroring the audit log off the box, setting enforcement without a restart |
@@ -168,14 +168,13 @@ This is a monorepo. Each package is one layer, and the two at the top have zero 
 | [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, local stores, and compliance reports |
 | [`@memnox/memory`](packages/memory) | Team decisions turned into machine-checkable constraints |
 | [`@memnox/risk`](packages/risk) | Deterministic behavioral signals such as novel destructive actions and bursts |
-| [`@memnox/content-shield`](packages/content-shield) | Offline secret, PII, and vulnerable-package scanning of content and diffs |
-| [`@memnox/code-graph`](packages/code-graph) | Import graph and blast radius, meaning what a change can actually reach |
+| [`@memnox/org-graph`](packages/org-graph) | Verified organizational statements, ownership, and delegated authority |
+| [`@memnox/organization`](packages/organization) | The open client protocol for asking an organization |
 | [`@memnox/mcp-firewall`](packages/mcp-firewall) | Transparent MCP proxy, so every `tools/call` goes through the runtime |
-| [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments and content never leave the machine |
+| [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments never leave the machine |
 | [`@memnox/intelligence`](packages/intelligence) | Optional BYOK layer that drafts and explains. It never decides. |
-| [`@memnox/trust-bench`](packages/trust-bench) | Public benchmark for agent-governance runtimes |
 | [`@memnox/postgres`](packages/postgres) · [`@memnox/redis`](packages/redis) | Adapters for shared storage and locks |
-| [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI with its 37 commands |
+| [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI |
 
 ### Client SDKs
 

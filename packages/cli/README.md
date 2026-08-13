@@ -1,18 +1,18 @@
 # memnox
 
-The `memnox` command: run the runtime, manage policies, inspect the audit trail,
-and install editor hooks.
+The `memnox` command: run the runtime, manage policies, and inspect the audit
+trail.
 
 ```bash
-npx memnox setup     # policies, agent token, editor hooks, running runtime
+npx memnox setup     # policies, agent token, running runtime
 npx memnox status    # is it on, what is in force, what would it have stopped
 ```
 
-`setup` is the local install: policies, an agent token, editor hooks, the MCP server, and
-a runtime with every deterministic guard on — content shield, shell indirection, taint,
-decision memory, behavior, trust, verification, and dependencies. The first run observes
-rather than blocks. `--no-hook`, `--no-mcp`, `--no-serve` and `--no-detect` opt out of the
-individual steps.
+`setup` is the local install: policies, an agent token, the MCP server, and a
+runtime with every deterministic guard on — shell indirection, taint, decision
+memory, behavior, trust, and verification. The first run observes rather than
+blocks. `--no-mcp`, `--no-serve` and `--no-detect` opt out of the individual
+steps.
 
 Most commands need no connection flags: the agent token and runtime URL come from
 `MEMNOX_AGENT_TOKEN`/`MEMNOX_URL` or the config `memnox setup` wrote to
@@ -39,11 +39,6 @@ Most commands need no connection flags: the agent token and runtime URL come fro
 | `approvals` | list pending (bare), status, resolve, break-glass override, flow health |
 | `memory` | record team decisions as machine-checkable constraints |
 | `policy` | version, simulate, packs, install, ui |
-| `graph` | build the import graph; explain a file's blast radius |
-| `graphify` | install/build/use [Graphify](https://github.com/Graphify-Labs/graphify) for deeper reachability |
-| `ci` | scan a diff for secrets and PII in CI |
-| `hook` | editor hook entry point (reads a tool call on stdin) |
-| `protect` | install the hook into Claude Code and/or Cursor |
 | `explain` | plain-language explanation of a decision (BYOK LLM) |
 | `draft` | draft policy YAML from a sentence (BYOK LLM) |
 | `intent` | expand a goal into the actions it would take |
@@ -63,9 +58,6 @@ index.ts                  composition root: builds the real context, parses argv
 program.ts                buildProgram(context) — the command tree
 cli-context.ts            CliContext: output + client factory
 cli-output.ts             CliOutput port; ConsoleOutput and RecordedOutput
-git-diff.ts               DiffSource port for `ci`
-hook-host.ts              HookHost port for `hook` — stdin, streams, exit, env
-editor-hook-installer.ts  writes editor configs under a given home directory
 llm-provider-option.ts    LlmProviderFactory for the BYOK commands
 commands/                 one <name>.command.ts per command
 ```
@@ -76,10 +68,7 @@ what that one command touches:
 
 | Command | Collaborator |
 |---|---|
-| `ci` | `DiffSource` — defaults to `git diff` |
 | `serve` | `ServerLauncher` — defaults to `startServer` |
-| `protect` | `EditorHookInstaller` — defaults to `$HOME` |
-| `hook` | `HookHost` — defaults to the real process streams |
 | `explain`, `draft`, `intent` | `LlmProviderFactory` — defaults to BYOK providers |
 
 `console.*` appears in exactly two places: `ConsoleOutput` and `index.ts`.

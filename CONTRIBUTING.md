@@ -21,18 +21,17 @@ packages/
   core/           # domain types, constants, store + advisor ports — zero dependencies
   policy-engine/  # deterministic evaluation + risk classification
   memory/         # team decisions as machine-checkable constraints
-  risk/           # behavioral, trust, and dependency advisors
-  content-shield/ # secret + PII scanning of written content
-  code-graph/     # file-level import graph and blast radius
+  org-graph/      # verified organizational statements, ownership, delegated authority
+  organization/   # the open client protocol for asking an organization
+  risk/           # behavioral, trust, authority, and verification advisors
   runtime/        # gateway pipeline, HTTP server with RBAC, local stores, reporting
   postgres/       # Postgres adapters for the storage ports
   redis/          # Redis adapters for locks and session taint
   sdk/            # TypeScript client
   mcp-firewall/   # transparent MCP proxy
-  local-gate/     # in-process gate — arguments and content never leave the machine
+  local-gate/     # in-process gate — a call's arguments never leave the machine
   intelligence/   # optional BYOK LLM layer — drafts and explains, never decides
-  cli/            # memnox command (editor hooks, protect, and the MCP server)
-  trust-bench/    # public governance benchmark
+  cli/            # memnox command, including the MCP server
 sdks/
   python/, go/, rust/, java/, swift/   # thin dependency-free clients
 examples/

@@ -3,7 +3,6 @@ import { McpFirewall } from './firewall';
 import {
   ENV_AGENT_TOKEN,
   ENV_FAIL_OPEN,
-  ENV_ON_SECRET,
   ENV_POLICIES,
   ENV_RUNTIME_URL,
   ENV_TOOLS_ALLOW,
@@ -23,7 +22,6 @@ Environment:
   ${ENV_FAIL_OPEN}    "true" to forward calls when the runtime is unreachable
   ${ENV_POLICIES}       policy files evaluated in-process, comma-separated —
                         the only place a call's arguments are ever read
-  ${ENV_ON_SECRET}      a secret in an argument: block (default) | redact | signal
 
 Example:
   MEMNOX_AGENT_TOKEN=mnx_... memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github`;

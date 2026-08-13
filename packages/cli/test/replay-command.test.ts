@@ -36,12 +36,12 @@ describe('memnox replay', () => {
 
   it('appends advisory signals when the decision carried any', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [
-      event({ advisories: ['taint', 'blast-radius'] }),
+      event({ advisories: ['taint', 'behavior'] }),
     ]);
 
     const { out } = await runCli(['replay', 'sess-1'], runtime);
 
-    expect(out.text).toContain('signals: taint, blast-radius');
+    expect(out.text).toContain('signals: taint, behavior');
   });
 
   it('says so plainly when the session has no audited actions', async () => {

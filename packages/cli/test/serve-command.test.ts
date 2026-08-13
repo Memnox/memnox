@@ -7,7 +7,6 @@ import { runCommand } from './cli-harness';
 const BASE_CONFIG = {
   host: DEFAULT_HOST,
   port: DEFAULT_PORT,
-  protectedPaths: [] as string[],
   auditRetentionDays: 0,
 } as unknown as RuntimeConfig;
 
@@ -107,36 +106,6 @@ describe('memnox serve — startup banner', () => {
     expect(out.text).toContain('Verification guard: enabled');
   });
 
-  it('names the license source when the dependency guard is on', async () => {
-    const { launch } = launcher();
-
-    const { out } = await runServe(['--dependency-guard'], launch);
-
-    expect(out.text).toContain('Dependency guard: enabled (licenses: offline table)');
-  });
-
-  it('switches the license source with --dependency-license-lookup', async () => {
-    const { launch } = launcher();
-
-    const { out } = await runServe(
-      ['--dependency-guard', '--dependency-license-lookup'],
-      launch,
-    );
-
-    expect(out.text).toContain('licenses: npm registry');
-  });
-
-  it('lists protected paths only when a code graph backs them', async () => {
-    const { launch } = launcher();
-
-    const { out } = await runServe(
-      ['--code-graph', 'graph.json', '--protected-path', '*payment/*'],
-      launch,
-    );
-
-    expect(out.text).toContain('Blast radius: protecting *payment/*');
-  });
-
   it('reports https and mTLS when all three TLS files are given', async () => {
     const { launch } = launcher();
 
@@ -203,33 +172,20 @@ describe('memnox serve — option mapping', () => {
     expect(launched.overrides.adminToken).toBe('from-flag');
   });
 
-  it('collects a repeated --protected-path into a list', async () => {
-    const { launch, launched } = launcher();
-
-    await runServe(
-      ['--protected-path', 'payment/*', '--protected-path', 'auth/*'],
-      launch,
-    );
-
-    expect(launched.overrides.protectedPaths).toEqual(['payment/*', 'auth/*']);
-  });
-
-  it('enables memory and the content shield by default', async () => {
+  it('enables memory by default', async () => {
     const { launch, launched } = launcher();
 
     await runServe([], launch);
 
     expect(launched.overrides.memoryEnabled).toBe(true);
-    expect(launched.overrides.contentShield).toBe(true);
   });
 
   it('honours the --no- forms', async () => {
     const { launch, launched } = launcher();
 
-    await runServe(['--no-memory', '--no-content-shield'], launch);
+    await runServe(['--no-memory'], launch);
 
     expect(launched.overrides.memoryEnabled).toBe(false);
-    expect(launched.overrides.contentShield).toBe(false);
   });
 
   it('accepts block as a default effect', async () => {

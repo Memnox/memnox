@@ -1,6 +1,6 @@
 export const DECISION_EFFECT = {
   ALLOW: 'allow',
-  /** The action proceeds, but only after the enforcement point masks what it carries. */
+  /** The action proceeds, but the context it is answered with is withheld in part. */
   REDACT: 'redact',
   BLOCK: 'block',
   REQUIRE_APPROVAL: 'require_approval',
@@ -16,13 +16,6 @@ export const EFFECT_PRECEDENCE: Record<DecisionEffect, number> = {
   [DECISION_EFFECT.BLOCK]: 3,
 };
 
-/**
- * Redaction rewrites a payload, so an enforcement point that cannot rewrite the
- * call it is gating (an editor hook only gets allow/deny) has to fall back. It
- * blocks: forwarding unmasked content is the one outcome the rule ruled out.
- */
-export const REDACT_FALLBACK_EFFECT: DecisionEffect = DECISION_EFFECT.BLOCK;
-
 export const DECISION_REASON = {
   NO_POLICY_MATCHED: 'no policy matched — default effect applied',
   UNKNOWN_AGENT: 'unknown agent credentials — fail closed',
@@ -33,5 +26,5 @@ export const DECISION_REASON = {
   BREAK_GLASS_OVERRIDE: 'break-glass override',
   NON_OVERRIDABLE: 'non-overridable block — no approval can satisfy this action',
   RATE_LIMIT: 'rate limit exceeded for this rule',
-  REDACTED: 'sensitive content masked before the call was forwarded',
+  REDACTED: 'answered with part of the supporting context withheld',
 } as const;

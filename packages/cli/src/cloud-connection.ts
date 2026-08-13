@@ -8,7 +8,7 @@ export const ENV_CLOUD_WORKSPACE = 'MEMNOX_CLOUD_WORKSPACE';
  * A control plane the developer signed into, stored beside the runtime
  * credential. Separate from `token`/`url`: that pair is the *agent* identity a
  * hook presents to a runtime, this one is the *person* reading their
- * organization. Conflating them would let an editor hook read the org.
+ * organization. Conflating them would let a governed agent read the org.
  */
 export interface CloudConfig {
   url: string;

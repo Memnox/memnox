@@ -10,6 +10,33 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Removed
+
+**Code understanding, in full.** Memnox is the organizational runtime: it holds an
+organization's operating model and rules on the actions agents propose. Reading a
+repository was a second product living inside the first, so it is gone rather than
+deprecated.
+
+- **`@memnox/code-graph`** — the import graph, `BlastRadiusAdvisor`, and blast-radius
+  escalation. With it go `memnox graph`, `memnox graphify`, `serve --code-graph`,
+  `serve --protected-path`, and the `codeGraphFile` / `protectedPaths` config fields.
+- **`@memnox/content-shield`** — the offline secret/PII scanner, `ContentShieldAdvisor`,
+  the curated vulnerable-package table, and the shipped security baseline. With it go
+  `memnox ci`, `serve --no-content-shield`, the proxy output guard and its
+  `memnox_proxy_output_blocked_total` metric, the local gate's secret scanning and
+  redaction (`MEMNOX_ON_SECRET`, `SECRET_RESPONSE`), and the `security` /
+  `securityBaseline` fields of an action briefing. `POST /v1/context` now returns
+  declared constraints only.
+- **`@memnox/trust-bench`** — the governance benchmark.
+- **Editor integration** — `memnox hook`, `memnox protect`, `EditorHookInstaller`, the
+  Claude Code and Cursor hook mappings, and `quickstart`'s `[agent]` argument and
+  `--no-hook` flag. Agents reach the runtime through the MCP server, the SDKs, or the
+  REST API.
+- **`DependencyAdvisor`** (`@memnox/risk`) and its `LicenseResolver` port, with
+  `serve --dependency-guard` and `--dependency-license-lookup`.
+- **`Dockerfile.allinone`**, `docker/entrypoint-allinone.sh`, and the Graphify
+  integration they existed to carry.
+
 ### Added
 
 - **Rules without YAML.** `memnox ui` (also `memnox policy ui`) opens the policy file in a

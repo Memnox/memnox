@@ -88,7 +88,7 @@ describe('resolveCloud', () => {
   it('keeps the org credential separate from the agent token', () => {
     const resolved = resolveCloud({}, STORED, {});
 
-    // An editor hook holds the agent token; it must not thereby read the org.
+    // A governed agent holds the agent token; it must not thereby read the org.
     if (isNotConfigured(resolved)) throw new Error('expected a resolution');
     expect(resolved.token).not.toBe(STORED.token);
   });

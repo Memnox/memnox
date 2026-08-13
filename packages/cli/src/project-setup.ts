@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { stringify } from 'yaml';
 import {
   findPolicyPack,
@@ -16,11 +15,6 @@ import { resolveProjectId } from './project-identity';
  * The steps `setup` and `quickstart` share. Both scaffold the same project;
  * they differ only in whether they go on to start the runtime.
  */
-
-/** GUI-launched editors do not inherit the shell PATH, so both paths are absolute. */
-export function hookCommandFor(agent: string): string {
-  return `${process.execPath} ${fileURLToPath(import.meta.url)} hook ${agent}`;
-}
 
 /**
  * Writes the starter rules only when nothing is there. Never overwrites — rules

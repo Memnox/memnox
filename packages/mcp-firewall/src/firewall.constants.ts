@@ -7,8 +7,6 @@ export const ENV_TOOLS_DENY = 'MEMNOX_TOOLS_DENY';
 export const ENV_FAIL_OPEN = 'MEMNOX_MCP_FAIL_OPEN';
 /** Policy files evaluated in-process, comma-separated — this is what sees the arguments. */
 export const ENV_POLICIES = 'MEMNOX_POLICIES';
-/** What a secret in an argument does: block (default), redact, or signal. */
-export const ENV_ON_SECRET = 'MEMNOX_ON_SECRET';
 /** Name the local rules match on `agents:`; defaults to the wrapped server's. */
 export const ENV_AGENT_NAME = 'MEMNOX_AGENT_NAME';
 

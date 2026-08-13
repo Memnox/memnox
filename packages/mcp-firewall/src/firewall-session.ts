@@ -2,7 +2,7 @@ import { DECISION_EFFECT } from '@memnox/core';
 import { isAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
 import { parseMessage, serializeMessage, type JsonRpcMessage } from './json-rpc';
-import { readToolCall, withRedactedArguments, type ToolCall } from './tool-call';
+import { readToolCall, type ToolCall } from './tool-call';
 import type { ToolFilter } from './tool-filter';
 
 /** The two directions a proxied message can travel. */
@@ -51,34 +51,10 @@ export class FirewallSession {
 
     const call = readToolCall(message.params);
     const verdict = await this.verdictFor(call);
-    if (verdict.effect === DECISION_EFFECT.REDACT) {
-      return this.forwardRedacted(message, call, verdict);
-    }
     if (isAllowed(verdict)) return this.forward(message);
 
     this.deps.log(`blocked tools/call "${call.name}": ${verdict.reason}`);
     this.deps.channel.toClient(serializeMessage(denial(message.id, verdict.reason)));
-  }
-
-  /**
-   * Masked arguments go to the server; the client is never told which ones, so
-   * an agent cannot use the reply to map out what the scanner catches.
-   */
-  private forwardRedacted(
-    message: JsonRpcMessage,
-    call: ToolCall,
-    verdict: CallVerdict,
-  ): void {
-    const masked = verdict.redactedArguments;
-    const rewritten =
-      masked === undefined ? null : withRedactedArguments(message, masked);
-    if (rewritten === null) {
-      const reason = `${verdict.reason} — the masked value could not be put back safely, so the call was blocked`;
-      this.deps.log(`blocked tools/call "${call.name}": ${reason}`);
-      return this.deps.channel.toClient(serializeMessage(denial(message.id, reason)));
-    }
-    this.deps.log(`redacted tools/call "${call.name}": ${verdict.reason}`);
-    this.forward(rewritten);
   }
 
   fromServer(line: string): void {

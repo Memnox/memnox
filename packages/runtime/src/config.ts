@@ -71,8 +71,6 @@ export interface RuntimeConfig {
   verificationGuard: boolean;
   /** Enables decision memory: team decisions constrain actions. */
   memoryEnabled: boolean;
-  /** Scans written content for secrets/PII before allowing file writes. */
-  contentShield: boolean;
   /** Reads past shell indirection so a wrapped destructive command still matches. */
   shellGuard: boolean;
   /** Open holds one agent may accumulate before further ones are refused. */
@@ -113,19 +111,11 @@ export interface RuntimeConfig {
   tlsCertFile?: string;
   tlsKeyFile?: string;
   tlsCaFile?: string;
-  /** Code-graph snapshot (`memnox graph build`) enabling blast-radius escalation. */
-  codeGraphFile?: string;
-  /** Path patterns a code change must not reach without a human, e.g. ["*payment/*"]. */
-  protectedPaths: string[];
   /** BYOK embedding key; unset = deterministic keyword search only. */
   embeddingApiKey?: string;
   embeddingModel?: string;
   /** Must match the model's output size; the pgvector column type fixes it. */
   embeddingDimensions?: number;
-  /** Governs dependency.add: known-vulnerable versions and unacceptable licenses. */
-  dependencyGuard: boolean;
-  /** Let the dependency guard read licenses from the npm registry (adds a network call). */
-  dependencyLicenseLookup: boolean;
 }
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
@@ -139,14 +129,10 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   trustGuard: false,
   verificationGuard: false,
   memoryEnabled: true,
-  contentShield: true,
   shellGuard: true,
   checkRateLimitPerMinute: DEFAULT_CHECK_RATE_LIMIT_PER_MINUTE,
   askRateLimitPerMinute: DEFAULT_ASK_RATE_LIMIT_PER_MINUTE,
   auditRetentionDays: DEFAULT_AUDIT_RETENTION_DAYS,
-  protectedPaths: [],
-  dependencyGuard: false,
-  dependencyLicenseLookup: false,
 };
 
 /** Merge overrides onto defaults without letting explicit undefined clobber a default. */

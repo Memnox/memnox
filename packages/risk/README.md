@@ -48,27 +48,9 @@ purpose: silence is a missing record, not evidence of harm, so escalating
 ordinary reads because a caller never wired up `runGuarded` would wedge
 everyday work.
 
-## DependencyAdvisor — is this package safe to add?
-
-Governs `dependency.add` against two things: the curated vulnerability table in
-`@memnox/content-shield`, and the package's license.
-
-```ts
-new DependencyAdvisor(new StaticLicenseResolver(), ['security-team']);
-```
-
-Licenses resolve through a `LicenseResolver` port. The default
-`StaticLicenseResolver` is offline. `NpmRegistryLicenseResolver` is opt-in behind
-`--dependency-license-lookup`, because the decision path does not make network
-calls unless you ask it to.
-
-**An unknown license raises nothing.** Neither does an unreachable registry. The
-advisor escalates on what it knows is a problem, never on absence of information —
-otherwise a registry outage would block every install.
-
 ## The shared contract
 
-All three implement `ActionAdvisor` from `@memnox/core`:
+Every advisor implements `ActionAdvisor` from `@memnox/core`:
 
 1. May tighten a decision, never loosen it.
 2. Deterministic — no clock, no randomness.

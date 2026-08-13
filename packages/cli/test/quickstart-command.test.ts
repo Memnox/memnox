@@ -6,49 +6,33 @@ import { Command } from 'commander';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { registerQuickstartCommand } from '../src/commands/quickstart.command';
-import type { EditorHookInstaller } from '../src/editor-hook-installer';
 
 describe('memnox quickstart', () => {
   let workspace: string;
   let out: RecordedOutput;
-  let installed: string[];
 
   const run = async (args: string[]): Promise<void> => {
     const program = new Command();
     program.exitOverride();
-    const installer = {
-      install: async (agent: string) => {
-        installed.push(agent);
-        return { agent, path: '/fake', changed: true };
-      },
-    } as unknown as EditorHookInstaller;
-    registerQuickstartCommand(program, new CliContext(out), installer);
+    registerQuickstartCommand(program, new CliContext(out));
     await program.parseAsync(['node', 'memnox', 'quickstart', ...args]);
   };
 
   beforeEach(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'memnox-quickstart-'));
     out = new RecordedOutput();
-    installed = [];
   });
 
   afterEach(async () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it('writes policies and installs the hook in one step', async () => {
+  it('writes starter policies in one step', async () => {
     const file = join(workspace, 'policies.yaml');
 
     await run(['--file', file]);
 
     expect(await readFile(file, 'utf8')).toContain('production-database-protection');
-    expect(installed).toEqual(['claude-code']);
-  });
-
-  it('installs for the agent named', async () => {
-    await run(['cursor', '--file', join(workspace, 'p.yaml')]);
-
-    expect(installed).toEqual(['cursor']);
   });
 
   it('steers the first run into monitor mode', async () => {
@@ -72,17 +56,5 @@ describe('memnox quickstart', () => {
 
     expect(await readFile(file, 'utf8')).toBe('version: 1\npolicies: []\n');
     expect(out.notes.join('\n')).toContain('Keeping the policy file');
-  });
-
-  it('can skip the hook', async () => {
-    await run(['--no-hook', '--file', join(workspace, 'p.yaml')]);
-
-    expect(installed).toEqual([]);
-  });
-
-  it('refuses an agent it cannot hook', async () => {
-    await expect(run(['emacs', '--file', join(workspace, 'p.yaml')])).rejects.toThrow(
-      /unknown agent/,
-    );
   });
 });

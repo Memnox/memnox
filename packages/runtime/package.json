@@ -45,8 +45,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/code-graph": "0.2.0",
-    "@memnox/content-shield": "0.2.0",
     "@memnox/core": "0.2.0",
     "@memnox/intelligence": "0.2.0",
     "@memnox/local-gate": "0.2.0",

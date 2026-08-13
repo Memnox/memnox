@@ -21,8 +21,6 @@ import {
   RedisSessionTaintStore,
   type RedisLike,
 } from '@memnox/redis';
-import { BlastRadiusAdvisor, type CodeGraph } from '@memnox/code-graph';
-import { ContentShieldAdvisor } from '@memnox/content-shield';
 import {
   DecisionMemoryAdvisor,
   DecisionSemanticSearch,
@@ -36,9 +34,6 @@ import type { AuthorityStore } from '@memnox/org-graph';
 import {
   AuthorityAdvisor,
   BehaviorAdvisor,
-  DependencyAdvisor,
-  NpmRegistryLicenseResolver,
-  StaticLicenseResolver,
   TaintAdvisor,
   PlanScopeAdvisor,
   ShellIndirectionAdvisor,
@@ -49,7 +44,6 @@ import {
 import { ActionGateway } from './action-gateway';
 import { DecisionMemoryService } from './decision-memory-service';
 import { scheduleAuditRetention } from './audit-retention';
-import { loadCodeGraphFromFile } from './code-graph-loader';
 import { peerCertificate, resolveAgentFromClientCert } from './client-cert';
 import { resolveLocalMode } from './auth';
 import { DEFAULT_ADVISOR_APPROVERS, resolveConfig, type RuntimeConfig } from './config';
@@ -156,7 +150,7 @@ function reportArgumentRules(policies: readonly Policy[]): void {
     `${named.length} rule(s) match on call arguments (${named
       .map((policy) => policy.name)
       .join(', ')}) — those are decided by @memnox/local-gate in the process that ` +
-      'makes the call (MEMNOX_POLICIES for the MCP firewall, the policy file for the editor hook), not here.',
+      'makes the call (MEMNOX_POLICIES for the MCP firewall), not here.',
   );
 }
 
@@ -183,9 +177,6 @@ export async function buildServer(
   };
   const policies = await loadPolicyFiles(await policySources());
   reportArgumentRules(policies);
-  const codeGraph = config.codeGraphFile
-    ? await loadCodeGraphFromFile(config.codeGraphFile, CONSOLE_LOGGER)
-    : null;
 
   const metrics = new MetricsRegistry();
   const codec = await buildCodec(config, metrics, CONSOLE_LOGGER);
@@ -250,7 +241,6 @@ export async function buildServer(
       auditLog,
       decisionStore,
       sessionTaintStore,
-      codeGraph,
       planStore,
       authorityStore,
     ),
@@ -417,7 +407,6 @@ function buildAdvisors(
   auditLog: AuditLog,
   decisionStore: DecisionStore,
   sessionTaintStore: SessionTaintStore,
-  codeGraph: CodeGraph | null,
   plans: PlanStore,
   grants: AuthorityStore,
 ): ActionAdvisor[] {
@@ -426,17 +415,6 @@ function buildAdvisors(
      principal the advisor returns nothing, so switching it on cannot stop work
      that was running the day before. */
   advisors.push(new AuthorityAdvisor(grants));
-  if (config.contentShield) {
-    advisors.push(new ContentShieldAdvisor());
-  }
-  if (codeGraph && config.protectedPaths.length > 0) {
-    advisors.push(
-      new BlastRadiusAdvisor(codeGraph, {
-        protectedPaths: config.protectedPaths,
-        approvers: [...DEFAULT_ADVISOR_APPROVERS],
-      }),
-    );
-  }
   // Escalates only when callers report taint — always safe to keep on.
   advisors.push(new TaintAdvisor(sessionTaintStore, CONSOLE_LOGGER));
   if (config.memoryEnabled) {
@@ -459,16 +437,6 @@ function buildAdvisors(
   }
   if (config.sessionTokenBudget) {
     advisors.push(new TokenBudgetAdvisor(auditLog, config.sessionTokenBudget));
-  }
-  if (config.dependencyGuard) {
-    advisors.push(
-      new DependencyAdvisor(
-        config.dependencyLicenseLookup
-          ? new NpmRegistryLicenseResolver()
-          : new StaticLicenseResolver(),
-        DEFAULT_ADVISOR_APPROVERS,
-      ),
-    );
   }
   return advisors;
 }

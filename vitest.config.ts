@@ -10,12 +10,9 @@ export default defineConfig({
     alias: {
       '@memnox/core': packageSrc('core'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
-      '@memnox/content-shield': packageSrc('content-shield'),
       '@memnox/local-gate': packageSrc('local-gate'),
-      '@memnox/code-graph': packageSrc('code-graph'),
       '@memnox/org-graph': packageSrc('org-graph'),
       '@memnox/organization': packageSrc('organization'),
-      '@memnox/trust-bench': packageSrc('trust-bench'),
       '@memnox/redis': packageSrc('redis'),
       '@memnox/memory': packageSrc('memory'),
       '@memnox/risk': packageSrc('risk'),

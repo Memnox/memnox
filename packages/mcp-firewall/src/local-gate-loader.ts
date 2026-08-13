@@ -1,17 +1,13 @@
-import { LocalGate, SECRET_RESPONSE, type SecretResponse } from '@memnox/local-gate';
+import { LocalGate } from '@memnox/local-gate';
 import {
   ENV_AGENT_NAME,
-  ENV_ON_SECRET,
   ENV_POLICIES,
   MCP_ACTION_PREFIX,
   POLICY_PATH_SEPARATOR,
 } from './firewall.constants';
 
-const VALID_RESPONSES: readonly string[] = Object.values(SECRET_RESPONSE);
-
 export interface LocalGateEnvironment {
   policies?: string;
-  onSecret?: string;
   agentName?: string;
 }
 
@@ -38,20 +34,12 @@ export async function loadLocalGate(
 
   return LocalGate.fromFiles(files, {
     agentName: environment.agentName ?? `${MCP_ACTION_PREFIX}:${serverName}`,
-    onSecret: parseSecretResponse(environment.onSecret),
   });
-}
-
-/** An unrecognised value falls back to the strict default rather than guessing. */
-function parseSecretResponse(value: string | undefined): SecretResponse | undefined {
-  if (value === undefined) return undefined;
-  return VALID_RESPONSES.includes(value) ? (value as SecretResponse) : undefined;
 }
 
 export function localGateEnvironment(env: NodeJS.ProcessEnv): LocalGateEnvironment {
   return {
     policies: env[ENV_POLICIES],
-    onSecret: env[ENV_ON_SECRET],
     agentName: env[ENV_AGENT_NAME],
   };
 }

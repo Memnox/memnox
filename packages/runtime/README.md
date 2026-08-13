@@ -25,8 +25,8 @@ rests on `evaluateConsent`, a pure function in `@memnox/core`. What to *do* with
 that consent is the gateway's.
 
 A grant is claimed by **fingerprint** (`agent | action | target | environment`), not
-by id, so a caller with nowhere to carry an approval id — an editor hook, an MCP
-client — still gets unblocked when a human approves. It is spent on use: one grant
+by id, so a caller with nowhere to carry an approval id — an MCP client, a
+firewalled tool call — still gets unblocked when a human approves. It is spent on use: one grant
 authorizes one action. Capability bounds, suspension, and non-overridable taint
 blocks all outrank a grant and leave it unspent.
 
@@ -74,8 +74,7 @@ enforced in review:
 3. **Failure means no escalation.** An advisor that throws is logged and skipped.
    It must never crash the gateway and never block everything.
 
-Shipped advisors live in `@memnox/memory`, `@memnox/risk`, `@memnox/content-shield`,
-and `@memnox/code-graph`.
+Shipped advisors live in `@memnox/memory` and `@memnox/risk`.
 
 ## Audit
 

@@ -3,7 +3,6 @@ import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/runtime';
 export const CLI_VERSION = '0.2.0';
 export const DEFAULT_BASE_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 export const DEFAULT_POLICY_FILE = 'memnox.policies.yaml';
-export const DEFAULT_CODE_GRAPH_FILE = '.memnox/code-graph.json';
 export const DEFAULT_CLI_AUDIT_LIMIT = 20;
 
 export const STARTER_POLICY_FILE = `version: 1

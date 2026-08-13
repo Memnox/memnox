@@ -12,16 +12,10 @@ const CLOUD_MODULES = ['cloud-client', 'cloud-connection'];
  * A machine that never signs in must be governed exactly as well as one that did.
  */
 const LOCAL_GOVERNANCE = [
-  'commands/hook.command.ts',
   'commands/check.command.ts',
   'commands/context.command.ts',
   'commands/serve.command.ts',
   'commands/setup.command.ts',
-  'commands/protect.command.ts',
-  'commands/ci.command.ts',
-  'hook-mapping.ts',
-  'cursor-hook-mapping.ts',
-  'editor-hook-installer.ts',
 ];
 
 async function sourceFiles(dir: string): Promise<string[]> {

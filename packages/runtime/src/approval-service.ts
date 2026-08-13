@@ -181,7 +181,7 @@ export class ApprovalService {
    * Spends the grant a human already gave for this exact action, if there is
    * one. Returns null when there is not.
    *
-   * This is what lets an editor hook or the MCP firewall be unblocked at all:
+   * This is what lets an MCP client or the firewall be unblocked at all:
    * both build their request from a tool call and have nowhere to carry an
    * approval id, so without a fingerprint lookup an approved action re-raises a
    * fresh hold on every retry and never proceeds.

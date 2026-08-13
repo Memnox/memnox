@@ -6,12 +6,9 @@
     "paths": {
       "@memnox/core": ["packages/core/src"],
       "@memnox/policy-engine": ["packages/policy-engine/src"],
-      "@memnox/content-shield": ["packages/content-shield/src"],
       "@memnox/local-gate": ["packages/local-gate/src"],
-      "@memnox/code-graph": ["packages/code-graph/src"],
       "@memnox/org-graph": ["packages/org-graph/src"],
       "@memnox/organization": ["packages/organization/src"],
-      "@memnox/trust-bench": ["packages/trust-bench/src"],
       "@memnox/redis": ["packages/redis/src"],
       "@memnox/memory": ["packages/memory/src"],
       "@memnox/risk": ["packages/risk/src"],

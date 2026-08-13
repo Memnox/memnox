@@ -21,36 +21,23 @@ Rules that apply — these decide whether this proceeds:
   - auth-code-review — your policy, requires approval
       Auth and session code changes need a second pair of eyes.
       approvers: security-team
+  - decision-memory — signal, requires approval
+      conflicts with team decision "Session handling stays in one place"
+      (platform-team): new auth surfaces reuse the shared session module.
+      approvers: security-team
 
-Not enforced, but worth checking for this kind of change (baseline 2026.08.2):
-  - authz-check-per-object
-      Check that this caller is allowed to touch this particular record — not
-      only that they are signed in.
-      why: Otherwise someone signed in can change the id in the request and
-      read another customer's data.
-  - session-cookie-flags
-      Set session cookies HttpOnly, Secure, and SameSite, and issue a brand
-      new session id whenever someone signs in or changes role.
-      why: A session id that survives sign-in still works for whoever planted
-      it — and they are now signed in as that person.
-  - no-hardcoded-secrets
-      Never write a password, key, or token into source. Read it from the
-      environment or the secret store.
-      why: Deleting the line afterwards does not help — it stays in the git
-      history, so the secret has to be replaced.
-
-None of this is a review of your code — Memnox has not read it. The rules
-above are your organization's; the checklist ships with Memnox.
+None of this is a judgement on the work itself — the rules above are your
+organization’s, quoted as declared.
 ```
 
-Two kinds of knowledge, deliberately kept apart:
+Every line is a **constraint** this organization declared, and the label says where it came from:
 
-| | Source | Example |
+| Label | Source | Example |
 |---|---|---|
-| **Constraints** | your policy files and recorded decisions, quoted verbatim | *"Auth changes need a second pair of eyes."* |
-| **Security requirements** | the baseline Memnox ships, keyed by action and target | *"Authorize the specific object being touched."* |
+| **your policy** | a rule in your policy files, quoted verbatim | *"Auth changes need a second pair of eyes."* |
+| **signal** | a deterministic advisor — recorded decisions, taint, trust, behavior, verification | *"Conflicts with a decision the team recorded."* |
 
-Neither is generated. The security baseline is a lookup table in [`@memnox/content-shield`](../packages/content-shield), so there is no model and no inference. The same input always produces the same requirements in the same order, stamped with `SECURITY_BASELINE_VERSION` so a briefing can be reproduced later.
+Neither is generated. There is no model and no inference in a briefing: the same input always produces the same constraints, in the same order and the same words, so a briefing can be cached, diffed, and reproduced later.
 
 Asking records nothing and raises no approval. Use `POST /v1/context` from the API, `client.context(request)` from the SDK, or `--json` from the CLI for the structured form.
 
@@ -67,17 +54,16 @@ Asking records nothing and raises no approval. Use `POST /v1/context` from the A
 
 `memnox mcp` is the server itself, and the client launches it. Add it later, or to another client, with `memnox mcp install`, and remove it with `memnox mcp uninstall <client>`. It never overwrites an existing `memnox` entry in your MCP config. Everything stays local, so there is no account, no API key, and no network call.
 
-## Protect real agents in one command
+## Gate what the agent actually calls
+
+Asking is advisory: an agent that never calls `memnox_check_rules` is not governed by it. Enforcement has to sit where the call is made, and the firewall is the one that needs no cooperation from the agent at all.
 
 ```bash
-memnox protect                      # detects Claude Code and Cursor, installs both
-memnox protect claude-code          # or name one explicitly
-memnox protect cursor
-export MEMNOX_AGENT_TOKEN=mnx_...   # from "memnox agents register"
-
-# Any MCP server: wrap it with the firewall, so tools/call is gated and denied tools are hidden
+# Any MCP server: wrap it with the firewall, so every tools/call is decided first
 MEMNOX_AGENT_TOKEN=mnx_... memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github
 ```
+
+The agent points at the firewall instead of the server and sees the same tools, except that every `tools/call` becomes a decision before it reaches upstream. `MEMNOX_TOOLS_ALLOW` and `MEMNOX_TOOLS_DENY` take regexes that hide tools from the listing as well — both are applied at `tools/call` too, since a client can call a tool it was never shown.
 
 ### Where the token comes from
 
@@ -87,7 +73,7 @@ Nowhere, until you mint it. There is no dashboard, no account, and no file it si
 
 The simple path is `memnox setup`. It registers a machine-local agent and writes the token to `~/.memnox/config.json`, directory `0700` and file `0600`, so only your user account can read it. It reuses a token already there instead of minting a second identity every time you run it — two identities for one machine would split that machine's history in half.
 
-**Why a file and not just the environment variable.** An editor launched from the dock or Start menu inherits no shell environment. Your `export MEMNOX_AGENT_TOKEN=...` lives in the terminal that ran it and in nothing else, so an editor hook started by that editor would see no token and silently do nothing. The hook has to be able to read the credential on its own, which means disk. Use the environment variable for terminals, CI, and the MCP firewall; let the file serve the editor.
+**Why a file and not just the environment variable.** An MCP client launched from the dock or Start menu inherits no shell environment. Your `export MEMNOX_AGENT_TOKEN=...` lives in the terminal that ran it and in nothing else, so a server that client spawns would see no token and could answer nothing. It has to be able to read the credential on its own, which means disk. Use the environment variable for terminals, CI, and the MCP firewall; let the file serve a GUI client.
 
 To mint one by hand instead:
 
@@ -107,8 +93,8 @@ memnox agents register --name claude-code --kind claude-code
 | | `MEMNOX_AGENT_TOKEN` | `--admin-token` |
 |---|---|---|
 | Answers | *which agent is asking for this decision?* | *who is allowed to administer this runtime?* |
-| Held by | the agent, hook, or firewall being governed | you, the operator |
-| Used for | `check`, `context`, hooks, the MCP firewall | `agents register`, `suspend`, `rotate`, and other management routes |
+| Held by | the agent, SDK caller, or firewall being governed | you, the operator |
+| Used for | `check`, `context`, the MCP server and firewall | `agents register`, `suspend`, `rotate`, and other management routes |
 
 A runtime bound to loopback with no admin token configured runs in keyless local mode and treats every management call as admin — convenient on your own machine, which is why `--admin-token` is usually absent from local examples. Bind that same runtime to a routable address without credentials and it refuses to start, rather than serving admin routes to the network.
 
@@ -124,10 +110,10 @@ The order exists so a one-off override never requires editing a file, and so CI 
 
 | Surface | How it is governed |
 |---|---|
-| **Claude Code** | `PreToolUse` hook, where exit 2 denies the tool call |
-| **Cursor** | Agent hooks (`preToolUse`, `beforeShellExecution`, `beforeMCPExecution`, `afterFileEdit`), because Memnox's three effects map exactly onto Cursor's `allow`, `deny`, and `ask` |
-| **Any MCP client** (Windsurf, Zed, Codex, and others) | `@memnox/mcp-firewall` proxies the server, so there is no per-client work |
+| **Any MCP client** (Claude Code, Cursor, Windsurf, Zed, Codex, and others) | `@memnox/mcp-firewall` proxies the server it calls, so every `tools/call` is decided and there is no per-client work |
+| **A shell, a script, a pipeline step** | `memnox check <action> [target]` prints the verdict, the risk, and the rules that produced it |
 | **OpenAI Agents SDK, LangGraph, CrewAI, custom loops** | `governTool` and `governTools` from the SDK wrap any function-calling tool registry |
+| **Any other service** | `POST /v1/authorize` answers 200 or 403, from whatever language it is written in |
 
 ```ts
 import { MemnoxClient, governTools } from '@memnox/sdk';
@@ -139,7 +125,7 @@ const tools = governTools(memnox, { readFile, writeFile, runShell }, {
 // Same signatures and same framework wiring, except each call is now decided before it runs.
 ```
 
-The runtime has to stay up for a hook to reach it. If you stop it, the hook fails **open**, because a dead runtime should never block development. Governance stops rather than bricking your editor.
+The runtime has to stay up for any of these to reach it. If you stop it, the MCP firewall fails **closed** and refuses the call, because a firewall that fails open is not a firewall. `MEMNOX_MCP_FAIL_OPEN=true` inverts that, deliberately and out loud.
 
 ## Next
 

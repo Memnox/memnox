@@ -52,7 +52,6 @@ describe('air-gapped operation', () => {
       behaviorGuard: true,
       trustGuard: true,
       memoryEnabled: true,
-      contentShield: true,
       shellGuard: true,
       sessionTokenBudget: 1_000,
     });

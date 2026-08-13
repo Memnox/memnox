@@ -9,7 +9,6 @@ import {
 } from './gateway.constants';
 import {
   ENV_FAIL_OPEN,
-  ENV_ON_SECRET,
   ENV_POLICIES,
   ENV_RUNTIME_URL,
   ENV_TOOLS_ALLOW,
@@ -37,7 +36,6 @@ Environment:
   ${ENV_FAIL_OPEN}      "true" to forward calls when the runtime is unreachable
   ${ENV_POLICIES}         policy files evaluated in-process, comma-separated —
                           the only place a call's arguments are ever read
-  ${ENV_ON_SECRET}        a secret in an argument: block (default) | redact | signal
 
 Callers POST JSON-RPC to ${DEFAULT_GATEWAY_PATH} with:
   Authorization: Bearer <the calling agent's mnx_ token>

@@ -46,8 +46,8 @@ policies:
       reason: Customer data export requires a human-run, logged procedure.
 
   # ── Argument-level rules ─────────────────────────────────────────────────
-  # Matched by the in-process gate (@memnox/local-gate): the MCP firewall and
-  # the editor hook read the call's arguments, the runtime never receives them.
+  # Matched by the in-process gate (@memnox/local-gate): the MCP firewall reads
+  # the call's arguments, and the runtime never receives them.
   - name: no-recursive-delete-anywhere
     description: The same command through a shell or through an MCP tool.
     match:

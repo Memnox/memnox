@@ -1,10 +1,8 @@
-import type { JsonRpcMessage } from './json-rpc';
-
 export interface ToolCall {
   name: string;
   /**
-   * The call's arguments flattened to strings, which is what a policy matches
-   * and the scanner reads. Structured values are carried as their JSON text.
+   * The call's arguments flattened to strings, which is what a policy matches.
+   * Structured values are carried as their JSON text.
    */
   arguments: Record<string, string>;
 }
@@ -29,35 +27,6 @@ export function flattenArguments(input: unknown): Record<string, string> {
     flattened[name] = asText(value);
   }
   return flattened;
-}
-
-/**
- * Rebuilds the message with masked arguments. Null means the masking cannot be
- * put back faithfully — a structured argument carried a secret, and rewriting
- * its JSON text would change the call's shape — so the caller blocks instead.
- */
-export function withRedactedArguments(
-  message: JsonRpcMessage,
-  redacted: Record<string, string>,
-): JsonRpcMessage | null {
-  const params = message.params;
-  if (params === undefined) return null;
-
-  const original = params[ARGUMENTS_KEY];
-  if (typeof original !== 'object' || original === null || Array.isArray(original)) {
-    return null;
-  }
-
-  const rewritten: Record<string, unknown> = { ...(original as Record<string, unknown>) };
-  for (const [name, masked] of Object.entries(redacted)) {
-    const current = rewritten[name];
-    if (typeof current === 'string') {
-      rewritten[name] = masked;
-      continue;
-    }
-    if (asText(current) !== masked) return null;
-  }
-  return { ...message, params: { ...params, [ARGUMENTS_KEY]: rewritten } };
 }
 
 function asText(value: unknown): string {

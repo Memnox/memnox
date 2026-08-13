@@ -118,7 +118,7 @@ describe('renderActionBriefing', () => {
     expect(text).toContain('Payment logic changes need security review.');
     expect(text).toContain('approvers: security-team');
     // The boundary is restated in the output itself.
-    expect(text).toContain('None of this is a review of your code');
+    expect(text).toContain('None of this is a judgement on the work itself');
   });
 
   it('names the source, so a declared rule is never read as an advisor signal', () => {
@@ -171,17 +171,19 @@ describe('renderActionBriefing', () => {
 
   it('wraps at a fixed column rather than the terminal width', () => {
     const text = renderActionBriefing(
-      buildActionBriefing({ action: 'file.write' }, assessment(), {
-        requirements: [
-          {
-            id: 'authz-check-per-object',
-            requirement:
-              'Authorize the specific object being touched, not just that the caller is logged in.',
-            why: 'Skipping the per-object check is IDOR: a valid session reads another tenant’s data.',
-          },
-        ],
-        version: '2026.08.1',
-      }),
+      buildActionBriefing(
+        { action: 'file.write' },
+        assessment({
+          matchedPolicies: [
+            {
+              name: 'per-object-authorization',
+              effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+              reason:
+                'Authorize the specific object being touched, not just that the caller is logged in — skipping the per-object check is IDOR.',
+            },
+          ],
+        }),
+      ),
     );
 
     for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(78);
@@ -207,65 +209,5 @@ describe('renderActionBriefing', () => {
     const briefing = buildActionBriefing({ action: 'deploy.service' }, assessment());
 
     expect(renderActionBriefing(briefing)).toBe(renderActionBriefing(briefing));
-  });
-
-  it('lists security requirements separately from declared constraints', () => {
-    const text = renderActionBriefing(
-      buildActionBriefing(
-        { action: 'file.write', target: 'src/auth/login.ts' },
-        assessment(),
-        {
-          requirements: [
-            {
-              id: 'authz-check-per-object',
-              requirement: 'Authorize the specific object being touched.',
-              why: 'Skipping it is IDOR.',
-            },
-          ],
-          version: '2026.08.1',
-        },
-      ),
-    );
-
-    // Declared rules first — an organization's own words outrank the baseline.
-    expect(text.indexOf('Payment logic changes')).toBeLessThan(
-      text.indexOf('Authorize the specific object'),
-    );
-    expect(text).toContain('worth checking for this kind of change');
-    expect(text).toContain('why: Skipping it is IDOR.');
-    // The id and the baseline version are what make a requirement citable.
-    expect(text).toContain('authz-check-per-object');
-    expect(text).toContain('(baseline 2026.08.1)');
-  });
-
-  it('still shows security requirements when no rule is declared', () => {
-    const text = renderActionBriefing(
-      buildActionBriefing(
-        { action: 'shell.execute', target: 'rm $USER_INPUT' },
-        assessment({ matchedPolicies: [], effect: DECISION_EFFECT.ALLOW }),
-        {
-          requirements: [
-            {
-              id: 'shell-no-interpolation',
-              requirement: 'Pass arguments as a list.',
-              why: 'Interpolation is command injection.',
-            },
-          ],
-          version: '2026.08.1',
-        },
-      ),
-    );
-
-    expect(text).toContain('No rule your organization wrote covers this action.');
-    expect(text).toContain('Pass arguments as a list.');
-  });
-
-  it('stamps the baseline version so a briefing is reproducible', () => {
-    const briefing = buildActionBriefing({ action: 'file.write' }, assessment(), {
-      requirements: [],
-      version: '2026.08.1',
-    });
-
-    expect(briefing.securityBaseline).toBe('2026.08.1');
   });
 });

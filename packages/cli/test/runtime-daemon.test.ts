@@ -20,7 +20,6 @@ describe('serveArgs', () => {
         port: 7466,
         host: '127.0.0.1',
         policyFile: 'memnox.policies.yaml',
-        protectedPaths: ['*auth/*'],
         behaviorGuard: true,
         trustGuard: false,
         enforcement: { default: ENFORCEMENT_MODE.MONITOR },
@@ -33,8 +32,6 @@ describe('serveArgs', () => {
       '127.0.0.1',
       '--policies',
       'memnox.policies.yaml',
-      '--protected-path',
-      '*auth/*',
       '--behavior-guard',
       '--enforcement',
       'monitor',
@@ -42,9 +39,7 @@ describe('serveArgs', () => {
   });
 
   it('omits a guard that is off rather than passing a negative flag', () => {
-    expect(serveArgs({ behaviorGuard: false, dependencyGuard: false })).toEqual([
-      'serve',
-    ]);
+    expect(serveArgs({ behaviorGuard: false, trustGuard: false })).toEqual(['serve']);
   });
 });
 

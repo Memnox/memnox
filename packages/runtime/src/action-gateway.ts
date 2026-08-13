@@ -54,10 +54,6 @@ import {
   TAINT_NO_OVERRIDE_ACTIONS,
   UNVERIFIED_EXECUTION_STATUSES,
 } from '@memnox/core';
-import {
-  SECURITY_BASELINE_VERSION,
-  securityRequirementsFor,
-} from '@memnox/content-shield';
 import { LLM_SPEND_ACTION } from '@memnox/risk';
 import {
   classifyRisk,
@@ -383,10 +379,7 @@ export class ActionGateway {
    * an agent can read the rules up front instead of discovering them by refusal.
    */
   async brief(agentToken: string, request: ActionRequest): Promise<ActionBriefing> {
-    return buildActionBriefing(request, await this.assess(agentToken, request), {
-      requirements: securityRequirementsFor(request.action, request.target),
-      version: SECURITY_BASELINE_VERSION,
-    });
+    return buildActionBriefing(request, await this.assess(agentToken, request));
   }
 
   /** What the decision would be, without making it — nothing is recorded. */

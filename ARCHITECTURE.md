@@ -5,10 +5,10 @@ Memnox is built around one core primitive:
 > **Every AI action becomes an event that Memnox can understand, evaluate, authorize, and prove.**
 
 ```
-        AI Agents (Claude Code, Cursor, MCP clients, custom)
+             AI Agents (MCP clients, SDK callers, custom)
                             |
         ┌─────────── interception ───────────┐
-        │  Claude Code hook   MCP firewall   │   SDKs (TS / Python / Go)
+        │     MCP firewall     REST API      │   SDKs (TS / Python / Go)
         └──────────────────┬─────────────────┘
                            ↓
                     Memnox Runtime
@@ -37,27 +37,26 @@ ActionGateway ──▶ AgentRegistry     identity, credentials, rotation
 1. **Identity** — `AgentRegistry` resolves token → agent (bearer hash first, then service-account JWT). Unknown token: blocked, audited as critical. Suspended agent: blocked. An agent registered with `capabilities` (wildcard action patterns) is blocked before policy evaluation when the action matches none of them — even a granted approval cannot widen capabilities.
 2. **Policy** — `PolicyEngine.evaluate()` collects every matching policy; the most restrictive effect wins (`block` > `require_approval` > `allow`); no match → configured default effect.
 3. **Advisors** — deterministic escalators run next. An advisor may only *tighten* the decision, never loosen it, and an advisor failure means "no escalation", never a crash. With `--trust-guard`, the `TrustAdvisor` requires approval for high/critical-risk actions from agents whose trust score has dropped below 60. With `--verification-guard`, the `VerificationAdvisor` does the same for destructive actions from an agent whose recent allowed decisions never reported an execution outcome.
-4. **Approval** — `ApprovalService.requestFor()` creates or reuses a pending approval bound to the exact action fingerprint; the notifier port announces new ones. A policy may demand a quorum (`minApprovals`): grants accumulate, one person counts once, and a single denial ends it. When a request presents an `approvalId`, `ApprovalService.consentFor()` answers what that approval means — a lapsed pending approval is retired rather than treated as consent — and the gateway turns that verdict into a decision. When it presents none, the gateway claims an unspent grant matching the request fingerprint (`ApprovalService.claimGrantFor`), which is what closes the loop for an editor hook or MCP client that has nowhere to carry an id. Either way the grant is marked `consumedAt`: **one grant authorizes one action**. An admin can break-glass (`POST /v1/approvals/:id/override` with a mandatory reason); the override is marked on the approval and appends a critical-risk audit event.
+4. **Approval** — `ApprovalService.requestFor()` creates or reuses a pending approval bound to the exact action fingerprint; the notifier port announces new ones. A policy may demand a quorum (`minApprovals`): grants accumulate, one person counts once, and a single denial ends it. When a request presents an `approvalId`, `ApprovalService.consentFor()` answers what that approval means — a lapsed pending approval is retired rather than treated as consent — and the gateway turns that verdict into a decision. When it presents none, the gateway claims an unspent grant matching the request fingerprint (`ApprovalService.claimGrantFor`), which is what closes the loop for an MCP client that has nowhere to carry an id. Either way the grant is marked `consumedAt`: **one grant authorizes one action**. An admin can break-glass (`POST /v1/approvals/:id/override` with a mandatory reason); the override is marked on the approval and appends a critical-risk audit event.
 5. **Audit** — exactly one append-only event per action request: who, what, decision, risk, matched policies, `policyVersion`, advisory signals, session.
 
 `POST /v1/evaluate-risk` runs steps 1–3 and stops: it reports what the verdict *would* be without auditing anything or creating an approval. Asking is not attempting.
 
-`POST /v1/context` runs the same steps and renders them as a **briefing** — the constraints that govern the action, in the words whoever declared them used, plus the security requirements Memnox ships for that class of work. It is the pre-flight half of the gate: an agent that asks first carries the rules into its work; one that does not meets them as a refusal. Both halves of a briefing are lookups, never generation — `buildActionBriefing` has no branch that invents a statement.
+`POST /v1/context` runs the same steps and renders them as a **briefing** — the constraints that govern the action, in the words whoever declared them used. It is the pre-flight half of the gate: an agent that asks first carries the rules into its work; one that does not meets them as a refusal. A briefing is a lookup, never generation — `buildActionBriefing` has no branch that invents a statement.
 
 ## Package map (vision layer → code)
 
 | Vision layer | Package / entry point | Notes |
 |---|---|---|
-| 1. Runtime gateway + interception | `@memnox/runtime`, `memnox protect` (Claude Code + Cursor), `@memnox/mcp-firewall`, `governTools` (`@memnox/sdk`) | Claude Code hook exits 2 to deny; Cursor hooks map the three effects onto `allow`/`deny`/`ask`; the firewall gates `tools/call`; `governTools` wraps any function-calling agent loop |
+| 1. Runtime gateway + interception | `@memnox/runtime`, `@memnox/mcp-firewall`, `governTools` (`@memnox/sdk`) | The firewall gates `tools/call` and filters `tools/list`; `governTools` wraps any function-calling agent loop; the REST API serves everything else |
 | 2. Agent identity | `@memnox/core` (AgentIdentity, trust score), `AgentRegistry`, runtime `/v1/agents` | Bearer tokens, service-account JWTs, mTLS. `POST /v1/agents/:id/rotate` issues a new credential and retires the old one on return. Deterministic trust score consumed by `TrustAdvisor` (`--trust-guard`); optional per-agent `capabilities` bound what an agent may attempt |
 | 3. Policy engine | `@memnox/policy-engine` | Zero-dep, wildcard matching, YAML validation with full error lists. `versionPolicySet` content-hashes a rule set (stamped on every event as `policyVersion`); `comparePolicySets` powers `memnox policy simulate`; `POLICY_PACKS` are the in-tree reusable bundles |
-| 3b. Action understanding | `@memnox/code-graph` + `BlastRadiusAdvisor` | File-level import graph → transitive reachability. Escalates a code change by what it reaches, not just the path it names. Deliberately not symbol-level (see the package README) |
 | 4. Organizational memory | `@memnox/memory` (`DecisionRegistry`, `searchDecisions`, `DecisionSemanticSearch`, `VectorIndex`) | Team decisions as machine-checkable constraints; enforcement is pure pattern matching. Search is keyword by default and hybrid keyword+embedding when `--embedding-key` is set, degrading to keyword if the provider is unreachable |
 | 5. Approvals | `ApprovalService` + `evaluateConsent` (core), runtime `/v1/approvals`, `ApprovalNotifier` port, Slack interactive endpoint | Fingerprint-bound, claimable without an id, and single-use. `minApprovals` gives the two-person rule: grants accumulate, one person counts once, a single denial ends it. Break-glass via `/v1/approvals/:id/override` — reason required, audited as critical, refused (403) for the non-overridable class |
 | 6. Audit & accountability | `JsonlAuditLog`, sessions (`memnox replay`), `memnox report` (compliance markdown/JSON) | Append-only JSONL |
 | 6b. Verified execution | `runGuarded` (`@memnox/sdk`), `POST /v1/actions/outcome`, `ActionGateway.recordOutcome` | Preconditions → action → postconditions → rollback. The outcome is the caller's testimony — the runtime cannot observe the outside world, so it records the claim and lets the log expose a decision that was never followed up. A failed rollback audits as critical |
-| 7. Risk | `classifyRisk` (policy-engine) + `@memnox/risk` (`BehaviorAdvisor`, `TrustAdvisor`, `VerificationAdvisor`, `TaintAdvisor`, `TokenBudgetAdvisor`, `DependencyAdvisor`) + `@memnox/content-shield` | Novel destructive actions, bursts, probing, prompt-injection taint gating, session token budgets — all rule-based. The shield scans written content and git diffs offline: secrets, credential/PII logging, SSN and Luhn-checked card numbers, `.env` credentials, and a curated vulnerable-package table. Rules are routed by path kind (code / manifest / lockfile / env / minified / sample) and stamped with `SHIELD_RULESET_VERSION` so a verdict can be reproduced. Used by the `ContentShieldAdvisor`, the `memnox hook` pre-write delta filter, and `memnox ci` |
-| 7b. Pre-flight context | `POST /v1/context`, `ActionGateway.brief`, `buildActionBriefing` (core), `securityRequirementsFor` (`@memnox/content-shield`) | "What governs this?", answered before acting. Declared constraints are quoted from the policy set and decision corpus; security requirements come from a shipped lookup table keyed by action and target, versioned as `SECURITY_BASELINE_VERSION`. No model, no inference, and no judgement about code already written — the shape lives in `core`, the security knowledge in `content-shield` |
+| 7. Risk | `classifyRisk` (policy-engine) + `@memnox/risk` (`BehaviorAdvisor`, `TrustAdvisor`, `VerificationAdvisor`, `TaintAdvisor`, `AuthorityAdvisor`, `PlanScopeAdvisor`, `ShellIndirectionAdvisor`, `TokenBudgetAdvisor`) | Novel destructive actions, bursts, probing, prompt-injection taint gating, delegated-authority limits, declared-plan scope, session token budgets — all rule-based, all escalate-only |
+| 7b. Pre-flight context | `POST /v1/context`, `ActionGateway.brief`, `buildActionBriefing` (core) | "What governs this?", answered before acting. Constraints are quoted from the policy set and decision corpus in the words whoever declared them used. No model, no inference, and no judgement about the work itself |
 | 7c. Agent-facing tools | `memnox mcp` (`@memnox/cli`) | Memnox as an MCP server over stdio: `memnox_check_rules` and `memnox_status`. `McpServer` is message-in/message-out and owns no sockets, so the protocol is driven directly in tests. `memnox mcp install` writes the client config and never overwrites an existing `memnox` entry |
 | 8. MCP security | `@memnox/mcp-firewall` | Transparent stdio proxy; static allow/deny + runtime checks; fail-closed by default |
 | 9. Enterprise control plane | RBAC roles on the API (`viewer` / `approver` / `admin` via `apiKeys`) | Dashboards/multi-org are the commercial control plane |
@@ -70,9 +69,8 @@ ActionGateway ──▶ AgentRegistry     identity, credentials, rotation
 
 ```
 core ← policy-engine ← memory
-core ← content-shield ← risk
-core + policy-engine ← code-graph
-core + policy-engine + memory + risk + code-graph ← runtime
+core ← org-graph ← risk
+core + policy-engine + memory + risk ← runtime
 core ← sdk ← mcp-firewall
 core + policy-engine ← intelligence
 core ← memory ← postgres
@@ -127,7 +125,7 @@ The pre-keyring `--data-key` shape survives as the reserved key id `v1` with its
 
 `--encryption-mode` decides what an envelope-less value means. `permissive` reads it and counts `memnox_plaintext_records_read_total`; that counter reaching zero is the signal that `strict` — which refuses — is safe. A deployment that calls itself encrypted and silently serves plaintext is exactly the failure this exists to expose.
 
-**Encrypted:** the `record` blob of every agent, decision, approval, and audit event, in both the file and Postgres backends, plus the local policy history (rule bodies name protected paths).
+**Encrypted:** the `record` blob of every agent, decision, approval, and audit event, in both the file and Postgres backends, plus the local policy history.
 
 **Deliberately not encrypted, and this is a real limit rather than an oversight:**
 
@@ -154,5 +152,4 @@ Honest limits: no signatures and no Merkle tree, so anyone who can write the sto
 | Advisors | escalation-only | A broken advisor must not brick or bypass anything |
 | Session taint store unreadable | fail closed | Provenance that cannot be proven clean is treated as tainted — the one exception to the row above |
 | MCP firewall, runtime unreachable | fail closed (`MEMNOX_MCP_FAIL_OPEN=true` to override) | A firewall that fails open is not a firewall |
-| Claude Code hook, runtime unreachable | fail open (`MEMNOX_HOOK_FAIL_CLOSED=true` to override) | A hook must never be the reason an editor stops working |
 | Approval notifier failure | never affects the decision | Notification is best-effort; the audit log is the record |

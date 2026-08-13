@@ -1,6 +1,6 @@
 # How a decision is made
 
-> This page is the detailed one. If terms like *taint*, *fingerprint*, *capabilities*, or *blast radius* are new, read [concepts.md](concepts.md) first — it defines them in plain language.
+> This page is the detailed one. If terms like *taint*, *fingerprint*, *provenance*, or *capabilities* are new, read [concepts.md](concepts.md) first — it defines them in plain language.
 
 Every call takes the same five steps, in the same order, with no LLM and no network anywhere in the path.
 
@@ -22,7 +22,7 @@ Risk levels run from `low` to `critical` and are classified by deterministic rul
 
 ## Approvals in practice
 
-On the next attempt the gateway **claims the grant by fingerprint**, so the caller does not have to echo an approval id back. That is what lets the loop close for an editor hook or an MCP client that has nowhere to put one.
+On the next attempt the gateway **claims the grant by fingerprint**, so the caller does not have to echo an approval id back. That is what lets the loop close for an MCP client or a wrapped tool that has nowhere to put one.
 
 A grant is **single-use**. It is marked spent when it authorizes an action, so approving "write this file" authorizes that write rather than every write of it until the TTL runs out.
 
@@ -40,32 +40,6 @@ Admins can break-glass a pending approval with `memnox approvals override <id> -
 A grant does **not** override an agent's declared `capabilities`, a suspended agent, or a non-overridable taint block. Each of those refuses the action and leaves the grant unspent.
 
 `GET /v1/approvals/:id` is the only route an agent token may read. It returns the approval that agent raised, and 403s on anyone else's.
-
-## Blast radius
-
-A policy matches the path an action names, and that is not enough on its own. An agent editing `src/utils/money.ts` is editing payment code if `payment/checkout.ts` imports it. Build the import graph, then protect what matters:
-
-```bash
-memnox graph build                       # writes .memnox/code-graph.json
-memnox graph explain src/utils/money.ts  # what a change here reaches
-memnox serve --code-graph .memnox/code-graph.json --protected-path "*payment/*"
-```
-
-This is escalation-only and silent when uncertain, so an unresolvable target or an ambiguous path raises nothing rather than blaming the wrong file.
-
-### Deeper code understanding, optionally
-
-The built-in graph reads imports in a handful of languages. [Graphify](https://github.com/Graphify-Labs/graphify) parses 36 of them with tree-sitter and adds `calls` and `inherits` edges:
-
-```bash
-memnox graphify install   # uv / pipx / pip3
-memnox graphify build     # AST only, so no LLM, no network, no API key
-memnox setup              # picks it up automatically
-```
-
-Only `EXTRACTED` (AST) edges cross into the decision path. `INFERRED` ones are counted and discarded, because a model-derived edge must never influence a verdict. Graphify is never installed as a side effect, since running the install command is the consent.
-
-Graphify is dual-licensed Apache-2.0 and MIT (© 2026 Safi Shamsi), makes no network calls during analysis, and parses rather than executes source. It stays an **optional** peer, because Memnox reads the JSON it writes and never links against it.
 
 ## Verified execution
 
@@ -94,10 +68,6 @@ Taint attaches to the **session** rather than to strings, and merges monotonical
 
 Provenance is fail-closed, which is the one exception to "advisor failure means no escalation". If the session taint store cannot be read, the session is treated as tainted rather than assumed clean.
 
-## Dependency governance
-
-`serve --dependency-guard` governs `dependency.add`, covering known-vulnerable versions from the shield's curated offline table, plus licenses the organization cannot accept. License lookup defaults to an offline table, and `--dependency-license-lookup` opts into the npm registry. An unknown license or an unreachable registry raises nothing, because a lookup failure can never cause a wrongful block.
-
 ## Platform API
 
 Beyond `/v1/actions/check`, the runtime exposes the named verbs other systems integrate against:
@@ -106,7 +76,7 @@ Beyond `/v1/actions/check`, the runtime exposes the named verbs other systems in
 |---|---|
 | `POST /v1/decision` | the full verdict, to inspect |
 | `POST /v1/authorize` | 200 or 403, for callers that just want a yes or no |
-| `POST /v1/context` | what governs this, before doing it: constraints plus the security baseline |
+| `POST /v1/context` | what governs this, before doing it: the constraints this organization declared |
 | `POST /v1/evaluate-risk` | what *would* happen. Audits nothing and creates no approval |
 | `POST /v1/actions/outcome` | what actually happened after an allowed action |
 | `GET /v1/policies` · `POST /v1/policies/validate` · `POST /v1/policies/reload` | inspect and reload the rule set |

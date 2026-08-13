@@ -34,7 +34,7 @@ const EXIT_NOT_SIGNED_IN = 1;
  * Outbound only, and that is the point: the laptop dials the control plane, so
  * nothing has to reach *in* to a developer's machine. It is also why this is a
  * separate credential from the agent token — this one is the person, and an
- * editor hook must never be able to read the organization with it.
+ * governed agent must never be able to read the organization with it.
  */
 export function registerLoginCommand(
   program: Command,
@@ -112,7 +112,7 @@ export function registerLoginCommand(
       const { cloud: _removed, ...rest } = stored;
       await writeAgentConfig(homeDir, rest);
       // The runtime credential is untouched: signing out of the org must not
-      // stop the editor hook governing this machine.
+      // stop the runtime governing the agents on this machine.
       context.out.line('Signed out. The local runtime credential is unchanged.');
     });
 

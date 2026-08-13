@@ -11,7 +11,6 @@ import {
   upstreamUrl,
   usageFromResponse,
 } from '../proxy/upstream';
-import { inspectOutput, OUTPUT_BLOCKED_MESSAGE } from '../proxy/output-guard';
 import { bearerToken, type RouteContext } from './route-context';
 
 /** Headers that belong to this hop, never to the upstream request. */
@@ -102,18 +101,6 @@ export function registerProxyRoutes(app: FastifyInstance, ctx: RouteContext): vo
             decisionRequest.sessionId,
             decisionRequest.environment,
           );
-        }
-      }
-      // Post-inference: a model can echo a secret it was shown; relaying that
-      // would put it in the caller's logs.
-      if (forwarded.ok && ctx.config.contentShield) {
-        const verdict = inspectOutput(text);
-        if (!verdict.safe) {
-          ctx.metrics.increment(METRIC.PROXY_OUTPUT_BLOCKED_TOTAL);
-          return reply.code(502).send({
-            error: OUTPUT_BLOCKED_MESSAGE,
-            rules: verdict.rules,
-          });
         }
       }
       return reply

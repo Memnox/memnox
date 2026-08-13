@@ -1,15 +1,15 @@
 # Getting started
 
-From nothing to a governed editor, then to one that actually blocks. Every
+From nothing to a governed agent, then to one that actually blocks. Every
 command and every output below is real.
 
 > **New to Memnox?** [concepts.md](concepts.md) explains the mental model and
-> every term used below — agent, action, hook, runtime, MCP, taint — in about
+> every term used below — agent, action, runtime, MCP, taint — in about
 > five minutes. This page assumes them.
 
 ```
-setup ──▶ restart editor ──▶ observe ──▶ tune ──▶ enforce ──▶ approve as needed
- 10s          once          a day     minutes    1 command      daily
+setup ──▶ restart agent ──▶ observe ──▶ tune ──▶ enforce ──▶ approve as needed
+ 10s          once         a day     minutes    1 command      daily
 ```
 
 ---
@@ -43,7 +43,7 @@ Wrote starter policies to memnox.policies.yaml (project: acme-checkout)
 Detected: payments, database migrations, CI/CD
 Packs: production-safety, terminal-safety, payments, data-privacy
 Registered agent "local-editor" — token saved to ~/.memnox/config.json
-Installed the claude-code hook
+Registered the Memnox MCP server with claude-code
 
 Memnox runtime listening on http://127.0.0.1:7466
 Running in the background: pid 4821
@@ -60,22 +60,19 @@ still runs in the foreground and is stopped with Ctrl+C; only `setup` detaches.
 Open <http://127.0.0.1:7466> for the same numbers as a page: mode, rule count,
 what is waiting, and the last decisions.
 
-Five things happened:
+Four things happened:
 
 | What | Where it landed | Why there |
 |---|---|---|
 | Rules scaffolded from your stack | `memnox.policies.yaml` | committed, reviewable in a diff |
-| A machine-local agent identity | `~/.memnox/config.json` (mode `0600`) | a GUI editor inherits no shell environment |
-| Editor hooks | `~/.claude/settings.json`, `~/.cursor/hooks.json` | user-level, never committed |
+| A machine-local agent identity | `~/.memnox/config.json` (mode `0600`) | a GUI client inherits no shell environment |
 | The runtime | `127.0.0.1:7466`, data in `./.memnox/` | zero infrastructure |
-| The MCP server, registered | `~/.claude.json`, `~/.cursor/mcp.json` | so the agent can *ask* before it writes |
-| A code-graph snapshot | `.memnox/code-graph.json` | blast radius needs it, and two manual steps meant nobody had it |
+| The MCP server, registered | `~/.claude.json`, `~/.cursor/mcp.json` | so the agent can *ask* before it acts |
 
 Every deterministic guard is on:
 
 ```
-Guards: content shield, shell indirection, taint, decision memory,
-        behavior, trust, verification, dependencies
+Guards: shell indirection, taint, decision memory, behavior, trust, verification
 ```
 
 A **guard** is an extra check that can *tighten* a decision your policies already
@@ -84,20 +81,18 @@ guessing. Here is what each one watches for:
 
 | Guard | Escalates when… |
 |---|---|
-| **content shield** | a secret, key, or personal data appears in the content or diff being written |
 | **shell indirection** | a destructive command is wrapped to avoid matching — `bash -c`, `eval`, a script that hides the real command |
 | **taint** | the agent has read untrusted content this session (a stranger's GitHub issue, a fetched page) and is now doing something privileged. The prompt-injection defense |
 | **decision memory** | the action contradicts a decision your team recorded with `memnox memory add` |
 | **behavior** | the pattern looks off — a destructive action this agent has never taken, or a sudden burst |
 | **trust** | a low-scoring agent attempts something risky. Each block costs 2 points of 100; 50 clean actions earn 1 back |
 | **verification** | earlier allowed actions never reported back whether they actually worked |
-| **dependencies** | a package being added has a known vulnerability or a license you do not accept |
 
 New terms here — taint, trust score, guard — are defined in
 [concepts.md](concepts.md).
 
 That is safe precisely because the first run **observes**. A guard that fires is
-a line in the audit trail, not a blocked editor, so you can read what it caught
+a line in the audit trail, not a refused action, so you can read what it caught
 before deciding to enforce. `memnox serve` keeps its explicit-flag contract — a
 server deployment does not silently gain guards because a local default moved.
 
@@ -105,14 +100,12 @@ Stack detection is deterministic and offline — dependency names and file
 existence, no model and no network. The same repository always scaffolds the
 same rules, and it only ever *adds* packs.
 
-**Restart your editor.** That is the whole install.
+**Restart your agent.** That is the whole install.
 
 **Less commitment, if you want it:**
 
 ```bash
-memnox setup --no-hook     # runtime + policies, editor untouched
-memnox setup --no-mcp      # skip registering the MCP server
-memnox setup --no-graph    # skip building the code graph
+memnox setup --no-mcp      # runtime + policies, your MCP config untouched
 memnox setup --no-serve    # scaffold only, bind no port
 memnox setup --no-detect   # generic starter rules instead of detection
 ```
@@ -124,7 +117,7 @@ Add `.memnox/` to your `.gitignore`. Commit `memnox.policies.yaml`.
 ## 2. Observe — do not skip this
 
 Nothing is blocked yet, deliberately. A rule you have not read must not wedge
-your editor on minute one.
+your agent on minute one.
 
 ```bash
 memnox status
@@ -228,7 +221,7 @@ policies match, **the most restrictive wins** (`block` > `require_approval` >
 `allow`). A `minApprovals: 2` gives you the two-person rule.
 
 > **If you set `project:`**, every request must name that project or the rule is
-> invisible. The CLI and the editor hook do this for you by reading the nearest
+> invisible. The CLI and the MCP server do this for you by reading the nearest
 > policy file. See [troubleshooting](troubleshooting.md#a-rule-exists-but-never-matches).
 
 ---
@@ -299,22 +292,13 @@ Rules that apply — these decide whether this proceeds:
       Auth and session code changes need a second pair of eyes.
       approvers: security-team
 
-Not enforced, but worth checking for this kind of change (baseline 2026.08.2):
-  - authz-check-per-object
-      Check that this caller is allowed to touch this particular record — not
-      only that they are signed in.
-      why: Otherwise someone signed in can change the id in the request and
-      read another customer's data.
-  - session-cookie-flags
-      Set session cookies HttpOnly, Secure, and SameSite, and issue a brand
-      new session id whenever someone signs in or changes role.
-      why: A session id that survives sign-in still works for whoever planted
-      it — and they are now signed in as that person.
+None of this is a judgement on the work itself — the rules above are your
+organization’s, quoted as declared.
 ```
 
-Two kinds of knowledge, kept visibly apart: **constraints** are what your
-organization declared, quoted verbatim; **security requirements** are the
-baseline Memnox ships for that class of work. Neither is generated.
+Every line of that is a **constraint** your organization declared — a policy you
+wrote, or a signal a deterministic advisor raised — quoted verbatim. Nothing is
+generated, and when no rule matches it says so rather than implying approval.
 
 Asking records nothing and raises no approval.
 
@@ -330,80 +314,14 @@ memnox mcp uninstall claude-code
 
 ---
 
-## 7. Deeper code understanding (optional)
-
-Memnox's own graph reads `import` statements in a handful of languages. Graphify
-parses **36 languages with tree-sitter** and emits `calls` and `inherits` too —
-on this repository that was **767 edges instead of 222**.
-
-```bash
-memnox graphify install     # uv tool install graphifyy, or pipx, or pip3
-memnox graphify build       # AST only: no LLM, no network, no API key
-memnox setup                # picks the Graphify graph up automatically
-```
-
-```
-Code graph: .memnox/code-graph.json (Graphify — 376 files, 767 edges)
-```
-
-`memnox graphify status` says whether it is installed and whether a graph exists.
-
-**Only `EXTRACTED` edges are read.** Graphify tags every edge `EXTRACTED` (parsed
-from the AST) or `INFERRED` (derived by a model). Memnox keeps the first and
-discards the second, and reports the count it dropped — a model-derived edge must
-never influence a decision. Nothing is installed as a side effect of `memnox
-setup`; running `memnox graphify install` is the consent.
-
-**What Memnox relies on from it** ([Graphify](https://github.com/Graphify-Labs/graphify),
-dual Apache-2.0 / MIT, © 2026 Safi Shamsi):
-
-- **No network during analysis.** Egress only in `ingest` with a URL you pass;
-  Memnox never calls that path. Verified offline here.
-- **AST parsing only — no code execution from source files**, and no
-  `shell=True`. Memnox points it at repositories it does not trust.
-- **No listener, no stored credentials** by default.
-
-> Its `SECURITY.md` lists **0.3.x** as the supported line while PyPI ships
-> **0.8.x**. Treat that as a stale policy file rather than a guarantee, and pin
-> the version you audited.
-
-### Everything in one container
-
-The npm package cannot carry a Python one, so a local install keeps Graphify
-optional. A container can carry both:
-
-```bash
-docker build -f Dockerfile.allinone -t memnox-allinone .
-docker run -p 7466:7466 \
-  -v memnox-data:/data \
-  -v "$PWD:/repo:ro" \
-  -e MEMNOX_REPO=/repo \
-  -e MEMNOX_ADMIN_TOKEN=<token> \
-  memnox-allinone
-```
-
-```
-[memnox] code graph built from /repo via Graphify
-Memnox runtime listening on http://0.0.0.0:7466
-```
-
-The repository mounts **read-only** — the graph is written to `/data`, never
-into your working tree. It runs unprivileged, refuses to start on a routable
-host without an admin token, and both licences ship inside at
-`/app/THIRD-PARTY-NOTICES.md`.
-
-## 8. Beyond one editor
+## 7. Beyond one client
 
 ```bash
 # any other MCP client — Windsurf, Zed, Codex
 memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github
 
-# what a change actually reaches, not the path it names
-memnox graph build
-memnox serve --code-graph .memnox/code-graph.json --protected-path "*payment/*"
-
-# CI — exits 1 on secrets or PII in the diff
-memnox ci
+# a script or a pipeline step: one decision, printed with the rules behind it
+memnox check deploy.service checkout-api --env production
 
 # evidence
 memnox replay <sessionId>    # one agent session, in order
@@ -440,11 +358,11 @@ your-project/
 ~/.memnox/policies.json    ← rule-file registry for multi-repo projects
 ~/.memnox/runtime.pid      ← what "memnox stop" signals
 ~/.memnox/runtime.log      ← what the background runtime printed
-~/.claude/settings.json    ← one PreToolUse hook entry
-~/.cursor/hooks.json       ← four hook entries
+~/.claude.json             ← one MCP server entry
+~/.cursor/mcp.json         ← the same entry, for Cursor
 ```
 
-**Backing out** is `memnox stop`, then deleting those hook entries. Nothing
+**Backing out** is `memnox stop`, then `memnox mcp uninstall <client>`. Nothing
 phones home; there is nothing to cancel.
 
 ---
