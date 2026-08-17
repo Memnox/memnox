@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, RISK_LEVEL } from '@memnox/core';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
-import { registerCheckCommand } from '../src/commands/check.command';
+import {
+  EXIT_BLOCKED,
+  EXIT_REQUIRE_APPROVAL,
+  registerCheckCommand,
+} from '../src/commands/check.command';
 import { plainStyle } from '../src/style';
 import { FakeRuntime, runCli } from './cli-harness';
 
@@ -204,5 +208,33 @@ describe('memnox check', () => {
     );
 
     expect(runtime.requests[0]?.body).toMatchObject({ projectId: 'other-project' });
+  });
+
+  // `memnox check … && deploy` has to stop at the gate, which means the shell
+  // needs the verdict in the exit code and not only on stdout.
+  describe('what a pipeline sees', () => {
+    const runFor = async (effect: string): Promise<number | undefined> => {
+      const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision({ effect }));
+      process.exitCode = undefined;
+      await runCli(
+        ['check', '--token', 'mnx_test', '--action', 'deploy.service'],
+        runtime,
+      );
+      const code = process.exitCode;
+      process.exitCode = undefined;
+      return code;
+    };
+
+    it('exits 0 when the action may proceed', async () => {
+      expect(await runFor(DECISION_EFFECT.ALLOW)).toBeFalsy();
+    });
+
+    it(`exits ${EXIT_REQUIRE_APPROVAL} when a human still has to decide`, async () => {
+      expect(await runFor(DECISION_EFFECT.REQUIRE_APPROVAL)).toBe(EXIT_REQUIRE_APPROVAL);
+    });
+
+    it(`exits ${EXIT_BLOCKED} when the action is blocked`, async () => {
+      expect(await runFor(DECISION_EFFECT.BLOCK)).toBe(EXIT_BLOCKED);
+    });
   });
 });
