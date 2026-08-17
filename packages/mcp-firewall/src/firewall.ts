@@ -33,6 +33,16 @@ export interface FirewallOptions {
   log?: (message: string) => void;
 }
 
+/** How the proxy reaches the process table and the client stream. */
+export interface FirewallProcessDeps {
+  spawn?: (command: string, args: string[]) => ChildProcess;
+  input?: NodeJS.EventEmitter;
+  exit?: (code: number) => void;
+}
+
+const defaultSpawn = (command: string, args: string[]): ChildProcess =>
+  spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+
 /**
  * Transparent stdio MCP proxy. Owns only the child process and the two byte
  * streams; every routing decision belongs to the FirewallSession it drives.
@@ -55,19 +65,37 @@ export class McpFirewall {
     });
   }
 
-  start(): void {
+  /**
+   * Wires the proxy to a wrapped server. Spawning, the client stream, and
+   * exiting are parameters because they are this class's only ambient
+   * dependencies — a test that cannot supply them cannot cover the lifecycle,
+   * which is how EOF went unforwarded.
+   */
+  start(deps: FirewallProcessDeps = {}): void {
     const [executable, ...args] = this.options.command;
     if (!executable) throw new Error('firewall requires a server command to wrap');
 
-    const child = spawn(executable, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+    const spawnChild = deps.spawn ?? defaultSpawn;
+    const input = deps.input ?? process.stdin;
+    const exit = deps.exit ?? ((code: number) => process.exit(code));
+
+    const child = spawnChild(executable, args);
     this.child = child;
-    child.on('exit', (code) => process.exit(code === null ? 0 : code));
+    child.on('exit', (code) => exit(code === null ? 0 : code));
 
     const clientToServer = new LineBuffer();
-    process.stdin.on('data', (chunk: Buffer) => {
+    input.on('data', (chunk: Buffer) => {
       for (const line of clientToServer.push(chunk.toString('utf8'))) {
         void this.session.fromClient(line);
       }
+    });
+
+    // A client that closes the stream instead of killing the process is saying
+    // it is done. Without forwarding that, the child never sees an end and both
+    // it and this proxy stay resident for the life of the session.
+    input.on('end', () => {
+      const stdin = child.stdin;
+      if (stdin !== null) stdin.end();
     });
 
     // stdio: ['pipe','pipe',…] always gives us both pipes; a null here means the
