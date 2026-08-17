@@ -57,15 +57,42 @@ function sourceOf(
 
 const CONNECTION_REFUSED = ['ECONNREFUSED', 'fetch failed', 'Failed to fetch'];
 
+/** Whether a thrown value is a runtime that is simply not answering. */
+export function isConnectionRefused(err: unknown): boolean {
+  const message =
+    err instanceof Error ? `${err.message} ${String(err.cause ?? '')}` : String(err);
+  return CONNECTION_REFUSED.some((needle) => message.includes(needle));
+}
+
+/**
+ * A refusal that remembers which address was dialled.
+ *
+ * The top-level handler cannot see a command's `--url`, so it used to reprint
+ * the default — telling someone their runtime was down while naming a different,
+ * healthy one. Carrying the address on the error is what makes the message true.
+ */
+export class RuntimeUnreachableError extends Error {
+  constructor(
+    readonly url: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`Cannot reach the Memnox runtime at ${url}.`, options);
+    this.name = 'RuntimeUnreachableError';
+  }
+}
+
 /**
  * Turns "fetch failed" into something a person can act on. A runtime that is
  * simply not running is by far the most common first-run failure, and the raw
  * cause names neither the address nor the fix.
  */
 export function describeConnectionFailure(err: unknown, url: string): string | null {
-  const message =
-    err instanceof Error ? `${err.message} ${String(err.cause ?? '')}` : String(err);
-  if (!CONNECTION_REFUSED.some((needle) => message.includes(needle))) return null;
+  if (err instanceof RuntimeUnreachableError) return explainUnreachable(err.url);
+  if (!isConnectionRefused(err)) return null;
+  return explainUnreachable(url);
+}
+
+function explainUnreachable(url: string): string {
   return [
     `Cannot reach the Memnox runtime at ${url}.`,
     '',

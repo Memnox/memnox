@@ -3,7 +3,9 @@ import { MemnoxClient, type HttpTransport } from '@memnox/sdk';
 import { readAgentConfig } from './agent-config';
 import { ConsoleOutput, type CliOutput } from './cli-output';
 import {
+  isConnectionRefused,
   resolveConnection,
+  RuntimeUnreachableError,
   type ConnectionFlags,
   type ResolvedConnection,
   type StoredConfigReader,
@@ -45,8 +47,26 @@ export class CliContext {
       baseUrl: options.url,
       token: options.token,
       adminToken: options.adminToken,
-      fetch: this.transport,
+      fetch: this.addressed(options.url),
     });
+  }
+
+  /**
+   * The transport, wrapped so a refused connection carries the address it was
+   * refused at. This is the only layer that still knows the resolved URL by the
+   * time a client method throws.
+   */
+  private addressed(url: string): HttpTransport {
+    const send = this.transport ?? ((target, init) => fetch(target, init));
+    return async (target, init) => {
+      try {
+        return await send(target, init);
+      } catch (err) {
+        if (isConnectionRefused(err))
+          throw new RuntimeUnreachableError(url, { cause: err });
+        throw err;
+      }
+    };
   }
 
   /**

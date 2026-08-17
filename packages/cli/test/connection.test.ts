@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import type { HttpTransport } from '@memnox/sdk';
+import { CliContext } from '../src/cli-context';
+import { ConsoleOutput } from '../src/cli-output';
 import {
   describeConnectionFailure,
   ENV_AGENT_TOKEN,
   ENV_RUNTIME_URL,
   resolveConnection,
+  RuntimeUnreachableError,
 } from '../src/connection';
 import { DEFAULT_BASE_URL } from '../src/defaults';
 
@@ -71,5 +75,36 @@ describe('describeConnectionFailure', () => {
     expect(
       describeConnectionFailure(new Error('401 unauthorized'), 'http://x'),
     ).toBeNull();
+  });
+
+  it('prefers the address on the error over the fallback', () => {
+    const message = describeConnectionFailure(
+      new RuntimeUnreachableError('http://127.0.0.1:9999'),
+      DEFAULT_BASE_URL,
+    );
+
+    expect(message).toContain('http://127.0.0.1:9999');
+    expect(message).not.toContain(DEFAULT_BASE_URL);
+  });
+});
+
+describe('a command that was pointed somewhere with --url', () => {
+  const refusing: HttpTransport = () =>
+    Promise.reject(new Error('fetch failed', { cause: new Error('ECONNREFUSED') }));
+
+  it('reports the address it was actually pointed at', async () => {
+    const context = new CliContext(
+      new ConsoleOutput(),
+      refusing,
+      undefined,
+      async () => ({}),
+    );
+    const { client } = await context.connect({ url: 'http://127.0.0.1:9999' });
+
+    const err = await client.policies().catch((caught: unknown) => caught);
+
+    expect(describeConnectionFailure(err, DEFAULT_BASE_URL)).toContain(
+      'http://127.0.0.1:9999',
+    );
   });
 });
