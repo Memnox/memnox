@@ -68,10 +68,32 @@ describe('the dashboard at /', () => {
 
   it('does not serve the audit trail to an unauthenticated caller', async () => {
     // A runtime with keys must not hand its decisions to whoever finds the port.
-    expect((await server.app.inject({ method: 'GET', url: '/' })).statusCode).toBe(401);
+    // It may hand over a page that asks for a token — that page carries none of
+    // them, and the data endpoints behind it are still guarded.
+    const page = await server.app.inject({ method: 'GET', url: '/' });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('This runtime is locked');
+    expect(page.body).not.toContain('claude-code');
+    expect(page.body).not.toContain('Recent decisions');
+
     expect(
       (await server.app.inject({ method: 'GET', url: '/v1/status' })).statusCode,
     ).toBe(401);
+  });
+
+  it('opens straight into the console on a keyless loopback runtime', async () => {
+    const open = await buildServer({ dataDir: `${dataDir}-open` });
+    try {
+      const page = await open.app.inject({ method: 'GET', url: '/' });
+
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain('Recent decisions');
+      // The token prompt ships with the console for a later 401, but starts hidden.
+      expect(page.body).toContain('id="gate" class="gate hidden"');
+    } finally {
+      await open.app.close();
+      await rm(`${dataDir}-open`, { recursive: true, force: true });
+    }
   });
 });
 
@@ -105,5 +127,32 @@ describe('rendering the page', () => {
   it('leaves ordinary text alone', () => {
     expect(escapeHtml('rm -rf ./build')).toBe('rm -rf ./build');
     expect(escapeHtml('a & b')).toBe('a &amp; b');
+  });
+
+  // The page can only do what the API already allows; these are the forms that
+  // reach the write endpoints, and losing one silently would be hard to notice.
+  it('offers the panes a person acts from', () => {
+    const page = renderDashboard(STATUS);
+
+    ['approvals', 'policies', 'decisions', 'agents', 'console'].forEach((pane) => {
+      expect(page).toContain(`data-panel="${pane}"`);
+    });
+    expect(page).toContain('id="policy-form"');
+    expect(page).toContain('id="decision-form"');
+    expect(page).toContain('id="agent-form"');
+    expect(page).toContain('id="console-form"');
+  });
+
+  // Without it the console is a dead end: `memnox setup` registers an agent
+  // before anyone opens this page, and its token is shown once and never again.
+  it('offers a way to get a token for the console', () => {
+    expect(renderDashboard(STATUS)).toContain('id="console-token-new"');
+  });
+
+  // A comment carrying one would end the embedded script early, and the page
+  // would ship a syntax error that only shows up in a browser.
+  it('embeds a script with no stray backtick', () => {
+    const script = renderDashboard(STATUS).split('<script>')[1] ?? '';
+    expect(script.slice(0, script.indexOf('</script>'))).not.toContain('`');
   });
 });
