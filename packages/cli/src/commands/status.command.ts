@@ -73,14 +73,23 @@ export function registerStatusCommand(
       }
       if (pending.length > 0) out.note(style.dim('→ Grant one:  memnox approve <id>'));
       if (withheld.length > 0) out.note(style.dim('→ See them:   memnox audit'));
-      // A missing file and a file that declares no project need different fixes,
-      // and `memnox init` writes the second one — so the first run hits this.
-      if (project === undefined) {
+      // A missing file and a file that declares no project need different fixes.
+      // Declaring none is only a problem when some *other* file scopes its rules
+      // to a project — otherwise every rule applies and there is nothing to warn
+      // about, which is the state every fresh `memnox setup` leaves behind.
+      const scopedRules = policies.policies.filter(isProjectScoped).length;
+      if (project === undefined && (policyFile === undefined || scopedRules > 0)) {
         out.note(
           policyFile === undefined
             ? `→ No ${DEFAULT_POLICY_FILE} here — create one:  memnox init`
-            : `→ ${DEFAULT_POLICY_FILE} declares no "project:" — project-scoped rules will not apply.`,
+            : `→ ${DEFAULT_POLICY_FILE} declares no "project:", so ${scopedRules} project-scoped rule(s) loaded here will never match.`,
         );
       }
     });
+}
+
+/** A rule that only matches requests naming its project — the wire shape is untyped. */
+function isProjectScoped(policy: unknown): boolean {
+  if (typeof policy !== 'object' || policy === null) return false;
+  return 'project' in policy && typeof policy.project === 'string';
 }

@@ -18,10 +18,13 @@ const policyFile = (project?: string): string =>
 describe('memnox status', () => {
   let root: string;
 
-  const runStatus = async (cwd: string): Promise<RecordedOutput> => {
+  const runStatus = async (
+    cwd: string,
+    loaded: unknown[] = [],
+  ): Promise<RecordedOutput> => {
     const out = new RecordedOutput();
     const runtime = new FakeRuntime()
-      .on('GET', '/v1/policies', { version: 'v1', policies: [] })
+      .on('GET', '/v1/policies', { version: 'v1', policies: loaded })
       .on('GET', '/v1/approvals', [])
       .on('GET', '/v1/audit', []);
     const context = new CliContext(
@@ -53,14 +56,25 @@ describe('memnox status', () => {
     expect(out.notes.join('\n')).toContain('memnox init');
   });
 
-  it('names the missing key when the policy file declares no project', async () => {
+  it('names the missing key when project-scoped rules are loaded that cannot match', async () => {
     await writeFile(join(root, DEFAULT_POLICY_FILE), policyFile(), 'utf8');
 
-    const out = await runStatus(root);
+    const out = await runStatus(root, [{ name: 'scoped', project: 'acme-checkout' }]);
 
     const notes = out.notes.join('\n');
     expect(notes).toContain('declares no "project:"');
+    expect(notes).toContain('1 project-scoped rule(s)');
     expect(notes).not.toContain(`No ${DEFAULT_POLICY_FILE} here`);
+  });
+
+  // What every fresh `memnox setup` leaves behind: no project declared, and no
+  // rule anywhere scoped to one. Nothing is wrong, so nothing should be flagged.
+  it('says nothing when no rule is scoped to a project either', async () => {
+    await writeFile(join(root, DEFAULT_POLICY_FILE), policyFile(), 'utf8');
+
+    const out = await runStatus(root, [{ name: 'unscoped' }]);
+
+    expect(out.notes.join('\n')).not.toContain('project:');
   });
 
   it('reports the project and says nothing about it when one is declared', async () => {
