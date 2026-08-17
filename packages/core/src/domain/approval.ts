@@ -3,12 +3,20 @@ import type { RiskLevel } from '../constants/risk.constants';
 
 export interface Approval {
   id: string;
-  /** Binds the approval to one exact action — agent, action, target, environment. */
+  /**
+   * Binds the approval to one exact action — agent, action, target,
+   * environment, amount, principal. Every field a grant does *not* cover is a
+   * field an agent can change and still spend the same grant.
+   */
   requestFingerprint: string;
   agentId: string;
   action: string;
   target?: string;
   environment?: string;
+  /** How much, when the action moves money. Shown to the approver, and bound. */
+  amount?: number;
+  /** Whose authority the agent is drawing on, when it named one. */
+  principal?: string;
   /**
    * Why it was asked for, §18. Without it an approver is told what an agent
    * wants and never what for, which is the whole question they are being asked.

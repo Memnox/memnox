@@ -67,12 +67,12 @@ describe('what outranks a granted approval', () => {
   ): Promise<Approval> => {
     const grant: Approval = {
       id: 'apr_seeded',
-      requestFingerprint: fingerprintRequest(
-        agent.id,
-        request.action,
-        request.target,
-        request.environment,
-      ),
+      requestFingerprint: fingerprintRequest({
+        agentId: agent.id,
+        action: request.action,
+        target: request.target,
+        environment: request.environment,
+      }),
       agentId: agent.id,
       action: request.action,
       target: request.target,

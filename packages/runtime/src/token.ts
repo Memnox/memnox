@@ -11,14 +11,34 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/** What an approval is bound to. Anything absent here is something a grant carries across. */
+export interface RequestIdentity {
+  agentId: string;
+  action: string;
+  target?: string;
+  environment?: string;
+  /**
+   * Money is what the ceiling in a delegation is expressed in, so leaving it out
+   * let a granted refund of 120 authorize one of 4500 — same agent, same action,
+   * same target, and the only field that differed was the one that mattered.
+   */
+  amount?: number;
+  /** Whose authority is being drawn on; two people are not interchangeable. */
+  principal?: string;
+}
+
 /** Binds an approval to one exact action so it cannot be replayed for a different one. */
-export function fingerprintRequest(
-  agentId: string,
-  action: string,
-  target?: string,
-  environment?: string,
-): string {
+export function fingerprintRequest(identity: RequestIdentity): string {
   return createHash('sha256')
-    .update([agentId, action, target ?? '', environment ?? ''].join('|'))
+    .update(
+      [
+        identity.agentId,
+        identity.action,
+        identity.target ?? '',
+        identity.environment ?? '',
+        identity.amount === undefined ? '' : String(identity.amount),
+        identity.principal ?? '',
+      ].join('|'),
+    )
     .digest('hex');
 }

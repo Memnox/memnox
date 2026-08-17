@@ -26,8 +26,11 @@ export function registerApprovalsCommand(program: Command, context: CliContext):
     for (const approval of pending) {
       const target = approval.target ? ` ${approval.target}` : '';
       const env = approval.environment ? ` [${approval.environment}]` : '';
+      // Amount belongs in the scanning view: it is usually the only thing that
+      // distinguishes two otherwise identical money-movement asks.
+      const amount = approval.amount === undefined ? '' : ` (${approval.amount})`;
       context.out.line(
-        `${approval.id}  ${approval.action}${target}${env} — approvers: ${approval.approvers.join(', ')}`,
+        `${approval.id}  ${approval.action}${target}${env}${amount} — approvers: ${approval.approvers.join(', ')}`,
       );
     }
     context.out.note('');
@@ -100,6 +103,13 @@ export function registerApprovalsCommand(program: Command, context: CliContext):
       const env = approval.environment ? ` [${approval.environment}]` : '';
       context.out.line(`Approval : ${approval.id}`);
       context.out.line(`Action   : ${approval.action}${target}${env}`);
+      // The two fields an approver is actually deciding on when money moves.
+      if (approval.amount !== undefined) {
+        context.out.line(`Amount   : ${approval.amount}`);
+      }
+      if (approval.principal !== undefined) {
+        context.out.line(`For      : ${approval.principal}`);
+      }
       context.out.line(`Status   : ${approval.status}`);
       context.out.line(
         `Granted  : ${approval.grants.length}/${approval.minApprovals}` +

@@ -161,6 +161,10 @@ export class ApprovalService {
       action: request.action,
       target: request.target,
       environment: request.environment,
+      // Carried onto the record, not just into the fingerprint: an approver who
+      // cannot see the amount is being asked to authorize a number they never read.
+      ...(request.amount === undefined ? {} : { amount: request.amount }),
+      ...(request.principal === undefined ? {} : { principal: request.principal }),
       approvers: [...new Set(approvers)],
       minApprovals,
       grants: [],
@@ -355,10 +359,12 @@ export class ApprovalService {
 }
 
 function fingerprintFor(agent: AgentIdentity, request: ActionRequest): string {
-  return fingerprintRequest(
-    agent.id,
-    request.action,
-    request.target,
-    request.environment,
-  );
+  return fingerprintRequest({
+    agentId: agent.id,
+    action: request.action,
+    target: request.target,
+    environment: request.environment,
+    amount: request.amount,
+    principal: request.principal,
+  });
 }
