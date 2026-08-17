@@ -59,12 +59,15 @@ export function registerKeysCommand(program: Command, context: CliContext): void
           : { activeKeyId: id, keys: [...existing.keys, generated] };
 
       if (options.keyringFile === undefined) {
+        // The JSON is the payload and nothing else may join it: the obvious way
+        // to use this command is `> keyring.json`, and advice printed on the
+        // same stream produced a file the runtime rejected as malformed.
         context.out.line(JSON.stringify(keyring, null, 2));
-        context.out.line('');
-        context.out.line(
+        context.out.note('');
+        context.out.note(
           'Store this somewhere the runtime can read and you can back up.',
         );
-        context.out.line('Losing a key means losing every record written under it.');
+        context.out.note('Losing a key means losing every record written under it.');
         return;
       }
       await writeFile(
@@ -142,6 +145,15 @@ export function registerKeysCommand(program: Command, context: CliContext): void
             : `Rewrapped ${total} record(s) onto key "${codec.activeKey}".`,
         );
         context.out.line('Retire the old key only once this reports 0 for it.');
+        // A running runtime read the keyring at boot and does not hold the key
+        // these records were just moved onto, so its next read fails. Saying so
+        // here is the difference between a rotation and an outage.
+        if (total > 0) {
+          context.out.note('');
+          context.out.note(
+            'Restart any running runtime: it loaded the keyring at startup and cannot read these records until it does.',
+          );
+        }
       } finally {
         if (sql !== null) await sql.end();
       }
