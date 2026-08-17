@@ -51,6 +51,27 @@ export const STATED_STATUS = {
 
 export type StatedStatus = (typeof STATED_STATUS)[keyof typeof STATED_STATUS];
 
+/**
+ * What a statement is, as opposed to who may read it (`clearance`).
+ *
+ * VISION.md §31 wants both: a label survives a reader list being widened, and it
+ * is what lets a retention rule or an export filter act on a statement without
+ * first resolving every principal that could see it.
+ */
+export const STATED_CLASSIFICATION = {
+  PUBLIC: 'public',
+  INTERNAL: 'internal',
+  CONFIDENTIAL: 'confidential',
+  RESTRICTED: 'restricted',
+} as const;
+
+export type StatedClassification =
+  (typeof STATED_CLASSIFICATION)[keyof typeof STATED_CLASSIFICATION];
+
+/** Unlabelled is internal, never public: an omitted label must not widen reach. */
+export const DEFAULT_CLASSIFICATION: StatedClassification =
+  STATED_CLASSIFICATION.INTERNAL;
+
 /** A declared or authoritative claim is not a guess, so it is recorded as certain. */
 export const CERTAIN_CONFIDENCE = 1;
 

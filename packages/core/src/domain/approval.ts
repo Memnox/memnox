@@ -1,4 +1,5 @@
 import { APPROVAL_STATUS, type ApprovalStatus } from '../constants/approval.constants';
+import type { RiskLevel } from '../constants/risk.constants';
 
 export interface Approval {
   id: string;
@@ -8,6 +9,17 @@ export interface Approval {
   action: string;
   target?: string;
   environment?: string;
+  /**
+   * Why it was asked for, §18. Without it an approver is told what an agent
+   * wants and never what for, which is the whole question they are being asked.
+   */
+  reason?: string;
+  /** Which rule forced the ask, §18. Names the policy, not the effect. */
+  policyTriggered?: string;
+  /** How bad it would be if this were wrong, §16. Drives how it is presented. */
+  risk?: RiskLevel;
+  /** What the agent had been told when it decided to ask, §18. Free-form, for the record. */
+  context?: string;
   approvers: string[];
   /** Distinct people required; 1 unless a policy asked for more. */
   minApprovals: number;

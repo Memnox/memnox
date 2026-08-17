@@ -1,4 +1,5 @@
 import type { AgentKind, AgentStatus } from '../constants/agent.constants';
+import type { RiskLevel } from '../constants/risk.constants';
 import {
   TRUST_PENALTY_PER_BLOCK,
   TRUST_RECOVERY_ALLOWED_ACTIONS,
@@ -23,6 +24,19 @@ export interface AgentIdentity {
   stats: AgentActionStats;
   /** Action-name patterns this agent may attempt; unset or empty = unrestricted. */
   capabilities?: string[];
+  /**
+   * The person who answers for this agent, §20. An agent nobody owns is the
+   * thing the registry exists to make visible, so this stays optional and is
+   * reported rather than defaulted.
+   */
+  owner?: string;
+  /** The team it works for, §20. Scopes it in the organizational graph. */
+  team?: string;
+  /**
+   * How much damage it could do, §20. Declared at registration, not derived from
+   * `stats`: the trust score says how it has behaved, this says what it can reach.
+   */
+  risk?: RiskLevel;
   /** Last credential rotation, when one has happened. */
   rotatedAt?: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
