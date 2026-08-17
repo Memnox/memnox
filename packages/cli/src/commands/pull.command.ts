@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import type { Policy } from '@memnox/policy-engine';
 import { readAgentConfig, type AgentConfig } from '../agent-config';
@@ -13,7 +14,7 @@ import {
 } from '../cloud-connection';
 import { describeConnectionFailure, resolveConnection } from '../connection';
 import { writeOrgPolicies } from '../org-policy-source';
-import { registerPolicyFile } from '../policy-registry';
+import { policyRegistryPath, registerPolicyFile } from '../policy-registry';
 import type { CloudClientFactory } from './login.command';
 
 const buildCloudClient: CloudClientFactory = (connection) => new CloudClient(connection);
@@ -93,7 +94,7 @@ export function registerPullCommand(
         }
 
         if (options.reload) {
-          await reloadRuntime(context, stored, options.adminToken, path);
+          await reloadRuntime(context, stored, options.adminToken, path, homeDir);
         }
       },
     );
@@ -109,12 +110,29 @@ async function reloadRuntime(
   stored: AgentConfig,
   adminToken: string | undefined,
   path: string,
+  homeDir: string,
 ): Promise<void> {
   const flags = adminToken === undefined ? {} : { adminToken };
   const connection = resolveConnection(flags, stored, process.env);
   try {
     const { client } = await context.connect(flags);
     const result = await client.reloadPolicies();
+    // Reloading is not the same as reading this file. A runtime started without
+    // --policy-registry re-reads only what it was pointed at, and reported a
+    // perfectly successful reload of everything except the rules just pulled.
+    // A runtime too old to list its sources cannot be interrogated, so it gets
+    // the benefit of the doubt rather than a warning nobody can act on.
+    const read = result.sources ?? [];
+    if (read.length > 0 && !read.includes(resolve(path))) {
+      context.out.line(
+        `Runtime  : reloaded, but ${connection.url} does not read this file, so these rules are not in force`,
+      );
+      context.out.note('');
+      context.out.note(
+        `Start it with the registry:  memnox serve --policy-registry ${policyRegistryPath(homeDir)}`,
+      );
+      return;
+    }
     context.out.line(`Runtime  : reloaded — now enforcing version ${result.version}`);
     return;
   } catch (err) {

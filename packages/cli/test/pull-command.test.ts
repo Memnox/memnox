@@ -130,12 +130,29 @@ describe('memnox pull', () => {
     const runtime = new FakeRuntime().on('POST', '/v1/policies/reload', {
       reloaded: true,
       version: 'abc123def456',
+      sources: [join(home, '.memnox', 'org', 'orbit.yaml')],
     });
 
     await run(['pull'], runtime);
 
     expect(out.text).toContain('reloaded');
     expect(out.text).toContain('abc123def456');
+  });
+
+  // The failure that reads exactly like success: the runtime reloads happily,
+  // having never been told to look at the file the pull just wrote.
+  it('says the rules are not in force when the runtime does not read that file', async () => {
+    const runtime = new FakeRuntime().on('POST', '/v1/policies/reload', {
+      reloaded: true,
+      version: 'abc123def456',
+      sources: ['/somewhere/else/memnox.policies.yaml'],
+    });
+
+    await run(['pull'], runtime);
+
+    expect(out.text).toContain('does not read this file');
+    expect(out.text).toContain('not in force');
+    expect(out.notes.join('\n')).toContain('--policy-registry');
   });
 
   it('says the rules are not in force when the runtime did not reload', async () => {
