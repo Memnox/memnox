@@ -8,7 +8,9 @@ import type {
   ApprovalStore,
   AuditLog,
   Consent,
+  DecisionEffect,
   Logger,
+  RiskLevel,
 } from '@memnox/core';
 import {
   APPROVAL_STATUS,
@@ -256,6 +258,11 @@ export class ApprovalService {
         resolvedBy,
       };
       await this.deps.approvalStore.save(denied);
+      await this.auditResolution(
+        denied,
+        DECISION_EFFECT.BLOCK,
+        `approval denied by ${resolvedBy}`,
+      );
       this.countResolved(denied);
       return { outcome: RESOLVE_OUTCOME.DENIED, approval: denied };
     }
@@ -265,6 +272,13 @@ export class ApprovalService {
       ? { ...granted, status: APPROVAL_STATUS.APPROVED, resolvedAt: at, resolvedBy }
       : granted;
     await this.deps.approvalStore.save(updated);
+    await this.auditResolution(
+      updated,
+      satisfied ? DECISION_EFFECT.ALLOW : DECISION_EFFECT.REQUIRE_APPROVAL,
+      satisfied
+        ? `approval granted by ${resolvedBy}`
+        : `approval granted by ${resolvedBy} — ${updated.grants.length} of ${updated.minApprovals}`,
+    );
     if (satisfied) this.countResolved(updated);
 
     return {
@@ -316,11 +330,33 @@ export class ApprovalService {
     return { outcome: OVERRIDE_OUTCOME.OVERRIDDEN, approval: updated };
   }
 
-  /** A refused break-glass attempt is itself a security event — same audit weight. */
+  /**
+   * A break-glass override, or its refusal — both are security events, and both
+   * carry critical weight whatever the action's own risk was.
+   */
   private async auditOverride(
     approval: Approval,
     effect: typeof DECISION_EFFECT.ALLOW | typeof DECISION_EFFECT.BLOCK,
     reason: string,
+  ): Promise<void> {
+    await this.auditResolution(approval, effect, reason, RISK_LEVEL.CRITICAL);
+  }
+
+  /**
+   * Who authorized this, on the record.
+   *
+   * Only break-glass used to be audited, so an ordinary grant left no trace in
+   * the hash chain at all — the approver's name lived in `approvals.json` and
+   * nowhere else, and the trail showed a decision going from
+   * `require_approval` to `allow` with nothing in between to say a human had
+   * agreed. Consent is the most consequential act in the system; it belongs in
+   * the same evidence as the decision it unblocks.
+   */
+  private async auditResolution(
+    approval: Approval,
+    effect: DecisionEffect,
+    reason: string,
+    riskLevel: RiskLevel = approval.risk ?? RISK_LEVEL.MEDIUM,
   ): Promise<void> {
     const agent = await this.deps.agents.findById(approval.agentId);
     await this.deps.auditLog.append({
@@ -332,7 +368,7 @@ export class ApprovalService {
       target: approval.target,
       environment: approval.environment,
       effect,
-      riskLevel: RISK_LEVEL.CRITICAL,
+      riskLevel,
       matchedPolicies: [],
       advisories: [],
       reason,

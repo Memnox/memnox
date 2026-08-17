@@ -113,7 +113,14 @@ describe('session taint through the gateway', () => {
     });
     expect(replayed.effect).toBe(DECISION_EFFECT.BLOCK);
     expect(replayed.reason).toContain(DECISION_REASON.NON_OVERRIDABLE);
-    expect(await auditLog.recent(10)).toHaveLength(2);
+    // Three on the record: the hold, the human granting it, and the refusal
+    // that grant could not buy.
+    const trail = await auditLog.recent(10);
+    expect(trail.map((event) => event.effect)).toEqual([
+      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.ALLOW,
+      DECISION_EFFECT.REQUIRE_APPROVAL,
+    ]);
   });
 
   it('refuses break-glass for the non-overridable action class and audits the attempt', async () => {
