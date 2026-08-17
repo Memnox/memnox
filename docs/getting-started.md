@@ -141,12 +141,13 @@ memnox audit
 ```
 
 ```
-2026-08-06T05:16Z  ALLOW  local-editor: shell.execute rm -rf ./build
-                          Withheld: block (this environment is only being monitored)
+2026-08-06T05:16Z  ALLOW  local-editor: shell.execute rm -rf ./build — observed only: Recursive force-delete is blocked for agents.
 ```
 
-`Withheld:` is what *would* have been stopped. Run for a day, read them, and you
-know whether your rules are right before they can stop anyone working.
+`observed only:` is what *would* have been stopped, quoting the rule that would
+have stopped it. Run for a day, read them, and you know whether your rules are
+right before they can stop anyone working. `memnox check` prints the same thing
+as a `Withheld:` line, and the API returns it as `withheldEffect`.
 
 ---
 
@@ -232,7 +233,7 @@ policies match, **the most restrictive wins** (`block` > `require_approval` >
 memnox setup --enforce
 ```
 
-Same rules, now applied. Everything you saw as `Withheld:` becomes real.
+Same rules, now applied. Everything you saw as `observed only:` becomes real.
 
 ---
 
@@ -320,7 +321,9 @@ memnox mcp uninstall claude-code
 # any other MCP client — Windsurf, Zed, Codex
 memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github
 
-# a script or a pipeline step: one decision, printed with the rules behind it
+# a script or a pipeline step: one decision, printed with the rules behind it.
+# exits 0 to proceed, 2 when a human must approve first, 3 when blocked — so
+# "check && deploy" stops at the gate.
 memnox check deploy.service checkout-api --env production
 
 # evidence

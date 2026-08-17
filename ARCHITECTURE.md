@@ -119,7 +119,9 @@ It is not isolation. The application, not the database, is what keeps orgs apart
 
 ### Encryption at rest: what is covered, and what is not
 
-`--keyring-file` turns on AES-256-GCM with a random IV per record. The key id travels in the envelope (`enc:<keyId>:<base64>`), so one store can hold records written under several keys — that is what makes rotation a background `memnox keys rewrap` rather than a downtime window. Keys derive through scrypt with a per-key salt, once at construction; deriving per read would be a denial-of-service surface.
+`--keyring-file` turns on AES-256-GCM with a random IV per record. The key id travels in the envelope (`enc:<keyId>:<base64>`), so one store can hold records written under several keys — which is what lets `memnox keys rewrap` move a store onto a new key incrementally instead of all at once. Keys derive through scrypt with a per-key salt, once at construction; deriving per read would be a denial-of-service surface.
+
+Rotation is not, however, invisible to a running process. The runtime reads the keyring at boot and holds the derived keys for its lifetime, so the order is: add the key, **restart the runtime so it holds both**, then rewrap. Rewrapping under a live runtime that never saw the new key leaves it unable to read the records it just moved, and reads fail until it restarts.
 
 The pre-keyring `--data-key` shape survives as the reserved key id `v1` with its original unsalted SHA-256 derivation, purely so existing deployments keep reading their own records. It cannot rotate, and the boot banner says so.
 
