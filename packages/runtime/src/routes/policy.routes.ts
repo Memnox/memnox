@@ -15,7 +15,19 @@ export function registerPolicyRoutes(app: FastifyInstance, ctx: RouteContext): v
   app.get('/v1/policies', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
     const policies = ctx.gateway.policies();
-    return { ...versionPolicySet(policies), policies };
+    // `policies` is every source composed; `writable` is the one file a PUT
+    // replaces. An editor that cannot tell them apart sends the composed set
+    // back and is refused for duplicate names — and names alone cannot
+    // separate them, because the duplicates are the case that matters.
+    const writable =
+      ctx.writablePolicies === undefined ? policies : await ctx.writablePolicies();
+    // Omitted rather than empty when the file cannot be read: an empty list
+    // would invite an editor to replace the file with whatever it holds.
+    return {
+      ...versionPolicySet(policies),
+      policies,
+      ...(writable === null ? {} : { writable }),
+    };
   });
 
   app.post('/v1/policies/validate', async (request, reply) => {
@@ -136,7 +148,10 @@ export function registerPolicyRoutes(app: FastifyInstance, ctx: RouteContext): v
     }
     try {
       const policies = await ctx.reloadPolicies();
-      return { reloaded: true, ...versionPolicySet(policies) };
+      // The files it read, not the files something registered: a caller that
+      // just wrote one needs to know whether this process is looking at it.
+      const sources = ctx.policySources === undefined ? [] : await ctx.policySources();
+      return { reloaded: true, sources, ...versionPolicySet(policies) };
     } catch (err) {
       return reply.code(400).send({
         reloaded: false,

@@ -55,8 +55,22 @@ export interface RouteContext {
   resolveCertAgent?: (request: FastifyRequest) => Promise<AgentIdentity | null>;
   /** Re-reads the policy file; absent when the runtime started without one. */
   reloadPolicies?: () => Promise<Policy[]>;
+  /**
+   * The rule files this runtime actually reads, absolute. A caller that has just
+   * written a new one needs to know whether this process is among the things
+   * that will ever look at it — registering a file and reloading a runtime that
+   * was never pointed at the registry are two different outcomes.
+   */
+  policySources?: () => Promise<string[]>;
   /** Persists a new rule set, then swaps the engine. Only when a file backs it. */
   applyPolicies?: (policies: Policy[]) => Promise<Policy[]>;
+  /**
+   * The rules living in the one file `applyPolicies` overwrites. Absent when no
+   * file backs the set. Everything else the engine holds came from another
+   * source — an organization bundle, a second repository — and a write cannot
+   * touch it, so an editor has to be handed these rather than guess from names.
+   */
+  writablePolicies?: () => Promise<Policy[] | null>;
   /** Writes the modes so a restart keeps them. Absent leaves them in memory. */
   persistEnforcement?: (modes: EnvironmentModes) => Promise<void>;
   /** Injected so proxy tests exercise real route code against a fake upstream. */

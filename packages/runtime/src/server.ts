@@ -312,13 +312,35 @@ export async function buildServer(
             return reloaded;
           }
         : undefined,
+    policySources,
+    writablePolicies: config.policyFile
+      ? async () => {
+          try {
+            return await loadPolicyFiles([config.policyFile ?? '']);
+          } catch (err) {
+            // The engine is still serving the last good set; only the question
+            // "which of these could I edit" has no answer right now. Null says
+            // so, and an editor falls back to read-only rather than offering to
+            // overwrite a file it could not read.
+            CONSOLE_LOGGER.warn(
+              `could not read ${config.policyFile ?? ''} to list editable rules: ${String(err)}`,
+            );
+            return null;
+          }
+        }
+      : undefined,
     applyPolicies: config.policyFile
       ? async (policies) => {
           await writePoliciesToFile(config.policyFile ?? '', policies);
+          // Recomposed from every source, not swapped to what was just written.
+          // Swapping dropped the organization bundle and any second repository
+          // the moment anything wrote this file — a pull could be un-enforced
+          // by an unrelated rule being added, with nothing said about it.
+          const composed = await loadPolicyFiles(await policySources());
           gateway.usePolicyEngine(
-            new PolicyEngine(policies, { defaultEffect: config.defaultEffect }),
+            new PolicyEngine(composed, { defaultEffect: config.defaultEffect }),
           );
-          return policies;
+          return composed;
         }
       : undefined,
     persistEnforcement: (modes) => writeStoredEnforcement(config.dataDir, modes),
