@@ -54,6 +54,7 @@ export class PostgresAuditLog implements AuditLog {
       params.push(value);
       conditions.push(`${column} ${operator} $${params.length}`);
     };
+    if (filter.eventId) where('id', filter.eventId);
     if (filter.agentId) where('agent_id', filter.agentId);
     if (filter.sessionId) where('session_id', filter.sessionId);
     if (filter.orgId) where('org_id', filter.orgId);

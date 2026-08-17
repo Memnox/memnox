@@ -70,7 +70,6 @@ import {
   type ResolveResult,
 } from './approval-service';
 import { APPROVAL_METRIC_STATE, METRIC, MetricsRegistry } from './metrics';
-import { fingerprintRequest } from './token';
 
 /** "default=monitor, production=enforce", or "unset" when nothing is declared. */
 function describeModes(modes: EnvironmentModes): string {
@@ -106,6 +105,19 @@ function weakens(before: EnvironmentModes, after: EnvironmentModes): boolean {
 const UNKNOWN_AGENT_ID = 'unknown';
 const RATE_LIMIT_RULE_PREFIX = 'rule';
 const LOCAL_SIGNAL_SOURCE = 'local';
+
+/** What became of a reported outcome. The caller maps these onto status codes. */
+export const OUTCOME_UNAUTHORIZED = 'unauthorized';
+export const OUTCOME_UNKNOWN_DECISION = 'unknown_decision';
+export const OUTCOME_RECORDED = 'recorded';
+/** Recorded, and the agent claimed success on something that was not allowed. */
+export const OUTCOME_DEFIED = 'defied';
+
+export type OutcomeRecording =
+  | typeof OUTCOME_UNAUTHORIZED
+  | typeof OUTCOME_UNKNOWN_DECISION
+  | typeof OUTCOME_RECORDED
+  | typeof OUTCOME_DEFIED;
 
 /** The stricter of two withheld verdicts, or whichever one exists. */
 function stricter(
@@ -306,16 +318,33 @@ export class ActionGateway {
 
   /**
    * Records what an allowed action actually did. This is the caller's testimony,
-   * not a verdict — the runtime cannot observe the outside world, so it stores the
-   * claim and lets the audit trail show a decision that was never followed up.
-   * Returns false when the token does not resolve to an agent.
+   * not a verdict — the runtime cannot observe the outside world, so it stores
+   * the claim and lets the audit trail show a decision that was never followed
+   * up.
+   *
+   * What it will not do is store testimony about a decision it never made. An
+   * unknown id is a claim with no verdict behind it, and a success reported
+   * against a verdict that was not `allow` is an agent saying it acted anyway —
+   * the loudest thing a governance runtime can hear, so it is recorded as a
+   * defiance rather than filed as an ordinary outcome.
    */
   async recordOutcome(
     agentToken: string,
     report: ExecutionOutcomeReport,
-  ): Promise<boolean> {
+  ): Promise<OutcomeRecording> {
     const agent = await this.resolveAgent(agentToken);
-    if (!agent) return false;
+    if (!agent) return OUTCOME_UNAUTHORIZED;
+
+    const [decided] = await this.deps.auditLog.query({
+      eventId: report.decisionEventId,
+      agentId: agent.id,
+      limit: 1,
+    });
+    if (decided === undefined) return OUTCOME_UNKNOWN_DECISION;
+
+    const defied =
+      decided.effect !== DECISION_EFFECT.ALLOW &&
+      report.status === EXECUTION_STATUS.SUCCEEDED;
 
     await this.appendEvent({
       id: randomUUID(),
@@ -327,17 +356,20 @@ export class ActionGateway {
       environment: report.environment,
       sessionId: report.sessionId,
       effect: DECISION_EFFECT.ALLOW,
-      riskLevel: outcomeRiskLevel(report),
+      riskLevel: defied ? RISK_LEVEL.CRITICAL : outcomeRiskLevel(report),
       matchedPolicies: [],
       advisories: [],
-      reason: describeOutcome(report),
+      reason: defied
+        ? `${describeOutcome(report)} — but this action was ${decided.effect}, not allowed`
+        : describeOutcome(report),
       orgId: agent.orgId,
       decisionEventId: report.decisionEventId,
       executionStatus: report.status,
       rolledBack: report.rolledBack,
       rollbackFailed: report.rollbackError !== undefined,
+      ...(defied ? { defiedVerdict: true as const } : {}),
     });
-    return true;
+    return defied ? OUTCOME_DEFIED : OUTCOME_RECORDED;
   }
 
   /**

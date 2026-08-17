@@ -86,6 +86,13 @@ function buildVerificationCoverage(
     outcomes.set(event.decisionEventId, event);
   }
 
+  // Counted over every outcome, not only those joined to an allowed decision —
+  // a defiance is precisely an outcome whose decision was not an allow.
+  let defied = 0;
+  for (const outcome of outcomes.values()) {
+    if (outcome.defiedVerdict === true) defied += 1;
+  }
+
   const unreportedActions = new Map<string, number>();
   let allowed = 0;
   let reported = 0;
@@ -128,6 +135,7 @@ function buildVerificationCoverage(
     failed,
     rolledBack,
     rollbackFailed,
+    defied,
     unreportedActions: topEntries(unreportedActions).map(([action, count]) => ({
       action,
       count,
@@ -172,6 +180,15 @@ export function renderComplianceReportMarkdown(report: ComplianceReport): string
       '',
       'An unreported decision means no outcome was reported for it, not that the action failed.',
     );
+    if (verification.defied > 0) {
+      lines.push(
+        '',
+        '### Reported acting without permission',
+        '',
+        `${verification.defied} outcome(s) claim success on an action this runtime did not allow.`,
+        'Each names the decision it contradicts; find them with "memnox audit".',
+      );
+    }
     if (verification.unreportedActions.length > 0) {
       lines.push('', '### Awaiting an outcome', '');
       lines.push(

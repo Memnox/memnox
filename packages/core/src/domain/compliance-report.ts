@@ -36,6 +36,12 @@ export interface VerificationCoverage {
   rolledBack: number;
   /** The worst case: ran, unverified, and could not be undone. */
   rollbackFailed: number;
+  /**
+   * Outcomes claiming success on an action that was not allowed. Counted apart
+   * from everything else because it is not a coverage number — it is an agent
+   * reporting that it ignored the gate, and it belongs at the top of a report.
+   */
+  defied: number;
   /** Allowed actions still awaiting testimony, most frequent first. */
   unreportedActions: Array<{ action: string; count: number }>;
 }

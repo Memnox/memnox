@@ -23,6 +23,7 @@ const report = (over: Partial<ComplianceReport> = {}): ComplianceReport => ({
     failed: 5,
     rolledBack: 3,
     rollbackFailed: 1,
+    defied: 0,
     unreportedActions: [{ action: 'code.modify', count: 40 }],
   },
   ...over,

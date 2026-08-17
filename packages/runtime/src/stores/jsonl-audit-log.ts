@@ -135,6 +135,7 @@ export class JsonlAuditLog implements AuditLog {
 }
 
 export function matchesAuditQuery(event: ActionEvent, filter: AuditQuery): boolean {
+  if (filter.eventId && event.id !== filter.eventId) return false;
   if (filter.sessionId && event.sessionId !== filter.sessionId) return false;
   if (filter.agentId && event.agentId !== filter.agentId) return false;
   if (filter.orgId && event.orgId !== filter.orgId) return false;

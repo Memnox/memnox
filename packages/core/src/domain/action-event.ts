@@ -136,6 +136,12 @@ export interface ActionEvent {
   rolledBack?: boolean;
   /** The compensating action itself failed, so the resulting state is unknown. */
   rollbackFailed?: boolean;
+  /**
+   * The agent reported succeeding at something the runtime did not allow. Not a
+   * measurement — the runtime cannot see the world — but the agent's own claim
+   * that it went ahead, which is the one thing an operator must never miss.
+   */
+  defiedVerdict?: true;
   /** Tamper evidence, set by the audit log at append time (see audit-chain). */
   prevHash?: string;
   hash?: string;
@@ -144,6 +150,8 @@ export interface ActionEvent {
 export interface AuditQuery {
   sessionId?: string;
   agentId?: string;
+  /** One event by id — how a reported outcome is matched to the decision it claims. */
+  eventId?: string;
   orgId?: string;
   projectId?: string;
   from?: string;

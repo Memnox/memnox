@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { ExecutionMeasurement, ExecutionOutcomeReport } from '@memnox/core';
 import { EXECUTION_STATUS, type ExecutionStatus } from '@memnox/core';
+import {
+  OUTCOME_DEFIED,
+  OUTCOME_UNAUTHORIZED,
+  OUTCOME_UNKNOWN_DECISION,
+} from '../action-gateway';
 import { METRIC } from '../metrics';
 import { readActionRequest } from './action-body';
 import { hashToken } from '../token';
@@ -70,8 +75,20 @@ export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): v
       rolledBack: body.rolledBack === true,
       ...(measurements.length > 0 ? { measurements } : {}),
     } as ExecutionOutcomeReport);
-    if (!recorded) return reply.code(401).send({ error: 'unauthorized' });
-    return reply.code(202).send({ recorded: true });
+
+    if (recorded === OUTCOME_UNAUTHORIZED) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    if (recorded === OUTCOME_UNKNOWN_DECISION) {
+      return reply
+        .code(404)
+        .send({ error: 'no decision by that id was made for this agent' });
+    }
+    // Still 202: the claim is on the record either way, and the flag is what
+    // makes it findable. Refusing it would only teach agents not to report.
+    return reply
+      .code(202)
+      .send({ recorded: true, ...(recorded === OUTCOME_DEFIED ? { defied: true } : {}) });
   });
 }
 

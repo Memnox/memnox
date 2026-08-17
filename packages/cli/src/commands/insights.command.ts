@@ -18,6 +18,13 @@ export function registerInsightsCommand(program: Command, context: CliContext): 
       context.out.line(`Sent to approval  : ${report.totals.approvalsRequired}`);
 
       const { verification } = report;
+      // Above the coverage numbers on purpose: an agent reporting that it acted
+      // without permission is not a reporting statistic, it is an incident.
+      if (verification.defied > 0) {
+        context.out.line(
+          `\nActed without permission : ${verification.defied} outcome(s) claim success on an action that was not allowed`,
+        );
+      }
       if (verification.allowed > 0) {
         context.out.line(
           `\nOutcomes reported : ${verification.reported}/${verification.allowed} allowed decisions` +
