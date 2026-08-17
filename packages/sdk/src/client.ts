@@ -15,7 +15,7 @@ import type {
 import { DECISION_EFFECT } from '@memnox/core';
 import { POLICY_DOCUMENT_VERSION, type Policy } from '@memnox/policy-engine';
 import { ActionBlockedError, ApprovalRequiredError, MemnoxApiError } from './errors';
-import type { PolicyApplyResult, PolicySetView } from './runtime-api';
+import type { PolicyApplyResult, PolicyReloadResult, PolicySetView } from './runtime-api';
 import {
   runGuarded,
   toOutcomeReport,
@@ -486,13 +486,11 @@ export class MemnoxClient {
   }
 
   /** Asks a running runtime to re-read its rule sources. Paths move, rule content never does. */
-  async reloadPolicies(): Promise<{ reloaded: boolean; version: string }> {
-    // An empty object, not undefined: the transport sets a JSON content-type and
-    // the server rejects a body-less request that claims to carry JSON.
-    return this.request<{ reloaded: boolean; version: string }>(
+  async reloadPolicies(): Promise<PolicyReloadResult> {
+    return this.request<PolicyReloadResult>(
       'POST',
       '/v1/policies/reload',
-      {},
+      undefined,
       this.options.adminToken,
     );
   }
@@ -727,7 +725,11 @@ export class MemnoxClient {
     body?: unknown,
     bearer?: string,
   ): Promise<T> {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    // Only when there is something to type. A JSON content-type on a body-less
+    // request is rejected before the route runs, which is how `rotateAgent`
+    // could be broken end to end while every unit test passed.
+    const headers: Record<string, string> =
+      body === undefined ? {} : { 'content-type': 'application/json' };
     if (bearer) headers['authorization'] = `Bearer ${bearer}`;
 
     const send = this.options.fetch ?? fetch;
