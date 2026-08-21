@@ -20,11 +20,7 @@ export const BEHAVIOR_ADVISOR = 'behavior-guard';
 
 const ACTION_VERB_SEPARATOR = '.';
 
-/**
- * Detects behavior that deviates from an agent's own audited history.
- * All rules are deterministic and explainable — this is the open-source
- * baseline; predictive models belong in the commercial risk engine.
- */
+/** Deterministic and explainable; predictive models belong in the commercial engine. */
 export class BehaviorAdvisor implements ActionAdvisor {
   readonly name = BEHAVIOR_ADVISOR;
 

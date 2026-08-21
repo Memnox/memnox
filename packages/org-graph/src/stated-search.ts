@@ -11,14 +11,7 @@ export interface StatedHit {
   score: number;
 }
 
-/**
- * Deterministic keyword search over what the organization states.
- *
- * Keyword and not embeddings, and that is a decision rather than a stage: this
- * feeds answers an agent acts on, so the same question has to return the same
- * statements on a runtime with no model key as on one with three. Semantic
- * recall belongs above this, ranking what this already found.
- */
+/** Keyword, not embeddings: this feeds answers a company acts on. */
 export function searchStatements(
   statements: readonly Stated[],
   query: string,

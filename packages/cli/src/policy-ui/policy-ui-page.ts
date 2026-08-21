@@ -23,12 +23,7 @@ function embedJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-/**
- * The whole editor: one document, no build step, no network. Everything it
- * knows about the rule set arrives from /api/document, and everything it writes
- * goes back through /api/save, so the page holds no policy knowledge of its own
- * beyond which fields exist.
- */
+/** One document, no build step, no network. */
 export function renderPolicyUiPage(data: PolicyUiPageData): string {
   const boot = embedJson({
     filePath: data.filePath,
@@ -119,11 +114,7 @@ ${CLIENT_SCRIPT}
 </html>`;
 }
 
-/**
- * Kept out of the template literal above so the markup stays readable. Plain
- * DOM construction rather than innerHTML: rule names and reasons are strings a
- * developer typed, and building nodes means never having to trust them.
- */
+/** Plain DOM construction, never innerHTML, and kept out of the template above. */
 const CLIENT_SCRIPT = String.raw`
 const LIST_FIELDS = {
   actions: 'Actions',

@@ -325,9 +325,7 @@ describe('McpGateway answers the HTTP request', () => {
     expect(response.status).toBe(400);
   });
 
-  // The body cap is enforced while reading: the connection is cut mid-upload, so
-  // the caller sees a transport failure rather than a status, and nothing is
-  // parsed or forwarded.
+  // The cap is enforced while reading, so the caller sees a transport failure.
   it('cuts off a body past the size cap without forwarding it', async () => {
     const { url, upstream } = await startGoverned(ALLOW_DECISION);
     const oversized = JSON.stringify({

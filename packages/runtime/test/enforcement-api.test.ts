@@ -19,10 +19,7 @@ policies:
 
 const ADMIN = ['admin', 'token', 'value'].join('-');
 
-/**
- * The mode used to be a startup flag, which left a control plane able to see
- * drift and unable to correct it. These prove it is now a live setting.
- */
+/** A startup flag left a control plane able to see drift and unable to correct it. */
 describe('PUT /v1/enforcement', () => {
   let dataDir: string;
   let server: MemnoxServer;

@@ -28,14 +28,7 @@ const buildCloudClient: CloudClientFactory = (connection) => new CloudClient(con
 
 const EXIT_NOT_SIGNED_IN = 1;
 
-/**
- * Joins a developer's machine to their organization's control plane.
- *
- * Outbound only, and that is the point: the laptop dials the control plane, so
- * nothing has to reach *in* to a developer's machine. It is also why this is a
- * separate credential from the agent token — this one is the person, and an
- * governed agent must never be able to read the organization with it.
- */
+/** Outbound only, which is what lets a laptop reach a control plane it cannot host. */
 export function registerLoginCommand(
   program: Command,
   context: CliContext,
@@ -54,9 +47,7 @@ export function registerLoginCommand(
       const stored = await readAgentConfig(homeDir);
       const cloudUrl = resolveCloudUrl(options.cloud, stored, process.env);
 
-      // No token to paste: open a browser, let a human sign in against the
-      // session the control plane already trusts, and take the code back on a
-      // loopback port. Nothing lands in shell history.
+      // Loopback sign-in rather than a pasted token, so nothing lands in shell history.
       const token =
         options.token ?? (await signInThroughBrowser(context, cloudUrl, exchange, open));
       if (token === null) {

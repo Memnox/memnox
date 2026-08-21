@@ -20,10 +20,7 @@ export interface CloudSuggestion {
   confidence?: number;
 }
 
-/**
- * The workspace's chosen rules. Composed by the control plane from its own
- * state, so it answers for a machine no runtime can be dialled from.
- */
+/** Composed by the control plane, so it answers for machines no runtime can see. */
 export interface CloudBundle {
   workspaceId: string;
   packs: string[];
@@ -51,13 +48,7 @@ export class CloudApiError extends Error {
   }
 }
 
-/**
- * The developer's read-only window onto their organization. Deliberately thin:
- * it reads what the control plane already exposes and decides nothing, so the
- * open runtime gains a client for a control plane, never a dependency on one.
- *
- * Takes its transport so tests exercise this code rather than a mock of it.
- */
+/** Deliberately thin: it reads what the control plane already exposes. */
 export class CloudClient {
   constructor(
     private readonly connection: ResolvedCloud,
@@ -127,11 +118,7 @@ interface CliTokenGrant {
   orgId: string;
 }
 
-/**
- * Trades a browser sign-in code for a machine credential. Unauthenticated by
- * design — the code and the verifier behind its challenge are what authorize
- * this call, so it takes a bare URL rather than a configured client.
- */
+/** Unauthenticated by design — the code and its verifier are the credential. */
 export async function exchangeCliCode(
   cloudUrl: string,
   code: string,

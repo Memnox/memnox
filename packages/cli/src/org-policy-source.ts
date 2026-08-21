@@ -8,15 +8,7 @@ const ORG_DIR = 'org';
 /** Owner-only: these rules govern the machine, and nothing else should edit them. */
 const DIR_MODE = 0o700;
 
-/**
- * Where a pulled rule set lands — its own file, never the repository's.
- *
- * Keeping them apart is the whole point. The engine composes every registered
- * source and resolves conflicts most-restrictive-wins, so a developer editing
- * their own `memnox.policies.yaml` can add rules but cannot loosen one the
- * organization sent. Writing into the repository file instead would put both
- * sets under the same edit, and the org half would be one deletion away.
- */
+/** Its own file, never the repository's: keeping them apart is the whole point. */
 export function orgPolicyPath(homeDir: string, workspace: string): string {
   return join(homeDir, CONFIG_DIR, ORG_DIR, `${safeName(workspace)}.yaml`);
 }

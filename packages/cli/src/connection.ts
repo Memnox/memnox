@@ -22,14 +22,7 @@ export interface ResolvedConnection {
   tokenSource?: 'flag' | 'environment' | 'config';
 }
 
-/**
- * Flag, then environment, then the token `memnox setup` stored on disk. Pasting
- * a token into every invocation is the single thing that made the CLI tedious,
- * and the file is already how a locally launched agent authenticates.
- *
- * Environment beats the file on purpose: that is how CI and the MCP firewall
- * override a developer's machine-local identity.
- */
+/** Flag, then environment, then what `memnox setup` stored on disk. */
 export function resolveConnection(
   flags: ConnectionFlags,
   stored: AgentConfig,
@@ -64,13 +57,7 @@ export function isConnectionRefused(err: unknown): boolean {
   return CONNECTION_REFUSED.some((needle) => message.includes(needle));
 }
 
-/**
- * A refusal that remembers which address was dialled.
- *
- * The top-level handler cannot see a command's `--url`, so it used to reprint
- * the default — telling someone their runtime was down while naming a different,
- * healthy one. Carrying the address on the error is what makes the message true.
- */
+/** The top-level handler cannot see a command's `--url`, so it printed the wrong one. */
 export class RuntimeUnreachableError extends Error {
   constructor(
     readonly url: string,
@@ -81,11 +68,7 @@ export class RuntimeUnreachableError extends Error {
   }
 }
 
-/**
- * Turns "fetch failed" into something a person can act on. A runtime that is
- * simply not running is by far the most common first-run failure, and the raw
- * cause names neither the address nor the fix.
- */
+/** "fetch failed" names neither the address nor the fix. */
 export function describeConnectionFailure(err: unknown, url: string): string | null {
   if (err instanceof RuntimeUnreachableError) return explainUnreachable(err.url);
   if (!isConnectionRefused(err)) return null;

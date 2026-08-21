@@ -17,12 +17,7 @@ policies:
       approvers: ["security"]
 `;
 
-/**
- * The editor-hook loop. A hook builds its request from a tool call and has
- * nowhere to carry an approval id, so it always retries the bare action. Before
- * grants were claimable by fingerprint, that retry raised a fresh hold every
- * time and an approved action could never proceed.
- */
+/** A caller with nowhere to carry an approval id still has to get unblocked. */
 describe('retry after approval', () => {
   let dataDir: string;
   let server: MemnoxServer;

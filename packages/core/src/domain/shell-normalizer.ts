@@ -34,11 +34,7 @@ const CODE_FLAG_RUNNERS = new Map<string, string>([
 const DECODERS = new Set(['base64', 'openssl']);
 const DOWNLOADERS = new Set(['curl', 'wget', 'fetch']);
 
-/**
- * Flattens a shell command into the commands it will actually run: pipelines
- * split, wrappers unwrapped, base64 decoded. Deterministic and offline —
- * it never executes anything it reads.
- */
+/** Flattens a command into what it will really run; offline, never executes anything. */
 export function normalizeShellCommand(raw: string): NormalizedCommand {
   const segments: string[] = [];
   const opaque = new Set<OpaqueReason>();
@@ -186,11 +182,7 @@ function looksLikeFlag(word: string): boolean {
   return word.startsWith('-');
 }
 
-/**
- * One spelling per command: bare binary name, bundled short flags split apart
- * and sorted, operands last. `rm -r -f /x` and `/bin/rm -fr /x` both become
- * `rm -f -r /x`, so one pattern matches either.
- */
+/** One spelling per command, so `rm -r -f /x` and `/bin/rm -fr /x` match one pattern. */
 function canonicalize(words: string[]): string {
   const binary = basename(words[0] ?? '');
   const flags: string[] = [];

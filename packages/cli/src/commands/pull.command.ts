@@ -21,15 +21,7 @@ const buildCloudClient: CloudClientFactory = (connection) => new CloudClient(con
 
 const EXIT_UNAVAILABLE = 1;
 
-/**
- * Brings the organization's rules onto this machine.
- *
- * The laptop dials out, which is what makes this work at all: a control plane
- * cannot reach a developer's machine, so distribution has to be a pull. The
- * rules land in their own source file registered alongside the repository's,
- * and the engine composes both — most-restrictive-wins, so a pull can only
- * ever tighten what this machine already enforced.
- */
+/** The laptop dials out, which is what makes this work at all. */
 export function registerPullCommand(
   program: Command,
   context: CliContext,
@@ -100,11 +92,7 @@ export function registerPullCommand(
     );
 }
 
-/**
- * A pulled rule set the runtime has not re-read is not yet in force, so silence
- * here would be a lie. Never fatal: the file is written either way, and a
- * developer with no runtime running still gets the rules on their next start.
- */
+/** A pulled set the runtime has not re-read is not in force, so silence would lie. */
 async function reloadRuntime(
   context: CliContext,
   stored: AgentConfig,
@@ -117,11 +105,7 @@ async function reloadRuntime(
   try {
     const { client } = await context.connect(flags);
     const result = await client.reloadPolicies();
-    // Reloading is not the same as reading this file. A runtime started without
-    // --policy-registry re-reads only what it was pointed at, and reported a
-    // perfectly successful reload of everything except the rules just pulled.
-    // A runtime too old to list its sources cannot be interrogated, so it gets
-    // the benefit of the doubt rather than a warning nobody can act on.
+    // A runtime without --policy-registry re-reads only what it was pointed at.
     const read = result.sources ?? [];
     if (read.length > 0 && !read.includes(resolve(path))) {
       context.out.line(
@@ -136,9 +120,7 @@ async function reloadRuntime(
     context.out.line(`Runtime  : reloaded — now enforcing version ${result.version}`);
     return;
   } catch (err) {
-    // Not a footnote: the rules are on disk and nothing is enforcing them yet.
-    // Which of the two reasons it is decides what the developer does next, so
-    // never collapse "nothing is listening" into "it refused me".
+    // Never collapse "nothing is listening" into "it refused me".
     const unreachable = describeConnectionFailure(err, connection.url);
     context.out.line(
       unreachable === null

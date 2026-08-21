@@ -27,11 +27,7 @@ export interface PolicyDraft {
   yaml: string;
 }
 
-/**
- * Drafts policies from plain language. The draft is validated by the same
- * deterministic validator that guards the runtime — a human still reviews
- * and commits the file; the LLM never touches enforcement.
- */
+/** Validated by the runtime's own validator; a human still reviews and commits. */
 export class PolicyDrafter {
   constructor(private readonly provider: LlmProvider) {}
 

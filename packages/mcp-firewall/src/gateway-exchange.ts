@@ -17,19 +17,7 @@ export interface GatewayExchangeDeps {
 export type GatewayResult =
   { malformed: true } | { malformed: false; replies: JsonRpcMessage[] };
 
-/**
- * One POST, gated. stdio hands the firewall two independent streams; HTTP hands
- * it a request and its reply, so this adapts one onto the other in two phases:
- * run the client's messages through the session, post whatever it approved, then
- * feed the replies back through the same session so a tools/list response is
- * filtered on the way out exactly as it is over stdio.
- *
- * `FirewallSession` is reused untouched — it already holds no socket, so both
- * transports share one implementation of the gate rather than growing a second.
- *
- * Stateless between requests, so a gateway can sit behind a load balancer
- * without pinning a client to one instance.
- */
+/** stdio gives two streams, HTTP a request and a reply; this adapts one onto the other. */
 export class GatewayExchange {
   constructor(private readonly deps: GatewayExchangeDeps) {}
 

@@ -4,12 +4,7 @@ export const ENV_CLOUD_URL = 'MEMNOX_CLOUD_URL';
 export const ENV_CLOUD_TOKEN = 'MEMNOX_CLOUD_TOKEN';
 export const ENV_CLOUD_WORKSPACE = 'MEMNOX_CLOUD_WORKSPACE';
 
-/**
- * A control plane the developer signed into, stored beside the runtime
- * credential. Separate from `token`/`url`: that pair is the *agent* identity a
- * hook presents to a runtime, this one is the *person* reading their
- * organization. Conflating them would let a governed agent read the org.
- */
+/** Separate from `token`/`url`: one is the person, the other the machine's agent. */
 export interface CloudConfig {
   url: string;
   token: string;
@@ -43,12 +38,7 @@ export function isNotConfigured(
   return resolution === CLOUD_NOT_CONFIGURED;
 }
 
-/**
- * Flag, then environment, then what `memnox login` stored — the same ladder the
- * runtime connection uses, so one mental model covers both. Environment beats
- * the file on purpose: that is how CI presents a machine identity without
- * touching a developer's home directory.
- */
+/** The same ladder the runtime connection uses, so one mental model covers both. */
 export function resolveCloud(
   flags: CloudFlags,
   stored: AgentConfig,
@@ -96,9 +86,6 @@ function sourceOf(
 export const SIGN_IN_HINT =
   'Not signed in to a control plane. Run "memnox login --cloud <url> --token <token>".';
 
-/**
- * A command needs a workspace and neither the flag nor the stored default gave
- * one. Named here so every cloud command words it the same way.
- */
+/** Named here so every cloud command words the same failure the same way. */
 export const WORKSPACE_HINT =
   'No workspace selected. Pass --workspace <id>, or set a default with "memnox login --workspace <id>".';

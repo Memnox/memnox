@@ -1,8 +1,4 @@
-/**
- * Provenance-based prompt-injection defense. Trust is decided at ingestion from
- * the source type AND the actor behind it — the same source type can be trusted
- * or untrusted depending on who authored the content.
- */
+/** Prompt-injection defense: trust is set at ingestion from source type and actor. */
 
 /** Provenance refs carried per assessment — enough to explain, bounded in storage. */
 export const TAINT_MAX_SOURCE_REFS = 10;
@@ -17,7 +13,7 @@ export const ALWAYS_TAINTED_SOURCE_TYPES: readonly string[] = [
   'google_doc',
 ];
 
-/** Ground truth — code artifacts and recorded team decisions an authority score must never taint. */
+/** Ground truth: artifacts and recorded decisions an authority score must not taint. */
 export const NEVER_TAINTED_SOURCE_TYPES: readonly string[] = [
   'github_file',
   'github_symbol',
@@ -43,7 +39,7 @@ export const TRUSTED_GITHUB_AUTHOR_ASSOCIATIONS: readonly string[] = [
 export const SLACK_SOURCE_TYPE = 'slack_message';
 export const UNKNOWN_SOURCE_TYPE = 'unknown';
 
-/** Actor facts the ingestion path resolves and forwards — the classifier never looks anything up. */
+/** Resolved by the ingestion path — the classifier never looks anything up. */
 export const TAINT_META_AUTHOR_ASSOCIATION = 'authorAssociation';
 export const TAINT_META_AUTHOR_IS_MEMBER = 'authorIsWorkspaceMember';
 export const TAINT_META_SOURCE_TYPE = 'sourceType';
@@ -59,10 +55,7 @@ export const TAINT_UNREADABLE_SOURCE_TYPE = 'unreadable_state';
 export const TAINT_UNREADABLE_REASON =
   'session taint state unreadable — provenance cannot be proven clean';
 
-/**
- * Irreversible, whole-estate destruction: while a session's context is tainted
- * these are blocked outright, and no approval — routine or break-glass — lifts it.
- */
+/** Blocked while a session is tainted; no approval, not even break-glass, lifts it. */
 export const TAINT_NO_OVERRIDE_ACTIONS: readonly string[] = [
   'project.delete',
   'database.drop',

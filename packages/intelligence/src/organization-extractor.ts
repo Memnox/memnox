@@ -53,16 +53,7 @@ export interface ExtractionRequest {
   detectedAt: string;
 }
 
-/**
- * Reads candidate statements out of a conversation.
- *
- * This is the whole of the intelligence plane, and it is deliberately on the
- * other side of the decision path from everything that decides. It runs offline,
- * against messages, and produces `candidate` statements — which by construction
- * bind nothing until a person verifies them. An extractor that could write a
- * binding statement would put a model in the decision path by the back door,
- * which is why `candidateStatement` is the only constructor it can reach.
- */
+/** The whole intelligence plane, deliberately on the far side of the decision path. */
 export class OrganizationExtractor {
   constructor(private readonly provider: LlmProvider) {}
 
@@ -120,14 +111,7 @@ interface RawStatement {
   evidence?: string[];
 }
 
-/**
- * A statement worth a reviewer's time.
- *
- * Everything unusable is dropped silently and that is correct here: a model
- * that returned half a statement has told us nothing, and there is no caller
- * waiting on it. What must never be silent is a *binding* statement going
- * missing, and none of these bind.
- */
+/** Half a statement is dropped silently; a reviewer's time is the scarce thing. */
 function isUsable(entry: RawStatement): entry is UsableStatement {
   if (typeof entry.statement !== 'string' || entry.statement.length === 0) return false;
   if (typeof entry.subject !== 'string' || entry.subject.length === 0) return false;
@@ -148,9 +132,7 @@ function parseStatements(raw: string): RawStatement[] {
     const parsed: unknown = JSON.parse(raw.slice(start, end + 1));
     return Array.isArray(parsed) ? (parsed as RawStatement[]) : [];
   } catch {
-    // A malformed answer is an empty run, never a partial statement: half a
-    // claim about a company is worse than none, and the next run will re-read
-    // the same messages.
+    // A malformed answer is an empty run: half a claim is worse than none.
     return [];
   }
 }

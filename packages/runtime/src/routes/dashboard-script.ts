@@ -1,14 +1,4 @@
-/**
- * The dashboard's client. Plain DOM construction rather than innerHTML: agent
- * names, rule reasons and audit targets are attacker-influenced strings, and
- * building nodes means never having to trust them.
- *
- * It holds no governance knowledge. Every read is a GET against an endpoint the
- * CLI also uses, and every write is the same POST/PUT the CLI makes, so the page
- * cannot decide anything the runtime would not.
- *
- * No template literals below: this source is embedded inside one.
- */
+/** Plain DOM construction, never innerHTML: agent names and audit targets are untrusted. */
 export const DASHBOARD_SCRIPT = String.raw`
 'use strict';
 
@@ -89,12 +79,7 @@ function api(method, path, body) {
   });
 }
 
-/**
- * A sentence, never a body. Routes refuse in two shapes — one "error" string,
- * or an "errors" array from the policy validator — and dumping the raw JSON put
- * "policies[16].decision.approvers is required" on screen inside braces and
- * escaped quotes. (No backticks in this file: it is one big template literal.)
- */
+/** Routes refuse in two shapes — one "error" string or an "errors" array. */
 function explain(parsed, text, status) {
   if (parsed) {
     if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
@@ -256,12 +241,7 @@ function approvalCard(approval) {
 function loadPolicies() {
   return api('GET', '/v1/policies').then(function (view) {
     state.policies = view.policies || [];
-    // The engine composes every rule source; a write replaces one file. Sending
-    // the composed set back is refused for duplicate names, which is how the
-    // whole pane stopped working the moment an org bundle was pulled.
-    // Absent means the runtime could not read the file it would write. Nothing
-    // is editable then, which is safer than offering to replace a file whose
-    // current contents are unknown.
+    // Sending the composed set back is refused for duplicate names.
     state.writable = view.writable === undefined ? null : view.writable;
     $('policy-form').classList.toggle('hidden', state.writable === null);
     var rows = $('policy-rows');
@@ -272,9 +252,7 @@ function loadPolicies() {
       ]));
       return;
     }
-    // One row per rule in force. The writable ones are claimed off by shape
-    // rather than by name — the two arrays arrive as separate objects, and a
-    // name is exactly what an organization rule can share with a local one.
+    // Writable rules are claimed off by shape: an org rule can share a local one's name.
     var unclaimed = (state.writable || []).map(function (policy) { return JSON.stringify(policy); });
     state.policies.forEach(function (policy) {
       var match = policy.match || {};
@@ -342,9 +320,7 @@ function addPolicy(event) {
   }
   var effect = $('rule-effect').value;
   var approvers = patterns($('rule-approvers').value);
-  // The rule the engine enforces anyway. Saying it here costs one line and
-  // saves a round trip that comes back as a validation error over a form the
-  // person has already filled in.
+  // The rule the engine enforces anyway; saying it here saves a round trip.
   if (effect === 'require_approval' && approvers.length === 0) {
     toast('Who approves it? A rule that requires approval has to name someone.', 'bad');
     $('rule-approvers').focus();
@@ -497,15 +473,7 @@ function registerAgent(event) {
 
 /* ── console ──────────────────────────────────────────────── */
 
-/**
- * A token for this console, without asking anyone to go and find one.
- *
- * "memnox setup" registers an agent before a person ever opens this page, and
- * its token is shown once and never again — correctly. So the console cannot
- * borrow that identity, and a first-time visitor used to be stuck at a field
- * they had no way to fill. It gets its own agent instead: registered on the
- * first click, rotated on later ones, and audited like any other identity.
- */
+/** "memnox setup" registers an agent before a person ever opens this page. */
 function issueConsoleToken() {
   var button = $('console-token-new');
   button.disabled = true;
@@ -572,11 +540,7 @@ function runCheck(event) {
 
 /* ── enforcement ──────────────────────────────────────────── */
 
-/**
- * Written out per mode rather than assembled. Gluing "ing" onto the mode name
- * gave "enforceing" and "offing", and each of the three means something
- * different enough to deserve its own sentence anyway.
- */
+/** Written out per mode: gluing "ing" on gave "enforceing" and "offing". */
 var ENFORCEMENT_SAID = {
   off: 'Governance is off — no action is being decided on.',
   monitor: 'Now monitoring every environment. Decisions are recorded, nothing is blocked.',

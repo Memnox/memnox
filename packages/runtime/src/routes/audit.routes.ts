@@ -32,7 +32,7 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): vo
       projectId: query.project,
       from: query.from,
       to: query.to,
-      // A timeline query without an explicit limit still gets the ceiling — never an unbounded scan.
+      // A query with no explicit limit still gets the ceiling, never an unbounded scan.
       limit: query.limit ? bounded : MAX_AUDIT_LIMIT,
     };
     if (

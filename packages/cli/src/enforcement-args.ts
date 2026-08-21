@@ -7,10 +7,7 @@ const DEFAULT_KEY = 'default';
 
 const MODES = Object.values(ENFORCEMENT_MODE).join(' | ');
 
-/**
- * Parses `default=monitor,production=enforce` into per-environment modes.
- * A bare mode (`monitor`) sets the default and nothing else.
- */
+/** A bare mode sets the default and nothing else. */
 export function parseEnforcement(spec: string): EnvironmentModes {
   const trimmed = spec.trim();
   if (trimmed.length === 0) throw new Error('--enforcement needs a value');

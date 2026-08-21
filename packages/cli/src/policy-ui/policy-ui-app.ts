@@ -88,11 +88,7 @@ const json = (status: number, payload: unknown): PolicyUiResponse =>
 const text = (status: number, body: string): PolicyUiResponse =>
   response(status, CONTENT_TYPE.TEXT, body);
 
-/**
- * A browser that resolved an attacker's hostname to 127.0.0.1 still sends that
- * name in `Host`, so this is what separates "the developer opened the editor"
- * from "a page they were reading reached the editor".
- */
+/** `Host` is what separates a real loopback visit from a rebound hostname. */
 function isLoopbackHost(host: string | undefined): boolean {
   if (host === undefined) return false;
   if (host.startsWith('[')) {
@@ -135,11 +131,7 @@ function issuesOf(err: unknown): string[] {
   return [err instanceof Error ? err.message : String(err)];
 }
 
-/**
- * The editor's whole server side. Nothing here reads a socket or a file — the
- * ports do that — so the routing, the two guards and every outcome are exercised
- * by tests that never bind a port.
- */
+/** Nothing here reads a socket or a file — the ports do that. */
 export function createPolicyUiHandler(deps: PolicyUiDeps): PolicyUiHandler {
   const page = renderPolicyUiPage({
     filePath: deps.filePath,

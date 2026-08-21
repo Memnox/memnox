@@ -5,16 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActionEvent } from '@memnox/core';
 import { buildServer, type MemnoxServer } from '../src/server';
 
-/**
- * Consent belongs in the evidence.
- *
- * Only break-glass used to be audited, so an ordinary grant left no trace in
- * the hash chain: the approver's name lived in approvals.json and nowhere else,
- * and a replay showed an action going from `require_approval` to `allow` with
- * nothing in between to say a human had agreed. For a product whose claim is
- * that every decision is on a tamper-evident record, the authorization was the
- * one act missing from it.
- */
+/** Only break-glass used to be audited, so an ordinary grant left no trace. */
 describe('resolving an approval', () => {
   let dataDir: string;
   let server: MemnoxServer;

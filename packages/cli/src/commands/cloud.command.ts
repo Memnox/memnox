@@ -24,13 +24,7 @@ interface CloudCommandFlags {
   workspace?: string;
 }
 
-/**
- * What a developer reads from their organization without leaving the terminal.
- *
- * Both of these are answerable while the workspace runtime is unreachable — the
- * review queue is control-plane state and the timeline is a mirror — so they
- * still work from a laptop that no runtime can be dialled from.
- */
+/** Answerable while the runtime is down, because the control plane holds them. */
 export function registerCloudCommand(
   program: Command,
   context: CliContext,
@@ -118,10 +112,7 @@ function withCloudFlags(command: Command): Command {
     .option('--workspace <id>', 'workspace to read');
 }
 
-/**
- * One line for either shape on the timeline. Reads named fields rather than
- * chaining, so a missing one is an empty string and never a crash.
- */
+/** Named fields rather than chaining, so a missing one is empty, not a crash. */
 function describe(event: Record<string, unknown>): string {
   const effect = text(event['effect']);
   const action = text(event['action']);

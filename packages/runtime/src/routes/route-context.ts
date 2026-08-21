@@ -25,14 +25,7 @@ export type RequireRole = (
   role: ApiRole,
 ) => boolean;
 
-/**
- * Guards a management route against the workspace it is about to touch.
- *
- * Separate from `RequireRole` because they answer different questions: a role
- * says what a credential may do, a scope says to whom. An admin key for one
- * customer must not be able to rewrite another customer's organization, and
- * the role check alone cannot see that.
- */
+/** Separate from `RequireRole`: one says what, the other says to whom. */
 export type RequireWorkspace = (
   request: FastifyRequest,
   reply: FastifyReply,
@@ -55,21 +48,11 @@ export interface RouteContext {
   resolveCertAgent?: (request: FastifyRequest) => Promise<AgentIdentity | null>;
   /** Re-reads the policy file; absent when the runtime started without one. */
   reloadPolicies?: () => Promise<Policy[]>;
-  /**
-   * The rule files this runtime actually reads, absolute. A caller that has just
-   * written a new one needs to know whether this process is among the things
-   * that will ever look at it — registering a file and reloading a runtime that
-   * was never pointed at the registry are two different outcomes.
-   */
+  /** A caller that has just written a rule file needs to know whether it was read. */
   policySources?: () => Promise<string[]>;
   /** Persists a new rule set, then swaps the engine. Only when a file backs it. */
   applyPolicies?: (policies: Policy[]) => Promise<Policy[]>;
-  /**
-   * The rules living in the one file `applyPolicies` overwrites. Absent when no
-   * file backs the set. Everything else the engine holds came from another
-   * source — an organization bundle, a second repository — and a write cannot
-   * touch it, so an editor has to be handed these rather than guess from names.
-   */
+  /** The rules in the one file `applyPolicies` overwrites; absent when no file backs it. */
   writablePolicies?: () => Promise<Policy[] | null>;
   /** Writes the modes so a restart keeps them. Absent leaves them in memory. */
   persistEnforcement?: (modes: EnvironmentModes) => Promise<void>;

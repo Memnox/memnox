@@ -11,12 +11,7 @@ const ENV_ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY';
 /** The SDK accepts either; a user who set the token should not be told to set the key. */
 const ENV_ANTHROPIC_AUTH_TOKEN = 'ANTHROPIC_AUTH_TOKEN';
 
-/**
- * Every BYOK command is optional and none of them can decide anything, so a
- * missing key is a setup step, not a failure of the runtime. Saying which
- * variable to set beats the provider SDK's own "could not resolve
- * authentication method", which names neither the variable nor the command.
- */
+/** A missing key is a setup step, not a failure — no BYOK command decides anything. */
 function missingKey(variable: string, provider: string): Error {
   return new Error(
     `${variable} is required for the ${provider} provider.\n` +

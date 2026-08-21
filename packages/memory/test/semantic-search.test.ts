@@ -30,8 +30,7 @@ const AXES: Record<string, number[]> = {
   d3: [0, 0, 1],
 };
 
-/** Queries are matched exactly first, so a query sharing a word with a decision
- *  still embeds to whatever the test says it means. */
+/** Queries are matched exactly first, so a shared word does not decide the result. */
 const fakeEmbed =
   (queries: Record<string, number[]>): EmbedFn =>
   async (texts) =>

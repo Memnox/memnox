@@ -28,11 +28,7 @@ export class UngovernedAuthorizer implements CallAuthorizer {
   }
 }
 
-/**
- * Policy decided on this machine, on the call's own arguments. It is what makes
- * argument-level rules possible without shipping the payload anywhere — see
- * LocalGate.
- */
+/** Argument-level rules without shipping the payload anywhere; see LocalGate. */
 export class LocalGateAuthorizer implements CallAuthorizer {
   constructor(
     private readonly gate: LocalGate,
@@ -103,11 +99,7 @@ export class RuntimeAuthorizer implements CallAuthorizer {
   }
 }
 
-/**
- * Local gate first, runtime second, strictest wins. The local pass is what sees
- * the arguments, so its findings travel to the runtime as signals — and a call
- * the local pass already blocked never becomes a request at all.
- */
+/** Local first, runtime second, strictest wins; a local block never becomes a request. */
 export class LayeredAuthorizer implements CallAuthorizer {
   constructor(
     private readonly local: LocalGateAuthorizer,

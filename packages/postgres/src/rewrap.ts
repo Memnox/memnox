@@ -23,11 +23,7 @@ export interface TableKeyUsage {
   byKeyId: Record<string, number>;
 }
 
-/**
- * Re-encodes rows not already on the target key. Plaintext never changes, so the
- * audit chain stays valid. Null from `recode` means skip, which is how a resumed
- * run ignores what an interrupted one converted.
- */
+/** Plaintext never changes, so the audit chain stays valid; null from `recode` skips. */
 export async function rewrapTable(
   sql: SqlClient,
   table: string,

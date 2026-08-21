@@ -6,11 +6,7 @@ import {
 } from './gateway.constants';
 import { isEventStream, readEventStream } from './event-stream';
 
-/**
- * The MCP server this gateway fronts. An interface, not a bare fetch call, so
- * tests drive the real routing code without a socket — the same seam
- * `MemnoxClient` uses for its transport.
- */
+/** An interface, so tests drive the real routing code without a socket. */
 export interface UpstreamServer {
   /** Sends one JSON-RPC payload on; returns the payloads that came back. */
   send(payload: string, sessionId?: string): Promise<string[]>;
@@ -18,11 +14,7 @@ export interface UpstreamServer {
 
 export interface HttpUpstreamOptions {
   url: string;
-  /**
-   * Credential for the upstream server, when it wants one. Deliberately
-   * separate from the caller's Memnox token: that token authenticates the agent
-   * to Memnox and must never be forwarded to a third-party server.
-   */
+  /** Separate from the caller's Memnox token, which is never forwarded onward. */
   authorization?: string;
   fetchImpl?: typeof fetch;
 }

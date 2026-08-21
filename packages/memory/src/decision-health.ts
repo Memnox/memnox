@@ -31,11 +31,7 @@ export interface DecisionHealthReport {
   entries: DecisionHealthEntry[];
 }
 
-/**
- * Corpus quality from enforcement telemetry: violations are the decay signal,
- * and a decision nobody ever cited or broke is dead weight. Aged constraints
- * are flagged for review — never silently dropped.
- */
+/** Violations are the decay signal; aged constraints are flagged, never dropped. */
 export function buildDecisionHealthReport(
   decisions: DecisionRecord[],
   violationsByDecisionId: Map<string, number>,

@@ -99,7 +99,7 @@ describe('postgres audit log at scale', () => {
 
     expect(await log.pruneBefore(DAY(4))).toBe(3);
     expect((await log.recent(10)).map((event) => event.id)).toEqual(['e6', 'e5', 'e4']);
-    // Every prune statement is bounded — a retention sweep never rewrites the whole table at once.
+    // Every prune statement is bounded; a sweep never rewrites the whole table.
     expect(sql.lastMatching('DELETE FROM audit_events')?.text).toContain('LIMIT $2');
     expect(await log.pruneBefore(DAY(4))).toBe(0);
   });

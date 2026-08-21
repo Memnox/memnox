@@ -24,10 +24,7 @@ const SCRYPT_PARALLELISM = 1;
 /** Node's default maxmem sits exactly on the boundary for these parameters. */
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 
-/**
- * What an unenveloped value means. `permissive` reads and counts it so enabling
- * encryption is not a migration; the count reaching zero is the cue for `strict`.
- */
+/** `permissive` reads and counts unenveloped values, so enabling is not a migration. */
 export const ENCRYPTION_MODE = {
   OFF: 'off',
   PERMISSIVE: 'permissive',
@@ -71,11 +68,7 @@ export class PlaintextRecordError extends Error {
   }
 }
 
-/**
- * AES-256-GCM at rest, random IV per record. Deliberately NOT deterministic —
- * stores are matched in memory, so searchable ciphertext (the legacy trap) is
- * never needed.
- */
+/** Random IV per record. NOT deterministic — stores are matched in memory. */
 export class KeyringCodec implements TextCodec {
   private readonly derived = new Map<string, Buffer>();
   private readonly activeKeyId: string;

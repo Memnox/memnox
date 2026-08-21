@@ -1,11 +1,4 @@
-/**
- * Self-assessed control readiness, as code.
- *
- * This is NOT a certification and must never be rendered as one. SOC 2 and ISO
- * 27001 are an auditor's opinion and a certificate; HIPAA and GDPR have no
- * certification at all. What this records is which controls exist, where the
- * evidence lives, and — the part that matters — what is still missing.
- */
+/** Self-assessed control readiness. NOT a certification, and must never render as one. */
 
 export const FRAMEWORK = {
   SOC2: 'soc2',

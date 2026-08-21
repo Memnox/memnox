@@ -44,9 +44,7 @@ export function registerApprovalsCommand(program: Command, context: CliContext):
     await listPending(this.opts() as ConnectionFlags);
   });
 
-  // Connection flags live on the parent only. Declaring them here too makes
-  // commander bind --url to the parent and hand this action its own default,
-  // so `approvals list --url X` silently queried somewhere else entirely.
+  // Connection flags live on the parent; declaring them here rebinds --url.
   approvals
     .command('list')
     .description('List pending approvals')

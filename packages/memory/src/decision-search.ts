@@ -11,11 +11,7 @@ export interface DecisionSearchHit {
   score: number;
 }
 
-/**
- * Deterministic keyword search over the active corpus — token overlap scored
- * against title (weighted), statement, and action patterns. An embedding
- * backend can implement a richer search behind the same signature.
- */
+/** Token overlap over the active corpus; an embedding backend can swap in behind it. */
 export function searchDecisions(
   decisions: DecisionRecord[],
   query: string,

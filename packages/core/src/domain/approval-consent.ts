@@ -13,10 +13,7 @@ export const CONSENT = {
 
 export type Consent = (typeof CONSENT)[keyof typeof CONSENT];
 
-/**
- * Pure: an approval only speaks for the exact action it was raised against, so
- * the fingerprint must match before its status means anything at all.
- */
+/** Pure: the fingerprint must match before an approval's status means anything. */
 export function evaluateConsent(
   approval: Approval | null,
   expectedFingerprint: string,

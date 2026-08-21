@@ -3,11 +3,7 @@ import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
 import { ensurePolicyFile } from '../project-setup';
 
-/**
- * One command from nothing to governed: write a policy file and print how to
- * start in monitor mode. Everything it does is a step the other commands
- * expose on their own.
- */
+/** Every step here is one the other commands expose on their own. */
 export function registerQuickstartCommand(program: Command, context: CliContext): void {
   program
     .command('quickstart')

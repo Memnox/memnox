@@ -1,11 +1,4 @@
-/**
- * The Memnox mark, inlined.
- *
- * The console at memnox-client renders it from `public/logo.png`; this page has
- * no static route and is served as one self-contained document, so it carries
- * the same drawing as a data URI. It is painted in `--primary`, which reads on
- * both grounds, so unlike the client it needs no per-scheme pair.
- */
+/** Inlined: this page has no static route to serve a file from. */
 export const MEMNOX_MARK_DATA_URI =
   'data:image/png;base64,' +
   'iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAYAAADL1t+KAABDjElEQVR42u2dB5hU5fWHZ3fpSFFRQBAFsSL2hr1XROxGo8Ye' +

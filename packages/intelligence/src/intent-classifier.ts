@@ -28,11 +28,7 @@ export interface IntentAnalysis {
   highestRisk: RiskLevel;
 }
 
-/**
- * Turns "improve database performance" into the actions it might mean, so a
- * human can see that it could include dropping a table. Advisory only — the
- * gate still decides on the real action when it is actually attempted.
- */
+/** Advisory only — the gate still decides on each action. */
 export class IntentClassifier {
   constructor(private readonly llm: LlmProvider) {}
 

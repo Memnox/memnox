@@ -28,11 +28,7 @@ export type ReversibilityCost =
 /** Where a decision entered the system; feeds the source-authority table. */
 export const DECISION_SOURCE_MANUAL = 'manual';
 
-/**
- * A team decision captured as a machine-checkable constraint,
- * e.g. "Do not migrate the database before Q4" → actions: ["database.migrate"].
- * Decisions are reviewed and superseded, never silently expired.
- */
+/** A team decision as a machine-checkable constraint; superseded, never expired. */
 export interface DecisionRecord {
   id: string;
   title: string;
@@ -59,10 +55,7 @@ export interface DecisionRecord {
   reviewAfter?: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
   orgId?: string;
-  /**
-   * Governance unit this decision binds. Unset = every project, which is what a
-   * decision recorded before projects existed must keep meaning.
-   */
+  /** Unset = every project, which is what a pre-projects decision must keep meaning. */
   projectId?: string;
 }
 

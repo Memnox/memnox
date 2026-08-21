@@ -55,10 +55,7 @@ interface TokenUsage {
   outputTokens: number;
 }
 
-/**
- * OpenAI reports prompt/completion, Anthropic input/output. Absent usage means
- * zero, never a guess — a spend cap must not act on an invented number.
- */
+/** Absent usage means zero, never a guess: a spend cap must not act on invention. */
 export function usageFromResponse(body: unknown): TokenUsage {
   if (typeof body !== 'object' || body === null) {
     return { inputTokens: 0, outputTokens: 0 };

@@ -21,27 +21,14 @@ interface Admitted {
   token: string;
 }
 
-/**
- * The organization protocol: one decision, and the questions that lead to it.
- *
- * Every route here validates a shape, resolves the credential to an agent, and
- * hands off. The workspace in the path is checked against the credential and
- * never trusted as a scope — `OrganizationService.workspaceOf` decides that,
- * and this module only refuses the mismatch.
- */
+/** One decision and the questions leading to it; each route validates a shape. */
 export function registerOrganizationRoutes(
   app: FastifyInstance,
   ctx: RouteContext,
 ): void {
   const organization = ctx.organization;
 
-  /**
-   * Resolves the credential and checks it against the workspace in the path.
-   *
-   * Fails closed on both: an unknown token and a token for another workspace
-   * are the same answer, because distinguishing them would tell an unauthorized
-   * caller which workspaces exist.
-   */
+  /** Fails closed on both an unknown token and a workspace it may not manage. */
   const admit = async (
     token: string | null,
     params: WorkspaceParams,

@@ -32,11 +32,7 @@ export async function sweepAuditRetention(
   }
 }
 
-/**
- * Resolved approvals share the audit window: an approval outlives its own audit
- * trail for no one's benefit, so one number governs both. Returns how many were
- * pruned; 0 when disabled, locked out, or already clean.
- */
+/** One number governs both: an approval outliving its audit trail helps nobody. */
 export async function sweepApprovalRetention(
   approvals: ApprovalStore,
   locks: LockService,

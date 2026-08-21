@@ -16,11 +16,7 @@ function compile(pattern: string): RegExp {
   return expression;
 }
 
-/**
- * Deterministic wildcard matching: "*" matches any sequence of characters,
- * including "." and "/" separators. Matching is case-insensitive.
- * "database.*" matches "database.delete"; "payment/*" matches "payment/api/refund.ts".
- */
+/** Case-insensitive wildcards; "*" spans "." and "/" separators too. */
 export function matchesPattern(pattern: string, value: string): boolean {
   return compile(pattern).test(value.toLowerCase());
 }

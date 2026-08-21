@@ -1,8 +1,4 @@
-/**
- * `enc:<keyId>:<base64>`. The key id rides in the envelope, not the codec, so one
- * store can hold records under several keys — which makes rotation a background
- * rewrap rather than a downtime window.
- */
+/** `enc:<keyId>:<base64>` — the key id rides along, so rotation is a rewrap, not downtime. */
 export const ENVELOPE_PREFIX = 'enc:';
 const SEGMENT_SEPARATOR = ':';
 /** `enc`, the key id, and the payload — the payload may not contain a separator. */

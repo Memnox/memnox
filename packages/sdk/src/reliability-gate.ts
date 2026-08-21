@@ -6,10 +6,7 @@ import type {
 } from '@memnox/core';
 import { EXECUTION_STATUS } from '@memnox/core';
 
-/**
- * What a check found. Returning a bare boolean stays supported — a condition
- * only reports a measurement when it has a number worth putting on the record.
- */
+/** A bare boolean stays supported; a number is reported only when worth recording. */
 export interface ConditionResult {
   held: boolean;
   /** Recorded whether the condition held or not: a failure's number is the useful one. */
@@ -61,11 +58,7 @@ function asResult(value: boolean | ConditionResult): ConditionResult {
   return typeof value === 'boolean' ? { held: value } : value;
 }
 
-/**
- * A condition that throws is a condition that did not hold. Measurements are
- * collected as they are taken, so a run that stops at the first failure still
- * reports what the checks before it saw.
- */
+/** A condition that throws did not hold; measurements survive an early stop. */
 async function firstFailing(
   conditions: readonly Condition[],
   measured: ExecutionMeasurement[],
@@ -78,15 +71,7 @@ async function firstFailing(
   return null;
 }
 
-/**
- * Runs an action only if its preconditions hold, verifies its postconditions
- * afterwards, and undoes it when verification fails.
- *
- * The runtime decides whether an action *may* happen; this decides whether what
- * happened was correct, and repairs it when it was not. Pure orchestration — it
- * makes no network calls and never throws, so a caller always gets an outcome
- * it can report.
- */
+/** Runs only if preconditions hold, verifies after, and undoes it when they fail. */
 export async function runGuarded<T>(
   plan: GuardedExecution<T>,
 ): Promise<ExecutionOutcome<T>> {

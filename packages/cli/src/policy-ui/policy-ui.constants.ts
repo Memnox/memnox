@@ -3,18 +3,10 @@ export const POLICY_UI_HOST = '127.0.0.1';
 
 export const DEFAULT_POLICY_UI_PORT = 7391;
 
-/**
- * The only names the page may be reached under. A browser that resolved some
- * attacker-controlled hostname to 127.0.0.1 arrives with that name in `Host`,
- * so checking it is what stops a rebound DNS record from driving the editor.
- */
+/** A browser resolving an attacker's hostname to 127.0.0.1 still sends that name. */
 export const ALLOWED_UI_HOSTNAMES: readonly string[] = ['127.0.0.1', 'localhost', '::1'];
 
-/**
- * Minted per run and echoed by the page. A custom header cannot be sent by a
- * drive-by form post, and no CORS headers are served, so a page on another
- * origin can neither read from nor write to this server.
- */
+/** A custom header cannot be sent by a drive-by form post. */
 export const UI_SESSION_HEADER = 'x-memnox-ui-token';
 export const UI_SESSION_TOKEN_BYTES = 32;
 

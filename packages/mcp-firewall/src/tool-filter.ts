@@ -1,8 +1,4 @@
-/**
- * Static allow/deny regexes over tool names — deny wins over allow.
- * Enforced at BOTH tools/list (hide) and tools/call (block): a client can
- * call a tool it was never shown, so filtering the listing alone is not a gate.
- */
+/** Deny wins. Enforced at both list and call: a client can call a tool never shown. */
 export class ToolFilter {
   private readonly allow: RegExp | null;
   private readonly deny: RegExp | null;

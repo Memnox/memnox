@@ -6,14 +6,7 @@ import { resolveProjectId } from '../project-identity';
 /** Where the command is being run; injected so tests never depend on the real cwd. */
 type WorkingDirectory = () => string;
 
-/**
- * `memnox context <action> [target]` — what governs this, before doing it.
- *
- * The pre-flight half of the gate. An agent that asks first carries the rules
- * into its work; one that does not meets them as a refusal. Prints the plain
- * text so it can be piped straight into a prompt, with `--json` for callers
- * that want the structure.
- */
+/** The pre-flight half of the gate: what governs this, before doing it. */
 export function registerContextCommand(
   program: Command,
   context: CliContext,

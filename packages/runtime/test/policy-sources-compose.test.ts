@@ -4,15 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildServer, type MemnoxServer } from '../src/server';
 
-/**
- * A runtime composes every rule source it was pointed at. Writing one of them
- * must not silently drop the rest.
- *
- * `PUT /v1/policies` used to swap the engine to exactly what it had just
- * written, so adding an unrelated rule un-enforced the organization bundle a
- * `memnox pull` had brought down — no error, no warning, and the rules simply
- * stopped applying until something reloaded.
- */
+/** Writing one source must not silently drop the others. */
 describe('writing one rule source', () => {
   let dataDir: string;
   let ownFile: string;

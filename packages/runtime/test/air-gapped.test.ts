@@ -26,11 +26,7 @@ policies:
       approvers: ["eng-lead"]
 `;
 
-/**
- * Air-gap guarantee. Every advisor and store the decision path uses must work
- * with no network at all, so a reachable socket cannot become a dependency by
- * accident. Any fetch during these calls fails the test.
- */
+/** Every advisor and store on the decision path must work with no network at all. */
 describe('air-gapped operation', () => {
   let dataDir: string;
   let server: MemnoxServer;

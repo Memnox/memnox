@@ -28,11 +28,7 @@ function describe(message: JsonRpcMessage): string {
   return message.method ?? 'response';
 }
 
-/**
- * Routing for one proxied MCP connection: tools/call is gated, tools/list
- * responses are filtered, everything else passes through untouched. Holds no
- * process or socket, so it is driven directly in tests.
- */
+/** tools/call is gated, tools/list filtered; holds no process, so tests drive it. */
 export class FirewallSession {
   private readonly listRequestIds = new Set<MessageId>();
 
@@ -88,10 +84,7 @@ export class FirewallSession {
     return { ...message, result: { ...message.result, tools: visible } };
   }
 
-  /**
-   * A dropped write must never look like success: the client is waiting on a
-   * reply that the dead server will never send, so answer it here instead.
-   */
+  /** A dropped write must not look like success — the dead server will never reply. */
   private forward(message: JsonRpcMessage): void {
     if (this.deps.channel.toServer(serializeMessage(message))) return;
 

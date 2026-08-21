@@ -2,15 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 
-/**
- * The loopback redirect flow (RFC 8252): the CLI listens on a random port on
- * 127.0.0.1, sends the browser to the control plane, and the control plane
- * redirects back with a one-time code once a human has signed in.
- *
- * A code, never a token, crosses in the URL. Query strings reach browser
- * history, referrers and proxy logs; the code is single-use and worthless
- * without the verifier, which never leaves this process.
- */
+/** Loopback redirect (RFC 8252): no secret in the URL, and the code is bound to a verifier. */
 
 /** Loopback only. A routable bind would let the network answer the callback. */
 const CALLBACK_HOST = '127.0.0.1';
@@ -61,12 +53,7 @@ export function statesMatch(expected: string, presented: string | null): boolean
   return timingSafeEqual(Buffer.from(expected), Buffer.from(presented));
 }
 
-/**
- * Opens the browser and resolves once the control plane redirects back.
- *
- * The server is bound before the browser is opened — a callback arriving at a
- * port nothing is listening on is an error a person cannot recover from.
- */
+/** The server is bound before the browser opens, or the redirect can beat the listener. */
 export async function loginThroughBrowser(
   request: BrowserLoginRequest,
 ): Promise<BrowserLoginOutcome> {

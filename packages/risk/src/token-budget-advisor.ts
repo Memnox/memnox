@@ -15,11 +15,7 @@ export const RISK_SIGNAL_TOKEN_BUDGET_EXCEEDED = 'token-budget-exceeded';
 /** What the proxy decides under; spend is recorded separately as llm.spend. */
 export const LLM_INFER_ACTION = 'llm.infer';
 
-/**
- * Caps cumulative LLM spend per session. Spend is reconstructed from the most
- * recent TOKEN_BUDGET_WINDOW_EVENTS audited events of the session (allowed
- * llm.spend), so the cap survives restarts and needs no extra state.
- */
+/** Spend is replayed from audited events, so the cap survives restarts with no state. */
 export class TokenBudgetAdvisor implements ActionAdvisor {
   readonly name = TOKEN_BUDGET_ADVISOR;
 

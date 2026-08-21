@@ -15,10 +15,7 @@ export function registerPolicyRoutes(app: FastifyInstance, ctx: RouteContext): v
   app.get('/v1/policies', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
     const policies = ctx.gateway.policies();
-    // `policies` is every source composed; `writable` is the one file a PUT
-    // replaces. An editor that cannot tell them apart sends the composed set
-    // back and is refused for duplicate names — and names alone cannot
-    // separate them, because the duplicates are the case that matters.
+    // `policies` is every source composed; `writable` is the one file a PUT replaces.
     const writable =
       ctx.writablePolicies === undefined ? policies : await ctx.writablePolicies();
     // Omitted rather than empty when the file cannot be read: an empty list
@@ -43,10 +40,7 @@ export function registerPolicyRoutes(app: FastifyInstance, ctx: RouteContext): v
     }
   });
 
-  /**
-   * Replaces the rule set. Writes the file first so the change survives a
-   * restart and stays reviewable in a diff — the same invariant reload relies on.
-   */
+  /** Writes the file first, so the change survives a restart and stays in a diff. */
   app.put('/v1/policies', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
     if (!ctx.applyPolicies) {
@@ -109,10 +103,7 @@ export function registerPolicyRoutes(app: FastifyInstance, ctx: RouteContext): v
     }
   });
 
-  /**
-   * Answers "what would this change have done" against real history rather than
-   * invented cases, which is what makes a rule change safe to publish.
-   */
+  /** Answers against real history rather than invented cases. */
   app.post('/v1/policies/simulate', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
     let document;

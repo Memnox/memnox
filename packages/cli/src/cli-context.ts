@@ -24,15 +24,7 @@ interface ConnectedClient {
   connection: ResolvedConnection;
 }
 
-/**
- * Everything a command needs from outside itself. Commands take this instead of
- * reaching for `console` or building their own client, so a test swaps the whole
- * outside world in one object.
- *
- * Styling and stored credentials live here because both are how a command talks
- * to the outside — the context stays output and HTTP, and does not widen into a
- * grab bag of things only one command needs.
- */
+/** Everything a command needs from outside itself, so nothing reaches for `console`. */
 export class CliContext {
   constructor(
     readonly out: CliOutput = new ConsoleOutput(),
@@ -51,11 +43,7 @@ export class CliContext {
     });
   }
 
-  /**
-   * The transport, wrapped so a refused connection carries the address it was
-   * refused at. This is the only layer that still knows the resolved URL by the
-   * time a client method throws.
-   */
+  /** The only layer that still knows which address was dialled. */
   private addressed(url: string): HttpTransport {
     const send = this.transport ?? ((target, init) => fetch(target, init));
     return async (target, init) => {
@@ -69,11 +57,7 @@ export class CliContext {
     };
   }
 
-  /**
-   * Builds a client from flags, falling back to the environment and then to the
-   * token `memnox setup` stored. Returns the resolved connection too, so a
-   * command can report which runtime it reached and where the token came from.
-   */
+  /** Flags, then environment, then what `memnox setup` stored. */
   async connect(flags: ConnectionFlags): Promise<ConnectedClient> {
     const connection = resolveConnection(flags, await this.readStored(), this.env);
     return { client: this.client(connection), connection };

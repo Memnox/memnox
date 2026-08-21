@@ -22,14 +22,7 @@ const processStdio: StdioHost = {
   onClose: (handler) => process.stdin.on('end', handler),
 };
 
-/**
- * `memnox mcp` — Memnox as an MCP server, so an agent can ask what the rules
- * are without anyone wiring it up per client.
- *
- * `memnox mcp install` writes the client config; `memnox mcp` is what the client
- * then launches. Nothing is printed to stdout except protocol messages — stdout
- * is the transport, so every human-facing word goes to stderr.
- */
+/** Memnox as an MCP server, so an agent can ask without per-client wiring. */
 export function registerMcpCommand(
   program: Command,
   context: CliContext,

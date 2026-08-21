@@ -36,11 +36,7 @@ const TAINTED = {
   sources: [{ sourceType: 'github_issue', reason: 'authored by NONE' }],
 };
 
-/**
- * A granted approval is consent for one action — it is not a master key. These
- * are the guards that outrank one, each proved against a real unspent grant
- * sitting in the store rather than against an empty one.
- */
+/** Consent for one action is not a master key; these are the guards that outrank it. */
 describe('what outranks a granted approval', () => {
   let gateway: ActionGateway;
   let approvalStore: InMemoryApprovalStore;

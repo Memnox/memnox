@@ -3,27 +3,14 @@ import type { SourceMessage } from '../organization-extractor';
 const SLACK_API = 'https://slack.com/api';
 const HISTORY_LIMIT = 200;
 const ARCHIVE_BASE = 'https://slack.com/archives';
-/**
- * Pages one run will walk before it stops and says so.
- *
- * A bound rather than "read the whole channel", because a busy channel has
- * years in it and one run is not the place to discover that. Reaching it is
- * reported, never silent — a backfill that quietly stopped halfway looks
- * exactly like a channel with nothing older in it.
- */
+/** A bound, not "read the channel": a busy channel holds years of messages. */
 const MAX_PAGES = 20;
 /** Slack asks for a wait on 429; this caps how long we will honour before giving up. */
 const MAX_RETRY_WAIT_MS = 30_000;
 const DEFAULT_RETRY_WAIT_MS = 1_000;
 const RATE_LIMITED = 429;
 
-/**
- * Where an extraction run gets its messages.
- *
- * A port rather than a Slack call inline, for the usual reason and one more:
- * every connector after this one — Teams, Drive, a meeting transcript — is the
- * same shape, and the extractor must not learn the difference.
- */
+/** A port, so every connector after this one lands behind the same seam. */
 export interface MessageSource {
   readonly name: string;
   /** Messages in a channel, oldest first, since an ISO timestamp. */
@@ -59,14 +46,7 @@ export class SlackSource implements MessageSource {
     this.sleep = options.sleep ?? defaultSleep;
   }
 
-  /**
-   * Every message since the bound, oldest first, following Slack's cursor.
-   *
-   * One page was enough to demonstrate the connector and wrong for the job it
-   * exists to do: the decision somebody is looking for is usually the one far
-   * enough back that nobody remembers it, which is past the first two hundred
-   * messages by definition.
-   */
+  /** One page demonstrated the connector and was wrong for the job. */
   async read(channel: string, since?: string): Promise<SourceMessage[]> {
     const collected: SourceMessage[] = [];
     let cursor: string | undefined;
@@ -173,13 +153,7 @@ interface SlackMessage {
   subtype?: string;
 }
 
-/**
- * A message a person actually wrote.
- *
- * Bots and join/leave notices are dropped before the model sees them: a channel
- * where a deploy bot posts every hour would otherwise fill an extraction run
- * with the same non-statement, and a reviewer would stop reading the queue.
- */
+/** Bots and join notices are dropped before the model sees them. */
 function isReadable(
   message: SlackMessage,
 ): message is SlackMessage & { ts: string; text: string } {

@@ -15,24 +15,13 @@ const PROVENANCES: readonly string[] = Object.values(STATED_PROVENANCE);
 /** Who a statement is attributed to when an admin credential records one. */
 const ADMIN_AUTHOR = 'admin';
 
-/**
- * Managing what the organization states: entering it, confirming it, delegating.
- *
- * Separate from the agent protocol on purpose. These are the doors a person
- * walks through, they need an admin credential, and only they can produce a
- * statement that binds — an agent's own routes cannot reach any of this.
- */
+/** Entering, confirming, delegating — separate from the agent protocol. */
 export function registerOrganizationAdminRoutes(
   app: FastifyInstance,
   ctx: RouteContext,
 ): void {
   const organization = ctx.organization;
-  /**
-   * The workspace this request names, once the credential is allowed to manage
-   * it. Null means the guard has already answered — an admin role says what a
-   * key may do and never to whom, so a management key confined to one customer
-   * cannot reach another by naming it on the query string.
-   */
+  /** Null means the guard already answered, so the caller must stop. */
   const admittedWorkspace = (
     request: FastifyRequest,
     reply: FastifyReply,

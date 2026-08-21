@@ -1,16 +1,4 @@
-/**
- * The Memnox design system, reduced to plain CSS.
- *
- * Tokens are copied verbatim from `@memnox/ui`'s `globals.css`, and the classes
- * below are the same shadcn primitives the product screens use — button, card,
- * badge, input, label, tabs — rewritten without Tailwind or React. The CLI ships
- * as one bundled file with no build step and no network, so the real package
- * cannot be imported; keeping the token block an exact copy is what lets the two
- * be diffed when the palette moves.
- *
- * The three brand faces are asked for by name and fall back to the system stack:
- * a local editor must not fetch a font from Google to render a rule list.
- */
+/** Tokens copied verbatim from @memnox/ui's globals.css — this repo cannot import them. */
 export const POLICY_UI_CSS = String.raw`
 :root {
   color-scheme: light;

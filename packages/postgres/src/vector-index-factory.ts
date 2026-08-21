@@ -15,11 +15,7 @@ export interface VectorIndexOptions {
   logger?: { warn(message: string): void };
 }
 
-/**
- * pgvector when the extension is installable, JSON scan otherwise. Managed
- * Postgres usually has it; a bare image often does not, and search working
- * slowly beats search not working.
- */
+/** pgvector when installable, JSON scan otherwise — slow search beats none. */
 export async function createPostgresVectorIndex(
   sql: SqlClient,
   options: VectorIndexOptions = {},

@@ -25,10 +25,7 @@ export interface FirewallOptions {
   failOpen?: boolean;
   /** Groups this proxy's calls in the audit timeline. */
   sessionId?: string;
-  /**
-   * Rules evaluated in this process, against the call's own arguments. Loading
-   * is the caller's job because it reads files; see loadLocalGate.
-   */
+  /** Loading is the caller's job because it reads files; see loadLocalGate. */
   gate?: LocalGate;
   log?: (message: string) => void;
 }
@@ -43,10 +40,7 @@ export interface FirewallProcessDeps {
 const defaultSpawn = (command: string, args: string[]): ChildProcess =>
   spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
 
-/**
- * Transparent stdio MCP proxy. Owns only the child process and the two byte
- * streams; every routing decision belongs to the FirewallSession it drives.
- */
+/** Owns the child process and two streams; routing belongs to FirewallSession. */
 export class McpFirewall {
   private readonly session: FirewallSession;
   private readonly log: (message: string) => void;
@@ -65,12 +59,7 @@ export class McpFirewall {
     });
   }
 
-  /**
-   * Wires the proxy to a wrapped server. Spawning, the client stream, and
-   * exiting are parameters because they are this class's only ambient
-   * dependencies — a test that cannot supply them cannot cover the lifecycle,
-   * which is how EOF went unforwarded.
-   */
+  /** Spawn, stream, and exit are parameters — this class's only ambient dependencies. */
   start(deps: FirewallProcessDeps = {}): void {
     const [executable, ...args] = this.options.command;
     if (!executable) throw new Error('firewall requires a server command to wrap');
@@ -90,9 +79,7 @@ export class McpFirewall {
       }
     });
 
-    // A client that closes the stream instead of killing the process is saying
-    // it is done. Without forwarding that, the child never sees an end and both
-    // it and this proxy stay resident for the life of the session.
+    // Without forwarding the close, the child never sees an end and stays resident.
     input.on('end', () => {
       const stdin = child.stdin;
       if (stdin !== null) stdin.end();

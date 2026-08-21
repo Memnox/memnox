@@ -1,11 +1,6 @@
 import type { ExecutionStatus } from '../constants/execution.constants';
 
-/**
- * Something the caller measured while verifying its own action — rows written,
- * seconds of downtime, requests dropped. The runtime cannot observe any of it,
- * so a measurement is testimony with a number attached, never a fact the
- * runtime checked. Naming and units are the caller's; nothing here is derived.
- */
+/** The caller's own measurement — testimony with a number, never a runtime fact. */
 export interface ExecutionMeasurement {
   name: string;
   value: number;
@@ -13,11 +8,7 @@ export interface ExecutionMeasurement {
   unit?: string;
 }
 
-/**
- * Reported by a caller after acting on an allowed decision. The runtime records
- * it verbatim — it is a caller's testimony about its own execution, not a
- * verdict the runtime derived.
- */
+/** The caller's testimony after acting; recorded verbatim, not derived. */
 export interface ExecutionOutcomeReport {
   /** `Decision.eventId` — the audited decision that authorized this execution. */
   decisionEventId: string;

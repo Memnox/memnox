@@ -169,15 +169,7 @@ export interface OrganizationServiceDeps {
   newId?: () => string;
 }
 
-/**
- * The organization as an application service.
- *
- * It owns no verdict of its own. Every answer here is the gate's decision said
- * in a wider vocabulary, plus the context the caller is cleared to read — which
- * is the seam that matters: adding a word to the vocabulary must never add a
- * way to reach `allow`. `decideFrom` is a pure function in the domain for that
- * reason, and this class only assembles the four facts it takes.
- */
+/** Owns no verdict: every answer here is the gate's decision, said in other words. */
 export class OrganizationService {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -187,13 +179,7 @@ export class OrganizationService {
     this.newId = deps.newId ?? randomUUID;
   }
 
-  /**
-   * The workspace an agent actually operates in.
-   *
-   * The credential decides, never the URL. A workspace named in a path is a
-   * request, and honouring it would make the tenant boundary something a caller
-   * picks — the one thing a multi-tenant deployment cannot let it be.
-   */
+  /** The credential decides the workspace, never the URL. */
   workspaceOf(agent: AgentIdentity): string {
     return agent.orgId ?? DEFAULT_WORKSPACE;
   }
@@ -202,14 +188,7 @@ export class OrganizationService {
     return this.deps.gateway.agents.resolveByToken(token);
   }
 
-  /**
-   * Ask before acting: one decision, plus what the caller may know about it.
-   *
-   * The gate runs first and unchanged, so this call is audited exactly like any
-   * other action. What the organization adds is on either side of that verdict —
-   * whose authority was drawn on going in, and which of the caller's cited facts
-   * it turns out not to be cleared to read coming out.
-   */
+  /** The gate runs first and unchanged; this only says what the caller may know. */
   async evaluate(
     token: string,
     agent: AgentIdentity,
@@ -259,16 +238,7 @@ export class OrganizationService {
     };
   }
 
-  /**
-   * The ids a caller cited that it turns out not to be entitled to rely on.
-   *
-   * Two different failures, kept apart because they mean different things about
-   * the caller. A cited id the organization holds but will not show it is a
-   * clearance problem, and the work should go to somebody cleared. A cited id
-   * the organization has never heard of is a claim about a fact that does not
-   * exist — most often a model that invented the citation — and no amount of
-   * delegating fixes that, so it asks a person instead.
-   */
+  /** Two different failures, kept apart because they mean different things. */
   private assessCitations(
     statements: readonly Stated[],
     reads: readonly string[] | undefined,
@@ -304,14 +274,7 @@ export class OrganizationService {
     return gateReason;
   }
 
-  /**
-   * Who can authorize this, and the statement that says they can.
-   *
-   * Named from what the organization states rather than from the policy file
-   * alone, so an approver arrives with their warrant attached. A name with no
-   * statement behind it is still returned — the gate decided it, and dropping
-   * it would leave a caller escalating to nobody.
-   */
+  /** Named from what the organization states, not from who happens to be around. */
   private approversFor(
     statements: readonly Stated[],
     decision: Decision,
@@ -398,13 +361,7 @@ export class OrganizationService {
     ];
   }
 
-  /**
-   * Which agents this company runs for an action, tightest remit first.
-   *
-   * Never includes the asker, and deliberately says nothing about what any
-   * candidate is cleared to know: naming who should take a job must not become
-   * a way to enumerate what every other agent can read.
-   */
+  /** Never includes the asker, and says nothing about what those agents may know. */
   async agentsFor(agent: AgentIdentity, action: string): Promise<AgentCandidate[]> {
     const workspace = this.workspaceOf(agent);
     const [everyone, statements, grants] = await Promise.all([
@@ -444,14 +401,7 @@ export class OrganizationService {
     };
   }
 
-  /**
-   * How the same action was routed the last few times somebody asked.
-   *
-   * The organization's behaviour rather than its statements. Never carries what
-   * any of those answers contained — only the verb, who it went to, and the
-   * stated intent — because a history that carried content would be a way to
-   * read, over time, everything a clearance withheld.
-   */
+  /** The organization's behaviour rather than its statements. */
   async precedent(
     agent: AgentIdentity,
     action: string,
@@ -474,14 +424,7 @@ export class OrganizationService {
     return this.deps.statements.list(workspace);
   }
 
-  /**
-   * Records a statement a person entered, ready to bind.
-   *
-   * Separate from what the extractor writes, and it has to be: a route a human
-   * reaches through an admin credential may produce a verified statement, and
-   * nothing a model reaches can. Same store, two doors, and only one of them
-   * opens onto `verified`.
-   */
+  /** Separate from what an extractor writes: a person entering it means to bind it. */
   async record(workspace: string, input: RecordStatedInput): Promise<Stated> {
     const stated = verifiedStatement({
       id: this.newId(),
@@ -522,15 +465,7 @@ export class OrganizationService {
     return pair.next;
   }
 
-  /**
-   * Files candidates an extractor produced. They bind nothing until verified.
-   *
-   * A claim the workspace already holds is dropped, and that includes one a
-   * person has already rejected — re-filing a refusal is the worst version of
-   * this, because it asks somebody to make the same decision twice and teaches
-   * them the queue is noise. Deduplication is on what the statement says, not
-   * its id, since a re-read mints a new id for the same sentence.
-   */
+  /** Candidates bind nothing until verified; a claim already held is dropped. */
   async propose(
     workspace: string,
     candidates: readonly Stated[],
@@ -600,26 +535,14 @@ export class OrganizationService {
     return this.deps.grants.list(workspace);
   }
 
-  /**
-   * Revokes a delegation, and only one this workspace holds.
-   *
-   * Scoped by looking it up first rather than trusting the id: a grant id is
-   * opaque and guessable enough that "delete by id" is otherwise a way to
-   * revoke another customer's authority without ever naming their workspace.
-   */
+  /** Looked up first rather than trusting the id, so one workspace cannot revoke another's. */
   async revokeGrant(workspace: string, id: string): Promise<boolean> {
     const held = await this.deps.grants.list(workspace);
     if (!held.some((grant) => grant.id === id)) return false;
     return this.deps.grants.remove(id);
   }
 
-  /**
-   * Whether one fact may be repeated to one person.
-   *
-   * Answered against the recipient's clearance, never the asker's. The refusal
-   * names the rule and never repeats the content, so it is safe to log — and it
-   * must not be repeated to the recipient either.
-   */
+  /** Answered against the recipient's clearance, never the asker's. */
   async canShare(
     agent: AgentIdentity,
     factId: string,
@@ -680,15 +603,7 @@ function bearingOn(statements: readonly Stated[], action: string, now: Date): St
   );
 }
 
-/**
- * The rules in that set this reader is entitled to be told.
- *
- * Clearance is applied here and not only where facts are counted, because a
- * constraint quotes the statement verbatim: a rule the reader may not read
- * would otherwise arrive in full as advice about how to obey it, and the
- * `withheld` count beside it would say one thing was hidden while the text of
- * that thing sat in the same response.
- */
+/** Clearance is applied here too, not only where facts are counted. */
 function readablePolicies(
   bearing: readonly Stated[],
   reader: string | undefined,
@@ -728,13 +643,7 @@ function declaresAction(agent: AgentIdentity, action: string): boolean {
   return matchesAny(capabilities, action);
 }
 
-/**
- * The verb as it was then, from what the event recorded.
- *
- * `escalate` only when the trail names who it went to. Reconstructing that from
- * today's rule set would answer what would happen now, which is a different
- * question and the wrong one to answer with a past tense.
- */
+/** The verb as it was then; `escalate` only when the trail names who it went to. */
 function toPrecedent(event: ActionEvent): Precedent {
   const to = event.approvers ?? [];
   return {
@@ -755,14 +664,7 @@ function precedentVerb(event: ActionEvent, to: readonly string[]): OrgDecision {
   return ORG_DECISION.ALLOW;
 }
 
-/**
- * Whether the organization has heard of this person at all.
- *
- * An unknown recipient is answered as unknown rather than as refused, because
- * the two lead somewhere different: a refusal says the clearance was checked
- * and failed, and saying that about a name nobody has recorded would be a
- * clearance answer the organization is not in a position to give.
- */
+/** An unknown recipient is answered as unknown, never as refused. */
 function isKnownPerson(statements: readonly Stated[], person: string): boolean {
   return statements.some(
     (stated) =>

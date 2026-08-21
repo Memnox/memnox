@@ -40,23 +40,12 @@ export interface McpGatewayOptions {
   denyPattern?: string;
   /** Forward calls when the runtime is unreachable. Default false — a firewall fails closed. */
   failOpen?: boolean;
-  /**
-   * Rules evaluated in this process, against the call's own arguments. The
-   * gateway is where an argument stops travelling: it matches and scans here,
-   * and the runtime is told only the tool name and what was found.
-   */
+  /** The gateway is where an argument stops travelling. */
   gate?: LocalGate;
   log?: (message: string) => void;
 }
 
-/**
- * A remote Streamable HTTP front door for an MCP server, so an agent running
- * somewhere this machine cannot reach — a hosted runner, a container, another
- * account's platform — is still gated. The stdio firewall can only govern a
- * server the client launches locally; this governs one it merely calls.
- *
- * Owns sockets and nothing else. Every routing decision is `GatewayExchange`'s.
- */
+/** A front door for an agent running somewhere this machine cannot reach. */
 export class McpGateway {
   private readonly filter: ToolFilter;
   private readonly log: (message: string) => void;
@@ -114,9 +103,7 @@ export class McpGateway {
     }
 
     const token = bearerOf(request.headers[HEADER_AUTHORIZATION]);
-    // Fail closed on identity: without the caller's own token every call would
-    // be attributed to the gateway, and the audit trail would name one agent
-    // for an entire fleet.
+    // Fail closed on identity, or the trail names one agent for an entire fleet.
     if (token === null) {
       return send(response, 401, {
         error: "present the calling agent's Memnox token as a bearer token",
@@ -150,10 +137,7 @@ export class McpGateway {
     return send(response, 200, result.replies);
   }
 
-  /**
-   * Built per request, around the caller's own credential, so the runtime sees
-   * the agent that actually made the call rather than this process.
-   */
+  /** Built per request around the caller's credential, so the runtime sees the real agent. */
   private authorizerFor(token: string, sessionId?: string): CallAuthorizer {
     const runtime = new RuntimeAuthorizer(
       new MemnoxClient({ baseUrl: this.options.runtimeUrl, token }),

@@ -2,12 +2,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-/**
- * `npm run build` emits declarations, and tsup reads a dependency's `.d.ts` from
- * its `dist`. A package built before something it imports fails with TS7016 —
- * invisibly on a developer machine where a stale `dist` is still lying around,
- * and every time in CI, where there is none.
- */
+/** tsup reads a dependency's `.d.ts` from its dist, so build order has to be real. */
 const WORKSPACE_PREFIX = '@memnox/';
 const CLI_PACKAGE = 'memnox';
 

@@ -27,14 +27,7 @@ export interface BriefingConstraint {
   nonOverridable?: boolean;
 }
 
-/**
- * What governs an action, answered before the action is attempted.
- *
- * This is the pre-flight counterpart to a decision: an agent asks "what applies
- * here?" and gets back the rules that already exist, rather than discovering
- * them by being refused. Every constraint is something this organization
- * declared, quoted verbatim — nothing is generated.
- */
+/** What governs an action, asked before attempting it — declared rules, quoted verbatim. */
 export interface ActionBriefing {
   action: string;
   target?: string;
@@ -49,10 +42,7 @@ const UNCONSTRAINED =
   'No rule your organization wrote covers this action. That means nobody has ' +
   'ruled on it — not that it is a good idea.';
 
-/**
- * The boundary, stated in the output itself: Memnox reports the constraints an
- * organization declared. It does not review the work or advise how to do it.
- */
+/** The boundary in the output itself: Memnox reports rules, it does not review work. */
 const SCOPE_NOTE =
   'None of this is a judgement on the work itself — the rules above are your ' +
   'organization’s, quoted as declared.';
@@ -118,18 +108,12 @@ const CONSTRAINT_EFFECT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.REQUIRE_APPROVAL]: 'requires approval',
 };
 
-/**
- * Fixed, never the terminal's width: the same briefing has to render byte for
- * byte the same everywhere, or it can no longer be cached or diffed.
- */
+/** Fixed, never the terminal width, so a briefing stays cacheable and diffable. */
 const WRAP_COLUMNS = 78;
 const BULLET = '  - ';
 const DETAIL = '      ';
 
-/**
- * The briefing as plain text an agent can put in its context before it works.
- * Deterministic — same briefing, same words, so it is safe to cache and diff.
- */
+/** The briefing as plain text; deterministic, so it is safe to cache and diff. */
 export function renderActionBriefing(briefing: ActionBriefing): string {
   const subject = [briefing.action, briefing.target].filter(Boolean).join(' ');
   const scope = briefing.environment === undefined ? '' : ` in ${briefing.environment}`;
@@ -163,10 +147,7 @@ function appendScopeNote(lines: string[]): void {
   lines.push('', ...wrapped(SCOPE_NOTE, ''));
 }
 
-/**
- * Where to go next, derived from the verdict rather than invented: a reader who
- * learns they are stopped still has to be told by whom.
- */
+/** Derived from the verdict: a reader who is stopped still has to be told by whom. */
 function describeNextStep(briefing: ActionBriefing): string | undefined {
   if (briefing.wouldBe === DECISION_EFFECT.BLOCK) {
     const sealed = briefing.constraints.some((c) => c.nonOverridable === true);
@@ -193,11 +174,7 @@ function approversOf(briefing: ActionBriefing): string[] {
   return seen;
 }
 
-/**
- * Source is part of the label, not a section: a reader has to be able to tell a
- * rule this organization declared from a signal an advisor raised, and grouping
- * them under one heading loses exactly that.
- */
+/** Source rides in the label: a declared rule must be tellable from an advisor signal. */
 function describeEffect(constraint: BriefingConstraint): string {
   const source = SOURCE_LABEL[constraint.source];
   if (constraint.effect === undefined) return `${source}, no effect on its own`;

@@ -39,10 +39,7 @@ export function chainAuditEvent(event: ActionEvent, prevHash: string): ActionEve
   return { ...linked, hash: computeEventHash(linked, prevHash) };
 }
 
-/**
- * Incremental so a large log verifies in pages instead of one in-memory array.
- * Anchors on the first event's own prevHash, so a retention-pruned prefix still verifies.
- */
+/** Verifies in pages, anchored on the first prevHash so a pruned prefix still passes. */
 export class AuditChainVerifier {
   private expectedPrev: string | null = null;
   private index = 0;

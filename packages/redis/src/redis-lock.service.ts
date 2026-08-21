@@ -45,12 +45,7 @@ export function connectRedis(redisUrl: string): RedisLike {
   return client as unknown as RedisLike;
 }
 
-/**
- * Ported from the legacy runtime with its semantics intact: every method
- * degrades gracefully with a per-method-appropriate fallback (see the
- * LockService port for the fail-closed vs fail-open asymmetry), and state
- * transitions — not every failure — are what get logged.
- */
+/** Every method degrades with its own fallback; state transitions are what get logged. */
 export class RedisLockService implements LockService {
   private available = false;
 
@@ -121,11 +116,7 @@ export class RedisLockService implements LockService {
   }
 }
 
-/**
- * Startup probe. A configured-but-unreachable Redis must fail loudly: silently
- * degrading to per-pod limits multiplies every rate limit by the pod count.
- * The key is unique, so a false result can only mean the backend is down.
- */
+/** A configured-but-unreachable Redis must fail loudly, not silently go per-pod. */
 export async function assertRedisReachable(
   locks: RedisLockService,
   attempts: number = PROBE_ATTEMPTS,

@@ -68,10 +68,7 @@ export async function runCli(
   return { out, runtime };
 }
 
-/**
- * Drives one command whose collaborator is supplied by the caller — the commands
- * that would otherwise spawn git, bind a port, or write to $HOME.
- */
+/** For commands whose collaborator would otherwise spawn a process or open a socket. */
 export async function runCommand(
   register: (program: Command, context: CliContext) => void,
   args: string[],

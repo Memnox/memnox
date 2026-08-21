@@ -7,11 +7,7 @@ const TOP_APPROVERS = 10;
 const MS_PER_MINUTE = 60_000;
 const P90 = 0.9;
 
-/**
- * Where approvals stall, derived from the records alone. Every duration is in
- * minutes because the numbers a human acts on are "hours" and "days", not
- * milliseconds.
- */
+/** Where approvals stall, in minutes — the unit humans act on. */
 export interface ApprovalFlowSummary {
   total: number;
   pending: number;
@@ -29,10 +25,7 @@ export interface ApprovalFlowSummary {
   approverActivity: Array<{ approver: string; grants: number }>;
 }
 
-/**
- * Pure. `now` is passed in rather than read so a summary over the same records
- * is reproducible — the same discipline as evaluateConsent and isApprovalExpired.
- */
+/** Pure: `now` is passed so the same records always summarize the same way. */
 export function summarizeApprovalFlow(
   approvals: Approval[],
   now: Date = new Date(),

@@ -1,8 +1,4 @@
-/**
- * Where a command writes. `line` is the payload a caller may pipe; `note` is
- * commentary that must stay out of that pipe. Injected so tests read output
- * instead of capturing the process streams.
- */
+/** `line` is the payload a caller may pipe; `note` is commentary that stays out of it. */
 export interface CliOutput {
   line(text: string): void;
   note(text: string): void;

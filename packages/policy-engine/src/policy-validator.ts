@@ -15,7 +15,7 @@ export class PolicyValidationError extends Error {
   }
 }
 
-/** Validates a parsed (YAML/JSON) document into a typed PolicyDocument. Throws with every issue listed. */
+/** Validates a parsed document into a typed PolicyDocument, listing every issue. */
 export function validatePolicyDocument(input: unknown): PolicyDocument {
   const issues: string[] = [];
   const doc = asRecord(input, 'document', issues);
@@ -43,10 +43,7 @@ export function validatePolicyDocument(input: unknown): PolicyDocument {
   return { version: POLICY_DOCUMENT_VERSION, project, policies };
 }
 
-/**
- * The project is an identifier repositories agree on by hand, so a typo must be
- * rejected rather than silently splitting one project into two scopes.
- */
+/** A typo must be rejected: it would silently split one project into two scopes. */
 function validateProject(input: unknown, issues: string[]): string | undefined {
   if (input === undefined || input === null) return undefined;
   if (typeof input !== 'string' || input.trim().length === 0) {
@@ -262,11 +259,7 @@ function asOptionalQuorum(
   return input as number;
 }
 
-/**
- * A size a rule triggers above. Any finite number that is not negative: sizes
- * are not always money and not always whole, and refusing a fractional one
- * would rule out the hours and rates that policies are genuinely written about.
- */
+/** Any finite non-negative size: policies are written about hours and rates too. */
 function asOptionalThreshold(
   input: unknown,
   path: string,

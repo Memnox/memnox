@@ -15,13 +15,7 @@ const PROTOCOL_VERSION = '2024-11-05';
 const SERVER_NAME = 'memnox';
 const METHOD_NOT_FOUND = -32601;
 
-/**
- * The Memnox MCP server: message in, message out, no sockets.
- *
- * Every routing decision lives here so tests drive the real protocol without
- * stdin — the same seam `FirewallSession` uses. Returning null means "no reply",
- * which is what a notification expects.
- */
+/** Message in, message out, no sockets, so tests drive the real protocol. */
 export class McpServer {
   constructor(private readonly runtime: ToolRuntime) {}
 
@@ -48,10 +42,7 @@ export class McpServer {
     };
   }
 
-  /**
-   * A refusal comes back as an isError *result*, never a protocol error, so the
-   * model reads the reason and can act on it instead of seeing a broken tool.
-   */
+  /** An isError result, never a protocol error, so the model can act on the reason. */
   private async callTool(
     id: JsonRpcMessage['id'],
     params: Record<string, unknown> | undefined,

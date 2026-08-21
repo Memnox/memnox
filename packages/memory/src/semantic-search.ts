@@ -24,11 +24,7 @@ function embeddableText(decision: DecisionRecord): string {
   return [decision.title, decision.statement, ...decision.actions].join('\n');
 }
 
-/**
- * Keyword search always runs; embeddings add recall when available. If the
- * embedding provider is unreachable, results degrade to deterministic keyword
- * matching rather than failing — search is a convenience, never a gate.
- */
+/** Degrades to keyword matching: search is a convenience, never a gate. */
 export class DecisionSemanticSearch {
   constructor(private readonly deps: SemanticSearchDeps) {}
 

@@ -11,7 +11,7 @@ const TOP_LIST_SIZE = 10;
 
 export type { ComplianceReport };
 
-/** Pure aggregation over audit events — the evidence base for SOC2/ISO-style AI governance reports. */
+/** Pure aggregation over audit events — the evidence base for governance reports. */
 export function buildComplianceReport(
   events: ActionEvent[],
   period: { from?: string; to?: string },
@@ -66,14 +66,7 @@ export function buildComplianceReport(
   };
 }
 
-/**
- * Joins reported outcomes onto the decisions that authorized them. A decision
- * with no outcome is unreported, never "failed" — the runtime only ever holds
- * the caller's testimony, and silence is not evidence of harm.
- *
- * `now` is passed in rather than read so the same events always produce the
- * same coverage, the discipline every other time-aware fold here follows.
- */
+/** A decision with no outcome is unreported, never "failed". */
 function buildVerificationCoverage(
   events: ActionEvent[],
   now: Date,

@@ -1,9 +1,6 @@
 export interface ToolCall {
   name: string;
-  /**
-   * The call's arguments flattened to strings, which is what a policy matches.
-   * Structured values are carried as their JSON text.
-   */
+  /** Flattened to strings, which is what a policy matches; structured values as JSON text. */
   arguments: Record<string, string>;
 }
 

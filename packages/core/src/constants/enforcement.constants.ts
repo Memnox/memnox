@@ -9,11 +9,7 @@ export const ENFORCEMENT_MODE = {
 
 export type EnforcementMode = (typeof ENFORCEMENT_MODE)[keyof typeof ENFORCEMENT_MODE];
 
-/**
- * Fail-closed. Monitor-first is an onboarding choice `memnox init` writes into a
- * config file — never a library default, which would silently stop an existing
- * deployment from enforcing the moment it upgrades.
- */
+/** Fail-closed: monitor-first belongs in a config file, never a library default. */
 export const DEFAULT_ENFORCEMENT_MODE: EnforcementMode = ENFORCEMENT_MODE.ENFORCE;
 
 export const ENFORCEMENT_REASON = {

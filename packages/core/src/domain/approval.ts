@@ -3,11 +3,7 @@ import type { RiskLevel } from '../constants/risk.constants';
 
 export interface Approval {
   id: string;
-  /**
-   * Binds the approval to one exact action — agent, action, target,
-   * environment, amount, principal. Every field a grant does *not* cover is a
-   * field an agent can change and still spend the same grant.
-   */
+  /** Binds a grant to one exact action; any field it omits is one an agent can change. */
   requestFingerprint: string;
   agentId: string;
   action: string;
@@ -17,10 +13,7 @@ export interface Approval {
   amount?: number;
   /** Whose authority the agent is drawing on, when it named one. */
   principal?: string;
-  /**
-   * Why it was asked for, §18. Without it an approver is told what an agent
-   * wants and never what for, which is the whole question they are being asked.
-   */
+  /** Why it was asked for, §18 — without it an approver never learns what for. */
   reason?: string;
   /** Which rule forced the ask, §18. Names the policy, not the effect. */
   policyTriggered?: string;
@@ -39,12 +32,7 @@ export interface Approval {
   expiresAt?: string;
   resolvedAt?: string;
   resolvedBy?: string;
-  /**
-   * When this grant was spent. A grant authorizes one action: a human approving
-   * "write this file" agreed to that write, not to every write of it until the
-   * TTL runs out. Absent on records written before single-use grants shipped,
-   * which therefore stay reusable rather than retroactively failing closed.
-   */
+  /** When the grant was spent; absent on pre-single-use records, which stay reusable. */
   consumedAt?: string;
   /** Set when an admin break-glass override approved this without the named approvers. */
   override?: boolean;
@@ -75,12 +63,7 @@ export function isApprovalExpired(approval: Approval, now: Date = new Date()): b
   return Boolean(approval.expiresAt && approval.expiresAt <= now.toISOString());
 }
 
-/**
- * A grant that still authorizes this exact action: approved, for this
- * fingerprint, and not already spent. Expiry is deliberately not checked — the
- * TTL bounds how long a *pending* hold waits for a human, and a grant a human
- * actually gave should not evaporate while the agent is retrying.
- */
+/** Expiry is not checked: the TTL bounds a pending hold, not a grant already given. */
 export function isUnspentGrant(approval: Approval, fingerprint: string): boolean {
   return (
     approval.status === APPROVAL_STATUS.APPROVED &&
@@ -89,10 +72,7 @@ export function isUnspentGrant(approval: Approval, fingerprint: string): boolean
   );
 }
 
-/**
- * Retention: old and finished. A pending hold is never prunable no matter how
- * old — it is a decision a human still owes, and deleting it would erase the ask.
- */
+/** Old and finished. A pending hold is never prunable — it is a decision still owed. */
 export function isApprovalPrunable(approval: Approval, cutoff: string): boolean {
   return approval.status !== APPROVAL_STATUS.PENDING && approval.createdAt < cutoff;
 }

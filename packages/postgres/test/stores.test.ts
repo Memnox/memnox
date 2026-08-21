@@ -20,7 +20,7 @@ import type { SqlClient } from '../src/sql-client';
 
 // Assembled at runtime so no credential-shaped literals exist in this file.
 const TOKEN_HASH = ['deadbeef', 'cafe', '0123'].join('');
-// Reversible stand-in for the runtime's AesGcmCodec — proves the codec seam without a dependency cycle.
+// Reversible stand-in for AesGcmCodec — the codec seam without a dependency cycle.
 const BASE64_CODEC: TextCodec = {
   encode: (plaintext) => Buffer.from(plaintext, 'utf8').toString('base64'),
   decode: (stored) => Buffer.from(stored, 'base64').toString('utf8'),

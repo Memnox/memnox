@@ -5,15 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemnoxClient, type HttpTransport } from '@memnox/sdk';
 import { buildServer, type MemnoxServer } from '@memnox/runtime';
 
-/**
- * The seam nothing else covered: real client code against real server code.
- *
- * Every route had a test that reached it with `app.inject`, and every client
- * method had a test with a hand-written transport — so a request the client
- * built but the server refused passed both. `rotateAgent` shipped broken that
- * way. Driving `MemnoxClient` through inject exercises header construction,
- * routing, and body parsing together, without opening a socket.
- */
+/** The seam nothing else covered: real client code against real server code. */
 function injectTransport(server: MemnoxServer): HttpTransport {
   return async (url, init) => {
     const response = await server.app.inject({

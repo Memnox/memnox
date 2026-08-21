@@ -14,13 +14,7 @@ import {
 
 export const DECISION_MEMORY_ADVISOR = 'decision-memory';
 
-/**
- * Checks every action against recorded team decisions. A conflicting decision
- * escalates deterministically — the LLM-based extraction of decisions from
- * Slack/GitHub happens elsewhere; enforcement here is pure pattern matching.
- * A decision past its review date still enforces (flagged in health) —
- * constraints are reviewed and superseded, never silently expired.
- */
+/** Pure pattern matching; a decision past review still enforces, never expires silently. */
 export class DecisionMemoryAdvisor implements ActionAdvisor {
   readonly name = DECISION_MEMORY_ADVISOR;
 

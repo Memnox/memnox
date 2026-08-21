@@ -2,24 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { API_ROLE, parseEnvironmentModes } from '@memnox/core';
 import type { RouteContext } from './route-context';
 
-/**
- * Reading and setting the modes in force.
- *
- * The mode was a startup flag and nothing else, which left a control plane able
- * to see drift and unable to correct it. Writing it here takes effect on the
- * next decision, because the gateway resolves the mode per request.
- */
+/** The mode was a startup flag alone, which left a control plane nothing to change. */
 export function registerEnforcementRoutes(app: FastifyInstance, ctx: RouteContext): void {
   app.get('/v1/enforcement', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
     return ctx.gateway.enforcement();
   });
 
-  /**
-   * Persisted before the swap, so a restart keeps what was asked for rather
-   * than reverting to the flag the process happened to start with. The same
-   * invariant `PUT /v1/policies` relies on.
-   */
+  /** Persisted before the swap, so a restart keeps what was asked for. */
   app.put('/v1/enforcement', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
 

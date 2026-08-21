@@ -18,10 +18,7 @@ const POLICIES: Policy[] = [
 const LONG_PAST = '2020-01-01T00:00:00.000Z';
 const CEILING = 3;
 
-/**
- * The stores hand lapsed holds straight back — TTL is the service's rule. These
- * drive InMemoryApprovalStore, which filters nothing, exactly like Postgres.
- */
+/** The stores hand lapsed holds straight back — the TTL is the service's rule. */
 describe('lapsed approvals', () => {
   let gateway: ActionGateway;
   let approvalStore: InMemoryApprovalStore;

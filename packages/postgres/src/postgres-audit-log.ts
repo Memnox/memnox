@@ -63,7 +63,7 @@ export class PostgresAuditLog implements AuditLog {
     if (filter.to) where('occurred_at', filter.to, '<=');
     const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // A bounded query takes the newest N in the database and flips them back to chronological order.
+    // Takes the newest N, then flips them back to chronological order.
     if (filter.limit !== undefined) {
       params.push(filter.limit);
       const { rows } = await this.sql.query(

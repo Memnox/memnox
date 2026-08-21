@@ -4,7 +4,7 @@ import { PLAINTEXT_KEY_ID } from '@memnox/postgres';
 import type { KeyringCodec } from './stores/keyring-codec';
 import { isFileMissing } from './file-errors';
 
-/** JSON stores encode their whole body; the audit log encodes per line. Mixing them corrupts the file. */
+/** JSON stores encode their whole body, the audit log per line; mixing them corrupts it. */
 const FILE_LAYOUT = {
   WHOLE: 'whole',
   LINES: 'lines',

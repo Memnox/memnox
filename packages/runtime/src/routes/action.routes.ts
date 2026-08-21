@@ -98,11 +98,7 @@ function isExecutionStatus(value: unknown): value is ExecutionStatus {
   return typeof value === 'string' && VALID_STATUSES.includes(value as ExecutionStatus);
 }
 
-/**
- * Caller-supplied numbers, so every field is checked rather than trusted.
- * Absent means "nothing measured" ([]); a malformed list is rejected (null)
- * instead of silently dropped — a caller that meant to testify should hear so.
- */
+/** Caller-supplied, so every field is checked rather than trusted. */
 function parseMeasurements(value: unknown): ExecutionMeasurement[] | null {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return null;

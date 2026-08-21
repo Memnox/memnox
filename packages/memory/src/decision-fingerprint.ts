@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DecisionRecord } from './decision-record';
 
-/**
- * Content identity for near-duplicate suppression: the same decision restated
- * in Slack, a meeting, and a PR must converge to one constraint. Normalized
- * over what the decision *does* (statement + patterns), not who recorded it.
- */
+/** The same decision restated in three places must converge to one constraint. */
 export function fingerprintDecision(
   record: Pick<DecisionRecord, 'statement' | 'actions' | 'targets' | 'environments'>,
 ): string {

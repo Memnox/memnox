@@ -8,10 +8,7 @@ export interface EmbeddableItem {
 /** Injected rather than imported so this package stays free of provider code. */
 export type EmbedFn = (texts: readonly string[]) => Promise<number[][]>;
 
-/**
- * Embeds only what the index has not seen, so re-indexing a corpus costs nothing
- * for the part that has not changed. Returns how many items were newly embedded.
- */
+/** Embeds only what is new, so re-indexing costs nothing for unchanged items. */
 export async function indexNewItems(
   index: VectorIndex,
   items: readonly EmbeddableItem[],

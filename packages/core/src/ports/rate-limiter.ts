@@ -2,11 +2,7 @@ import type { LockService } from './lock-service';
 
 export const RATE_LIMIT_KEY_PREFIX = 'memnox:ratelimit';
 
-/**
- * Fixed-window limiter over the LockService counter (Lua-atomic with TTL).
- * Inherits the backend's failure semantics: when the counter is unreadable,
- * increment() returns 1 — the limiter fails open, availability over strictness.
- */
+/** Fixed-window over the LockService counter; fails open when the counter is unreadable. */
 export class FixedWindowRateLimiter {
   constructor(private readonly locks: LockService) {}
 

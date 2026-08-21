@@ -24,12 +24,7 @@ export interface PostgresOptions {
   poolMin?: number;
   /** Managed Postgres (RDS, Supabase, Neon) refuses plaintext connections. */
   ssl?: boolean;
-  /**
-   * Accepts a certificate this host cannot verify. Encryption without
-   * authentication: it stops a passive listener and not an active one, so it is
-   * for a self-signed development database and never for production. Named
-   * rather than silent, because the risk is exactly that nobody notices.
-   */
+  /** Encryption without authentication: stops a passive listener, not an active one. */
   sslAllowUnverified?: boolean;
   /** A private CA's certificate, for a database not signed by a public root. */
   sslRootCert?: string;
@@ -37,12 +32,7 @@ export interface PostgresOptions {
   applicationName?: string;
 }
 
-/**
- * Verifying by default is the whole point: `rejectUnauthorized: false` was the
- * previous behaviour and it turns TLS into encryption against a passive
- * listener only — anyone who can answer for the database's address reads and
- * rewrites every row in transit, credentials included.
- */
+/** Verifying by default is the point; `rejectUnauthorized: false` was the old behaviour. */
 function sslSettings(
   options: PostgresOptions,
 ): { ssl: ConnectionOptions } | Record<string, never> {
@@ -53,10 +43,7 @@ function sslSettings(
   return { ssl: { rejectUnauthorized: options.sslAllowUnverified !== true } };
 }
 
-/**
- * Deliberately sets no `statement_timeout`: pg sends it as a startup parameter
- * and PgBouncer's transaction pooling rejects it. Set it on the database role.
- */
+/** No `statement_timeout`: PgBouncer rejects it at startup. Set it on the role instead. */
 export function connectPostgres(
   databaseUrl: string,
   options: PostgresOptions = {},

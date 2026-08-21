@@ -8,14 +8,7 @@ export interface Ownership {
   owners: Array<{ name: string; throughDecision: string }>;
 }
 
-/**
- * Who answers for a subject.
- *
- * An empty answer is a real answer and the caller is meant to act on it:
- * nobody has been recorded as owning this, which is a reason to involve a
- * person rather than to pick the nearest plausible name. Nothing here guesses
- * an owner from a team name or a commit history.
- */
+/** An empty answer is a real answer: nobody owns this, and that is worth acting on. */
 export function resolveOwnership(
   statements: readonly Stated[],
   subject: string,

@@ -2,12 +2,7 @@ import type { ActionRequest } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import type { MemnoxClient } from './client';
 
-/**
- * Every function-calling agent loop — OpenAI Agents SDK, Codex, LangGraph,
- * CrewAI, AutoGen, or a hand-rolled one — reduces to the same shape: a named
- * tool, some arguments, and a function that runs it. Governing that shape once
- * is what makes those frameworks work without an adapter each.
- */
+/** Every agent loop reduces to the same shape: a named tool and some arguments. */
 export type ToolHandler<TArgs, TResult> = (args: TArgs) => Promise<TResult>;
 
 export interface GovernedTool<TArgs, TResult> {
@@ -24,11 +19,7 @@ export interface ToolGovernorOptions<TArgs> {
   environment?: string;
   /** Override how a tool call becomes an action; defaults to `tool.<name>`. */
   mapAction?: ToolActionMapper<TArgs>;
-  /**
-   * Called instead of throwing when the runtime refuses. Returning a value lets
-   * the agent read the refusal as a normal tool result and choose a different
-   * path, which is usually better than an exception it cannot see.
-   */
+  /** Returning a value lets the agent read a refusal as a result and reroute. */
   onRefused?: (refusal: ToolRefusal) => never | Promise<never>;
 }
 
@@ -70,11 +61,7 @@ export class ToolRefusedError extends Error {
   }
 }
 
-/**
- * Wraps one tool handler so the runtime decides before it runs. The wrapped
- * function keeps the original signature, so it drops into any framework that
- * takes a plain async function.
- */
+/** Keeps the original signature, so it drops into any framework taking a plain function. */
 export function governTool<TArgs, TResult>(
   client: MemnoxClient,
   tool: GovernedTool<TArgs, TResult>,

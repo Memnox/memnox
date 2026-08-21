@@ -2,10 +2,7 @@ import type { VectorEntry, VectorIndex, VectorMatch } from '@memnox/memory';
 import { cosineSimilarity } from '@memnox/memory';
 import type { SqlClient } from './sql-client';
 
-/**
- * Vectors are stored as JSON and scored in process. Correct at the corpus sizes
- * decision memory reaches; pgvector with an ANN index is the swap when it grows.
- */
+/** JSON vectors scored in process; pgvector is the swap when the corpus grows. */
 export class PostgresVectorIndex implements VectorIndex {
   constructor(private readonly sql: SqlClient) {}
 

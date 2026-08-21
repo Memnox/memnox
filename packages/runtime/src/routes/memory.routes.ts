@@ -26,11 +26,7 @@ interface DecisionBody {
   supersedes?: string;
 }
 
-/**
- * Decision memory over HTTP. Every corpus operation belongs to
- * DecisionMemoryService — this module only validates shapes and maps outcomes
- * to status codes.
- */
+/** Every corpus operation belongs to DecisionMemoryService; this validates shapes. */
 export function registerMemoryRoutes(app: FastifyInstance, ctx: RouteContext): void {
   const memory = ctx.decisionMemory;
 

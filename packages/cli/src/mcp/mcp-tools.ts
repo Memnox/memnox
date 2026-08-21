@@ -1,12 +1,7 @@
 import type { MemnoxClient } from '@memnox/sdk';
 import { describeConnectionFailure } from '../connection';
 
-/**
- * The tools an agent sees. Descriptions are the whole interface here: a model
- * decides whether to call a tool from its description alone, so each one says
- * plainly when to call it and what comes back. Two tools, not ten — a long list
- * is a list nothing gets picked from.
- */
+/** Descriptions are the interface: a model calls a tool from its description alone. */
 interface McpToolDefinition {
   name: string;
   description: string;

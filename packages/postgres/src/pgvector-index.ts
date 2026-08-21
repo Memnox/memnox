@@ -8,10 +8,7 @@ export const DEFAULT_EMBEDDING_DIMENSIONS = 1536;
 const HNSW_M = 16;
 const HNSW_EF_CONSTRUCTION = 64;
 
-/**
- * Cosine distance (`<=>`) scored inside Postgres against an HNSW index, so a
- * query reads the near neighbours instead of every row.
- */
+/** Cosine distance against an HNSW index, so a query reads neighbours, not every row. */
 export class PgVectorIndex implements VectorIndex {
   constructor(
     private readonly sql: SqlClient,
@@ -64,11 +61,7 @@ function toVectorLiteral(vector: readonly number[]): string {
   return `[${vector.join(',')}]`;
 }
 
-/**
- * Creates the extension, table and ANN index. A dimension change means the model
- * changed, so the table is rebuilt — vectors are re-embedded from the decisions
- * they came from, and nothing durable is lost.
- */
+/** A dimension change means the model changed, so vectors are re-embedded. */
 export async function ensurePgVectorSchema(
   sql: SqlClient,
   dimensions: number = DEFAULT_EMBEDDING_DIMENSIONS,

@@ -3,11 +3,7 @@ import { describeConnectionFailure, ENV_RUNTIME_URL } from './connection';
 import { DEFAULT_BASE_URL } from './defaults';
 import { buildProgram } from './program';
 
-/**
- * The single failure path. A runtime that is not running is the most common
- * first-run failure and "fetch failed" names neither the address nor the fix,
- * so that one cause is translated before anything reaches the user.
- */
+/** The single failure path: "fetch failed" names neither the address nor the fix. */
 function explain(err: unknown): string {
   const url = process.env[ENV_RUNTIME_URL] ?? DEFAULT_BASE_URL;
   const connection = describeConnectionFailure(err, url);

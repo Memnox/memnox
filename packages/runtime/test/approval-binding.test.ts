@@ -5,12 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Approval } from '@memnox/core';
 import { buildServer, type MemnoxServer } from '../src/server';
 
-/**
- * A grant authorizes one action, and "one action" has to include the fields the
- * rule was actually about. An approval raised for a refund of 120 used to
- * satisfy one of 4500: same agent, action, target and environment, and the
- * amount — the only field a money rule cares about — was not bound.
- */
+/** "One action" has to include the fields the rule was actually about. */
 describe('what an approval is bound to', () => {
   let dataDir: string;
   let server: MemnoxServer;

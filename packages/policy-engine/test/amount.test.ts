@@ -4,14 +4,7 @@ import { PolicyEngine } from '../src/policy-engine';
 import { PolicyValidationError, validatePolicyDocument } from '../src/policy-validator';
 import type { Policy } from '../src/policy';
 
-/**
- * Size as a condition.
- *
- * "Refunds are fine" and "refunds up to a thousand are fine" are different
- * policies, and until an action could say how big it was the gate could only
- * express the first. Everything a company writes about money, volume or scope
- * lands here.
- */
+/** "Refunds are fine" and "refunds under a thousand are fine" are different policies. */
 const rule = (aboveAmount?: number): Policy => ({
   name: 'large-refunds',
   match: {

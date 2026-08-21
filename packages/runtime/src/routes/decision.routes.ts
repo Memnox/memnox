@@ -29,11 +29,7 @@ export function registerDecisionRoutes(app: FastifyInstance, ctx: RouteContext):
     return reply.code(authorized ? 200 : 403).send({ authorized, decision });
   });
 
-  /**
-   * "What governs this?", asked before acting. Read-only like evaluate-risk, but
-   * answers with the declared constraints rather than a verdict, so an agent can
-   * carry the rules into its work instead of meeting them as a refusal.
-   */
+  /** Read-only like evaluate-risk, but answers with the declared constraints. */
   app.post('/v1/context', async (request, reply) => {
     const token = bearerToken(request);
     if (!token) return reply.code(401).send({ error: 'unauthorized' });

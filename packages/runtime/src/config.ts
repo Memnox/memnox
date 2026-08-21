@@ -5,20 +5,13 @@ import type { EncryptionMode, Keyring } from './stores/keyring-codec';
 export const DEFAULT_PORT = 7466;
 export const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_DATA_DIR = '.memnox';
-/** How much history a simulation replays; enough to be representative, bounded so it stays fast. */
+/** Enough history to be representative, bounded so a simulation stays fast. */
 export const SIMULATION_SAMPLE_LIMIT = 1_000;
 
 export const DEFAULT_AUDIT_LIMIT = 50;
 /** Per-agent ceiling on the check endpoint; 0 disables. Generous — it stops floods, not work. */
 export const DEFAULT_CHECK_RATE_LIMIT_PER_MINUTE = 600;
-/**
- * Organizational questions per agent per minute.
- *
- * A tenth of the check budget, because the two calls cost different things: a
- * check is a policy match, and an `evaluate` walks the corpus, filters it by
- * clearance, runs the same gate, and appends an audit event. The tighter
- * number is the honest one to defend the expensive endpoint with.
- */
+/** A tenth of the check budget: the two calls cost very different things. */
 export const DEFAULT_ASK_RATE_LIMIT_PER_MINUTE = 60;
 export const MAX_AUDIT_LIMIT = 500;
 /** Days of audit history kept by the retention sweep; 0 = keep everything. */
@@ -29,12 +22,7 @@ export const DEFAULT_ADVISOR_APPROVERS: readonly string[] = ['team-lead'];
 export interface ApiKeyConfig {
   token: string;
   role: ApiRole;
-  /**
-   * The one workspace this key may manage. Unset means every workspace, which
-   * is what a single-tenant deployment needs and what every existing key
-   * already means — so scoping is something an operator opts into rather than
-   * a migration that locks them out of their own runtime.
-   */
+  /** Unset means every workspace, which is what a single-tenant deployment needs. */
   workspace?: string;
 }
 
@@ -43,11 +31,7 @@ export interface RuntimeConfig {
   host: string;
   /** Directory for local persistence (audit log, agent registry, decision memory). */
   dataDir: string;
-  /**
-   * Serves every /v1 route under this prefix, e.g. "/orbit". One runtime is one
-   * tenant, so a control plane that reaches many of them behind one host tells
-   * them apart by path. Absent serves at the root, which is the default.
-   */
+  /** One runtime is one tenant, so a control plane reaching many needs a prefix. */
   basePath?: string;
   policyFile?: string;
   /** Extra rule sources, e.g. a second repository of the same project. */
@@ -61,7 +45,7 @@ export interface RuntimeConfig {
   apiKeys: ApiKeyConfig[];
   /** Legacy single admin token — equivalent to an apiKeys entry with role "admin". */
   adminToken?: string;
-  /** Serve management routes unauthenticated when no keys are set. Loopback grants this itself. */
+  /** Serve management routes unauthenticated when no keys are set. */
   allowLocalAdmin: boolean;
   /** Enables the deterministic behavioral advisor (novel actions, bursts, probing). */
   behaviorGuard: boolean;
@@ -81,10 +65,7 @@ export interface RuntimeConfig {
   approvalWebhookUrl?: string;
   /** Enables the Slack interactive-approval endpoint when set. */
   slackSigningSecret?: string;
-  /**
-   * Encrypts local stores (agents, approvals, decisions, audit) at rest.
-   * @deprecated Unsalted derivation and no rotation path — use keyringFile.
-   */
+  /** @deprecated Unsalted derivation and no rotation path — use keyringFile. */
   dataEncryptionKey?: string;
   /** Reads the same secret from a file, so it never appears in argv or `ps`. */
   dataKeyFile?: string;

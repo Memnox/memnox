@@ -36,10 +36,7 @@ export const APPROVAL_METRIC_STATE = {
 
 export type MetricLabels = Record<string, string>;
 
-/**
- * One process's view of its own counters. Multi-pod aggregation is the scrape
- * layer's job — Prometheus sums across instances, this registry never does.
- */
+/** One process's own counters; summing across pods is the scrape layer's job. */
 export class MetricsRegistry<N extends string = MetricName> {
   private readonly counters = new Map<string, number>();
   private readonly labelSets = new Map<string, MetricLabels>();

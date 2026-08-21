@@ -1,14 +1,7 @@
 import type { TextCodec } from '@memnox/core';
 import { ENCRYPTION_MODE, KeyringCodec, legacyKeyring } from './keyring-codec';
 
-/**
- * The pre-keyring codec: one passphrase, an unsalted SHA-256 derivation, and a
- * literal `v1` in place of a key id. Kept so existing `--data-key` deployments
- * keep reading their own records; new deployments should configure a keyring and
- * run `memnox keys rewrap` onto a salted key.
- *
- * @deprecated Use KeyringCodec.
- */
+/** The pre-keyring codec, kept only so existing records stay readable. */
 export class AesGcmCodec implements TextCodec {
   private readonly codec: KeyringCodec;
 

@@ -73,10 +73,7 @@ describe('postgresOptionsFromEnv', () => {
   });
 });
 
-/**
- * The pool resolves lazily, so constructing one opens no socket and its settled
- * options are readable. What is asserted here is the decision, not the driver.
- */
+/** The pool resolves lazily, so constructing one opens no socket. */
 function sslOf(options: PostgresOptions): unknown {
   const pool = connectPostgres(
     'postgres://user@db.test:5432/memnox',

@@ -9,10 +9,7 @@ interface FirewallArgs {
   serverName: string;
 }
 
-/**
- * Splits `memnox-mcp-firewall --name <server> -- <command...>`.
- * Null means the invocation cannot be run and the caller should print usage.
- */
+/** Null means the invocation cannot run and the caller should print usage. */
 export function parseFirewallArgs(argv: readonly string[]): FirewallArgs | null {
   const separator = argv.indexOf(COMMAND_SEPARATOR);
   if (separator === -1 || separator === argv.length - 1) return null;

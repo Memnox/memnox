@@ -16,10 +16,7 @@ export interface IdentityStore {
 export interface AuditLog {
   append(event: ActionEvent): Promise<void>;
   recent(limit: number): Promise<ActionEvent[]>;
-  /**
-   * Chronological events matching the filter — used by replay, reports, and advisors.
-   * Callers on the hot path must pass `limit`: an unbounded scan is a scale hazard.
-   */
+  /** Chronological matches; hot-path callers must pass `limit` — unbounded scans do not scale. */
   query(filter: AuditQuery): Promise<ActionEvent[]>;
   /** Retention sweep: drops events older than the cutoff, returns how many. */
   pruneBefore(cutoff: string): Promise<number>;
@@ -32,27 +29,14 @@ export interface ApprovalNotifier {
   notify(approval: Approval): Promise<void>;
 }
 
-/**
- * Storage only: an adapter never applies the approval TTL, because whether a
- * hold still counts is `ApprovalService`'s call and the flow report has to see
- * the lapsed ones. Adapters that filtered on their own disagreed with each other.
- */
+/** Storage only: the TTL is ApprovalService's call, and adapters that filtered disagreed. */
 export interface ApprovalStore {
   save(approval: Approval): Promise<void>;
   findById(id: string): Promise<Approval | null>;
   findPendingByFingerprint(fingerprint: string): Promise<Approval | null>;
-  /**
-   * The unspent grant for this exact action, if a human has already given one.
-   * This is how an approval reaches a caller that cannot echo an approval id
-   * back — an MCP client builds its request from a tool call and has nowhere
-   * to put one, so without this lookup an approved action retries forever.
-   */
+  /** Lets a caller that cannot echo an approval id still see a grant it was given. */
   findGrantedByFingerprint(fingerprint: string): Promise<Approval | null>;
   listByStatus(status: ApprovalStatus): Promise<Approval[]>;
-  /**
-   * Retention sweep. Drops approvals raised before the cutoff that have reached
-   * a terminal status, returns how many. A pending hold is never dropped: it is
-   * a human decision still owed, however old it looks.
-   */
+  /** Retention sweep over terminal approvals; a pending hold is a decision still owed. */
   pruneResolvedBefore(cutoff: string): Promise<number>;
 }

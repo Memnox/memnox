@@ -27,11 +27,7 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: RouteContext):
     return ctx.gateway.approvals.flowSummary();
   });
 
-  /**
-   * Lets a blocked agent poll the approval it was handed. Readable by an API
-   * principal or by the agent that raised it — never by another agent, since the
-   * id alone would otherwise expose one tenant's pending work to another.
-   */
+  /** Readable by an API principal or by the agent that raised it, nobody else. */
   app.get('/v1/approvals/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const approval = await ctx.gateway.approvals.findById(id);

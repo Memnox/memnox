@@ -10,15 +10,7 @@ interface TableSchema {
   droppedIndexes?: string[];
 }
 
-/**
- * Query fields are real columns; the full record is a codec-encoded text blob.
- * Searches never touch encrypted data (the legacy deterministic-IV trap), and
- * record shape can evolve without a migration.
- *
- * `org_id` is nullable everywhere: null = single-tenant, which is every
- * deployment that has not opted into multi-tenancy. Only `audit_events` filters
- * on it, so only that table indexes it — the rest carried an index no query used.
- */
+/** Query fields are columns, the record a codec blob: searches never touch ciphertext. */
 const RUNTIME_TABLES: TableSchema[] = [
   {
     name: 'agents',
@@ -74,7 +66,7 @@ const RUNTIME_TABLES: TableSchema[] = [
   },
   {
     name: 'audit_events',
-    // seq is the tie-break that makes append order total: ISO timestamps collide inside a millisecond.
+    // seq breaks the tie: ISO timestamps collide inside a millisecond.
     create: `CREATE TABLE audit_events (
       id TEXT PRIMARY KEY,
       seq BIGSERIAL,

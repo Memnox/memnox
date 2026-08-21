@@ -4,10 +4,7 @@ import type { ExecutionStatus } from '../constants/execution.constants';
 import type { RiskLevel } from '../constants/risk.constants';
 import type { TaintAssessment } from './taint';
 
-/**
- * The core primitive: every AI action becomes an event that Memnox can
- * understand, evaluate, authorize, and prove.
- */
+/** The core primitive: every AI action becomes an event Memnox can rule on and prove. */
 export interface ActionRequest {
   /** Namespaced verb, e.g. "database.delete", "code.modify", "deploy.service". */
   action: string;
@@ -16,29 +13,11 @@ export interface ActionRequest {
   environment?: string;
   /** Groups actions into one agent session for replay and reporting. */
   sessionId?: string;
-  /**
-   * The governance unit this action belongs to. Declared in a policy file, not
-   * inferred from the repository — a frontend and a backend repo that declare
-   * the same project share one policy and memory scope.
-   */
+  /** The governance unit, declared in a policy file — repos sharing a name share one scope. */
   projectId?: string;
-  /**
-   * The person this action is taken on behalf of.
-   *
-   * Not who the agent *is* — that is its credential, and it is settled before
-   * policy runs. This is whose authority it is drawing on, and the two are
-   * different numbers: a person may approve fifty thousand and the agent
-   * acting for them five. Without this field the only expressible answer is
-   * that an agent inherits everything its principal can do.
-   */
+  /** Whose authority the agent draws on — not who the agent is, which is its credential. */
   principal?: string;
-  /**
-   * Ids of facts, from an earlier answer, that this action relies on.
-   *
-   * What lets the organization tell "you may not do this" from "you may do
-   * this but should not be the one who knows it". Sent by a caller that read
-   * context first; an action that reads nothing has nothing to declare.
-   */
+  /** Facts this action relies on, so "may not do" is tellable from "should not know". */
   reads?: readonly string[];
   /** Untrusted sources that influenced the agent's context, reported by the caller. */
   taint?: TaintAssessment;
@@ -55,31 +34,15 @@ export interface ActionRequest {
   dataClassification?: string;
   /** Region the action executes in, e.g. "eu", "us". */
   jurisdiction?: string;
-  /**
-   * How big the action is, in whatever unit it counts in: money refunded, rows
-   * deleted, seats granted. Reported by the caller.
-   *
-   * Here because size is often the whole rule. "Refunds are fine" and "refunds
-   * up to a thousand are fine" are different policies, and without this the
-   * gate could only express the first. A rule reads it through `aboveAmount`.
-   */
+  /** How big the action is; size is often the whole rule. Read by `aboveAmount`. */
   amount?: number;
   /** Directory the agent is working in, e.g. "/srv/checkout". Reported by the caller. */
   workingDirectory?: string;
   /** Source control branch the work sits on, e.g. "main", "release/24.3". */
   branch?: string;
-  /**
-   * The call's own arguments, flattened to strings — a tool's `command`, `path`,
-   * `query`. LOCAL ONLY: this is the raw payload, so the in-process gate matches
-   * on it and the SDK strips it before anything crosses the network. What travels
-   * instead is `signals`.
-   */
+  /** LOCAL ONLY: the raw payload. The SDK strips it; `signals` travel instead. */
   arguments?: Record<string, string>;
-  /**
-   * What the local gate already found, e.g. "shield:aws-access-key",
-   * "policy:no-rm-rf". Testimony, not evidence: it is audited and may escalate,
-   * and can never loosen a verdict the runtime reaches on its own.
-   */
+  /** What the local gate found. Testimony: it may escalate, never loosen. */
   signals?: string[];
 }
 
@@ -115,32 +78,18 @@ export interface ActionEvent {
   policyVersion?: string;
   /** Names of advisors that escalated or flagged this action. */
   advisories: string[];
-  /**
-   * Who the action was sent to, when it was sent to anybody.
-   *
-   * Recorded because "who was asked" is a question the trail is expected to
-   * answer years later, and reconstructing it from today's rule set answers a
-   * different question — what would happen now, not what happened then.
-   */
+  /** Who was asked, recorded because today's rules answer a different question. */
   approvers?: string[];
   reason: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
   orgId?: string;
-  /**
-   * Present only on execution.outcome events — the caller's testimony about an
-   * action already allowed, carried verbatim so a decision can be joined to what
-   * it actually did. See ExecutionOutcomeReport.
-   */
+  /** Only on execution.outcome events; carried verbatim so a decision joins its effect. */
   decisionEventId?: string;
   executionStatus?: ExecutionStatus;
   rolledBack?: boolean;
   /** The compensating action itself failed, so the resulting state is unknown. */
   rollbackFailed?: boolean;
-  /**
-   * The agent reported succeeding at something the runtime did not allow. Not a
-   * measurement — the runtime cannot see the world — but the agent's own claim
-   * that it went ahead, which is the one thing an operator must never miss.
-   */
+  /** The agent claimed success on something not allowed — its claim, not a measurement. */
   defiedVerdict?: true;
   /** Tamper evidence, set by the audit log at append time (see audit-chain). */
   prevHash?: string;

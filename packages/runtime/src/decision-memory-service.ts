@@ -46,11 +46,7 @@ export interface DecisionMemoryDeps {
   semanticSearch?: DecisionSemanticSearch;
 }
 
-/**
- * The decision corpus as an application service: registration invariants,
- * retrieval, and health. Routes above it only validate shapes and map outcomes
- * to status codes.
- */
+/** The corpus as a service — routes above it only validate shapes. */
 export class DecisionMemoryService {
   private readonly registry: DecisionRegistry;
 

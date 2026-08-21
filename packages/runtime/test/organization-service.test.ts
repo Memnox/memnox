@@ -16,11 +16,7 @@ import { InMemoryStatedStore } from '../src/stores/json-file-stated-store';
 
 const WORKSPACE = 'default';
 
-/**
- * A statement that only applies for one week of 2026, so the clock is what
- * decides whether it binds — and the clock is injected, so the boundary is
- * testable rather than something you wait for.
- */
+/** Applies for one week of 2026, so the clock decides whether it binds. */
 const SEASONAL = {
   kind: 'policy' as const,
   statement: 'Deploys are frozen for the holidays.',

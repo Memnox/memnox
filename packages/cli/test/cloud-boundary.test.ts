@@ -7,10 +7,7 @@ const SRC = join(import.meta.dirname, '..', 'src');
 /** The modules that speak to a control plane. Nothing governing may import them. */
 const CLOUD_MODULES = ['cloud-client', 'cloud-connection'];
 
-/**
- * Every file on the path that decides, blocks, or installs governance locally.
- * A machine that never signs in must be governed exactly as well as one that did.
- */
+/** A machine that never signs in must be governed exactly as well as one that did. */
 const LOCAL_GOVERNANCE = [
   'commands/check.command.ts',
   'commands/context.command.ts',

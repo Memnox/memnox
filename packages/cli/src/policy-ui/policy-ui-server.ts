@@ -48,10 +48,7 @@ function readBody(request: IncomingMessage): Promise<string | null> {
   });
 }
 
-/**
- * Binds the editor to loopback and nothing else. A routable bind would put an
- * unauthenticated rule editor — one that writes a file — on the network.
- */
+/** A routable bind would expose an unauthenticated rule editor. */
 export const loopbackPolicyUi: PolicyUiLauncher = async (handle, port) => {
   const server = createServer((incoming, outgoing) => {
     void (async () => {

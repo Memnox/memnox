@@ -16,10 +16,7 @@ const ESCALATING_RISK_LEVELS: readonly RiskLevel[] = [
   RISK_LEVEL.CRITICAL,
 ];
 
-/**
- * Puts the trust score in the decision path: an agent whose audited history
- * has eroded its score must get a human sign-off for risky actions.
- */
+/** An agent whose audited history eroded its score needs a human for risky actions. */
 export class TrustAdvisor implements ActionAdvisor {
   readonly name = TRUST_ADVISOR;
 

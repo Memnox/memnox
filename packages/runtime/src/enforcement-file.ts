@@ -4,14 +4,7 @@ import { parseEnvironmentModes, type EnvironmentModes } from '@memnox/core';
 
 const ENFORCEMENT_FILE = 'enforcement.json';
 
-/**
- * The modes a control plane last set, kept so a restart does not silently
- * revert to whatever flag the process happened to start with.
- *
- * The startup flag still wins on a cold start: an air-gapped image pinned to
- * `default=enforce` must not be talked down to `off` by a stored file, and an
- * operator editing the flag expects it to mean something.
- */
+/** Kept so a restart does not silently revert to the flag the process started with. */
 export async function readStoredEnforcement(
   dataDir: string,
 ): Promise<EnvironmentModes | undefined> {

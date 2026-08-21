@@ -25,10 +25,7 @@ export function isEnforcementMode(value: unknown): value is EnforcementMode {
   );
 }
 
-/**
- * Validates a mode map off the wire. Shared so the management route and the
- * CLI flag agree on what a legal map is, rather than each deciding.
- */
+/** Shared so the management route and the CLI flag agree on what a legal map is. */
 export function parseEnvironmentModes(value: unknown): EnvironmentModes | string {
   if (typeof value !== 'object' || value === null) {
     return 'body must be an object with "default" and/or "environments"';
@@ -84,11 +81,7 @@ export function resolveEnforcementMode(
   return mode === undefined ? fallback : mode;
 }
 
-/**
- * Separates the verdict from its application. Monitor mode must never rewrite
- * the verdict — an audit record that claims it blocked when it did not is worse
- * than no record at all.
- */
+/** Verdict apart from its application: monitor must never rewrite what was decided. */
 export function applyEnforcementMode(
   verdict: DecisionEffect,
   mode: EnforcementMode,

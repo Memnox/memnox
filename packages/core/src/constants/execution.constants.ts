@@ -1,7 +1,4 @@
-/**
- * What became of an action after the runtime allowed it. A decision proves an
- * action was permitted; an outcome proves what it actually did.
- */
+/** A decision proves an action was permitted; an outcome proves what it actually did. */
 export const EXECUTION_STATUS = {
   /** Ran and every postcondition held. */
   SUCCEEDED: 'succeeded',
@@ -24,9 +21,5 @@ export const UNVERIFIED_EXECUTION_STATUSES: readonly ExecutionStatus[] = [
 /** Audited action name for a reported execution outcome. */
 export const EXECUTION_OUTCOME_ACTION = 'execution.outcome';
 
-/**
- * How long an allowed decision may go without testimony before the silence
- * counts against it. An action authorized seconds ago is still running, and
- * treating that as a missing report would make the number mostly noise.
- */
+/** Grace before silence counts against a decision: a fresh action is still running. */
 export const EXECUTION_OUTCOME_GRACE_MS = 5 * 60_000;

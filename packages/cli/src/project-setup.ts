@@ -11,16 +11,9 @@ import type { CliOutput } from './cli-output';
 import { STARTER_POLICY_FILE } from './defaults';
 import { resolveProjectId } from './project-identity';
 
-/**
- * The steps `setup` and `quickstart` share. Both scaffold the same project;
- * they differ only in whether they go on to start the runtime.
- */
+/** What `setup` and `quickstart` share; they differ only in starting the runtime. */
 
-/**
- * Writes the starter rules only when nothing is there. Never overwrites — rules
- * someone already authored outrank anything we would scaffold, and rewriting
- * their YAML to insert one key would reformat a file they own.
- */
+/** Never overwrites: rules someone authored outrank anything we would scaffold. */
 interface PolicyFileOptions {
   project?: string;
   /** A ready-made document, e.g. one composed from detected packs. */
@@ -49,11 +42,7 @@ export async function ensurePolicyFile(
   return true;
 }
 
-/**
- * Builds a policy document out of named packs. Duplicate rule names across
- * packs collapse to the first — the validator rejects a document that repeats
- * one, and two packs guarding the same thing is a redundancy, not a conflict.
- */
+/** Duplicate names collapse to the first — two packs guarding one thing is redundancy. */
 export function composePolicyDocument(
   project: string | undefined,
   packNames: readonly string[],

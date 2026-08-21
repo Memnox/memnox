@@ -11,14 +11,7 @@ export interface LocalGateEnvironment {
   agentName?: string;
 }
 
-/**
- * Builds the in-process gate from the environment. Null means no local rules
- * were configured, which leaves the runtime as the only gate — the behaviour
- * every existing deployment already has.
- *
- * An unreadable or invalid policy file throws: a firewall that silently runs
- * with no rules is worse than one that refuses to start.
- */
+/** Null leaves the runtime as the only gate — what every existing deployment has. */
 export async function loadLocalGate(
   environment: LocalGateEnvironment,
   serverName: string,

@@ -1,10 +1,6 @@
 const DATA_FIELD = 'data:';
 
-/**
- * A Streamable HTTP server may answer one POST with an SSE body rather than a
- * JSON object. Only the `data:` payloads carry JSON-RPC, so the event names and
- * ids are dropped — the proxy correlates on the JSON-RPC id, not the SSE one.
- */
+/** Only `data:` payloads carry JSON-RPC; event names and ids are framing. */
 export function readEventStream(body: string): string[] {
   const payloads: string[] = [];
   for (const line of body.split('\n')) {

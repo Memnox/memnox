@@ -30,11 +30,7 @@ export const UNAVAILABLE_SESSION_TAINT: SessionTaintState = {
   available: false,
 };
 
-/**
- * Session-scoped provenance. Taint attaches to the session, never to strings,
- * so an LLM rewrite cannot launder it — and merges are monotonic: a session
- * that has seen untrusted content stays tainted for the rest of its TTL.
- */
+/** Taint attaches to the session, not to strings, so a rewrite cannot launder it. */
 export interface SessionTaintStore {
   read(sessionId: string): Promise<SessionTaintState>;
   /** Monotonic merge-in; a clean assessment never clears an existing one. */

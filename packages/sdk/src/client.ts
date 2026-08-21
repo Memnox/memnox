@@ -208,10 +208,7 @@ export class MemnoxClient {
     );
   }
 
-  /**
-   * Run `execute` only if the runtime allows the action.
-   * Throws ActionBlockedError or ApprovalRequiredError otherwise.
-   */
+  /** Runs `execute` only if the runtime allows the action; throws otherwise. */
   async guard<T>(request: ActionRequest, execute: () => Promise<T>): Promise<T> {
     const decision = await this.check(request);
     if (decision.effect === DECISION_EFFECT.BLOCK) throw new ActionBlockedError(decision);
@@ -221,14 +218,7 @@ export class MemnoxClient {
     return execute();
   }
 
-  /**
-   * guard() plus verification: checks the action, runs it only if allowed, verifies
-   * its postconditions, rolls back when they fail, and reports the outcome so the
-   * audit log records what happened rather than only what was permitted.
-   *
-   * Throws on block/approval exactly like guard(); otherwise always returns an
-   * outcome — inspect `status` to see whether the work actually held.
-   */
+  /** guard() plus verification: rolls back on failure and reports the outcome. */
   async guardVerified<T>(
     request: ActionRequest,
     plan: GuardedExecution<T>,
@@ -244,11 +234,7 @@ export class MemnoxClient {
     return outcome;
   }
 
-  /**
-   * Records an execution outcome. Returns false instead of throwing when the
-   * report cannot be delivered — a reporting failure must not turn work that
-   * already succeeded into an exception. Callers that need to know can check it.
-   */
+  /** Returns false rather than throwing: a failed report must not undo real work. */
   async reportOutcome(report: ExecutionOutcomeReport): Promise<boolean> {
     try {
       await this.request<{ recorded: boolean }>(
@@ -264,11 +250,7 @@ export class MemnoxClient {
     }
   }
 
-  /**
-   * Ask what governs an action before attempting it. Returns the declared
-   * constraints plus a plain-text rendering an agent can carry in its context.
-   * Nothing is audited and no approval is created.
-   */
+  /** Nothing is audited and no approval is raised — asking is not attempting. */
   async context(request: ActionRequest): Promise<ActionContextResponse> {
     return this.request<ActionContextResponse>(
       'POST',
@@ -378,10 +360,7 @@ export class MemnoxClient {
     );
   }
 
-  /**
-   * Sets the mode per environment. The runtime persists it before switching,
-   * and it applies from the next decision without a restart.
-   */
+  /** Persisted before switching; applies from the next decision without a restart. */
   async setEnforcement(modes: EnvironmentModes): Promise<EnvironmentModes> {
     return this.request<EnvironmentModes>(
       'PUT',
@@ -536,10 +515,7 @@ export class MemnoxClient {
     );
   }
 
-  /**
-   * Files candidates an extractor produced. They bind nothing until verified,
-   * which is the whole reason this is a different call from `recordStatement`.
-   */
+  /** Candidates bind nothing until verified, hence a separate call. */
   async proposeStatements(
     candidates: readonly unknown[],
     workspace?: string,
@@ -647,10 +623,7 @@ export class MemnoxClient {
     );
   }
 
-  /**
-   * Poll one approval. An agent token may read only the approval it raised;
-   * an admin token may read any. Lets a blocked agent wait and retry.
-   */
+  /** An agent token reads only its own approval; an admin token reads any. */
   async approvalStatus(approvalId: string): Promise<Approval> {
     return this.request<Approval>(
       'GET',
@@ -692,10 +665,7 @@ export class MemnoxClient {
     );
   }
 
-  /**
-   * Audit evidence as CSV. Returns text rather than JSON, so it bypasses the
-   * shared request helper's parse step.
-   */
+  /** Text rather than JSON, so it bypasses the shared request helper's parse step. */
   async exportAuditCsv(period: { from?: string; to?: string } = {}): Promise<string> {
     const query = new URLSearchParams();
     if (period.from) query.set('from', period.from);
@@ -725,9 +695,7 @@ export class MemnoxClient {
     body?: unknown,
     bearer?: string,
   ): Promise<T> {
-    // Only when there is something to type. A JSON content-type on a body-less
-    // request is rejected before the route runs, which is how `rotateAgent`
-    // could be broken end to end while every unit test passed.
+    // A JSON content-type on a body-less request is rejected before the route runs.
     const headers: Record<string, string> =
       body === undefined ? {} : { 'content-type': 'application/json' };
     if (bearer) headers['authorization'] = `Bearer ${bearer}`;
@@ -746,12 +714,7 @@ export class MemnoxClient {
   }
 }
 
-/**
- * Strips the fields that must never cross the network. `arguments` is the raw
- * payload of the call — matched in-process by @memnox/local-gate, which is the
- * only component that ever reads it. What the runtime is told instead is
- * `signals`: the rule ids the local pass produced.
- */
+/** `arguments` is the raw payload, matched in-process by @memnox/local-gate alone. */
 /** Absent on a single-tenant runtime, which resolves the workspace itself. */
 function workspaceQuery(workspace: string | undefined): string {
   return workspace === undefined ? '' : `?workspace=${encodeURIComponent(workspace)}`;

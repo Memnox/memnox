@@ -3,11 +3,7 @@ import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { daemonPaths, readDaemonPid, stopDaemon } from '../runtime-daemon';
 
-/**
- * The other half of a `setup` that returns the prompt: something has to end the
- * process the terminal no longer owns. Only stops a runtime started here — a
- * `memnox serve` in the foreground belongs to whoever ran it.
- */
+/** Something has to end the process the terminal no longer owns. */
 export function registerStopCommand(
   program: Command,
   context: CliContext,

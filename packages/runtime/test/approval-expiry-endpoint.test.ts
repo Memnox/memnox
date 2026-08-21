@@ -23,10 +23,7 @@ const ADMIN_KEY = 'admin-key';
 const APPROVER_KEY = 'approver-key';
 const LONG_PAST = '2020-01-01T00:00:00.000Z';
 
-/**
- * The real Postgres adapter behind real routes: it filters nothing, so this is
- * where a lapsed hold used to stay resolvable long after its TTL.
- */
+/** The real Postgres adapter filters nothing, so a lapsed hold surfaces here. */
 describe('lapsed approvals over HTTP', () => {
   let dataDir: string;
   let server: MemnoxServer;

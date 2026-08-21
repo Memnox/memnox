@@ -8,11 +8,7 @@ const RECENT_WINDOW_EVENTS = 200;
 /** Where the command is being run; injected so tests never depend on the real cwd. */
 type WorkingDirectory = () => string;
 
-/**
- * The "is this thing on?" command. Every other answer took three invocations —
- * one for the runtime, one for the rules, one for what is waiting — and a new
- * user does not yet know which three.
- */
+/** "Is this thing on?" — every other answer took three invocations. */
 export function registerStatusCommand(
   program: Command,
   context: CliContext,
@@ -73,10 +69,7 @@ export function registerStatusCommand(
       }
       if (pending.length > 0) out.note(style.dim('→ Grant one:  memnox approve <id>'));
       if (withheld.length > 0) out.note(style.dim('→ See them:   memnox audit'));
-      // A missing file and a file that declares no project need different fixes.
-      // Declaring none is only a problem when some *other* file scopes its rules
-      // to a project — otherwise every rule applies and there is nothing to warn
-      // about, which is the state every fresh `memnox setup` leaves behind.
+      // Declaring no project only matters when another file scopes its rules to one.
       const scopedRules = policies.policies.filter(isProjectScoped).length;
       if (project === undefined && (policyFile === undefined || scopedRules > 0)) {
         out.note(

@@ -2,14 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { readPolicyRegistry } from '@memnox/local-gate';
 
-/**
- * The list of rule files this machine's runtime should load.
- *
- * One runtime serves every project, so a second repository joining an already
- * running runtime has to get its rules there somehow. It registers a *path*
- * here and asks for a reload — rule content never travels over the API, so
- * every rule stays reviewable in the diff of the repository that owns it.
- */
+/** One runtime serves every project, so a second repository has to join the list. */
 const CONFIG_DIR = '.memnox';
 const REGISTRY_FILE = 'policies.json';
 const DIR_MODE = 0o700;
@@ -18,11 +11,7 @@ export function policyRegistryPath(homeDir: string): string {
   return join(homeDir, CONFIG_DIR, REGISTRY_FILE);
 }
 
-/**
- * Adds a rule file to the set this machine loads. Absolute and de-duplicated:
- * the runtime resolves these from its own working directory, not the caller's.
- * Returns the full list so a caller can report what is now in force.
- */
+/** Absolute and de-duplicated: the runtime resolves these from its own directory. */
 export async function registerPolicyFile(
   homeDir: string,
   filePath: string,

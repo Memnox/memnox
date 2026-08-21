@@ -1,7 +1,4 @@
-/**
- * BYOK LLM port. Providers are interchangeable and optional — the runtime
- * never calls an LLM to decide; intelligence only drafts and explains.
- */
+/** BYOK port: intelligence drafts and explains, it never decides. */
 export interface LlmCompletionRequest {
   system?: string;
   prompt: string;

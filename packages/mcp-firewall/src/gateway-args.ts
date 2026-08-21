@@ -32,10 +32,7 @@ export interface GatewayConfig {
   failOpen: boolean;
 }
 
-/**
- * Resolves `memnox-mcp-gateway --name <server>` plus its environment.
- * Null means the invocation cannot be run and the caller should print usage.
- */
+/** Null means the invocation cannot run and the caller should print usage. */
 export function parseGatewayArgs(
   argv: readonly string[],
   env: GatewayEnv,

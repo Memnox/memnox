@@ -3,14 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { DEFAULT_POLICY_FILE } from './defaults';
 
-/**
- * Resolves which governance unit a working directory belongs to.
- *
- * The repository is deliberately not the unit. A frontend and a backend repo
- * that both declare `project: acme-checkout` share one policy and memory scope,
- * so the identifier is read from the policy file rather than inferred from the
- * directory — declared, committed, and reviewable in a diff.
- */
+/** The repository is deliberately not the unit — a frontend and backend can share one. */
 
 /** A repo nested deeply under $HOME still terminates; nothing legitimate is deeper. */
 const MAX_PARENT_WALK = 40;
@@ -31,11 +24,7 @@ export function findPolicyFile(
   return undefined;
 }
 
-/**
- * The declared project for a working directory, or undefined when there is no
- * policy file or it declares none. Never throws: an unreadable or malformed
- * file means "no project", never a broken tool call.
- */
+/** Never throws: a malformed file is the validator's error to report, not this. */
 export function resolveProjectId(
   cwd: string | undefined,
   fileName: string = DEFAULT_POLICY_FILE,

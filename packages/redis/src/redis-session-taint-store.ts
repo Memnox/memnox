@@ -19,12 +19,7 @@ import {
 } from '@memnox/core';
 import type { RedisLike } from './redis-lock.service';
 
-/**
- * Shared session provenance for multi-pod deployments. Reads never invent a
- * clean verdict: a corrupt or unreachable state reports taint, because a
- * session whose provenance cannot be proven is exactly what an injection
- * attempt looks like.
- */
+/** Unreachable or corrupt state reports taint — unprovable provenance is the attack. */
 export class RedisSessionTaintStore implements SessionTaintStore {
   constructor(
     private readonly client: RedisLike,
@@ -56,7 +51,7 @@ export class RedisSessionTaintStore implements SessionTaintStore {
   async merge(sessionId: string, taint: TaintAssessment): Promise<void> {
     if (!taint.tainted) return;
     const lockKey = `${TAINT_SESSION_LOCK_PREFIX}${sessionId}`;
-    // Best-effort lock: losing a duplicate source ref is acceptable, losing the tainted bit is not.
+    // Best-effort lock: losing a source ref is fine, losing the tainted bit is not.
     const locked = await this.locks.acquireLock(lockKey, TAINT_SESSION_LOCK_TTL_S);
     try {
       const current = await this.read(sessionId);

@@ -23,15 +23,7 @@ export const VERIFICATION_ADVISOR = 'verification-guard';
 
 const ACTION_VERB_SEPARATOR = '.';
 
-/**
- * Autonomy is earned by reporting outcomes. An agent that keeps being allowed
- * to act and never says what happened leaves an unverified trail, so its next
- * destructive action goes to a human rather than inheriting that trust.
- *
- * Scoped to destructive verbs deliberately: silence is a missing record, not
- * evidence of harm, and escalating ordinary reads because a caller never wired
- * up runGuarded would wedge everyday work.
- */
+/** Autonomy is earned by reporting outcomes; scoped to destructive verbs. */
 export class VerificationAdvisor implements ActionAdvisor {
   readonly name = VERIFICATION_ADVISOR;
 
@@ -72,11 +64,7 @@ function isDestructive(action: string): boolean {
   return DESTRUCTIVE_VERBS.includes(lastSegment.toLowerCase());
 }
 
-/**
- * Allowed decisions old enough that testimony should have arrived, with none
- * on record. Bookkeeping events are excluded — nobody reports an outcome for
- * an audit record.
- */
+/** Overdue allowed decisions with no testimony; bookkeeping events excluded. */
 function countOverdueOutcomes(history: ActionEvent[], overdueBefore: number): number {
   const reported = new Set<string>();
   for (const event of history) {

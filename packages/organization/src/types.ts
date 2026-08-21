@@ -1,11 +1,4 @@
-/**
- * The wire contract between an AI worker and the organization it works inside.
- *
- * This file is the protocol, and it is deliberately the whole of it. An
- * integrator should be able to read one page and know what to send: who is
- * asking, who they act for, what they intend, and what they are relying on.
- * Everything the organization does with that is on the other side of the call.
- */
+/** The wire contract between an AI worker and its organization — deliberately all of it. */
 
 /** What should happen next. Six answers, because a gate's two are not enough. */
 export const DECISION = {
@@ -46,13 +39,7 @@ export interface EvaluateRequest {
   environment?: string;
   /** Your intent, in your own words. Recorded verbatim in the ledger. */
   reason?: string;
-  /**
-   * Fact ids from an earlier answer that this action relies on.
-   *
-   * Worth sending. It is what lets the organization tell "you may not do this"
-   * apart from "you may do this but should not be the one who knows it", which
-   * is the difference between a refusal and a delegation.
-   */
+  /** Tells "you may not do this" from "you may, but should not be the one who knows". */
   reads?: readonly string[];
 }
 
@@ -88,34 +75,15 @@ export interface EvaluateResponse {
   constraints: string[];
   /** Facts the action needs that you are not cleared to read. */
   missingContext: string[];
-  /**
-   * How much bearing evidence was withheld from you.
-   *
-   * Non-zero does not mean you were refused. It means your answer is partial
-   * and you do not know how, which is a reason to involve a person rather than
-   * to proceed confidently.
-   */
+  /** Non-zero is not a refusal: your answer is partial and you do not know how. */
   withheld: number;
   /** Present when there is an approval to wait on. */
   approvalId?: string;
   /** The action is allowed only with its content masked. */
   redacted?: boolean;
-  /**
-   * The organization holds more history than one answer reads.
-   *
-   * Different from `withheld`, and both are worth acting on: withheld is what
-   * you were not allowed to see, this is what nobody looked at.
-   */
+  /** Withheld is what you could not see; this is what one answer did not read. */
   truncated?: true;
-  /**
-   * You sent no `reads`, so delegation was never assessed.
-   *
-   * The one thing about this call that goes wrong quietly. Without the fact ids
-   * your action relies on, the organization cannot tell "you may not do this"
-   * from "you may do this but should not be the one who knows it", so
-   * `delegate` can never come back. If you see this and you did intend to read
-   * something, send the ids.
-   */
+  /** The one thing that goes wrong quietly: no `reads`, so delegation went unassessed. */
   delegationNotAssessed?: true;
 }
 
@@ -141,13 +109,7 @@ export interface Decided {
   sourceRef?: string;
 }
 
-/**
- * A statement the organization has verified about itself.
- *
- * Typed rather than `unknown`, because the fields an integrator actually reads
- * are the ones that say whether to trust it: who confirmed it, when it took
- * effect, and what it replaced.
- */
+/** Typed, because an integrator reads exactly the fields that say whether it binds. */
 export interface Stated {
   id: string;
   workspaceId: string;
@@ -164,12 +126,7 @@ export interface Stated {
   sourceRef?: string;
   /** Event ids this was read out of, so "why" is a lookup rather than a guess. */
   evidence: string[];
-  /**
-   * How sure the reader was, from 0 to 1.
-   *
-   * Recorded even on a verified statement, because how sure we were is part of
-   * the history. A declared or authoritative claim is 1: it is not a guess.
-   */
+  /** Recorded even when verified: how sure we were is part of the history. */
   confidence: number;
   detectedAt: string;
   verifiedAt?: string;
@@ -184,14 +141,7 @@ export interface Ownership {
   owners: Array<{ name: string; throughDecision: string }>;
 }
 
-/**
- * Another agent this company runs, offered as somewhere to send work.
- *
- * Deliberately says nothing about what that agent is cleared to know: naming
- * who should take a job must not become a way to enumerate what every other
- * agent can read. `owner` is the person accountable for it — a candidate
- * nobody answers for is not one to hand work to.
- */
+/** Says nothing about what that agent may know — naming a recipient is not clearing it. */
 export interface AgentCandidate {
   agentId: string;
   label: string;
@@ -204,13 +154,7 @@ export interface AgentCandidate {
   spendLimit?: number;
 }
 
-/**
- * One earlier occasion of the same action, as the organization recorded it.
- *
- * What is deliberately absent is the answer: precedent says an action was
- * escalated to the CFO, never what the CFO was shown. A history that carried
- * content would be a way to read, over time, everything a clearance withheld.
- */
+/** The answer is deliberately absent: precedent says it was escalated, not how it ended. */
 export interface Precedent {
   occurredAt: string;
   /** allow, deny, ask, escalate, delegate or clarify, as it was then. */
@@ -237,14 +181,7 @@ export function isHeld(decision: Decision): boolean {
   return HELD.includes(decision);
 }
 
-/**
- * Whether it is safe to go ahead without further involvement.
- *
- * Written as its own function rather than `decision === 'allow'` at a call
- * site, because the interesting case is the one people get wrong: an allow with
- * withheld context is still an allow, and an allow that came back redacted is
- * only an allow for a caller that can honour the masking.
- */
+/** Its own function rather than a bare equality check, because the other answers differ. */
 export function mayProceed(response: EvaluateResponse): boolean {
   return response.decision === DECISION.ALLOW;
 }

@@ -50,12 +50,7 @@ const emptyDocument = (): PolicyDocument => ({
   policies: [],
 });
 
-/**
- * The rule editor most developers actually want: the same file, the same
- * validator and the same simulation, behind a form instead of YAML. It writes
- * the policy file and nothing else, so every rule made here still arrives in a
- * diff a reviewer can read.
- */
+/** The same file, validator, and simulation, behind a form instead of YAML. */
 export function registerPolicyUiCommand(
   parent: Command,
   context: CliContext,
@@ -112,11 +107,7 @@ export function registerPolicyUiCommand(
     });
 }
 
-/**
- * What the candidate rules would have decided about the actions that really
- * happened. Unreachable runtime is the ordinary case for someone editing rules
- * before they have run anything, so it reports why rather than failing.
- */
+/** What the candidate rules would have decided about actions that really happened. */
 async function replayHistory(
   context: CliContext,
   options: PolicyUiOptions,

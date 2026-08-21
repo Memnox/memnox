@@ -47,9 +47,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
       body.capabilities,
       typeof body.orgId === 'string' && body.orgId.length > 0 ? body.orgId : undefined,
     );
-    // Same rule as every other agent route: the stored hash never leaves the
-    // runtime. Registration output is the most likely of all of them to be
-    // pasted into a terminal recording or a CI log.
+    // The stored hash never leaves the runtime; this output gets pasted into logs.
     const { tokenHash: _tokenHash, ...agent } = registration.agent;
     return reply.code(201).send({ agent, token: registration.token });
   });

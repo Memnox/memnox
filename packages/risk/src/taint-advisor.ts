@@ -31,11 +31,7 @@ export const TAINT_PRIVILEGED_ACTION_PATTERNS: readonly string[] = [
 
 const SIGNAL_PREFIX = 'taint:';
 
-/**
- * Prompt-injection defense: blocking is structural — if any untrusted source
- * entered the session's context, privileged actions need a human no matter how
- * benign they look. Taint is monotonic per session: once reported, it sticks.
- */
+/** Structural: any untrusted source in context sends privileged actions to a human. */
 export class TaintAdvisor implements ActionAdvisor {
   readonly name = TAINT_ADVISOR;
 
@@ -86,7 +82,7 @@ export class TaintAdvisor implements ActionAdvisor {
     ];
   }
 
-  /** Persisting here is what makes taint stick: later actions in the session need no re-reporting. */
+  /** Persisting here is what makes taint stick for the rest of the session. */
   private async remember(request: ActionRequest): Promise<void> {
     const taint = request.taint;
     if (!request.sessionId || taint === undefined || !taint.tainted) return;

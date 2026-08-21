@@ -1,11 +1,7 @@
 import { DECISION_EFFECT } from '@memnox/core';
 import type { Policy } from './policy';
 
-/**
- * What a pack is about, and the order a catalogue lists them in: what agents
- * do first, then what governs it. A pack belongs to exactly one, because a pack
- * filed under two is a pack that should have been two packs.
- */
+/** A pack belongs to exactly one: filed under two, it should have been two packs. */
 export const POLICY_SURFACES = [
   {
     id: 'coding-agents',
@@ -88,11 +84,7 @@ export const POLICY_SURFACES = [
 
 export type PolicySurface = (typeof POLICY_SURFACES)[number]['id'];
 
-/**
- * How far a pack has been taken. `stable` enforces sensible defaults the day it
- * is installed; `beta` is real but narrower, or wants a look before it is
- * trusted with the whole surface it names.
- */
+/** `stable` enforces on install; `beta` is narrower or wants a look first. */
 export const PACK_MATURITY = {
   STABLE: 'stable',
   BETA: 'beta',
@@ -100,12 +92,7 @@ export const PACK_MATURITY = {
 
 export type PackMaturity = (typeof PACK_MATURITY)[keyof typeof PACK_MATURITY];
 
-/**
- * What the pack still needs before it does anything, stated by the pack rather
- * than guessed at by whatever is drawing it. `edit` ships example lists that
- * are placeholders for your own; `classification` stays inert until requests
- * carry a data classification, so installing it changes nothing on its own.
- */
+/** Stated by the pack, so whatever draws it never guesses what it still needs. */
 export const PACK_CAVEAT = {
   EDIT: 'edit',
   CLASSIFICATION: 'classification',
@@ -118,30 +105,18 @@ export interface PolicyPack {
   /** The title a person reads. `name` stays the id every install path keys on. */
   label: string;
   surface: PolicySurface;
-  /**
-   * Semver over the pack's rules. It moves when the rules do, which is what
-   * lets a control plane tell an installation that has fallen behind from one
-   * that is current.
-   */
+  /** Moves when the rules do, so a control plane can spot a stale installation. */
   version: string;
   maturity: PackMaturity;
   description: string;
   /** Absent means the pack enforces as shipped. */
   caveat?: PackCaveat;
-  /**
-   * Covers a broad surface most teams want governed on day one. A catalogue
-   * leads with these; it is a starting order, not a ranking of importance.
-   */
+  /** A starting order for a catalogue, not a ranking of importance. */
   recommended?: boolean;
   policies: Policy[];
 }
 
-/**
- * Reusable starting points, each one thing a team can turn on without writing
- * rules from scratch. Deliberately conservative: a pack that blocks legitimate
- * work gets uninstalled, so packs escalate to a human far more often than they
- * block outright.
- */
+/** Conservative by design: a pack that blocks legitimate work gets uninstalled. */
 export const POLICY_PACKS: readonly PolicyPack[] = [
   {
     name: 'production-safety',

@@ -4,10 +4,7 @@ import { dirname, join } from 'node:path';
 import { resolveConfig, type RuntimeConfig } from '@memnox/runtime';
 import type { ServerLauncher } from './commands/serve.command';
 
-/**
- * One runtime serves every project on the machine, so where it is and what it
- * wrote are machine-local facts rather than per-repository ones.
- */
+/** One runtime serves every project, so these are machine-local facts, not per-repo. */
 const MEMNOX_DIR = '.memnox';
 const PID_FILE = 'runtime.pid';
 const LOG_FILE = 'runtime.log';
@@ -70,14 +67,7 @@ interface DetachedLauncherDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/**
- * Starts the runtime in the background and returns once it answers, so `setup`
- * hands the prompt back instead of holding the terminal for the life of the
- * server. `memnox serve` keeps its foreground contract — a deployment that
- * expects to own the process must not silently start detaching.
- *
- * Maps exactly the overrides `setup` sets; every one of them has a `serve` flag.
- */
+/** Returns once it answers, so `setup` hands the prompt back instead of holding it. */
 export function createDetachedLauncher(
   homeDir: string,
   deps: DetachedLauncherDeps = {},

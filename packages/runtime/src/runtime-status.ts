@@ -30,17 +30,13 @@ export interface RuntimeStatus {
   policyVersion: string;
   pendingApprovals: number;
   recentDecisions: number;
-  /** Would have been stopped under enforcement — the number that decides whether arming is safe. */
+  /** Would have been stopped under enforcement — what decides whether arming is safe. */
   withheld: number;
   guards: string[];
   recent: RecentDecision[];
 }
 
-/**
- * Assembles what the dashboard and any status caller need in one pass. It lives
- * beside the gateway rather than in a route because tallying withheld decisions
- * is a question about the corpus, not about HTTP.
- */
+/** Beside the gateway, not in a route, so the dashboard and status agree in one pass. */
 export async function readRuntimeStatus(
   gateway: ActionGateway,
   config: RuntimeConfig,

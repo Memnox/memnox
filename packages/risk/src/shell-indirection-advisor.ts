@@ -28,11 +28,7 @@ export const DEFAULT_DESTRUCTIVE_PATTERNS: readonly string[] = [
   'chmod 777 *',
 ];
 
-/**
- * Reads past shell indirection. A destructive command hidden behind bash -c,
- * base64, or a bundled flag is the same command; indirection it cannot resolve
- * is escalated rather than assumed harmless.
- */
+/** Indirection it cannot resolve is escalated, never assumed harmless. */
 export class ShellIndirectionAdvisor implements ActionAdvisor {
   readonly name = SHELL_INDIRECTION_ADVISOR;
 

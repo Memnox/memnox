@@ -32,11 +32,7 @@ export type RegisterDecisionOutcome =
   | { ok: false; reason: 'duplicate'; existingId: string }
   | { ok: false; reason: 'supersede-target-missing' };
 
-/**
- * Application service owning the decision-corpus invariants: restatements
- * converge to one constraint (fingerprint dedup), supersession chains stay
- * intact, and status changes go through here — transports stay thin.
- */
+/** Owns the corpus invariants — dedup, supersession, status — so transports stay thin. */
 export class DecisionRegistry {
   constructor(private readonly store: DecisionStore) {}
 

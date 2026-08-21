@@ -26,11 +26,7 @@ export interface TaintSourceRef {
   reason: string;
 }
 
-/**
- * Whether untrusted content influenced an agent's context. Threaded as an
- * immutable value with the request — never ambient state — and merged
- * monotonically: once tainted, a session stays tainted.
- */
+/** Threaded with the request, never ambient; merges are monotonic, so taint sticks. */
 export interface TaintAssessment {
   tainted: boolean;
   sources: TaintSourceRef[];
@@ -130,7 +126,7 @@ export function isRecordTainted(record: TaintCheckableRecord): boolean {
   return classifySourceTaint(sourceType, factsFrom(metadata)).tainted;
 }
 
-/** Rejects anything that is not a well-formed assessment — a partial parse must not clear taint. */
+/** A partial parse must not clear taint. */
 export function parseTaintAssessment(raw: string): TaintAssessment | null {
   let value: unknown;
   try {

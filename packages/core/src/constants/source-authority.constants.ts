@@ -1,9 +1,4 @@
-/**
- * How much a content source is trusted, 0..1. Used by memory feeders for
- * conflict resolution (higher authority wins, ties broken by recency) and by
- * provenance classification. Configuration for a team should override this
- * table, not fork it.
- */
+/** How much a source is trusted, 0..1; higher wins conflicts, ties break by recency. */
 export const SOURCE_AUTHORITY: Record<string, number> = {
   manual: 1.0,
   github_file: 1.0,

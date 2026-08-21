@@ -12,7 +12,7 @@ import {
   type RuntimeConfig,
 } from '@memnox/runtime';
 
-/** How `serve` brings the runtime up. Injected so tests reach the config mapping and the banner. */
+/** Injected so tests reach the config mapping and the banner. */
 export type ServerLauncher = (
   overrides: Partial<RuntimeConfig>,
 ) => Promise<Pick<MemnoxServer, 'config'>>;

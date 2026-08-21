@@ -15,11 +15,7 @@ export interface PolicySetVersion {
   policyNames: string[];
 }
 
-/**
- * Identifies a rule set by its content, not by a version number someone has to
- * remember to bump. Reordering the file does not change the version; changing any
- * rule does. This is what lets an audit event say which rules produced it.
- */
+/** Content-addressed, so an audit event can name the rules that produced it. */
 export function versionPolicySet(policies: readonly Policy[]): PolicySetVersion {
   const sorted = [...policies].sort((left, right) => left.name.localeCompare(right.name));
   const digest = createHash(HASH_ALGORITHM)

@@ -2,14 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { CloudConfig } from './cloud-connection';
 
-/**
- * Where a locally launched agent finds its credentials.
- *
- * A GUI-launched MCP client inherits no shell environment, so an exported
- * MEMNOX_AGENT_TOKEN never reaches it — the token has to live somewhere on disk
- * it can read on its own. Takes the home directory rather than reading it, so
- * tests write into a scratch directory.
- */
+/** A GUI-launched client inherits no shell environment, so the token lives on disk. */
 export interface AgentConfig {
   token?: string;
   url?: string;

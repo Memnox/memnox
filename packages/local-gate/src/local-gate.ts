@@ -24,15 +24,7 @@ export interface LocalVerdict {
   withheldEffect?: DecisionEffect;
 }
 
-/**
- * Policy evaluated in the process that makes the call, so a verdict on the
- * call's own arguments never requires them to travel. Only rule ids and
- * signals leave the machine.
- *
- * It does not replace the runtime — it runs before it, and the strictest of the
- * two verdicts is what the enforcement point applies. Rate limits are the
- * runtime's alone: a per-process counter is not a limit.
- */
+/** Evaluated where the call is made, so arguments never travel; only ids and signals do. */
 export class LocalGate {
   private readonly engine: PolicyEngine;
 

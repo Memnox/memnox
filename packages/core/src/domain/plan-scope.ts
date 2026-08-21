@@ -38,10 +38,7 @@ export function currentStep(plan: AgentPlan): PlanStep | undefined {
   return plan.steps[plan.current];
 }
 
-/**
- * A step's grant is only what it declared. Advancing is one-way, so a step that
- * has been left cannot be re-entered to reuse its permissions.
- */
+/** Advancing is one-way, so a step left behind cannot be re-entered for its permissions. */
 export function evaluatePlanScope(
   plan: AgentPlan,
   action: string,
@@ -99,10 +96,7 @@ export class InMemoryPlanStore implements PlanStore {
     this.byId.set(plan.id, plan);
   }
 
-  /**
-   * A closed plan still binds its session — otherwise an agent escapes scoping
-   * by closing its own plan. An open plan wins so a new one supersedes the last.
-   */
+  /** A closed plan still binds, or an agent escapes by closing it; an open plan wins. */
   async findBySession(sessionId: string): Promise<AgentPlan | null> {
     let closed: AgentPlan | null = null;
     for (const plan of this.byId.values()) {

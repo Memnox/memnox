@@ -6,15 +6,7 @@ import { resolveProjectId } from '../project-identity';
 
 const LABEL_WIDTH = 9;
 
-/**
- * What a shell learns from the verdict. `memnox check … && deploy` is the
- * obvious way to use this in a pipeline, and it used to run the deploy after a
- * BLOCK because every verdict exited 0.
- *
- * Distinct codes rather than a bare 1: "a human has to decide" and "this will
- * never be allowed" call for different things from a pipeline, and 1 stays
- * reserved for the command itself failing.
- */
+/** `memnox check … && deploy` is the obvious pipeline use, so the exit code carries it. */
 export const EXIT_REQUIRE_APPROVAL = 2;
 export const EXIT_BLOCKED = 3;
 

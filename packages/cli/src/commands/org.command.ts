@@ -26,14 +26,7 @@ export const buildMessageSource: MessageSourceFactory = (source, token) => {
   return new SlackSource({ token });
 };
 
-/**
- * What the organization states about itself, and who has delegated what.
- *
- * `import` is the one command here that costs money and calls a model, and it
- * is deliberately the one that decides nothing: everything it writes lands as a
- * candidate for a person to confirm. The two planes of the product are visible
- * in this file — an expensive offline read, and a free deterministic one.
- */
+/** `import` is the one command here that costs money and reads a model. */
 export function registerOrgCommand(
   program: Command,
   context: CliContext,

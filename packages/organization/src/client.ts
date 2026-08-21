@@ -37,19 +37,7 @@ export class MemnoxOrganizationError extends Error {
   }
 }
 
-/**
- * Ask the organization before you act.
- *
- * This client is the whole integration. It does not touch your tools, does not
- * execute anything, and does not need to know how you reach Slack or Stripe.
- * You keep execution; it answers whether, who, and what you are allowed to
- * know.
- *
- * It is also deliberately small. The organization is a service, and everything
- * that makes an answer worth trusting, the provenance of a fact, the ceiling on
- * an authority, who confirmed what, lives there rather than in a package that
- * every integrator would then be running a different version of.
- */
+/** Ask before you act: this touches no tools and executes nothing. */
 export class MemnoxOrganization {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -61,12 +49,7 @@ export class MemnoxOrganization {
     this.fetchImpl = options.fetch ?? globalThis.fetch;
   }
 
-  /**
-   * The one call. Send who you are, what you intend, and what you rely on.
-   *
-   * The answer is a decision plus the context you are entitled to, so a caller
-   * that acts on `allow` and stops on anything else is already correct.
-   */
+  /** The one call: who you are, what you intend, and what you rely on. */
   evaluate(request: EvaluateRequest): Promise<EvaluateResponse> {
     return this.post<EvaluateResponse>('/evaluate', request);
   }
@@ -79,14 +62,7 @@ export class MemnoxOrganization {
     });
   }
 
-  /**
-   * Who owns something, as the organization recorded it.
-   *
-   * Ownership here is a fact the company produced: somebody owns a decision,
-   * and that decision governs what you asked about. An empty answer means
-   * nobody has been recorded as owning it, which is a reason to ask rather than
-   * to proceed.
-   */
+  /** Ownership is a fact the company produced, not an inference. */
   owner(subject: string): Promise<Ownership> {
     return this.post<Ownership>('/ask/owner', { subject });
   }
@@ -96,51 +72,22 @@ export class MemnoxOrganization {
     return this.post<Decided[]>('/ask/decisions', { topic });
   }
 
-  /**
-   * The rules that apply to a subject.
-   *
-   * Only verified policies come back. A policy nobody has confirmed is a
-   * belief, and this never returns one, so anything here is something the
-   * organization will hold you to.
-   */
+  /** Only verified policies: an unconfirmed one is a belief, and this never returns it. */
   policy(subject: string): Promise<Stated[]> {
     return this.rpc<Stated[]>('get_policy', { subject });
   }
 
-  /**
-   * What the organization states about one person: what they may authorize and
-   * up to what, what they own, how they stand to others.
-   *
-   * Worth calling before naming somebody as an approver. An answer with no
-   * authority in it means they cannot sign this off, whatever an org chart
-   * elsewhere suggests.
-   */
+  /** Worth calling before naming somebody as an approver. */
   person(address: string): Promise<Stated[]> {
     return this.rpc<Stated[]>('get_person', { person: address });
   }
 
-  /**
-   * Which agents this company runs for an action, tightest remit first.
-   *
-   * The answer to "this is not what I am for". An agent handed work outside its
-   * own remit can pass it sideways instead of escalating to a person who will
-   * only hand it to the agent that does this routinely. Never includes you, and
-   * an empty answer means nobody is recorded for it — a reason to involve a
-   * person, not to attempt it anyway.
-   */
+  /** The answer to "this is not what I am for", tightest remit first. */
   agentsFor(action: string): Promise<AgentCandidate[]> {
     return this.post<AgentCandidate[]>('/ask/agents', { action });
   }
 
-  /**
-   * How the same action was routed the last few times somebody asked.
-   *
-   * The organization's behaviour rather than its statements: `decisions` is
-   * what the company wrote down, this is what actually kept happening. A run of
-   * escalations to one person is a rule nobody wrote, and a run of allows is
-   * evidence the action is genuinely routine. Never carries what any of those
-   * answers contained — only the verb, who it went to, and the stated intent.
-   */
+  /** The organization's behaviour rather than its statements. */
   precedent(action: string, limit?: number): Promise<Precedent[]> {
     return this.post<Precedent[]>('/ask/precedent', {
       action,
@@ -148,23 +95,12 @@ export class MemnoxOrganization {
     });
   }
 
-  /**
-   * Whether one fact may be repeated to one person.
-   *
-   * Answered against the recipient's clearance, never yours. The refusal
-   * reason is safe to log and must not be repeated to the recipient either.
-   */
+  /** Answered against the recipient's clearance, never yours. */
   canShare(factId: string, recipient: string): Promise<ShareResponse> {
     return this.post<ShareResponse>('/ask/can-share', { factId, recipient });
   }
 
-  /**
-   * Evaluate, and throw unless the answer is a plain allow.
-   *
-   * For the call site that has nothing sensible to do with an escalation and
-   * would otherwise write `if (!allowed) throw` slightly differently each time.
-   * Anything that can handle an approval should use `evaluate` instead.
-   */
+  /** For a call site that has nothing sensible to do with an escalation. */
   async require(request: EvaluateRequest): Promise<EvaluateResponse> {
     const answer = await this.evaluate(request);
     if (answer.decision !== DECISION.ALLOW) {
@@ -175,14 +111,7 @@ export class MemnoxOrganization {
     return answer;
   }
 
-  /**
-   * A read that only the protocol endpoint exposes.
-   *
-   * Two of the questions an agent asks live behind MCP rather than behind a
-   * route of their own, so this speaks JSON-RPC to reach them. Hidden here
-   * rather than in the caller: which transport answers a question is Memnox's
-   * business, not the integrator's.
-   */
+  /** Two questions live behind MCP rather than a route, so this speaks JSON-RPC. */
   private async rpc<T>(tool: string, args: Record<string, unknown>): Promise<T> {
     const answer = await this.post<{
       result?: {

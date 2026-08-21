@@ -24,18 +24,11 @@ export interface AgentIdentity {
   stats: AgentActionStats;
   /** Action-name patterns this agent may attempt; unset or empty = unrestricted. */
   capabilities?: string[];
-  /**
-   * The person who answers for this agent, §20. An agent nobody owns is the
-   * thing the registry exists to make visible, so this stays optional and is
-   * reported rather than defaulted.
-   */
+  /** Who answers for this agent, §20 — optional and reported, never defaulted. */
   owner?: string;
   /** The team it works for, §20. Scopes it in the organizational graph. */
   team?: string;
-  /**
-   * How much damage it could do, §20. Declared at registration, not derived from
-   * `stats`: the trust score says how it has behaved, this says what it can reach.
-   */
+  /** What it can reach, §20 — where the trust score says how it has behaved. */
   risk?: RiskLevel;
   /** Last credential rotation, when one has happened. */
   rotatedAt?: string;

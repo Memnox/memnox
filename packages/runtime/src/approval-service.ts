@@ -88,11 +88,7 @@ export const APPROVAL_CAP_REACHED = 'approval_cap_reached';
 /** Beyond this many open holds for one agent, something is wrong with the rules. */
 export const DEFAULT_MAX_PENDING_PER_AGENT = 10;
 
-/**
- * The approval lifecycle: raising one, reading consent, resolving it against a
- * quorum, and breaking the glass. Deciding what to *do* with consent belongs to
- * the gateway; deciding whether consent exists belongs here.
- */
+/** Raising, consent, quorum, break-glass. What to do with consent is the gateway's. */
 export class ApprovalService {
   private readonly metrics: MetricsRegistry;
   private readonly logger: Logger;
@@ -106,21 +102,13 @@ export class ApprovalService {
     return this.deps.approvalStore.findById(id);
   }
 
-  /**
-   * Open holds only. Lapsed ones are filtered here rather than in the stores:
-   * an adapter is storage, and flowSummary still has to see a lapsed record to
-   * report it. Adapters that filtered on their own disagreed with each other.
-   */
+  /** Lapsed ones are filtered here, not in the stores: an adapter is only storage. */
   async pending(now: Date = new Date()): Promise<Approval[]> {
     const open = await this.deps.approvalStore.listByStatus(APPROVAL_STATUS.PENDING);
     return open.filter((approval) => !isApprovalExpired(approval, now));
   }
 
-  /**
-   * Where approvals stall. The store lists by status rather than in bulk, so the
-   * corpus is assembled from the four statuses instead of widening the port for
-   * a read that composes from what every adapter already implements.
-   */
+  /** Assembled from the four statuses because the store lists by status, not in bulk. */
   async flowSummary(now: Date = new Date()): Promise<ApprovalFlowSummary> {
     const byStatus = await Promise.all(
       Object.values(APPROVAL_STATUS).map((status) =>
@@ -130,11 +118,7 @@ export class ApprovalService {
     return summarizeApprovalFlow(byStatus.flat(), now);
   }
 
-  /**
-   * Reuses the open approval for this exact action rather than raising a second
-   * one, and refuses past the per-agent ceiling: an approver facing dozens of
-   * holds stops reading them, which is worse than a clear refusal.
-   */
+  /** Reuses the open approval rather than raising a second, and refuses past the cap. */
   async requestFor(
     agent: AgentIdentity,
     request: ActionRequest,
@@ -183,15 +167,7 @@ export class ApprovalService {
     return approval;
   }
 
-  /**
-   * Spends the grant a human already gave for this exact action, if there is
-   * one. Returns null when there is not.
-   *
-   * This is what lets an MCP client or the firewall be unblocked at all:
-   * both build their request from a tool call and have nowhere to carry an
-   * approval id, so without a fingerprint lookup an approved action re-raises a
-   * fresh hold on every retry and never proceeds.
-   */
+  /** Spends a grant already given; null when there is none. */
   async claimGrantFor(
     agent: AgentIdentity,
     request: ActionRequest,
@@ -330,10 +306,7 @@ export class ApprovalService {
     return { outcome: OVERRIDE_OUTCOME.OVERRIDDEN, approval: updated };
   }
 
-  /**
-   * A break-glass override, or its refusal — both are security events, and both
-   * carry critical weight whatever the action's own risk was.
-   */
+  /** Break-glass and its refusal are both security events, both critical. */
   private async auditOverride(
     approval: Approval,
     effect: typeof DECISION_EFFECT.ALLOW | typeof DECISION_EFFECT.BLOCK,
@@ -342,16 +315,7 @@ export class ApprovalService {
     await this.auditResolution(approval, effect, reason, RISK_LEVEL.CRITICAL);
   }
 
-  /**
-   * Who authorized this, on the record.
-   *
-   * Only break-glass used to be audited, so an ordinary grant left no trace in
-   * the hash chain at all — the approver's name lived in `approvals.json` and
-   * nowhere else, and the trail showed a decision going from
-   * `require_approval` to `allow` with nothing in between to say a human had
-   * agreed. Consent is the most consequential act in the system; it belongs in
-   * the same evidence as the decision it unblocks.
-   */
+  /** Only break-glass used to be audited, so an ordinary grant left no trace. */
   private async auditResolution(
     approval: Approval,
     effect: DecisionEffect,

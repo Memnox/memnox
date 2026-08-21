@@ -11,11 +11,7 @@ import {
 } from '@memnox/core';
 import { buildServer, type MemnoxServer } from '../src/server';
 
-/**
- * Testimony is still testimony about something. An outcome naming a decision
- * the runtime never made is a claim with no verdict behind it, and a success
- * reported against a block is an agent saying it went ahead anyway.
- */
+/** An outcome naming a decision the runtime never made is testimony about nothing. */
 describe('an outcome report, against the decision it names', () => {
   let dataDir: string;
   let server: MemnoxServer;

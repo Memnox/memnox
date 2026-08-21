@@ -33,13 +33,7 @@ interface McpInstallReport {
   installed: boolean;
 }
 
-/**
- * Registers Memnox as an MCP server in a client's own config.
- *
- * User-level, never project-level: a committed MCP config would hand every
- * clone of the repo a server it did not choose — the same reason the editor
- * hooks install into $HOME.
- */
+/** User-level, never project-level: a committed MCP config would hijack a teammate's. */
 export class McpInstaller {
   constructor(private readonly homeDir: string) {}
 

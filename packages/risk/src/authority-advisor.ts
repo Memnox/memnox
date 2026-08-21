@@ -12,14 +12,7 @@ import {
 
 export const AUTHORITY_ADVISOR = 'authority-guard';
 
-/**
- * Puts delegated authority in the decision path.
- *
- * An advisor rather than a policy rule because the two have different
- * lifecycles: policy is a file a team reviews, a grant is a fact about one
- * person that changes when they delegate something or a grant runs out. Both
- * escalate, and neither can loosen what the other decided.
- */
+/** An advisor, not a rule: policy is a reviewed file, a grant is one person's fact. */
 export class AuthorityAdvisor implements ActionAdvisor {
   readonly name = AUTHORITY_ADVISOR;
 

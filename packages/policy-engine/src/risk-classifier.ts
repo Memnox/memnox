@@ -11,11 +11,7 @@ import {
 /** Actions split on both "." and "_" so "mcp.delete_repo" yields [mcp, delete, repo]. */
 const ACTION_SEGMENT_SEPARATOR = /[._]/;
 
-/**
- * Deterministic baseline risk from the action's verb segments and environment.
- * Destructive beats mutating beats read-only when several segments match.
- * This is intentionally rule-based — risk must be explainable and reproducible.
- */
+/** Rule-based on purpose: risk must be explainable and reproducible. */
 export function classifyRisk(action: string, environment?: string): RiskLevel {
   const segments = action.toLowerCase().split(ACTION_SEGMENT_SEPARATOR);
   let level: RiskLevel = RISK_LEVEL.MEDIUM;

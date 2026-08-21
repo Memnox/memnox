@@ -5,11 +5,7 @@ import {
   type RiskLevel,
 } from '@memnox/core';
 
-/**
- * Terminal styling as an injected value rather than an ambient check. Colour is
- * decoration, so `plainStyle` is the identity everywhere and piped output stays
- * byte-identical to what a script already parses.
- */
+/** Injected, not an ambient check; `plainStyle` is the identity everywhere else. */
 export interface Style {
   bold(text: string): string;
   dim(text: string): string;
@@ -86,11 +82,7 @@ export const ansiStyle: Style = {
   },
 };
 
-/**
- * Honours the NO_COLOR convention and an explicit FORCE_COLOR, then falls back
- * to whether anything is actually attached to the stream. Takes both as
- * arguments so the decision is testable without touching the process.
- */
+/** NO_COLOR, then FORCE_COLOR, then whether anything is attached to the stream. */
 export function resolveStyle(env: NodeJS.ProcessEnv, isTty: boolean): Style {
   if (env['NO_COLOR'] !== undefined && env['NO_COLOR'] !== '') return plainStyle;
   if (env['FORCE_COLOR'] !== undefined && env['FORCE_COLOR'] !== '0') return ansiStyle;

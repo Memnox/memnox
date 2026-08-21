@@ -66,12 +66,7 @@ export interface PolicyApplyResult {
 export interface PolicyReloadResult {
   reloaded: boolean;
   version: string;
-  /**
-   * Absolute paths the runtime re-read. A caller that just wrote a rule file
-   * checks this rather than assuming a reload picked it up — a runtime started
-   * without a registry never looks at one, and reports a successful reload of
-   * everything else. Optional: a runtime older than this field says nothing.
-   */
+  /** A caller that just wrote a rule file checks this rather than assuming a reload. */
   sources?: string[];
 }
 

@@ -1,11 +1,4 @@
-/**
- * Distributed coordination port. The two lookalike methods have deliberately
- * OPPOSITE outage semantics (legacy-proven):
- * - acquireLock fails CLOSED (false when the backend is down — skip the run,
- *   a duplicate cron is worse than a missed one)
- * - checkAndSetCooldown fails OPEN (true when down — a missed notification is
- *   worse than a repeated one)
- */
+/** Coordination port: acquireLock fails closed, checkAndSetCooldown fails open. */
 export interface LockService {
   /** SET NX EX. True = lock acquired, proceed. */
   acquireLock(key: string, ttlSeconds: number): Promise<boolean>;
@@ -16,10 +9,7 @@ export interface LockService {
   increment(key: string, ttlSeconds: number): Promise<number>;
 }
 
-/**
- * Single-process implementation — correct semantics without a backend, so
- * every deployment starts with locking and upgrades to Redis when it scales.
- */
+/** Single-process: correct semantics with no backend, upgraded to Redis when it scales. */
 export class InProcessLockService implements LockService {
   private readonly entries = new Map<string, { value: number; expiresAt: number }>();
 

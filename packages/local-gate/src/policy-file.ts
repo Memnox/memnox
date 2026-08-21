@@ -25,11 +25,7 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
   return document.policies.map((policy) => ({ ...policy, project: document.project }));
 }
 
-/**
- * Loads every configured rule source into one set. A project spanning several
- * repositories contributes one file per repository; they compose here, and the
- * engine's most-restrictive-wins does the rest.
- */
+/** One file per repository; they compose under most-restrictive-wins. */
 export async function loadPolicyFiles(filePaths: readonly string[]): Promise<Policy[]> {
   const policies: Policy[] = [];
   for (const filePath of filePaths) {
@@ -42,12 +38,7 @@ interface PolicyRegistry {
   files?: string[];
 }
 
-/**
- * The registry is how a second repository's rules reach a runtime that is
- * already running: `memnox setup` appends the path, then asks for a reload.
- * Paths only — rule content never travels over the API, so every rule stays
- * reviewable in the diff of the repository that owns it.
- */
+/** Paths only — rule content never travels, so a rule stays in its own repo's diff. */
 export async function readPolicyRegistry(filePath: string): Promise<string[]> {
   let raw: string;
   try {
@@ -71,15 +62,7 @@ function isMissingFile(err: unknown): boolean {
   );
 }
 
-/**
- * The whole document rather than just its rules. An editor that writes a file
- * back needs `project` as the file declared it — `loadPoliciesFromFile` folds
- * that key into every rule, and saving those rules would turn one file-level
- * declaration into a per-rule one.
- *
- * Null means there is no file yet, which is the first-run case for an editor
- * rather than an error.
- */
+/** The whole document: an editor needs `project` as declared, not folded into each rule. */
 export async function readPolicyDocumentFile(
   filePath: string,
 ): Promise<PolicyDocument | null> {
@@ -94,10 +77,7 @@ export async function readPolicyDocumentFile(
   return validatePolicyDocument(parse(raw));
 }
 
-/**
- * Writes via a temp file and rename so a crash mid-write cannot leave the
- * runtime with a truncated rule set on its next start.
- */
+/** Temp file and rename, so a crash mid-write cannot truncate the rule set. */
 export async function writePolicyDocumentFile(
   filePath: string,
   document: PolicyDocument,

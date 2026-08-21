@@ -1,10 +1,4 @@
-/**
- * What an organization can say about itself.
- *
- * Five kinds and no more: everything a company states that bears on whether an
- * action should happen is one of these. A sixth kind would be a sign the model
- * has started describing the company rather than governing it.
- */
+/** Five kinds and no more; everything bearing on an action is one of them. */
 export const STATED_KIND = {
   /** A course the company committed to. */
   DECISION: 'decision',
@@ -20,13 +14,7 @@ export const STATED_KIND = {
 
 export type StatedKind = (typeof STATED_KIND)[keyof typeof STATED_KIND];
 
-/**
- * How a statement got here, which is what decides whether it may bind.
- *
- * `observed` is a machine's reading of a conversation and never binds on its
- * own. The distinction is the whole reason an extractor can run against Slack
- * without an LLM ever reaching the decision path.
- */
+/** How it got here decides whether it may bind; `observed` never binds alone. */
 export const STATED_PROVENANCE = {
   /** Read out of a source by a machine. Always starts as a candidate. */
   OBSERVED: 'observed',
@@ -51,13 +39,7 @@ export const STATED_STATUS = {
 
 export type StatedStatus = (typeof STATED_STATUS)[keyof typeof STATED_STATUS];
 
-/**
- * What a statement is, as opposed to who may read it (`clearance`).
- *
- * VISION.md §31 wants both: a label survives a reader list being widened, and it
- * is what lets a retention rule or an export filter act on a statement without
- * first resolving every principal that could see it.
- */
+/** What a statement is, not who may read it — §31 wants both, and a label survives. */
 export const STATED_CLASSIFICATION = {
   PUBLIC: 'public',
   INTERNAL: 'internal',
@@ -75,13 +57,7 @@ export const DEFAULT_CLASSIFICATION: StatedClassification =
 /** A declared or authoritative claim is not a guess, so it is recorded as certain. */
 export const CERTAIN_CONFIDENCE = 1;
 
-/**
- * The six answers an organization can give.
- *
- * A gate has two and that is the whole reason this vocabulary exists: "no" and
- * "not by you" are different answers, and so are "ask somebody" and "ask
- * somebody in particular".
- */
+/** A gate has two answers: "no" and "not by you" differ, which is why there are six. */
 export const ORG_DECISION = {
   /** Proceed. */
   ALLOW: 'allow',
@@ -108,14 +84,7 @@ export const HELD_DECISIONS: readonly OrgDecision[] = [
   ORG_DECISION.CLARIFY,
 ];
 
-/**
- * The workspace a single-tenant deployment operates in.
- *
- * Every organizational read is workspace-scoped, so a runtime that has no
- * tenants still needs one name to scope them to. An agent with no `orgId`
- * belongs to this one, which is what keeps a local install from having to
- * declare a tenant before it can record anything.
- */
+/** Every organizational read is workspace-scoped, so a single tenant still needs one. */
 export const DEFAULT_WORKSPACE = 'default';
 
 /** Signals an authority verdict contributes to the audit trail. */

@@ -1,15 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/**
- * Picks the policy packs a repository actually needs by looking at what is in
- * it. Deterministic and offline: file existence and manifest dependencies only,
- * no model and no network, so the same repository always scaffolds the same
- * rules.
- *
- * Detection only ever *adds* packs. Getting a signal wrong scaffolds a rule the
- * team can delete; missing one scaffolds nothing, which is the status quo.
- */
+/** Deterministic and offline: file existence only, never a model. */
 interface DetectedStack {
   /** What was found, in the repository's own terms — shown so a choice can be argued with. */
   signals: string[];

@@ -8,11 +8,7 @@ export interface SimulationCase {
   target?: string;
   environment?: string;
   agentName?: string;
-  /**
-   * Without this a project-scoped rule matches nothing, and the comparison
-   * reports a confident "no change" for exactly the rule sets `memnox setup
-   * --project` writes.
-   */
+  /** Without it a project-scoped rule matches nothing and reports a false "no change". */
   projectId?: string;
 }
 
@@ -75,13 +71,7 @@ export function simulate(
   });
 }
 
-/**
- * Answers the question that makes a policy change safe to ship: against these
- * actions, what would the candidate rules decide differently?
- *
- * Pair it with real audit history and the answer stops being hypothetical —
- * "this would have blocked 3 of your last 1000 actions, here they are".
- */
+/** Against real history, "would this have blocked anything?" stops being hypothetical. */
 export function comparePolicySets(
   baseline: PolicyEngine,
   candidate: PolicyEngine,
