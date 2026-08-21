@@ -10,11 +10,7 @@ export interface AgentJwtConfig {
   issuer?: string;
 }
 
-/**
- * Service-account style agent auth: an identity provider issues short-lived
- * HS256 JWTs whose `sub` is the registered agent ID. Verified locally —
- * no network in the decision path.
- */
+/** Short-lived HS256 JWTs whose `sub` is the registered agent id. */
 export function verifyAgentJwt(token: string, config: AgentJwtConfig): string | null {
   const parts = token.split('.');
   if (parts.length !== JWT_PARTS) return null;
@@ -39,7 +35,11 @@ export function verifyAgentJwt(token: string, config: AgentJwtConfig): string | 
   if (header.alg !== JWT_ALG) return null;
   if (typeof payload.sub !== 'string' || payload.sub.length === 0) return null;
   if (config.issuer && payload.iss !== config.issuer) return null;
-  if (typeof payload.exp === 'number' && payload.exp * 1_000 <= Date.now()) return null;
+  /* Required, not optional. Treating an absent `exp` as "no expiry" turned a
+     service-account token meant to live minutes into a permanent credential,
+     and an issuer that simply omits the claim would never have been noticed. */
+  if (typeof payload.exp !== 'number') return null;
+  if (payload.exp * 1_000 <= Date.now()) return null;
   return payload.sub;
 }
 

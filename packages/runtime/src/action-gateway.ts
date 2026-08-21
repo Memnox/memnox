@@ -38,6 +38,7 @@ import {
   EFFECT_PRECEDENCE,
   EMPTY_AGENT_STATS,
   ENFORCEMENT_MODE,
+  normalizeActionRequest,
   ENFORCEMENT_REASON,
   ENFORCEMENT_SET_ACTION,
   applyEnforcementMode,
@@ -129,10 +130,7 @@ function stricter(
   return EFFECT_PRECEDENCE[right] > EFFECT_PRECEDENCE[left] ? right : left;
 }
 
-/**
- * A failed rollback is the worst case: the action ran, could not be verified, and
- * could not be undone, so nobody knows what state the system is in.
- */
+/** A failed rollback is the worst case: nobody knows what state the system is in. */
 function outcomeRiskLevel(report: ExecutionOutcomeReport): RiskLevel {
   if (report.rollbackError) return RISK_LEVEL.CRITICAL;
   if (UNVERIFIED_EXECUTION_STATUSES.includes(report.status)) {
@@ -184,10 +182,7 @@ export interface ActionGatewayDeps {
   enforcement?: EnvironmentModes;
   /** Open holds one agent may accumulate before further ones are refused. */
   maxPendingPerAgent?: number;
-  /**
-   * Counts per-rule rate limits. Shared with the HTTP limiter so one Redis-backed
-   * counter serves every process; without it, `rateLimit` rules are inert.
-   */
+  /** Shared with the HTTP limiter; without it `rateLimit` rules are inert. */
   rateLimiter?: FixedWindowRateLimiter;
 }
 
@@ -204,10 +199,7 @@ interface Outcome {
   withheldEffect?: DecisionEffect;
 }
 
-/**
- * The deterministic decision pipeline: identity → policy → advisors → approval → audit.
- * Every request produces exactly one audited event — allowed or not.
- */
+/** identity → policy → advisors → approval → audit; exactly one event per request. */
 export class ActionGateway {
   private readonly advisors: ActionAdvisor[];
   private readonly logger: Logger;
@@ -284,14 +276,7 @@ export class ActionGateway {
     return this.deps.enforcement ?? {};
   }
 
-  /**
-   * Swaps the modes at runtime. Resolved per request, so this takes effect on
-   * the next decision without a restart or an engine rebuild.
-   *
-   * Audited: weakening governance is the most consequential thing anybody can
-   * do here, and a chain that records every blocked action but not the moment
-   * blocking was turned off proves the wrong thing.
-   */
+  /** Resolved per request, so a mode change lands on the next decision, not a restart. */
   async useEnforcement(modes: EnvironmentModes): Promise<void> {
     const before = this.deps.enforcement ?? {};
     this.deps.enforcement = modes;
@@ -316,18 +301,7 @@ export class ActionGateway {
     return this.authorizeAgent(await this.resolveAgent(agentToken), request);
   }
 
-  /**
-   * Records what an allowed action actually did. This is the caller's testimony,
-   * not a verdict — the runtime cannot observe the outside world, so it stores
-   * the claim and lets the audit trail show a decision that was never followed
-   * up.
-   *
-   * What it will not do is store testimony about a decision it never made. An
-   * unknown id is a claim with no verdict behind it, and a success reported
-   * against a verdict that was not `allow` is an agent saying it acted anyway —
-   * the loudest thing a governance runtime can hear, so it is recorded as a
-   * defiance rather than filed as an ordinary outcome.
-   */
+  /** The caller's testimony, not a verdict — the runtime cannot observe the world. */
   async recordOutcome(
     agentToken: string,
     report: ExecutionOutcomeReport,
@@ -372,11 +346,7 @@ export class ActionGateway {
     return defied ? OUTCOME_DEFIED : OUTCOME_RECORDED;
   }
 
-  /**
-   * Appends metered LLM usage. Deliberately not policy-evaluated: recording is
-   * bookkeeping, and blocking the record once a budget is spent would freeze the
-   * ledger so the cap could never fire again.
-   */
+  /** Bookkeeping, not a decision: blocking the record would freeze the ledger. */
   async recordSpend(
     agentToken: string,
     tokens: number,
@@ -405,11 +375,7 @@ export class ActionGateway {
     return true;
   }
 
-  /**
-   * What governs this action, asked before attempting it. Same pipeline as
-   * `assess`, rendered as the constraints themselves rather than a verdict — so
-   * an agent can read the rules up front instead of discovering them by refusal.
-   */
+  /** Same pipeline as `assess`, rendered as constraints rather than a verdict. */
   async brief(agentToken: string, request: ActionRequest): Promise<ActionBriefing> {
     return buildActionBriefing(request, await this.assess(agentToken, request));
   }
@@ -471,8 +437,13 @@ export class ActionGateway {
   /** Pipeline entry for already-authenticated identities (e.g. mTLS client certs). */
   async authorizeAgent(
     agent: AgentIdentity | null,
-    request: ActionRequest,
+    incoming: ActionRequest,
   ): Promise<Decision> {
+    /* Every decision funnels through here, so this is the one place a request
+       becomes canonical. Before it, `database.delete ` missed a rule naming
+       `database.delete` and a block answered allow. The audit records the
+       normalized form, because that is the request that was ruled on. */
+    const request = normalizeActionRequest(incoming);
     if (!agent) {
       return this.finalize(null, request, {
         effect: DECISION_EFFECT.BLOCK,
@@ -552,9 +523,7 @@ export class ActionGateway {
     const withheldEffect = stricter(applied.withheldEffect, evaluation.withheldEffect);
 
     if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
-      // Claimed only here, so the extra lookup stays off the allow path. No veto
-      // check is needed: a non-overridable advisory escalates to block, and
-      // combineEffects would have made that the verdict instead of this branch.
+      // Claimed only here, so the extra lookup stays off the allow path.
       const granted = await this.approvals.claimGrantFor(agent, request);
       if (granted) {
         return this.finalize(agent, request, {
@@ -614,14 +583,7 @@ export class ActionGateway {
     });
   }
 
-  /**
-   * A ceiling on how often a rule may fire. Only an action that is actually
-   * proceeding consumes a slot — a blocked one never happened, and counting it
-   * would let refused calls exhaust the budget of the calls that succeed.
-   *
-   * A limiter that cannot answer does not block: the counter is a budget, not
-   * an identity check, and an unreachable Redis must not stop every agent.
-   */
+  /** Only an action that proceeds consumes a slot; a blocked one never held one. */
   private async applyRateLimits(
     agent: AgentIdentity,
     matched: MatchedPolicy[],
@@ -689,7 +651,7 @@ export class ActionGateway {
     }, policyEffect);
   }
 
-  /** An advisor failure means no escalation — it must never turn into a crash or an allow-nothing. */
+  /** An advisor failure means no escalation, never a crash. */
   private async collectAdvisories(
     request: ActionRequest,
     agent: AgentIdentity,

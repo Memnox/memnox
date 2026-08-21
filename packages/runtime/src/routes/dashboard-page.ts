@@ -4,17 +4,7 @@ import { MEMNOX_MARK_DATA_URI } from './dashboard-mark';
 import { DASHBOARD_SCRIPT } from './dashboard-script';
 import { DASHBOARD_CSS } from './dashboard-styles';
 
-/**
- * The console, rendered as one self-contained document. Pure: it takes a status
- * and returns HTML, so the route stays shape-only and a test can assert on
- * markup without binding a port.
- *
- * The first paint is server-rendered from the status the route already read, so
- * the page is readable before a single script runs. Everything after that — and
- * everything a person can *do* here — goes through the same JSON endpoints the
- * CLI uses, which is what keeps this a client of the runtime rather than a
- * second way to govern.
- */
+/** Pure: status in, HTML out, so the route stays a route. */
 
 /** Seconds between polls. Long enough to read a row, short enough to feel live. */
 const REFRESH_SECONDS = 5;
@@ -37,15 +27,8 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * The page a caller sees when the runtime has keys and the browser has none.
- *
- * A browser cannot send a bearer header on a navigation, so guarding `/` the way
- * every other read is guarded meant a keyed runtime served `{"error":
- * "unauthorized"}` and nothing else. This carries no data — it exists to collect
- * a token, after which the guarded JSON endpoints do all the answering.
- */
-export function renderDashboardGate(): string {
+/** A browser cannot send a bearer header on a plain navigation. */
+export function renderDashboardGate(nonce: string): string {
   return page(
     'Memnox — sign in',
     `<div class="gate">
@@ -64,10 +47,11 @@ export function renderDashboardGate(): string {
     <div class="actions"><button class="primary" type="submit">Open</button></div>
   </form>
 </div>`,
+    nonce,
   );
 }
 
-export function renderDashboard(status: RuntimeStatus): string {
+export function renderDashboard(status: RuntimeStatus, nonce: string): string {
   const observing = status.enforcement !== ENFORCEMENT_MODE.ENFORCE;
   return page(
     `Memnox — ${escapeHtml(status.enforcement)}`,
@@ -76,7 +60,7 @@ export function renderDashboard(status: RuntimeStatus): string {
     ${lockup('runtime')}
     <span id="mode" class="mode ${observing ? 'mode-observing' : 'mode-enforcing'}">${observing ? 'observing' : 'enforcing'}</span>
     <span class="spacer"></span>
-    <select id="enforcement" aria-label="Enforcement mode" style="width:auto">
+    <select id="enforcement" class="auto-width" aria-label="Enforcement mode">
       ${enforcementOptions(status.enforcement)}
     </select>
     <button id="live" class="live" type="button" data-paused="false" title="Pause or resume polling"><span>live</span></button>
@@ -125,10 +109,11 @@ export function renderDashboard(status: RuntimeStatus): string {
     <div class="actions"><button class="primary" type="submit">Open</button></div>
   </form>
 </div>`,
+    nonce,
   );
 }
 
-function page(title: string, body: string): string {
+function page(title: string, body: string, nonce: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -136,20 +121,17 @@ function page(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${title}</title>
-<style>${DASHBOARD_CSS}</style>
+<style nonce="${escapeHtml(nonce)}">${DASHBOARD_CSS}</style>
 </head>
 <body>
 ${body}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script>${DASHBOARD_SCRIPT}</script>
+<script nonce="${escapeHtml(nonce)}">${DASHBOARD_SCRIPT}</script>
 </body>
 </html>`;
 }
 
-/**
- * Mark plus wordtext plus a mono suffix — the lockup from @memnox/ui, so the
- * runtime's one page is recognisably the same product as the console.
- */
+/** The @memnox/ui lockup, so this page is recognisably the same product. */
 function lockup(suffix: string): string {
   return `<span class="lockup">
       <img src="${MEMNOX_MARK_DATA_URI}" alt="" aria-hidden="true">
@@ -200,7 +182,7 @@ function activityPanel(status: RuntimeStatus): string {
 function approvalsPanel(): string {
   return `<section class="pane stack" data-panel="approvals" hidden>
     <h2>Waiting on a human</h2>
-    <label style="max-width:20rem">
+    <label class="narrow">
       <span>Deciding as</span>
       <input id="resolver" placeholder="your name" autocomplete="off">
       <span class="hint">Recorded as the grantor. Not verified against the approver list.</span>

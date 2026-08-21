@@ -15,6 +15,7 @@ import {
   PLAIN_TEXT_CODEC,
   verifyAuditChain,
 } from '@memnox/core';
+import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
 /** Bytes read per backward step when a bounded query only needs the tail. */
 const TAIL_CHUNK_BYTES = 64 * 1_024;
@@ -32,9 +33,12 @@ export class JsonlAuditLog implements AuditLog {
   ) {}
 
   async append(event: ActionEvent): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
+    await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     const linked = chainAuditEvent(event, await this.tipHash());
-    await appendFile(this.filePath, `${this.encode(linked)}${NEWLINE}`, 'utf8');
+    await appendFile(this.filePath, `${this.encode(linked)}${NEWLINE}`, {
+      encoding: 'utf8',
+      mode: SECRET_FILE_MODE,
+    });
   }
 
   async recent(limit: number): Promise<ActionEvent[]> {
@@ -54,7 +58,7 @@ export class JsonlAuditLog implements AuditLog {
     if (removed === 0) return 0;
     const rewritePath = `${this.filePath}${REWRITE_SUFFIX}`;
     const body = retained.map((event) => `${this.encode(event)}${NEWLINE}`).join('');
-    await writeFile(rewritePath, body, 'utf8');
+    await writeFile(rewritePath, body, { encoding: 'utf8', mode: SECRET_FILE_MODE });
     await rename(rewritePath, this.filePath);
     return removed;
   }

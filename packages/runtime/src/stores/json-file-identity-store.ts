@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { AgentIdentity, IdentityStore, TextCodec } from '@memnox/core';
 import { PLAIN_TEXT_CODEC } from '@memnox/core';
+import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
 /** Local agent registry persisted as a single JSON file — inspectable and diffable. */
 export class JsonFileIdentityStore implements IdentityStore {
@@ -51,8 +52,11 @@ export class JsonFileIdentityStore implements IdentityStore {
   }
 
   private async persist(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
+    await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     const serialized = JSON.stringify([...this.agents.values()], null, 2);
-    await writeFile(this.filePath, this.codec.encode(serialized), 'utf8');
+    await writeFile(this.filePath, this.codec.encode(serialized), {
+      encoding: 'utf8',
+      mode: SECRET_FILE_MODE,
+    });
   }
 }

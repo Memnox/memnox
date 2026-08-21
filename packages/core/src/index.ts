@@ -9,6 +9,7 @@ export * from './constants/taint.constants';
 export * from './constants/execution.constants';
 export * from './domain/action-briefing';
 export * from './domain/action-event';
+export * from './domain/action-identity';
 export * from './domain/plan-scope';
 export * from './domain/shell-normalizer';
 export * from './domain/enforcement';

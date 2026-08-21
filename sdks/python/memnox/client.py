@@ -68,6 +68,43 @@ def _query(params: Mapping[str, str | int | None]) -> str:
     return f"?{urllib.parse.urlencode(pairs)}" if pairs else ""
 
 
+class _TokenSafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keeps the agent token from following a redirect off the runtime.
+
+    ``urllib`` copies every header onto the redirected request, so a runtime
+    address that answers with a 302 -- a hostile one, or a plaintext hop with
+    someone in the middle -- collects the bearer token. Upgrading the same host
+    from http to https is the one move that keeps it.
+    """
+
+    def redirect_request(  # noqa: PLR0913 - signature fixed by urllib
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: Mapping[str, str],
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is None or _same_trust(req.full_url, newurl):
+            return redirected
+        for name in list(redirected.headers):
+            if name.lower() == "authorization":
+                del redirected.headers[name]
+        return redirected
+
+
+def _same_trust(origin_url: str, new_url: str) -> bool:
+    origin = urllib.parse.urlsplit(origin_url)
+    target = urllib.parse.urlsplit(new_url)
+    if origin.netloc != target.netloc:
+        return False
+    return target.scheme == origin.scheme or (
+        origin.scheme == "http" and target.scheme == "https"
+    )
+
+
 class MemnoxClient:
     """Ask the runtime for a decision before an AI action executes."""
 
@@ -82,6 +119,7 @@ class MemnoxClient:
         self._token = token
         self._admin_token = admin_token
         self._timeout = timeout
+        self._opener = urllib.request.build_opener(_TokenSafeRedirectHandler)
 
     # --- Actions -----------------------------------------------------------
 
@@ -468,7 +506,7 @@ class MemnoxClient:
         if bearer:
             request.add_header("authorization", f"Bearer {bearer}")
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            with self._opener.open(request, timeout=self._timeout) as response:
                 return response.read().decode("utf-8")
         except urllib.error.HTTPError as err:
             detail = err.read().decode("utf-8", errors="replace")

@@ -20,13 +20,11 @@ const STRIPPED = new Set([
   'host',
   'content-length',
   'connection',
+  // A browser-driven caller would otherwise hand its session to the provider.
+  'cookie',
 ]);
 
-/**
- * BYOK inference gateway: point an SDK's base URL here and every model call is
- * decided before it reaches the provider. The caller's own key rides along in
- * x-upstream-api-key — this runtime never stores one.
- */
+/** The caller's own key rides along; this runtime never stores one. */
 export function registerProxyRoutes(app: FastifyInstance, ctx: RouteContext): void {
   app.post<{ Params: { provider: string; '*': string } }>(
     '/v1/proxy/:provider/*',

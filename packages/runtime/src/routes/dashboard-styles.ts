@@ -1,16 +1,4 @@
-/**
- * The dashboard's stylesheet.
- *
- * Every token below is copied from `@memnox/ui`'s globals.css in the
- * memnox-client repo — the same values, the same three theme states, the same
- * two radii and two elevations. The runtime ships as a standalone npm package
- * and cannot import a sibling workspace, so this is a transcription rather than
- * a dependency: when the palette moves there, move it here.
- *
- * What is deliberately *not* copied is Tailwind. The client composes these
- * tokens through utilities; a page served from the runtime has no build step,
- * so the same design is expressed as plain rules reading the same variables.
- */
+/** Tokens copied from @memnox/ui's globals.css — this repo cannot import them. */
 export const DASHBOARD_CSS = `
 :root {
   color-scheme: light;
@@ -239,6 +227,8 @@ input, select, textarea {
 }
 textarea { min-height: 4.5rem; resize: vertical; }
 input.mono, textarea.mono { font-family: var(--font-mono); font-size: var(--text-meta); }
+.auto-width { width: auto; }
+.narrow { max-width: 20rem; }
 .row { display: flex; gap: .4rem; align-items: stretch; }
 .row button { white-space: nowrap; }
 .actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }

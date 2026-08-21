@@ -1,5 +1,10 @@
-import { readFile } from 'node:fs/promises';
-import { PLAIN_TEXT_CODEC, type Logger, type TextCodec } from '@memnox/core';
+import { readFile, stat } from 'node:fs/promises';
+import {
+  PLAIN_TEXT_CODEC,
+  SILENT_LOGGER,
+  type Logger,
+  type TextCodec,
+} from '@memnox/core';
 import type { RuntimeConfig } from './config';
 import { METRIC, type MetricsRegistry } from './metrics';
 import {
@@ -18,12 +23,37 @@ export interface KeySource {
   dataEncryptionKey?: string;
 }
 
+/** Anything readable by group or other. `memnox keys generate` now writes 0600. */
+const SHARED_READ_BITS = 0o077;
+
+/** A warning, not a refusal: a key readable by other accounts still works. */
+async function warnIfWorldReadable(path: string, logger: Logger): Promise<void> {
+  try {
+    const info = await stat(path);
+    if ((info.mode & SHARED_READ_BITS) === 0) return;
+    logger.warn(
+      `keyring file "${path}" is readable by other accounts on this host — chmod 600 it.`,
+    );
+  } catch (error) {
+    // Never block startup on a permission probe; the read itself reports a real problem.
+    logger.warn(
+      `could not check permissions on keyring file "${path}": ${String(error)}`,
+    );
+  }
+}
+
 /** Keyring beats key file beats legacy flag, so nobody thinks they rotated when they did not. */
-export async function resolveKeyring(config: KeySource): Promise<Keyring | null> {
+export async function resolveKeyring(
+  config: KeySource,
+  logger: Logger = SILENT_LOGGER,
+): Promise<Keyring | null> {
   if (config.keyring !== undefined) return config.keyring;
-  if (config.keyringFile !== undefined)
+  if (config.keyringFile !== undefined) {
+    await warnIfWorldReadable(config.keyringFile, logger);
     return parseKeyring(await readFile(config.keyringFile, 'utf8'));
+  }
   if (config.dataKeyFile !== undefined) {
+    await warnIfWorldReadable(config.dataKeyFile, logger);
     return legacyKeyring((await readFile(config.dataKeyFile, 'utf8')).trim());
   }
   if (config.dataEncryptionKey !== undefined)
@@ -41,7 +71,7 @@ export async function buildCodec(
   metrics: MetricsRegistry,
   logger: Logger,
 ): Promise<TextCodec> {
-  const keyring = await resolveKeyring(config);
+  const keyring = await resolveKeyring(config, logger);
   if (keyring === null) {
     if (config.dataEncryptionMode === ENCRYPTION_MODE.STRICT) {
       throw new Error('encryption mode is "strict" but no key source is configured');

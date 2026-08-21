@@ -1,106 +1,48 @@
 version: 1
 policies:
-  - name: production-database-protection
-    description: AI agents may never destroy production data.
+  - name: refund-ceiling
+    description: Refunds need finance sign-off.
     match:
-      actions: ["database.delete", "database.drop", "database.truncate"]
-      environments: ["production"]
+      actions:
+        - payment.refund
+    decision:
+      effect: require_approval
+      approvers:
+        - finance-lead
+  - name: production-database-protection
+    description: Destructive database operations in production are never automated.
+    match:
+      actions:
+        - database.delete
+        - database.drop
+        - database.truncate
+      environments:
+        - production
+        - prod
     decision:
       effect: block
       reason: No AI-initiated destructive database operations in production.
-
   - name: production-deploy-approval
-    description: Production deployments need a human sign-off.
-    match:
-      actions: ["deploy.*"]
-      environments: ["production"]
-    decision:
-      effect: require_approval
-      approvers: ["eng-lead"]
-
-  - name: payment-code-approval
-    description: Payment logic changes need security review.
-    match:
-      actions: ["code.modify", "code.delete"]
-      targets: ["payment/*"]
-    decision:
-      effect: require_approval
-      approvers: ["security-team"]
-
-  - name: destructive-shell-protection
-    description: Obviously destructive shell commands need a human at the keyboard.
-    match:
-      actions: ["shell.execute"]
-      targets: ["*drop table*", "*drop database*", "*truncate table*", "*rm -rf /*"]
-    decision:
-      effect: block
-      reason: Destructive shell commands are blocked for AI agents.
-
-  - name: customer-data-export-block
-    description: Agents cannot exfiltrate customer data.
-    match:
-      actions: ["data.export"]
-      targets: ["customers*", "users*"]
-    decision:
-      effect: block
-      reason: Customer data export requires a human-run, logged procedure.
-
-  # ── Argument-level rules ─────────────────────────────────────────────────
-  # Matched by the in-process gate (@memnox/local-gate): the MCP firewall reads
-  # the call's arguments, and the runtime never receives them.
-  - name: no-recursive-delete-anywhere
-    description: The same command through a shell or through an MCP tool.
-    match:
-      actions:
-        - shell.execute
-        - mcp.*
-      arguments:
-        command: ["*rm -rf /*", "*rm -fr /*", "*rm -rf ~*"]
-    decision:
-      effect: block
-      reason: Recursive force-delete is not an agent action.
-
-  - name: no-credentials-file-writes
-    match:
-      actions:
-        - file.write
-      arguments:
-        file_path: ["*.env", "*.env.*", "*id_rsa", "*credentials.json"]
-    decision:
-      effect: block
-      reason: Credential files are edited by a human, not an agent.
-
-  - name: force-push-on-a-release-branch
-    description: Routine on a spike branch, a conversation on a release one.
-    match:
-      actions:
-        - shell.execute
-      arguments:
-        command: ["*git push*--force*"]
-      branches: ["main", "release/*"]
-    decision:
-      effect: require_approval
-      reason: Rewriting a release branch needs a second pair of eyes.
-      approvers:
-        - eng-lead
-
-  # ── Outcomes beyond allow / block ────────────────────────────────────────
-  - name: mask-secrets-leaving-the-machine
-    description: An outbound tool call proceeds, with its credentials masked.
-    match:
-      actions:
-        - mcp.*
-    decision:
-      effect: redact
-      reason: Secrets are masked before a call leaves the machine.
-
-  - name: deploy-budget
-    description: A runaway agent redeploying in a loop stops at ten an hour.
+    description: A human signs off on anything reaching production.
     match:
       actions:
         - deploy.*
+      environments:
+        - production
+        - prod
     decision:
-      effect: allow
-      rateLimit:
-        max: 10
-        windowSeconds: 3600
+      effect: require_approval
+      reason: Production deployments need a human sign-off.
+      approvers:
+        - eng-lead
+  - name: infrastructure-teardown-approval
+    description: Destroying infrastructure is not a routine agent action.
+    match:
+      actions:
+        - infrastructure.delete
+        - infrastructure.destroy
+    decision:
+      effect: require_approval
+      reason: Tearing down infrastructure needs a human.
+      approvers:
+        - platform-team

@@ -15,6 +15,32 @@ const blockRecursiveDelete: Policy = {
   decision: { effect: DECISION_EFFECT.BLOCK, reason: 'recursive delete' },
 };
 
+const blockToolByName: Policy = {
+  name: 'no-deploy-tool',
+  match: { actions: ['mcp.deploy'] },
+  decision: { effect: DECISION_EFFECT.BLOCK, reason: 'deploys are not an agent action' },
+};
+
+/** Calls the policy engine directly, so it is its own path to a verdict. */
+describe('LocalGate — a tool name dressed up to miss its rule', () => {
+  it.each([
+    ['a trailing space', 'mcp.deploy '],
+    ['a leading space', ' mcp.deploy'],
+    ['a trailing newline', 'mcp.deploy\n'],
+    ['a zero-width space', 'mcp.deploy\u200b'],
+  ])('blocks it just the same with %s', (_name, action) => {
+    const verdict = gate([blockToolByName]).evaluate({ action });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.BLOCK);
+  });
+
+  it('still allows a tool no rule names', () => {
+    const verdict = gate([blockToolByName]).evaluate({ action: 'mcp.read_file' });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
 describe('LocalGate — argument rules', () => {
   it('blocks on the call arguments, which never leave this process', () => {
     const verdict = gate([blockRecursiveDelete]).evaluate({

@@ -1,31 +1,37 @@
-import type { FastifyInstance } from 'fastify';
+import { randomBytes } from 'node:crypto';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { API_ROLE } from '@memnox/core';
 import { isAuthorizedFor } from '../auth';
+import { consoleCsp } from '../security-headers';
 import { readRuntimeStatus } from '../runtime-status';
 import { renderDashboard, renderDashboardGate } from './dashboard-page';
 import { bearerToken, type RouteContext } from './route-context';
 
 const HTML_CONTENT_TYPE = 'text/html; charset=utf-8';
+const NONCE_BYTE_LENGTH = 16;
 
-/**
- * The one route a browser is ever pointed at. `/` used to 404, which is what
- * someone opening the address the CLI just printed actually saw.
- *
- * A keyless loopback runtime resolves to admin and the console opens with its
- * numbers already rendered. A runtime with keys serves a page that asks for a
- * token instead — a browser cannot put a bearer header on a navigation, so
- * guarding this the way `/v1/status` is guarded meant a keyed deployment served
- * `{"error":"unauthorized"}` and nothing a person could act on. The gate page
- * carries no decisions, no rules, and no agents; every one of those still comes
- * from the guarded JSON endpoints, with the token the page collected.
- */
+/** A fresh nonce per response, so the page's inline script runs and an injected one does not. */
+function serveConsole(
+  reply: FastifyReply,
+  render: (nonce: string) => string,
+): FastifyReply {
+  const nonce = randomBytes(NONCE_BYTE_LENGTH).toString('base64');
+  // No copy of a page rendered from one tenant's decisions in a shared cache.
+  return reply
+    .header('content-security-policy', consoleCsp(nonce))
+    .header('cache-control', 'no-store')
+    .type(HTML_CONTENT_TYPE)
+    .send(render(nonce));
+}
+
+/** `/` used to 404 — the address the CLI had just printed. */
 export function registerDashboardRoutes(app: FastifyInstance, ctx: RouteContext): void {
   app.get('/', async (request, reply) => {
     if (!isAuthorizedFor(bearerToken(request), ctx.config, API_ROLE.VIEWER)) {
-      return reply.type(HTML_CONTENT_TYPE).send(renderDashboardGate());
+      return serveConsole(reply, renderDashboardGate);
     }
     const status = await readRuntimeStatus(ctx.gateway, ctx.config);
-    return reply.type(HTML_CONTENT_TYPE).send(renderDashboard(status));
+    return serveConsole(reply, (nonce) => renderDashboard(status, nonce));
   });
 
   /** The same numbers as JSON, for anything that would rather not parse HTML. */

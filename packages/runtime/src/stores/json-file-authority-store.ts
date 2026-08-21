@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import type { TextCodec } from '@memnox/core';
 import { PLAIN_TEXT_CODEC } from '@memnox/core';
 import type { AuthorityGrant, AuthorityStore } from '@memnox/org-graph';
+import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
 /** Delegated authority as a single JSON file — who may act for whom, up to what. */
 export class JsonFileAuthorityStore implements AuthorityStore {
@@ -46,9 +47,12 @@ export class JsonFileAuthorityStore implements AuthorityStore {
   }
 
   private async persist(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
+    await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     const serialized = JSON.stringify([...this.grants.values()], null, 2);
-    await writeFile(this.filePath, this.codec.encode(serialized), 'utf8');
+    await writeFile(this.filePath, this.codec.encode(serialized), {
+      encoding: 'utf8',
+      mode: SECRET_FILE_MODE,
+    });
   }
 }
 

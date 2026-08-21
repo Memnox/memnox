@@ -52,6 +52,25 @@ describe('api auth', () => {
   });
 });
 
+/** `===` returns as soon as two bytes differ, so comparison is over digests. */
+describe('comparing a credential', () => {
+  const REAL = ['api', 'key', 'value'].join('-');
+
+  it('accepts only the whole credential', () => {
+    const config = resolveConfig({ apiKeys: [{ token: REAL, role: API_ROLE.ADMIN }] });
+    expect(resolveApiRole(REAL, config)).toBe(API_ROLE.ADMIN);
+    expect(resolveApiRole(REAL.slice(0, -1), config)).toBeNull();
+    expect(resolveApiRole(`${REAL}x`, config)).toBeNull();
+    expect(resolveApiRole('', config)).toBeNull();
+  });
+
+  it('accepts only the whole admin token', () => {
+    const config = resolveConfig({ adminToken: REAL });
+    expect(resolveApiRole(REAL, config)).toBe(API_ROLE.ADMIN);
+    expect(resolveApiRole(REAL.slice(0, 4), config)).toBeNull();
+  });
+});
+
 describe('local mode', () => {
   it('grants loopback admin and says so', () => {
     const logger = recordingLogger();

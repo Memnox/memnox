@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { ApiRole, Logger } from '@memnox/core';
 import { API_ROLE, roleSatisfies } from '@memnox/core';
 import type { RuntimeConfig } from './config';
@@ -9,14 +10,19 @@ const UNKNOWN_ROLE = 'unknown';
 /** Addresses nothing off this machine can reach, so a keyless runtime stays private. */
 const LOOPBACK_HOSTS: readonly string[] = ['127.0.0.1', '::1', 'localhost'];
 
+/** Compared as digests: `===` leaks how much of a secret was right via timing. */
+function credentialEquals(candidate: string, expected: string): boolean {
+  return timingSafeEqual(
+    Buffer.from(hashToken(candidate), 'hex'),
+    Buffer.from(hashToken(expected), 'hex'),
+  );
+}
+
 function hasManagementKeys(config: RuntimeConfig): boolean {
   return config.apiKeys.length > 0 || Boolean(config.adminToken);
 }
 
-/**
- * Keyless local mode is only safe when nothing else can reach the port: a
- * routable bind with no credentials serves every admin route to the network.
- */
+/** Keyless local mode is safe only when nothing else can reach the port. */
 export function resolveLocalMode(config: RuntimeConfig, logger: Logger): RuntimeConfig {
   if (hasManagementKeys(config) || config.allowLocalAdmin) return config;
   if (!LOOPBACK_HOSTS.includes(config.host)) {
@@ -29,40 +35,30 @@ export function resolveLocalMode(config: RuntimeConfig, logger: Logger): Runtime
   return { ...config, allowLocalAdmin: true };
 }
 
-/**
- * Resolves the role behind a bearer token. A runtime that opted into local mode
- * has no keys, so every management request is treated as admin.
- */
+/** A runtime in local mode has no keys, so management requests are already trusted. */
 export function resolveApiRole(
   token: string | null,
   config: RuntimeConfig,
 ): ApiRole | null {
   if (!hasManagementKeys(config)) return config.allowLocalAdmin ? API_ROLE.ADMIN : null;
   if (!token) return null;
-  if (config.adminToken && token === config.adminToken) return API_ROLE.ADMIN;
-  const match = config.apiKeys.find((key) => key.token === token);
+  if (config.adminToken && credentialEquals(token, config.adminToken))
+    return API_ROLE.ADMIN;
+  const match = config.apiKeys.find((key) => credentialEquals(token, key.token));
   return match === undefined ? null : match.role;
 }
 
-/**
- * Whether this credential may manage this workspace.
- *
- * The check the role alone cannot make: `admin` says what a key may do, never
- * to whom. A key that names a workspace is confined to it; one that names none
- * is a single-tenant key and reaches everything, which is what it already did.
- *
- * Local mode has no keys and therefore no scope — it is a loopback runtime with
- * admin routes deliberately open, and pretending otherwise here would suggest a
- * boundary that is not there.
- */
+/** `admin` says what a key may do, never to whom — this is the missing half. */
 export function isScopedToWorkspace(
   token: string | null,
   config: RuntimeConfig,
   workspace: string,
 ): boolean {
   if (!hasManagementKeys(config)) return true;
-  if (config.adminToken && token === config.adminToken) return true;
-  const match = config.apiKeys.find((key) => key.token === token);
+  // A keyed runtime with no credential presented is scoped to nothing.
+  if (token === null) return false;
+  if (config.adminToken && credentialEquals(token, config.adminToken)) return true;
+  const match = config.apiKeys.find((key) => credentialEquals(token, key.token));
   if (match === undefined) return false;
   return match.workspace === undefined || match.workspace === workspace;
 }

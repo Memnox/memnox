@@ -94,6 +94,7 @@ import { JsonFileApprovalStore } from './stores/json-file-approval-store';
 import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
+import { registerSecurityHeaders } from './security-headers';
 
 /** "orbit" and "/orbit/" are one prefix; Fastify wants exactly one leading slash. */
 export function normalizeBasePath(raw: string | undefined): string {
@@ -118,10 +119,7 @@ export interface MemnoxServer {
   metrics: MetricsRegistry;
 }
 
-/**
- * Composition root: builds the stores, advisors, and gateway from config,
- * then hands one RouteContext to each interface-layer route module.
- */
+/** Composition root: builds stores, advisors, and gateway, then hands out one context. */
 export interface ServerServices {
   /** Injected SQL client (tests use pg-mem); default = connect via config.databaseUrl. */
   sql?: SqlClient;
@@ -129,19 +127,11 @@ export interface ServerServices {
   redis?: RedisLike;
   /** Injected so proxy tests exercise real route code against a fake upstream. */
   proxyFetch?: typeof fetch;
-  /**
-   * Startup probe budget. The default spends 5s proving an unreachable Redis
-   * really is unreachable, which is right at boot and far too long for a test
-   * asserting only that the failure propagates.
-   */
+  /** The default spends 5s proving an unreachable Redis really is unreachable. */
   redisProbe?: { attempts: number; delayMs: number };
 }
 
-/**
- * An `arguments:` rule is decided by the in-process gate, because the payload it
- * matches never reaches this process. Saying so at boot keeps such a rule from
- * looking enforced here when nothing local is configured to enforce it.
- */
+/** Said at boot so such a rule cannot look enforced here when nothing local enforces it. */
 function reportArgumentRules(policies: readonly Policy[]): void {
   const named = policies.filter((policy) => policy.match.arguments !== undefined);
   if (named.length === 0) return;
@@ -180,7 +170,7 @@ export async function buildServer(
 
   const metrics = new MetricsRegistry();
   const codec = await buildCodec(config, metrics, CONSOLE_LOGGER);
-  // Postgres = shared state for horizontally scaled deployments; files = zero-infrastructure default.
+  // Postgres for scaled deployments; files are the zero-infrastructure default.
   const sql: SqlClient | null =
     services.sql ??
     (config.databaseUrl
@@ -254,7 +244,7 @@ export async function buildServer(
   });
 
   const tls = await loadTlsOptions(config);
-  // requestCert without rejectUnauthorized: token-only clients still connect; cert auth is per request.
+  // requestCert without rejectUnauthorized: token-only clients still connect.
   const app = (
     tls
       ? Fastify({
@@ -273,6 +263,7 @@ export async function buildServer(
     CONSOLE_LOGGER,
   );
   app.addHook('onClose', async () => stopRetention());
+  registerSecurityHeaders(app);
   app.get('/healthz', async () => ({ status: 'ok' }));
 
   const decisionMemory = new DecisionMemoryService({
@@ -318,10 +309,7 @@ export async function buildServer(
           try {
             return await loadPolicyFiles([config.policyFile ?? '']);
           } catch (err) {
-            // The engine is still serving the last good set; only the question
-            // "which of these could I edit" has no answer right now. Null says
-            // so, and an editor falls back to read-only rather than offering to
-            // overwrite a file it could not read.
+            // Null says "no answer", so an editor falls back to read-only.
             CONSOLE_LOGGER.warn(
               `could not read ${config.policyFile ?? ''} to list editable rules: ${String(err)}`,
             );
@@ -332,10 +320,7 @@ export async function buildServer(
     applyPolicies: config.policyFile
       ? async (policies) => {
           await writePoliciesToFile(config.policyFile ?? '', policies);
-          // Recomposed from every source, not swapped to what was just written.
-          // Swapping dropped the organization bundle and any second repository
-          // the moment anything wrote this file — a pull could be un-enforced
-          // by an unrelated rule being added, with nothing said about it.
+          // Recomposed from every source: swapping dropped the org bundle on any write.
           const composed = await loadPolicyFiles(await policySources());
           gateway.usePolicyEngine(
             new PolicyEngine(composed, { defaultEffect: config.defaultEffect }),
@@ -350,8 +335,15 @@ export async function buildServer(
      infrastructure probe knows the host and not the tenant. */
   const prefix = normalizeBasePath(config.basePath);
   const mount = async (scope: FastifyInstance): Promise<void> => {
-    // Worth having per tenant under a prefix; at the root it is already above.
-    if (prefix !== '') scope.get('/healthz', async () => ({ status: 'ok' }));
+    /* Worth having per tenant under a prefix; at the root it is already above.
+       It names the tenant as well as the status, because the address alone does
+       not prove the runtime behind it is this workspace's own: a router that
+       strips the prefix in front of one single-tenant runtime answers every
+       `<base>/<id>` alike, and a control plane that cannot tell the difference
+       binds every workspace to one store. The root probe declares no tenant,
+       which is the honest answer for a deployment serving whoever reaches it. */
+    if (prefix !== '')
+      scope.get('/healthz', async () => ({ status: 'ok', tenant: prefix.slice(1) }));
     registerDashboardRoutes(scope, ctx);
     registerPlanRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
@@ -378,7 +370,7 @@ interface Coordination {
   sessionTaintStore: SessionTaintStore;
 }
 
-/** A configured Redis must work: silently falling back multiplies every limit by the pod count. */
+/** A configured Redis must work: falling back multiplies every limit by pod count. */
 async function resolveCoordination(
   config: RuntimeConfig,
   services: ServerServices,

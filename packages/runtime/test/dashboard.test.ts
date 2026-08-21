@@ -20,10 +20,7 @@ const STATUS: RuntimeStatus = {
   recent: [],
 };
 
-/**
- * Opening the address `memnox setup` prints used to return a 404 body, which is
- * what someone following the getting-started page actually saw.
- */
+/** The address `memnox setup` prints used to return a 404. */
 describe('the dashboard at /', () => {
   let dataDir: string;
   let server: MemnoxServer;
@@ -67,9 +64,7 @@ describe('the dashboard at /', () => {
   });
 
   it('does not serve the audit trail to an unauthenticated caller', async () => {
-    // A runtime with keys must not hand its decisions to whoever finds the port.
-    // It may hand over a page that asks for a token — that page carries none of
-    // them, and the data endpoints behind it are still guarded.
+    // A page that asks for a token carries none of them; the endpoints stay guarded.
     const page = await server.app.inject({ method: 'GET', url: '/' });
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('This runtime is locked');
@@ -98,27 +93,33 @@ describe('the dashboard at /', () => {
 });
 
 describe('rendering the page', () => {
+  // The value is per-response in the route; the renderer only has to place it.
+  const NONCE = 'test-nonce';
+
   it('names the mode so observing is never mistaken for enforcing', () => {
-    expect(renderDashboard(STATUS)).toContain('observing');
+    expect(renderDashboard(STATUS, NONCE)).toContain('observing');
     expect(
-      renderDashboard({ ...STATUS, enforcement: ENFORCEMENT_MODE.ENFORCE }),
+      renderDashboard({ ...STATUS, enforcement: ENFORCEMENT_MODE.ENFORCE }, NONCE),
     ).toContain('enforcing');
   });
 
   it('escapes decision text, which is attacker-influenced', () => {
-    const page = renderDashboard({
-      ...STATUS,
-      recent: [
-        {
-          occurredAt: '2026-08-11T05:16:00Z',
-          effect: 'block',
-          agentName: 'local-editor',
-          action: 'file.write',
-          target: '<img src=x onerror=alert(1)>',
-          reason: 'secret in diff',
-        },
-      ],
-    });
+    const page = renderDashboard(
+      {
+        ...STATUS,
+        recent: [
+          {
+            occurredAt: '2026-08-11T05:16:00Z',
+            effect: 'block',
+            agentName: 'local-editor',
+            action: 'file.write',
+            target: '<img src=x onerror=alert(1)>',
+            reason: 'secret in diff',
+          },
+        ],
+      },
+      NONCE,
+    );
 
     expect(page).not.toContain('<img src=x');
     expect(page).toContain('&lt;img src=x');
@@ -132,7 +133,7 @@ describe('rendering the page', () => {
   // The page can only do what the API already allows; these are the forms that
   // reach the write endpoints, and losing one silently would be hard to notice.
   it('offers the panes a person acts from', () => {
-    const page = renderDashboard(STATUS);
+    const page = renderDashboard(STATUS, NONCE);
 
     ['approvals', 'policies', 'decisions', 'agents', 'console'].forEach((pane) => {
       expect(page).toContain(`data-panel="${pane}"`);
@@ -146,13 +147,14 @@ describe('rendering the page', () => {
   // Without it the console is a dead end: `memnox setup` registers an agent
   // before anyone opens this page, and its token is shown once and never again.
   it('offers a way to get a token for the console', () => {
-    expect(renderDashboard(STATUS)).toContain('id="console-token-new"');
+    expect(renderDashboard(STATUS, NONCE)).toContain('id="console-token-new"');
   });
 
   // A comment carrying one would end the embedded script early, and the page
   // would ship a syntax error that only shows up in a browser.
   it('embeds a script with no stray backtick', () => {
-    const script = renderDashboard(STATUS).split('<script>')[1] ?? '';
+    const script =
+      renderDashboard(STATUS, NONCE).split(`<script nonce="${NONCE}">`)[1] ?? '';
     expect(script.slice(0, script.indexOf('</script>'))).not.toContain('`');
   });
 });

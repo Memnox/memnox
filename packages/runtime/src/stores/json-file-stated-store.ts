@@ -3,14 +3,9 @@ import { dirname } from 'node:path';
 import type { TextCodec } from '@memnox/core';
 import { PLAIN_TEXT_CODEC } from '@memnox/core';
 import type { Stated, StatedStore } from '@memnox/org-graph';
+import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
-/**
- * What the organization states about itself, as a single JSON file.
- *
- * Reviewable and diffable on purpose: the first thing a company does with an
- * extracted statement is argue about whether it is true, and that argument goes
- * better against a file than against a database.
- */
+/** One JSON file, reviewable and diffable on purpose. */
 export class JsonFileStatedStore implements StatedStore {
   private statements = new Map<string, Stated>();
   private loaded = false;
@@ -63,19 +58,15 @@ export class JsonFileStatedStore implements StatedStore {
     }
   }
 
-  /**
-   * Written beside the target and renamed over it.
-   *
-   * A truncated write here is not a lost update, it is a company that has
-   * forgotten what it decided — so the rename, which is atomic on every
-   * filesystem this runs on, is what makes a crash mid-write leave the previous
-   * corpus intact rather than half of the new one.
-   */
+  /** A truncated write here is not a lost update, it is a company misdescribed. */
   private async persist(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
+    await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     const serialized = JSON.stringify([...this.statements.values()], null, 2);
     const scratch = `${this.filePath}.${process.pid}.tmp`;
-    await writeFile(scratch, this.codec.encode(serialized), 'utf8');
+    await writeFile(scratch, this.codec.encode(serialized), {
+      encoding: 'utf8',
+      mode: SECRET_FILE_MODE,
+    });
     await rename(scratch, this.filePath);
   }
 }

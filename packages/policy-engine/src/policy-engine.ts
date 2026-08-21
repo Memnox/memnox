@@ -4,7 +4,12 @@ import type {
   MatchedPolicy,
   RiskLevel,
 } from '@memnox/core';
-import { DECISION_EFFECT, DECISION_REASON, EFFECT_PRECEDENCE } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  DECISION_REASON,
+  EFFECT_PRECEDENCE,
+  normalizeActionRequest,
+} from '@memnox/core';
 import { matchesAny } from './pattern-matcher';
 import { matchesAnyTimeWindow } from './time-window';
 import { classifyRisk } from './risk-classifier';
@@ -31,11 +36,7 @@ export interface PolicyEngineOptions {
   defaultEffect?: DecisionEffect;
 }
 
-/**
- * Deterministic evaluation: every matching policy is collected and the most
- * restrictive effect wins. No network, no LLM, no randomness — same input,
- * same decision, every time.
- */
+/** Most restrictive effect wins. No network, no LLM, no randomness. */
 export class PolicyEngine {
   private readonly defaultEffect: DecisionEffect;
   /** Content version of this rule set, stamped onto every event it decides. */
@@ -54,11 +55,7 @@ export class PolicyEngine {
     this.buildIndex();
   }
 
-  /**
-   * Without this, evaluation scans every rule: 10k policies measured p99 7ms.
-   * Bucketing by the action's first segment keeps the scan proportional to the
-   * rules that could possibly match, not to the size of the rule set.
-   */
+  /** Bucketing by first segment keeps the scan proportional to plausible rules, not all. */
   private buildIndex(): void {
     for (const policy of this.policies) {
       const prefixes = literalPrefixes(policy.match.actions);
@@ -86,7 +83,11 @@ export class PolicyEngine {
     return [...this.policies];
   }
 
-  evaluate(request: ActionRequest, context: EvaluationContext): EvaluationResult {
+  evaluate(incoming: ActionRequest, context: EvaluationContext): EvaluationResult {
+    /* Here rather than in a caller, because callers are the problem: the runtime
+       gateway is one, the in-process gate another, and a padded name only had to
+       miss the rule naming it once to turn a block into an allow. */
+    const request = normalizeActionRequest(incoming);
     const riskLevel = classifyRisk(request.action, request.environment);
     const matchedPolicies = this.candidates(request.action)
       .filter((policy) => this.matches(policy, request, context))
@@ -121,10 +122,7 @@ export class PolicyEngine {
     };
   }
 
-  /**
-   * A rule contributed by one project never decides another project's action.
-   * An unscoped rule is the shared baseline and applies to everything.
-   */
+  /** One project's rule never decides another's; an unscoped rule is the baseline. */
   private inScope(policy: Policy, request: ActionRequest): boolean {
     if (policy.project === undefined) return true;
     return policy.project === request.projectId;
@@ -194,18 +192,8 @@ function withheld(
   return { withheldEffect: monitored };
 }
 
-/**
- * Every named argument must match — each one narrows the rule further, so
- * `{ command: ["*rm -rf*"], cwd: ["/srv/*"] }` fires only when both hold.
- */
-/**
- * Whether the action is big enough for this rule.
- *
- * No threshold matches everything, as every other unset condition does. An
- * action with no stated amount also matches: it cannot prove it is under the
- * line, and letting an unstated size slip past the rule written for size is the
- * failure worth avoiding.
- */
+/** Each named argument narrows the rule further — all of them must hold. */
+/** An unstated amount matches: it cannot prove it is under the line. */
 function matchesAmount(
   threshold: number | undefined,
   amount: number | undefined,
@@ -234,11 +222,7 @@ function firstSegment(value: string): string {
   return index === -1 ? value : value.slice(0, index);
 }
 
-/**
- * The literal first segments a pattern list can match, or null when any pattern
- * could match anything — a wildcard first segment must stay unindexed so the
- * index only ever narrows work, never the result.
- */
+/** Null when a pattern could match anything, so the index only ever narrows work. */
 function literalPrefixes(patterns: string[]): Set<string> | null {
   const prefixes = new Set<string>();
   for (const pattern of patterns) {

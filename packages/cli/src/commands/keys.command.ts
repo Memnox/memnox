@@ -20,6 +20,9 @@ import {
 } from '@memnox/runtime';
 import type { CliContext } from '../cli-context';
 
+/** Owner-only, the way an SSH private key is. */
+const KEYRING_FILE_MODE = 0o600;
+
 /** 32 bytes of entropy each — a generated key is never a memorable passphrase. */
 const SECRET_BYTES = 32;
 const SALT_BYTES = 16;
@@ -59,9 +62,7 @@ export function registerKeysCommand(program: Command, context: CliContext): void
           : { activeKeyId: id, keys: [...existing.keys, generated] };
 
       if (options.keyringFile === undefined) {
-        // The JSON is the payload and nothing else may join it: the obvious way
-        // to use this command is `> keyring.json`, and advice printed on the
-        // same stream produced a file the runtime rejected as malformed.
+        // The JSON is the payload: advice on the same stream produced a malformed file.
         context.out.line(JSON.stringify(keyring, null, 2));
         context.out.note('');
         context.out.note(
@@ -70,11 +71,12 @@ export function registerKeysCommand(program: Command, context: CliContext): void
         context.out.note('Losing a key means losing every record written under it.');
         return;
       }
-      await writeFile(
-        options.keyringFile,
-        `${JSON.stringify(keyring, null, 2)}\n`,
-        'utf8',
-      );
+      // The key to every encrypted record; the default umask made it readable
+      // by every account on the host.
+      await writeFile(options.keyringFile, `${JSON.stringify(keyring, null, 2)}\n`, {
+        encoding: 'utf8',
+        mode: KEYRING_FILE_MODE,
+      });
       context.out.line(`Added key "${id}" to ${options.keyringFile} and made it active.`);
       context.out.line(`Run "memnox keys rewrap" to move existing records onto it.`);
     });
@@ -145,9 +147,7 @@ export function registerKeysCommand(program: Command, context: CliContext): void
             : `Rewrapped ${total} record(s) onto key "${codec.activeKey}".`,
         );
         context.out.line('Retire the old key only once this reports 0 for it.');
-        // A running runtime read the keyring at boot and does not hold the key
-        // these records were just moved onto, so its next read fails. Saying so
-        // here is the difference between a rotation and an outage.
+        // A running runtime still holds the old key, so its next read fails.
         if (total > 0) {
           context.out.note('');
           context.out.note(

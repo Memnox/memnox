@@ -6,11 +6,7 @@ import { buildServer, normalizeBasePath, type MemnoxServer } from '../src/server
 
 const ADMIN = ['admin', 'token', 'value'].join('-');
 
-/**
- * One runtime is one tenant, so a control plane reaching several of them behind
- * one host tells them apart by path. Without this the cloud's `<base>/<id>`
- * addresses 404 and every workspace reads as unreachable.
- */
+/** One runtime is one tenant; a control plane tells several apart by prefix. */
 describe('serving under a base path', () => {
   let dataDir: string;
   let server: MemnoxServer;
@@ -45,6 +41,18 @@ describe('serving under a base path', () => {
 
   it('keeps /healthz at the root for an infrastructure probe', async () => {
     expect((await get('/healthz')).statusCode).toBe(200);
+  });
+
+  /** Tells this runtime from one reached through a router that strips the prefix. */
+  it('names the tenant it serves under the prefix', async () => {
+    expect((await get('/orbit/healthz')).json()).toEqual({
+      status: 'ok',
+      tenant: 'orbit',
+    });
+  });
+
+  it('declares no tenant at the root, where it serves whoever reaches it', async () => {
+    expect((await get('/healthz')).json()).toEqual({ status: 'ok' });
   });
 
   it('still decides actions under the prefix', async () => {

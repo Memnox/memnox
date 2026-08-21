@@ -7,12 +7,9 @@ import {
   isUnspentGrant,
   PLAIN_TEXT_CODEC,
 } from '@memnox/core';
+import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
-/**
- * Approvals survive restarts — a pending human decision must not vanish with the
- * process. TTL is not applied here: an adapter is storage, and ApprovalService
- * owns expiry so every backend answers the same way.
- */
+/** A pending human decision must not vanish with the process. */
 export class JsonFileApprovalStore implements ApprovalStore {
   private approvals = new Map<string, Approval>();
   private loaded = false;
@@ -85,11 +82,11 @@ export class JsonFileApprovalStore implements ApprovalStore {
   }
 
   private async persist(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
+    await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     await writeFile(
       this.filePath,
       this.codec.encode(JSON.stringify([...this.approvals.values()], null, 2)),
-      'utf8',
+      { encoding: 'utf8', mode: SECRET_FILE_MODE },
     );
   }
 }

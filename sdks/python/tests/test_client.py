@@ -629,5 +629,68 @@ class ApprovalTest(MemnoxClientTestCase):
         self.assertEqual(self.last().body, {"reason": "incident 412"})
 
 
+class _Collector(BaseHTTPRequestHandler):
+    """Stands in for wherever a redirect points. Records what it was handed."""
+
+    seen: dict[str, str | None] = {}
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        _Collector.seen["authorization"] = self.headers.get("authorization")
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *args: object) -> None:
+        return
+
+
+def _redirector(location: Callable[[], str]) -> type[BaseHTTPRequestHandler]:
+    class Redirecting(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+            self.send_response(302)
+            self.send_header("location", location())
+            # Explicit, so urllib's read of the redirect body cannot race the close.
+            self.send_header("content-length", "0")
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            return
+
+    return Redirecting
+
+
+class RedirectTest(unittest.TestCase):
+    """A runtime address that answers with a redirect must not collect the token.
+
+    urllib copies every header onto the redirected request, so before this the
+    bearer token followed a 302 to any host it named.
+    """
+
+    def setUp(self) -> None:
+        _Collector.seen = {}
+        self.collector = HTTPServer(("127.0.0.1", 0), _Collector)
+        self.collector_port = self.collector.server_address[1]
+        threading.Thread(target=self.collector.serve_forever, daemon=True).start()
+
+        elsewhere = f"http://localhost:{self.collector_port}/collected"
+        self.runtime = HTTPServer(("127.0.0.1", 0), _redirector(lambda: elsewhere))
+        threading.Thread(target=self.runtime.serve_forever, daemon=True).start()
+        self.base_url = f"http://127.0.0.1:{self.runtime.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.collector.shutdown()
+        self.collector.server_close()
+        self.runtime.shutdown()
+        self.runtime.server_close()
+
+    def test_token_does_not_follow_a_redirect_to_another_host(self) -> None:
+        client = MemnoxClient(self.base_url, token=AGENT_TOKEN)
+
+        client.check("repository.read")
+
+        self.assertIsNone(_Collector.seen.get("authorization"))
+
+
 if __name__ == "__main__":
     unittest.main()

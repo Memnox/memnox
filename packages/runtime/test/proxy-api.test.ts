@@ -164,6 +164,18 @@ describe('BYOK inference proxy', () => {
     expect(headers['authorization']).not.toContain(agentToken);
   });
 
+  // The proxy relays a caller's headers so provider-specific ones survive. A
+  // session cookie is not one of those: it belongs to this hop and nowhere else.
+  it('never hands the caller’s cookies to the provider', async () => {
+    await call(
+      '/v1/proxy/openai/v1/chat/completions',
+      { model: 'gpt-4' },
+      { cookie: 'session=not-the-providers-business' },
+    );
+
+    expect(sent[0]?.headers['cookie']).toBeUndefined();
+  });
+
   it('audits every proxied decision', async () => {
     await call('/v1/proxy/openai/v1/chat/completions', { model: 'gpt-4' });
 
