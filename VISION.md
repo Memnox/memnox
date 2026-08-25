@@ -647,6 +647,30 @@ Customer Support Agent
     capabilities: CRM, email, knowledge base
 ```
 
+**The registry federates; it does not discover.** §39 says not to build another
+IAM, and the market has since made that boundary sharper rather than softer:
+non-human identities outnumber people roughly 45 to 1, most organizations say
+their existing tools cannot manage agent identities, and Okta, Entro, Astrix and
+the rest sell exactly that discovery. Memnox must not compete for it, and must
+not be unable to answer the question buyers walk in holding — *which agents
+exist here?*
+
+So a census is **pushed in, never crawled**. Okta, Entro, a CMDB export or a
+script all submit the same shape, Memnox holds none of their credentials, and
+what comes back is the reconciliation none of them can produce:
+
+```
+FLEET
+
+Governed      9     Memnox issued the credential; every action is gated
+Ungoverned  403     something in the estate runs it and nothing decides what it may do
+```
+
+A reported agent counts as governed only when the census **names the Memnox
+agent it is**. Matching on similar names is the obvious third rule and is left
+out on purpose: a wrong match reports an ungoverned agent as governed, and that
+is the one direction this number must never fail in.
+
 ---
 
 ## 21. Human plus AI organizational graph
@@ -947,6 +971,36 @@ Status:                      Needs confirmation
 
 A very valuable organizational intelligence feature.
 
+**Ranking the rivals is the part nobody else has.** Detecting a conflict is
+easy and half an answer; an agent told "these two disagree" is no better off
+than one told nothing. The engines that enforce rules cannot rank them —
+XACML, Rego and Cedar all evaluate policies and none of them resolves a
+conflict between two, because a rule file carries no record of who wrote it or
+under what authority. A Memnox fact does, which is exactly enough for a
+deterministic ladder:
+
+1. **Specificity.** A claim drawn for one scope beats one drawn for the whole
+   company. Narrowing is something somebody did on purpose.
+2. **Provenance.** A system of record beats a person typing beats a reading of
+   something said. The same ladder `verifiesItself` already walks.
+3. **Recency.** The later claim, by the date somebody put on it — a stated
+   effective date only. Two claims that merely happen to have been written
+   seconds apart are contemporaneous, and ranking those by their write
+   timestamps would settle by milliseconds exactly the disagreements a person
+   needs to see.
+
+Two refusals hold it together. **A disagreement is never silently resolved
+away**: when the ladder runs out the answer is `unresolved`, which is the
+company saying it has not decided, and an action resting on one is escalated
+rather than allowed. **An exception is not a disagreement**: "EU payments go
+through Adyen" narrows "payments go through Stripe" rather than contradicting
+it, so scopes that cannot both apply are never paired at all.
+
+Nothing is stored. A contradiction exists exactly as long as both facts are in
+force, and the act that ends one is `supersede` — the operation §32 already
+requires. A stored contradiction is a fifth status on a fact, kept in step by
+hand, wrong the moment somebody supersedes either side.
+
 ---
 
 ## 34. Temporal memory
@@ -1098,7 +1152,32 @@ Instead: Memnox understands organizational authority and context across them.
 | Decision memory | **Memnox** |
 | Agent-to-organization governance | **Memnox** |
 
-That is the territory.
+That is the territory. It is narrower than it was when this was written, and
+worth stating plainly rather than discovering in a sales call.
+
+Both neighbours have moved in. From the data side, "context layer" is now a
+phrase semantic-layer vendors, knowledge-graph companies, data catalogues and
+the hyperscalers all use — AWS Context maps relationships into a graph and
+serves them to agents at runtime; Databricks is building an ontology for the
+same job. From the identity side, Okta ships an Agent Gateway, Auth0 treats MCP
+servers and autonomous agents as first-class identities, and Cisco bought
+Astrix.
+
+Neither models **authority**. A context vendor knows how data relates. An
+identity vendor knows which credential acted. Neither can say whose mandate an
+action falls under, at what ceiling, with what delegation, and what the company
+decided before — and neither can prove it six months later. The defensible
+sentence is the one no competitor can say:
+
+> Memnox knows which human's authority an action falls under, and can prove it
+> afterwards.
+
+The corollary is about **when** governance gets bought. Over 40% of agentic
+projects are forecast to be cancelled by the end of 2027, and inadequate risk
+controls is named among the reasons. A control plane sold as what supervises a
+fleet is priced against fleets that mostly never reach production. It has to be
+sold as what gets the pilot **into** production — the reason the refund agent is
+allowed to touch real money at all.
 
 ---
 
