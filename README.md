@@ -62,7 +62,25 @@ Detected: payments, database migrations, CI/CD, infrastructure as code
 Packs: production-safety, terminal-safety, payments, money-movement, data-privacy, supply-chain
 ```
 
-The first run **observes without blocking**, because a rule you have not read yet should not wedge your agent on minute one. Watch what it would have done:
+The first run **observes without blocking**, because a rule you have not read yet should not wedge your agent on minute one.
+
+Ask it something before your agent does. This needs no traffic and no waiting:
+
+```bash
+memnox check shell.execute "rm -rf /"
+```
+
+```
+Decision : ALLOW
+Risk     : critical
+Reason   : Recursive force-delete is blocked for agents.
+Policies : recursive-delete-protection
+Withheld : block (this environment is only being monitored)
+```
+
+That rule was scaffolded from your repository, nothing was blocked to produce
+the answer, and the last line is what enforcing would have done. Then watch it
+against real work:
 
 ```bash
 memnox status   # is it on, what is in force, what would it have stopped
@@ -83,6 +101,83 @@ That last line is the number to watch, because it tells you whether enforcing is
 Everything runs on your machine. No account, no API key, and no network call.
 
 **→ [Full walkthrough: observe, tune, enforce, and the daily approval loop](docs/getting-started.md)**
+
+## Five commands that answer with your own environment
+
+Nothing below uses demo data or a hosted account. Every number comes from your rules, your agent, and your trail.
+
+**`memnox test`** — fire real dangerous actions at your own gate and see which ones it stops. It is read-only by default: nothing is recorded and no action is taken.
+
+```
+  PASS  BLOCKED   Wipe a directory tree with rm -rf
+        shell.execute "rm -rf /" — destructive-shell-protection
+  PASS  HELD      Deploy to production unattended
+        deploy.release "api" — production-deploy-approval
+  GAP   ALLOWED   Force-push over shared git history
+        repository.force_push "main" — no rule your organization wrote covers this
+
+Result
+  11 capabilities tested
+  4 blocked, 1 held for approval, 6 allowed
+
+  5 of these your agent can do right now, unattended:
+    - Rewrite a credential file
+    - Force-push over shared git history
+```
+
+It exits non-zero when something got through, so it belongs in CI. Add `--record` to put the run in the audit trail as a replayable session.
+
+**`memnox describe <action> [target]`** — everything your organization attaches to one action, and how far the rules that catch it reach.
+
+```
+Governed by
+  policy  production-database-protection — blocks
+          also governs database.drop, database.truncate
+  signal  behavior-guard — requires approval
+          4 blocked attempts in the last 10 minutes — agent is probing policy boundaries
+
+Who can authorise it
+  team-lead
+
+Observed
+  1 of the last 11 audited actions — 1 blocked, 0 held, 0 allowed
+```
+
+**`memnox plan run.yaml`** — rule on a whole run before any of it starts. Same exit codes as `memnox check`, so one pipeline can branch on either.
+
+```
+Memnox plan — 5 action(s)
+
+  ● approval  code.modify payment/refund.ts
+              policy "payment-code-approval" applied
+  ✗ block     shell.execute rm -rf ./dist
+              destructive command behind indirection: rm -f -r ./dist
+
+Plan: 0 to allow, 4 needing approval, 1 blocked.
+Nothing was done and nothing was recorded — this is what would happen.
+```
+
+`--from-session <id>` plans a session already on record, which answers *"what would this run do under today's rules?"*
+
+**`memnox drift`** — where what your organization states and what its trail shows have come apart: verdicts a monitored environment let through, decisions agents keep running into, rules nothing has ever matched, decisions past review. Exits non-zero when it finds any.
+
+**`memnox trace <eventId>`** — the evidence behind one recorded decision, link by link, with no model involved. Only what the record actually carries is ticked.
+
+```
+  Requested   shell.execute rm -rf /
+       ↓
+  Rules       destructive-shell-protection
+       ↓
+  Decision    BLOCK
+
+Evidence
+  ✓ agent identity    local-editor (f7652c84…)
+  · human principal   not stated by the caller
+  ✓ tamper evidence   chained — 000000000000… → b67f3c788bd1…
+  · reported outcome  never reported
+```
+
+`memnox explain` is the same event in plain language, and it does use a model. `trace` never does.
 
 ## Beyond one machine
 

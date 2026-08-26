@@ -112,6 +112,73 @@ memnox setup --no-detect   # generic starter rules instead of detection
 
 Add `.memnox/` to your `.gitignore`. Commit `memnox.policies.yaml`.
 
+### See it work, before waiting on anything
+
+`Observed` below counts real work your agent has done, so at minute one it is
+zero. You do not have to wait for it to know the gate is live. Ask the runtime
+directly:
+
+```bash
+memnox check shell.execute "rm -rf /"
+```
+
+```
+Decision : ALLOW
+Risk     : critical
+Reason   : Recursive force-delete is blocked for agents.
+Policies : recursive-delete-protection
+Withheld : block (this environment is only being monitored)
+```
+
+Four things are true in that output and all four are the product: a rule
+scaffolded from your own repository matched, it is named, the runtime rated the
+risk, and `Withheld` says what enforcing would have done. Nothing was blocked to
+produce it.
+
+Try one that ends somewhere else:
+
+```bash
+memnox check payment.refund --target acme-corp
+```
+
+The exit code carries the verdict, so `memnox check … && deploy` works in a
+pipeline: `0` may proceed, `2` needs approval, `3` blocked.
+
+### The whole surface at once
+
+`memnox check` asks about one action. `memnox test` asks about every dangerous
+thing an agent with a shell and a token can do, against the rules you just
+scaffolded:
+
+```bash
+memnox test
+```
+
+```
+  PASS  BLOCKED   Wipe a directory tree with rm -rf
+        shell.execute "rm -rf /" — destructive-shell-protection
+  PASS  HELD      Deploy to production unattended
+        deploy.release "api" — production-deploy-approval
+  GAP   ALLOWED   Force-push over shared git history
+        repository.force_push "main" — no rule your organization wrote covers this
+
+Result
+  11 capabilities tested
+  4 blocked, 1 held for approval, 6 allowed
+
+  5 of these your agent can do right now, unattended:
+    - Rewrite a credential file
+    - Force-push over shared git history
+```
+
+A `GAP` is not a bug in Memnox — it is a capability nobody has ruled on yet, and
+naming it is the point. The suite is read-only: nothing is recorded and no
+action is taken. It exits non-zero when something got through, so it belongs in
+CI next to your other tests. `memnox test --record` runs the same cases as real
+decisions instead, which puts the whole run in the audit trail as one replayable
+session; that traffic is real, so it raises approvals and the behavioral guards
+can see it.
+
 ---
 
 ## 2. Observe — do not skip this
@@ -148,6 +215,34 @@ memnox audit
 have stopped it. Run for a day, read them, and you know whether your rules are
 right before they can stop anyone working. `memnox check` prints the same thing
 as a `Withheld:` line, and the API returns it as `withheldEffect`.
+
+For any one line of that trail, `memnox trace <eventId>` walks the whole chain
+behind it — who asked, under whose authority, which rule matched, which signals
+fired, what was decided, and whether anyone ever reported back:
+
+```
+  Requested   shell.execute rm -rf /
+              by local-editor (f7652c84-95c9-43db-919f-57729c847a4c)
+       ↓
+  Rules       destructive-shell-protection
+       ↓
+  Decision    BLOCK
+              Destructive shell commands are blocked for AI agents.
+       ↓
+  Outcome     the action did not proceed
+
+Evidence
+  ✓ agent identity    local-editor (f7652c84-95c9-43db-919f-57729c847a4c)
+  · human principal   not stated by the caller
+  ✓ rule set version  a6428ca6e846
+  ✓ tamper evidence   chained — 000000000000… → b67f3c788bd1…
+  · reported outcome  never reported
+```
+
+Only what the record actually carries is ticked; a `·` is Memnox saying it does
+not have that, rather than implying it does. `trace` is deterministic and
+offline. `memnox explain` is the same event in plain language and does call a
+model — that is the difference between them.
 
 ---
 
@@ -272,6 +367,36 @@ the approval id. Two things to know:
 `memnox approvals override` — break-glass requires a reason and is permanently
 audited as critical.
 
+### Once a week, not once a day
+
+Rules go stale quietly. `memnox drift` reads what your organization states
+against what its own trail shows, and reports only where the two have come
+apart:
+
+```bash
+memnox drift
+```
+
+```
+Stated but not enforced
+  23 action(s) your rules decided to stop were allowed anyway — the environment
+  is being observed, not enforced.
+  Environments: production
+
+Stated and repeatedly contradicted
+  DEC-003  Customer data is never deleted in production — 9 hit(s)
+
+Stated and never exercised
+  1 of 4 rules matched nothing in this window — they may be guarding actions
+  your agents never name.
+    payment-code-approval
+```
+
+It exits non-zero when it finds anything, so it works as a weekly CI job. Each
+finding is a question, not a verdict: a never-exercised rule may be guarding
+something that has simply not happened yet, and a repeatedly contradicted
+decision may be one the team has moved past without retiring.
+
 ---
 
 ## 6. Ask before acting
@@ -302,6 +427,67 @@ wrote, or a signal a deterministic advisor raised — quoted verbatim. Nothing i
 generated, and when no rule matches it says so rather than implying approval.
 
 Asking records nothing and raises no approval.
+
+### Asking about more than one action
+
+`memnox context` answers for the agent. Two commands answer for you.
+
+**`memnox describe <action> [target]`** is the same question with the
+organization's whole file on it: the verdict right now, what else the matched
+rules reach, who can authorise it, the decisions on record that bear on it, and
+how the same action has gone in the recent trail.
+
+```
+Governed by
+  policy  production-database-protection — blocks
+          also governs database.drop, database.truncate
+  signal  behavior-guard — requires approval
+          4 blocked attempts in the last 10 minutes — agent is probing policy boundaries
+
+Who can authorise it
+  team-lead
+
+Observed
+  1 of the last 11 audited actions — 1 blocked, 0 held, 0 allowed
+```
+
+`also governs` is the reach Memnox can compute honestly: the other actions and
+targets the same rule catches. It is not a code dependency graph — Memnox does
+not read your code, and never claims to.
+
+**`memnox plan <file>`** rules on a whole run before any of it starts. A plan is
+a list of intended actions:
+
+```yaml
+version: 1
+actions:
+  - action: code.modify
+    target: payment/refund.ts
+  - action: database.migrate
+    target: production
+    environment: production
+  - action: shell.execute
+    target: rm -rf ./dist
+```
+
+```
+Memnox plan — 3 action(s)
+
+  ● approval  code.modify payment/refund.ts
+              policy "payment-code-approval" applied
+  ● approval  database.migrate production [production]
+  ✗ block     shell.execute rm -rf ./dist
+              destructive command behind indirection: rm -f -r ./dist
+
+Plan: 0 to allow, 2 needing approval, 1 blocked.
+Nothing was done and nothing was recorded — this is what would happen.
+```
+
+It uses the same exit codes as `memnox check` — `0`, `2`, `3` — so one pipeline
+can branch on either. `memnox plan --from-session <id>` plans a session already
+in your audit trail, which answers *"what would that run do under today's
+rules?"* A misspelled field is an error rather than a silently dropped one,
+because a typo'd `enviroment` would quietly change every verdict below it.
 
 ### The agent asks on its own
 

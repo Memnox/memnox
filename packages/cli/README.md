@@ -30,6 +30,11 @@ Most commands need no connection flags: the agent token and runtime URL come fro
 | `context <action> [target]` | what governs an action — ask before doing it |
 | `mcp` / `mcp install` | run Memnox as an MCP server; register it with a client |
 | `check [action] [target]` | ask for a decision on one action |
+| `describe <action> [target]` | everything the organization attaches to one action, and what else its rules reach |
+| `plan [file]` | rule on a whole run before it starts (`--from-session` plans one already on record) |
+| `test` | fire the dangerous-capability suite at your own gate and report what got through |
+| `drift` | where the stated rules and the actual history disagree |
+| `trace [eventId]` | the evidence behind one recorded decision, link by link |
 | `approve <id>` / `deny <id>` | resolve a pending approval (`--by` defaults to `$USER`) |
 | `simulate [file]` | replay real history through candidate rules |
 | `reload` | re-read policy files without restarting the runtime |
@@ -70,6 +75,7 @@ what that one command touches:
 |---|---|
 | `serve` | `ServerLauncher` — defaults to `startServer` |
 | `explain`, `draft`, `intent` | `LlmProviderFactory` — defaults to BYOK providers |
+| `test` | a session-id factory, so a recorded run is reproducible in a test |
 
 `console.*` appears in exactly two places: `ConsoleOutput` and `index.ts`.
 Everywhere else writes through `context.out`.

@@ -14,13 +14,22 @@ interface RecordedRequest {
   authorization?: string;
 }
 
+type RouteHandler = (body: unknown) => { status?: number; body: unknown };
+
 /** Stands in for a running runtime so command bodies execute against real SDK code. */
 export class FakeRuntime {
   readonly requests: RecordedRequest[] = [];
   private readonly routes = new Map<string, { status: number; body: unknown }>();
+  private readonly handlers = new Map<string, RouteHandler>();
 
   on(method: string, path: string, body: unknown, status = 200): this {
     this.routes.set(`${method} ${path}`, { status, body });
+    return this;
+  }
+
+  /** For a command that sends many requests to one route and needs distinct answers. */
+  handle(method: string, path: string, respond: RouteHandler): this {
+    this.handlers.set(`${method} ${path}`, respond);
     return this;
   }
 
@@ -35,7 +44,19 @@ export class FakeRuntime {
         authorization: init.headers['authorization'],
       });
 
-      const route = this.routes.get(`${init.method} ${pathname}`);
+      const key = `${init.method} ${pathname}`;
+      const handler = this.handlers.get(key);
+      if (handler) {
+        const answer = handler(
+          init.body === undefined ? undefined : JSON.parse(init.body),
+        );
+        return new Response(JSON.stringify(answer.body), {
+          status: answer.status ?? 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      const route = this.routes.get(key);
       if (!route) {
         return new Response(`no stub for ${init.method} ${pathname}`, { status: 404 });
       }

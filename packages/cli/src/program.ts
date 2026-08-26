@@ -7,6 +7,8 @@ import { registerAuditCommand } from './commands/audit.command';
 import { registerCheckCommand } from './commands/check.command';
 import { registerCloudCommand } from './commands/cloud.command';
 import { registerContextCommand } from './commands/context.command';
+import { registerDescribeCommand } from './commands/describe.command';
+import { registerDriftCommand } from './commands/drift.command';
 import { registerComplianceCommand } from './commands/compliance.command';
 import { registerDraftCommand } from './commands/draft.command';
 import { registerExplainCommand } from './commands/explain.command';
@@ -18,6 +20,7 @@ import { registerIntentCommand } from './commands/intent.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerMemoryCommand } from './commands/memory.command';
 import { registerOrgCommand } from './commands/org.command';
+import { registerPlanCommand } from './commands/plan.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerPullCommand } from './commands/pull.command';
 import { registerQuickstartCommand } from './commands/quickstart.command';
@@ -27,6 +30,8 @@ import { registerServeCommand } from './commands/serve.command';
 import { registerStatusCommand } from './commands/status.command';
 import { registerSetupCommand } from './commands/setup.command';
 import { registerStopCommand } from './commands/stop.command';
+import { registerTestCommand } from './commands/test.command';
+import { registerTraceCommand } from './commands/trace.command';
 import { registerValidateCommand } from './commands/validate.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -48,6 +53,11 @@ export function buildProgram(context: CliContext): Command {
   registerValidateCommand(program, context);
   registerCheckCommand(program, context);
   registerContextCommand(program, context);
+  registerDescribeCommand(program, context);
+  registerPlanCommand(program, context);
+  registerTestCommand(program, context);
+  registerDriftCommand(program, context);
+  registerTraceCommand(program, context);
   registerAuditCommand(program, context);
   registerAgentsCommand(program, context);
   registerApprovalsCommand(program, context);

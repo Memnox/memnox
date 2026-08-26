@@ -197,11 +197,19 @@ export function registerSetupCommand(
                 ),
           );
         }
+        /* The first proof, and the only one that needs no traffic and no wait.
+           Every other number here is an aggregate the agent has to earn. */
+        if (credentialed) {
+          out.note(
+            style.dim('→ Try it now:           memnox check shell.execute "rm -rf /"'),
+          );
+          out.note(style.dim('→ Test every capability: memnox test'));
+        }
         out.note(style.dim('→ See what it decided:  memnox audit'));
         if (!joined && !enforcing) {
           out.note(style.dim('→ Start blocking:       memnox setup --enforce'));
         }
-        if (!joined) out.note(style.dim('→ Stop it:             memnox stop'));
+        if (!joined) out.note(style.dim('→ Stop it:              memnox stop'));
       },
     );
 }

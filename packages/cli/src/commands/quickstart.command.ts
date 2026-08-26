@@ -19,5 +19,13 @@ export function registerQuickstartCommand(program: Command, context: CliContext)
         'That watches without blocking. Drop --enforcement once the decisions look right.',
       );
       context.out.note('Everything runs locally — no account, no network, no limits.');
+      context.out.note('');
+      context.out.note('Once it is up:');
+      context.out.note('  memnox test                      what your agent can still do');
+      context.out.note('  memnox describe database.delete  what governs one action');
+      context.out.note('  memnox plan run.yaml             rule on a whole run first');
+      context.out.note(
+        '  memnox drift                     where your rules and history disagree',
+      );
     });
 }
