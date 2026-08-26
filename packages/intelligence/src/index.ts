@@ -1,4 +1,5 @@
 export * from './llm-provider';
+export * from './reasoning';
 export * from './embedding-provider';
 export * from './intent-classifier';
 export * from './providers/anthropic-provider';
