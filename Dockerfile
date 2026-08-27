@@ -20,7 +20,11 @@ RUN addgroup -S memnox && adduser -S memnox -G memnox && mkdir -p /data \
   && chown -R memnox:memnox /data
 USER memnox
 COPY --chown=memnox:memnox --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-VOLUME /data
+# No `VOLUME /data`: it declares an anonymous volume nobody names, and both
+# compose files already mount `memnox-data:/data` themselves, so it bought
+# nothing here. Platforms that manage their own volumes reject the instruction
+# outright — Railway fails the build on it — and whoever runs this image still
+# has to mount /data somewhere, which is the part that was never optional.
 EXPOSE 7466
 # The entrypoint seeds a policy file on a fresh volume; without it the first
 # "docker compose up" crash-loops on a file the volume cannot yet contain.
