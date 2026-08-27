@@ -3,6 +3,14 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # A release that fails halfway is re-run against the same tag rather than
+  # finished by hand: publishing skips versions already on the registry, and npm
+  # versions are immutable, so re-tagging would fail at the first one that got out.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish, e.g. v0.3.0
+        required: true
 
 jobs:
   publish:
@@ -12,6 +20,8 @@ jobs:
       id-token: write # npm provenance signs against this
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -20,14 +30,51 @@ jobs:
 
       - run: npm ci
 
-      - name: Tag must match the package version
+      # Every package sets publishConfig.provenance, so a token alone is not
+      # enough — but a missing or expired one is the likelier failure, and it
+      # otherwise surfaces as a 401 on the first publish, after the whole test
+      # suite has run. Ask the registry who we are before spending that time.
+      #
+      # The account enforces 2FA on writes, so this must be an automation or
+      # granular access token. A classic publish token still prompts for an OTP
+      # that no CI run can answer.
+      - name: The registry must accept our token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./packages/core/package.json').version")"
-          test "$tag" = "$pkg" || {
-            echo "tag $tag does not match package version $pkg"
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN is not set on this repository."
+            exit 1
+          fi
+          npm whoami || {
+            echo "NPM_TOKEN is set but the registry rejects it — expired or revoked."
             exit 1
           }
+
+      # Checking core alone let a package left behind at an older version pass:
+      # it would publish a duplicate of a version already out, or nothing at all.
+      - name: Tag must match every package version
+        id: version
+        # Via env, never interpolated into the script: a dispatch input is a
+        # string somebody typed, and `${{ }}` splices it in before bash parses.
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -n "$TAG_INPUT" ]; then
+            tag="${TAG_INPUT#v}"
+          fi
+          mismatched=""
+          for dir in packages/*/; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            [ "$version" = "$tag" ] || mismatched="$mismatched $name@$version"
+          done
+          if [ -n "$mismatched" ]; then
+            echo "tag $tag does not match:$mismatched"
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
 
       - run: npm run typecheck
       - run: npm test
@@ -42,38 +89,66 @@ jobs:
       # silently skipped org-graph and organization when they were added, and a
       # package missing from a release is not something the build would fail on.
       - name: Resolve publish order
-        id: order
         run: |
-          {
-            echo 'packages<<EOF'
-            node -e "
-              const fs=require('fs');
-              const pkgs={};
-              for (const d of fs.readdirSync('packages')) {
-                const p=JSON.parse(fs.readFileSync('packages/'+d+'/package.json','utf8'));
-                if (p.private) continue;
-                pkgs[p.name]={deps:Object.keys({...p.dependencies,...p.peerDependencies})
-                  .filter(k=>k==='memnox'||k.startsWith('@memnox/'))};
-              }
-              const done=new Set(), order=[];
-              while (order.length<Object.keys(pkgs).length){
-                const ready=Object.entries(pkgs)
-                  .filter(([n,v])=>!done.has(n)&&v.deps.every(d=>done.has(d)))
-                  .map(([n])=>n).sort();
-                if(!ready.length){console.error('dependency cycle');process.exit(1);}
-                ready.forEach(n=>{done.add(n);order.push(n);});
-              }
-              console.log(order.join('\n'));
-            "
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
+          node -e "
+            const fs=require('fs');
+            const pkgs={};
+            for (const d of fs.readdirSync('packages')) {
+              const p=JSON.parse(fs.readFileSync('packages/'+d+'/package.json','utf8'));
+              if (p.private) continue;
+              pkgs[p.name]={deps:Object.keys({...p.dependencies,...p.peerDependencies})
+                .filter(k=>k==='memnox'||k.startsWith('@memnox/'))};
+            }
+            const done=new Set(), order=[];
+            while (order.length<Object.keys(pkgs).length){
+              const ready=Object.entries(pkgs)
+                .filter(([n,v])=>!done.has(n)&&v.deps.every(d=>done.has(d)))
+                .map(([n])=>n).sort();
+              if(!ready.length){console.error('dependency cycle');process.exit(1);}
+              ready.forEach(n=>{done.add(n);order.push(n);});
+            }
+            console.log(order.join('\n'));
+          " > publish-order.txt
+          cat publish-order.txt
 
       - name: Publish in dependency order
-        run: |
-          echo "${{ steps.order.outputs.packages }}" | while read -r pkg; do
-            [ -z "$pkg" ] && continue
-            echo "publishing $pkg"
-            npm publish -w "$pkg" --access public
-          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          while read -r pkg; do
+            [ -n "$pkg" ] || continue
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              echo "skip      $pkg@$VERSION is already published"
+              continue
+            fi
+            echo "publish   $pkg@$VERSION"
+            npm publish -w "$pkg" --access public
+          done < publish-order.txt
+
+      # A tag that published nothing is what this closes: the run above went
+      # green on a registry that had none of it. A package that never existed
+      # before takes a minute or two to appear in the registry index even though
+      # its tarball is already served, so this waits rather than asserting once.
+      - name: Every package must resolve at the released version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          missing=""
+          while read -r pkg; do
+            [ -n "$pkg" ] || continue
+            resolved=""
+            for _ in $(seq 1 10); do
+              if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+                resolved=yes
+                break
+              fi
+              sleep 15
+            done
+            [ -n "$resolved" ] || missing="$missing $pkg"
+          done < publish-order.txt
+          if [ -n "$missing" ]; then
+            echo "not on the registry at $VERSION:$missing"
+            exit 1
+          fi
+          echo "all packages resolve at $VERSION"

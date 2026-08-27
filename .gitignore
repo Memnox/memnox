@@ -15,3 +15,6 @@ sessions/
 # back them up somewhere that is not this repository.
 memnox-keyring*.json
 *.keyring.json
+
+# Written by the release workflow when it resolves the publish order.
+publish-order.txt
