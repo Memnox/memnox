@@ -1,6 +1,6 @@
 {
   "name": "@memnox/organization",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Ask your organization before your agent acts — context, authority and one decision, from any AI.",
   "keywords": [
     "ai-agents",

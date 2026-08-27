@@ -1,6 +1,6 @@
 {
   "name": "@memnox/local-gate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "In-process policy gate — matches a call's own arguments and scans its content on the machine that makes it, so the raw payload never crosses the network.",
   "keywords": [
     "policy",
@@ -45,8 +45,8 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.2.0",
-    "@memnox/policy-engine": "0.2.0",
+    "@memnox/core": "0.3.0",
+    "@memnox/policy-engine": "0.3.0",
     "yaml": "^2.4.0"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@memnox/risk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Deterministic behavioral risk signals for AI agents \u2014 baseline deviation, bursts, and escalation patterns.",
   "keywords": [
     "risk"
@@ -41,8 +41,8 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.2.0",
-    "@memnox/org-graph": "0.2.0",
-    "@memnox/policy-engine": "0.2.0"
+    "@memnox/core": "0.3.0",
+    "@memnox/org-graph": "0.3.0",
+    "@memnox/policy-engine": "0.3.0"
   }
 }
