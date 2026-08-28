@@ -25,13 +25,52 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
   return document.policies.map((policy) => ({ ...policy, project: document.project }));
 }
 
+/** A path whose absence is tolerable, and how to say so when it is skipped. */
+export interface OptionalPolicySources {
+  /** Paths registered by *other* repositories on this machine. */
+  optional: ReadonlySet<string>;
+  /** Told which registered file vanished, so a skip is never silent. */
+  onSkipped?: (filePath: string) => void;
+}
+
 /** One file per repository; they compose under most-restrictive-wins. */
-export async function loadPolicyFiles(filePaths: readonly string[]): Promise<Policy[]> {
+export async function loadPolicyFiles(
+  filePaths: readonly string[],
+  sources?: OptionalPolicySources,
+): Promise<Policy[]> {
   const policies: Policy[] = [];
   for (const filePath of filePaths) {
+    // A path this run named itself must exist — a typo has to be loud. A path
+    // another repo registered belongs to a checkout that may since have been
+    // deleted or moved, and one dead entry must not stop every other project
+    // on the machine from starting.
+    if (sources !== undefined && sources.optional.has(filePath)) {
+      const loaded = await loadOptionalPolicyFile(filePath);
+      if (loaded === null) {
+        if (sources.onSkipped !== undefined) sources.onSkipped(filePath);
+        continue;
+      }
+      policies.push(...loaded);
+      continue;
+    }
     policies.push(...(await loadPoliciesFromFile(filePath)));
   }
   return policies;
+}
+
+/** Null when the file is gone; a malformed one still throws — that is a real fault. */
+async function loadOptionalPolicyFile(filePath: string): Promise<Policy[] | null> {
+  try {
+    return await loadPoliciesFromFile(filePath);
+  } catch (err) {
+    if (isMissingPolicyFile(err)) return null;
+    throw err;
+  }
+}
+
+/** `loadPoliciesFromFile` rewrites ENOENT into guidance, so match on the path it names. */
+function isMissingPolicyFile(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith('No policy file at ');
 }
 
 interface PolicyRegistry {

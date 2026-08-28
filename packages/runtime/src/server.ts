@@ -53,6 +53,7 @@ import { readStoredEnforcement, writeStoredEnforcement } from './enforcement-fil
 import { FilePolicyHistory } from './policy-history';
 import {
   loadPolicyFiles,
+  type OptionalPolicySources,
   readPolicyRegistry,
   writePoliciesToFile,
 } from '@memnox/local-gate';
@@ -165,7 +166,32 @@ export async function buildServer(
     // it absolutely, and two spellings of one path loaded every rule in it twice.
     return [...new Set(configured.map((source) => resolve(source)))];
   };
-  const policies = await loadPolicyFiles(await policySources());
+  /** Registered by another repo, so its checkout may be gone; this run's own files may not. */
+  const optionalSources = async (): Promise<OptionalPolicySources> => {
+    const named = new Set(
+      [
+        ...(config.policyFile === undefined ? [] : [config.policyFile]),
+        ...(config.policyFiles ?? []),
+      ].map((source) => resolve(source)),
+    );
+    const registered =
+      config.policyRegistryFile === undefined
+        ? []
+        : await readPolicyRegistry(config.policyRegistryFile);
+    return {
+      optional: new Set(
+        registered
+          .map((source) => resolve(source))
+          .filter((source) => !named.has(source)),
+      ),
+      onSkipped: (filePath) =>
+        CONSOLE_LOGGER.warn(
+          `registered policy file is gone, skipping it: ${filePath} — remove it from ` +
+            `${config.policyRegistryFile ?? 'the policy registry'} to silence this`,
+        ),
+    };
+  };
+  const policies = await loadPolicyFiles(await policySources(), await optionalSources());
   reportArgumentRules(policies);
 
   const metrics = new MetricsRegistry();
@@ -296,7 +322,10 @@ export async function buildServer(
     reloadPolicies:
       config.policyFile || config.policyRegistryFile
         ? async () => {
-            const reloaded = await loadPolicyFiles(await policySources());
+            const reloaded = await loadPolicyFiles(
+              await policySources(),
+              await optionalSources(),
+            );
             gateway.usePolicyEngine(
               new PolicyEngine(reloaded, { defaultEffect: config.defaultEffect }),
             );
@@ -321,7 +350,10 @@ export async function buildServer(
       ? async (policies) => {
           await writePoliciesToFile(config.policyFile ?? '', policies);
           // Recomposed from every source: swapping dropped the org bundle on any write.
-          const composed = await loadPolicyFiles(await policySources());
+          const composed = await loadPolicyFiles(
+            await policySources(),
+            await optionalSources(),
+          );
           gateway.usePolicyEngine(
             new PolicyEngine(composed, { defaultEffect: config.defaultEffect }),
           );

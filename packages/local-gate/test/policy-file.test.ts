@@ -57,6 +57,40 @@ describe('policy sources', () => {
     expect(policies.map((policy) => policy.name)).toEqual(['web-rule', 'api-rule']);
   });
 
+  it('skips a registered file that has since been deleted, and says which', async () => {
+    // One repo losing its policy file used to stop every other project on the
+    // machine from starting a runtime at all.
+    const mine = join(dir, 'mine.yaml');
+    const theirs = join(dir, 'deleted-repo.yaml');
+    await writeFile(mine, doc('acme', 'my-rule', 'allow'), 'utf8');
+    const skipped: string[] = [];
+
+    const policies = await loadPolicyFiles([mine, theirs], {
+      optional: new Set([theirs]),
+      onSkipped: (file) => skipped.push(file),
+    });
+
+    expect(policies.map((policy) => policy.name)).toEqual(['my-rule']);
+    expect(skipped).toEqual([theirs]);
+  });
+
+  it('still fails on a file this run named itself — a typo has to be loud', async () => {
+    const missing = join(dir, 'typo.yaml');
+
+    await expect(
+      loadPolicyFiles([missing], { optional: new Set(), onSkipped: () => {} }),
+    ).rejects.toThrow(/No policy file at/);
+  });
+
+  it('never skips a malformed registered file — that is a real fault', async () => {
+    const broken = join(dir, 'broken.yaml');
+    await writeFile(broken, 'version: 1\npolicies: [{ name: x }]\n', 'utf8');
+
+    await expect(
+      loadPolicyFiles([broken], { optional: new Set([broken]) }),
+    ).rejects.toThrow();
+  });
+
   it('treats a missing registry as no extra sources, not an error', async () => {
     expect(await readPolicyRegistry(join(dir, 'absent.json'))).toEqual([]);
   });
