@@ -182,6 +182,19 @@ deprecated.
   server had exited — `child?.stdin?.write()` returns false rather than throwing, so
   the client hung forever. Drops are now logged and answered with an `isError` result.
 
+## [0.3.1] - 2026-08-28
+
+### Fixed
+
+- **`memnox setup` could not start a runtime once any registered policy file went
+  missing.** `~/.memnox/policies.json` only ever grows, and loading it treated a
+  vanished path as fatal, so deleting a policy file in one repository broke setup
+  in *every other project on the machine* — reporting a directory the user was not
+  working in. A path a run names itself is still fatal, because a typo has to be
+  loud; a path another repository registered is now skipped with a warning naming
+  the file. A registered file that is present but malformed still fails.
+- `memnox --version` reported `0.2.0`, unchanged since the 0.3.0 release.
+
 ## [0.1.0]
 
 Initial release.

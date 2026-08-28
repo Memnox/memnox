@@ -1,7 +1,7 @@
 {
   "name": "@memnox/redis",
-  "version": "0.3.0",
-  "description": "Redis adapter for the LockService port — distributed locks and cooldowns for multi-instance deployments.",
+  "version": "0.3.1",
+  "description": "Redis adapter for the LockService port \u2014 distributed locks and cooldowns for multi-instance deployments.",
   "keywords": [
     "redis",
     "locks",
@@ -44,7 +44,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.3.0",
+    "@memnox/core": "0.3.1",
     "ioredis": "^5.4.0"
   }
 }
