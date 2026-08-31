@@ -42,6 +42,12 @@ import {
   type FrameStore,
 } from '@memnox/ledger';
 import {
+  compileStateFacts,
+  matchesScope as stateApplies,
+  stateVersion,
+} from '@memnox/org-graph';
+import type { StateFactStore } from './stores/json-file-state-store';
+import {
   AGENT_STATUS,
   buildActionBriefing,
   buildExplanation,
@@ -204,6 +210,8 @@ export interface ActionGatewayDeps {
   tasks?: TaskStore;
   /** The flight recorder. Full fidelity on anything not simply allowed, sampled otherwise. */
   frames?: FrameStore;
+  /** The company's current condition, read as a policy input rather than queried. */
+  state?: StateFactStore;
 }
 
 interface Outcome {
@@ -437,10 +445,12 @@ export class ActionGateway {
     }
 
     const scope = await this.compareScope(request);
+    const state = await this.stateInForce(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       now: new Date(),
       ...(scope === undefined ? {} : { scope: scope.match }),
+      ...state,
     });
     const advisories = await this.collectAdvisories(request, agent);
     const effect = this.combineEffects(evaluation.effect, advisories);
@@ -527,10 +537,12 @@ export class ActionGateway {
     }
 
     const scope = await this.compareScope(request);
+    const state = await this.stateInForce(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       now: new Date(),
       ...(scope === undefined ? {} : { scope: scope.match }),
+      ...state,
     });
     const advisories = await advise();
     const verdict = this.combineEffects(evaluation.effect, advisories);
@@ -830,6 +842,40 @@ export class ActionGateway {
       this.logger.error(`audit append failed for ${event.id}: ${String(err)}`);
       throw err;
     }
+  }
+
+  /**
+   * State is distributed, not queried: the facts are read once and compared in process,
+   * so a freeze refuses in microseconds rather than over a network the hot path forbids.
+   * An unreadable store contributes no facts, which lets a state-bearing rule lapse
+   * rather than refusing everything on an outage.
+   */
+  private async stateInForce(
+    request: ActionRequest,
+  ): Promise<{ state?: string[]; stateVersion?: string }> {
+    const store = this.deps.state;
+    if (store === undefined) return {};
+    let facts;
+    try {
+      facts = await store.list();
+    } catch (err) {
+      this.logger.error(`state facts unreadable: ${String(err)}`);
+      return {};
+    }
+    const { facts: live } = compileStateFacts(facts, new Date());
+    const subject = {
+      ...(request.environment === undefined
+        ? {}
+        : { environments: [request.environment] }),
+      ...(request.projectId === undefined ? {} : { repositories: [request.projectId] }),
+      ...(request.target === undefined ? {} : { services: [request.target] }),
+    };
+    const applies = live.filter((fact) => stateApplies(fact, subject));
+    if (applies.length === 0) return { stateVersion: stateVersion(live) };
+    return {
+      state: [...new Set(applies.map((fact) => fact.kind))],
+      stateVersion: stateVersion(live),
+    };
   }
 
   /**

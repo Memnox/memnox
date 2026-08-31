@@ -29,6 +29,12 @@ export interface PolicyMatch {
    * judgement: `out_of_scope` is a fact a rule matches on, exactly like an environment.
    */
   scope?: ScopeMatch[];
+  /**
+   * The company's current condition, distributed inside the bundle rather than queried.
+   * A merge refused because incident 928 is open and the freeze is active is
+   * organizational intelligence enforcing an action.
+   */
+  state?: string[];
 }
 
 /** Per-rule mode. An observed rule matches and is recorded, but never decides. */

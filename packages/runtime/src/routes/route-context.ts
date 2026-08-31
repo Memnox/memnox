@@ -16,6 +16,8 @@ import type { PolicyHistory } from '../policy-history';
 import type { ActionGateway } from '../action-gateway';
 import type { ContainmentService } from '../containment-service';
 import type { LearnService } from '../learn-service';
+import type { DelegationService } from '../delegation-service';
+import type { StateFactStore } from '../stores/json-file-state-store';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { MetricsRegistry } from '../metrics';
@@ -76,6 +78,10 @@ export interface RouteContext {
   containment: ContainmentService;
   /** Usage against grant, and the least-privilege proposal that falls out of it. */
   learn: LearnService;
+  /** Who may act for whom, through a chain that can only narrow. */
+  delegations: DelegationService;
+  /** The company's current condition, read as a policy input. */
+  state: StateFactStore;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

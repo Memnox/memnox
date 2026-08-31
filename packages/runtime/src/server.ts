@@ -101,6 +101,8 @@ import {
 } from './stores/in-memory-capability-store';
 import { registerOperateRoutes } from './routes/operate.routes';
 import { LearnService } from './learn-service';
+import { DelegationService, InMemoryDelegationStore } from './delegation-service';
+import { JsonFileStateStore } from './stores/json-file-state-store';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
@@ -117,6 +119,7 @@ const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
 const SEAMS_FILE = 'seams.json';
 const FRAMES_FILE = 'frames.jsonl';
+const STATE_FILE = 'state.json';
 /** One machine, always reachable, because it is this process. */
 const LOCAL_INSTALL_LABEL = 'this machine';
 const STATED_FILE = 'organization.json';
@@ -245,6 +248,7 @@ export async function buildServer(
   const taskStore = new InMemoryTaskStore();
   const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
   const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
+  const stateStore = new JsonFileStateStore(join(config.dataDir, STATE_FILE), codec);
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
@@ -260,6 +264,7 @@ export async function buildServer(
     explanations,
     tasks: taskStore,
     frames: frameStore,
+    state: stateStore,
     identityStore,
     auditLog,
     metrics,
@@ -325,6 +330,11 @@ export async function buildServer(
     config,
     explanations,
     seams: seamStore,
+    delegations: new DelegationService({
+      store: new InMemoryDelegationStore(),
+      logger: CONSOLE_LOGGER,
+    }),
+    state: stateStore,
     learn: new LearnService({
       auditLog,
       rules: () => policies,

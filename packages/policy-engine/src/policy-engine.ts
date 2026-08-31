@@ -28,6 +28,14 @@ export interface EvaluationContext {
    * A fact to match on, like an environment: no model is consulted here, ever.
    */
   scope?: ScopeMatch;
+  /**
+   * State facts in force for this request, by kind — "freeze", "incident". Small,
+   * versioned and carrying an expiry, so they ride in the bundle and the evaluator
+   * still decides locally in microseconds rather than calling a service.
+   */
+  state?: readonly string[];
+  /** Which state version decided this, so a freeze that never propagated is a finding. */
+  stateVersion?: string;
 }
 
 export interface EvaluationResult {
@@ -41,6 +49,8 @@ export interface EvaluationResult {
   rule?: RuleRef;
   /** Resolved from that rule, never invented. Absent when the rule named none. */
   alternative?: Alternative;
+  /** The state version this verdict was decided against, stamped for later reading. */
+  stateVersion?: string;
 }
 
 export interface PolicyEngineOptions {
@@ -117,6 +127,9 @@ export class PolicyEngine {
         riskLevel,
         reason: DECISION_REASON.NO_POLICY_MATCHED,
         matchedPolicies,
+        ...(context.stateVersion === undefined
+          ? {}
+          : { stateVersion: context.stateVersion }),
         ...withheld(this.defaultEffect, shadowEffect),
       };
     }
@@ -133,6 +146,9 @@ export class PolicyEngine {
       reason: winner.reason ?? `policy "${winner.name}" applied`,
       matchedPolicies,
       ...(decided === undefined ? {} : { rule: this.ruleRef(decided) }),
+      ...(context.stateVersion === undefined
+        ? {}
+        : { stateVersion: context.stateVersion }),
       ...(winner.alternative === undefined ? {} : { alternative: winner.alternative }),
       ...withheld(winner.effect, shadowEffect),
     };
@@ -170,6 +186,7 @@ export class PolicyEngine {
       matchesAllArguments(policy.match.arguments, request.arguments) &&
       matchesAmount(policy.match.aboveAmount, request.amount) &&
       matchesScope(policy.match.scope, context.scope) &&
+      matchesState(policy.match.state, context.state) &&
       matchesAnyTimeWindow(policy.match.windows, context.now)
     );
   }
@@ -191,6 +208,20 @@ function toMatchedPolicy(policy: Policy): MatchedPolicy {
       ? {}
       : { alternative: policy.decision.alternative }),
   };
+}
+
+/**
+ * A rule naming a state fact applies only while that fact is in force. A bundle with
+ * no facts matches no state-bearing rule, which is what makes a lapsed freeze stop
+ * refusing rather than keep refusing forever.
+ */
+function matchesState(
+  required: readonly string[] | undefined,
+  inForce: readonly string[] | undefined,
+): boolean {
+  if (required === undefined || required.length === 0) return true;
+  if (inForce === undefined || inForce.length === 0) return false;
+  return required.some((kind) => inForce.includes(kind));
 }
 
 /**

@@ -147,6 +147,7 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
       ),
       windows: asOptionalWindows(match['windows'], `${path}.match.windows`, issues),
       scope: asOptionalScope(match['scope'], `${path}.match.scope`, issues),
+      state: asOptionalStringArray(match['state'], `${path}.match.state`, issues),
     },
     decision: {
       effect,
