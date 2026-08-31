@@ -8,8 +8,8 @@
      [![CI](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml)
      [![npm](https://img.shields.io/npm/v/memnox?label=memnox)](https://www.npmjs.com/package/memnox) -->
 
-[![memnox](https://img.shields.io/badge/memnox-v0.1.0-orange)](packages/cli)
-[![@memnox/sdk](https://img.shields.io/badge/%40memnox%2Fsdk-v0.1.0-orange)](packages/sdk)
+[![memnox](https://img.shields.io/badge/memnox-v0.4.0-orange)](packages/cli)
+[![@memnox/sdk](https://img.shields.io/badge/%40memnox%2Fsdk-v0.4.0-orange)](packages/sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
 
@@ -18,6 +18,8 @@
 # Memnox
 
 Memnox gives your AI agents a deterministic policy gate, human approvals, tamper-evident audit, delegated authority, and prompt-injection defense — so you can let agents act on real systems without hoping they behave.
+
+**A refusal names what to use instead**, so the agent finishes the task under constraint rather than abandoning it and leaving you to blame the tool.
 
 This is the Memnox runtime monorepo. It contains:
 
@@ -45,6 +47,43 @@ Three things make that decision worth trusting.
 **It is a gate, not a worker.** It answers *"is this allowed, and who authorizes it?"* and never does the work itself. Memnox reads an action request and decides on it; it never generates, edits, or commits anything, and runs no sandbox. Governing an agent and being an agent do not belong in the same trust boundary.
 
 **It leaves proof.** Every decision appends one event to a hash-chained audit log, so you can replay any session and show exactly what was allowed, what was stopped, and under which rule.
+
+## Start with no account at all
+
+Before any rules, any login and any network call, one question is worth
+answering: **what on this machine is already able to act, and what can it reach?**
+
+```bash
+npx memnox
+```
+
+```
+AI AGENTS               claude-code, claude-desktop, cursor, codex-cli
+MCP CLIENTS             claude-code, cursor
+
+REACHABLE FROM AN AGENT RIGHT NOW
+
+  !  ~/.ssh/id_ed25519         3 agents
+  !  ~/.docker/config.json     3 agents
+  !  /var/run/docker.sock      3 agents
+
+11 execution surfaces.
+
+  memnox doctor   what is risky and why
+  memnox harden   fix it, reversibly
+```
+
+Nothing is transmitted. That is the only reason this is safe to run on a laptop
+holding production credentials, and it is why the first four things Memnox does
+need no account.
+
+Finding a credential means opening the file it lives in — so the value stays in
+the process that read it. What is stored is a path, a kind and a hash, and
+`--json` lists every file it opened, so the tool that inspects your credentials
+can itself be inspected.
+
+`memnox doctor` ranks that into findings, each naming the one change that closes
+it. `memnox harden` writes those changes, and **prints the undo before it runs**.
 
 ## Quickstart
 
@@ -102,7 +141,7 @@ Everything runs on your machine. No account, no API key, and no network call.
 
 **→ [Full walkthrough: observe, tune, enforce, and the daily approval loop](docs/getting-started.md)**
 
-## Five commands that answer with your own environment
+## Six commands that answer with your own environment
 
 Nothing below uses demo data or a hosted account. Every number comes from your rules, your agent, and your trail.
 
@@ -162,6 +201,38 @@ Evidence
 ```
 
 **`memnox why <decisionId>`** — the same decision in five lines, read back off the record: source, resource, authority, rule, outcome. Every line cites the rule version or the context block it came from. Nothing here is generated, because an explanation a model wrote afterwards is a plausible story about a decision, which is worse than none.
+
+**`memnox learn`** — after a day of real work, what each agent was permitted, what it actually used, and what it never needed. Rendered as a policy file in the format a person writes.
+
+```
+  You granted this agent 14 action(s) and it used 27% of them.
+
+  From 7 day(s), 31 session(s), covering 96% of its traffic.
+
+  used            filesystem.read, repository.read
+  never touched   cloud.write, database.delete
+  tried, refused  filesystem.read .env  4×
+```
+
+Least privilege written from behaviour rather than from imagination. The window, the sessions and the coverage ride in a comment at the top of the file it writes, where they cannot be dropped in the retelling — four days of one developer's work is not a policy for a team, and a proposal that hid how little it saw would be a trap.
+
+## What you actually get, in the order you get it
+
+Each step is worth something on its own. Nothing below needs the step after it.
+
+| When | What you run | What you did not have before |
+|---|---|---|
+| Minute 0 | `npx memnox` | A true list of what can act on this machine and what it can reach. No account, nothing transmitted. |
+| Minute 1 | `memnox doctor` · `harden` | The worst of it closed, every step reversible, and the undo printed before it ran. |
+| Minute 2 | `memnox setup` | Rules scaffolded from your own repository, and an agent that is governed the moment you restart it. |
+| Minute 3 | `memnox test` | Proof, against your own gate, of which dangerous capabilities it actually stops — and which it does not. |
+| Hour 1 | `memnox check` · `why` | A refusal your agent can act on, because it names what to use instead, and an explanation that reads the same a year later. |
+| Day 1 | `memnox audit` · `replay` | A hash-chained record of every decision, replayable session by session. |
+| Week 1 | `memnox learn` | The sentence nobody else can produce about your setup: *you granted this agent everything and it used twenty-seven percent of it.* |
+| Week 2 | `memnox coverage` · `drift` | How much of what your agents do is really governed, weighted by risk — and where your stated rules and your actual history came apart. |
+| When it matters | `memnox kill` · `panic` | One command stops an agent everywhere, and tells you every machine it could not reach. |
+
+The order is not a funnel. **The first four rows need no account, no cloud and no network**, which is architecture rather than a free tier: if a capability works on one laptop with no login, putting it behind one would be the mistake people notice first.
 
 ## Beyond one machine
 
@@ -247,14 +318,18 @@ This is a monorepo. Each package is one layer, and the two at the top have zero 
 |---------|---------|
 | [`@memnox/core`](packages/core) | Domain types, decision constants, and store ports. Zero dependencies. |
 | [`@memnox/policy-engine`](packages/policy-engine) | Deterministic policy evaluation and risk classification. Zero dependencies. |
+| [`@memnox/discovery`](packages/discovery) | What can act on this machine, what it reaches, and reversible harden steps. Zero dependencies. |
 | [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, local stores, and compliance reports |
+| [`@memnox/ledger`](packages/ledger) | The local record: usage against grant, unused grants, lineage, coverage, drift, cost |
+| [`@memnox/workflow`](packages/workflow) | Durable runs, and the invariant that every route to a delegation passes a gate |
+| [`@memnox/autonomy`](packages/autonomy) | Named levels a person grants, and readiness as queries nobody can tick |
 | [`@memnox/memory`](packages/memory) | Team decisions turned into machine-checkable constraints |
 | [`@memnox/risk`](packages/risk) | Deterministic behavioral signals such as novel destructive actions and bursts |
 | [`@memnox/org-graph`](packages/org-graph) | Verified organizational statements, ownership, and delegated authority |
 | [`@memnox/organization`](packages/organization) | The open client protocol for asking an organization |
 | [`@memnox/mcp-firewall`](packages/mcp-firewall) | Transparent MCP proxy, so every `tools/call` goes through the runtime |
 | [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments never leave the machine |
-| [`@memnox/intelligence`](packages/intelligence) | Optional BYOK layer that drafts and explains. It never decides. |
+| [`@memnox/intelligence`](packages/intelligence) | Optional BYOK layer that drafts policy YAML. It never decides, explains, or infers intent. |
 | [`@memnox/postgres`](packages/postgres) · [`@memnox/redis`](packages/redis) | Adapters for shared storage and locks |
 | [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI |
 
