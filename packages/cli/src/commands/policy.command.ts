@@ -20,7 +20,6 @@ import {
 import { loadPoliciesFromFile } from '@memnox/local-gate';
 import { DEFAULT_BASE_URL, DEFAULT_POLICY_FILE } from '../defaults';
 import { casesFromAudit } from '../simulation-cases';
-import { registerPolicyUiCommand } from './policy-ui.command';
 
 const DEFAULT_SIMULATION_SAMPLE = 500;
 const MAX_LISTED_CHANGES = 20;
@@ -231,9 +230,6 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
         `\nAdded ${merged.added.length} policies to ${options.file} (version ${versionPolicySet(merged.policies).version})`,
       );
     });
-
-  registerPolicyUiCommand(policy, context);
   // Top-level as well: "I would rather not write YAML" is the reason someone
   // reaches for this, and that answer should not be three words deep.
-  registerPolicyUiCommand(program, context);
 }

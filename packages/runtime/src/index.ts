@@ -28,4 +28,7 @@ export * from './stores/in-memory-audit-log';
 export * from './stores/in-memory-explanation-store';
 export * from './stores/in-memory-capability-store';
 export * from './capability-broker';
+export * from './containment-service';
+export * from './coverage';
+export * from './stores/json-file-seam-store';
 export * from './policy-history';

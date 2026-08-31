@@ -5,6 +5,7 @@ import type {
   EnvironmentModes,
   ExplanationStore,
   FixedWindowRateLimiter,
+  SeamStore,
   TaskStore,
 } from '@memnox/core';
 import type { DecisionSemanticSearch } from '@memnox/memory';
@@ -13,6 +14,7 @@ import type { OrganizationService } from '../organization-service';
 import type { Policy } from '@memnox/policy-engine';
 import type { PolicyHistory } from '../policy-history';
 import type { ActionGateway } from '../action-gateway';
+import type { ContainmentService } from '../containment-service';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { MetricsRegistry } from '../metrics';
@@ -67,6 +69,10 @@ export interface RouteContext {
   semanticSearch?: DecisionSemanticSearch;
   /** The explanation each verdict was built with, so `why` reads rather than retells. */
   explanations: ExplanationStore;
+  /** Which seams are installed, in what mode, and what each one cannot see. */
+  seams: SeamStore;
+  /** Kill, quarantine and panic, each recording what it could not reach. */
+  containment: ContainmentService;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

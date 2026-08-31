@@ -92,6 +92,14 @@ import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
 import { InMemoryExplanationStore } from './stores/in-memory-explanation-store';
 import { InMemoryTaskStore } from './stores/in-memory-task-store';
+import { JsonFileSeamStore } from './stores/json-file-seam-store';
+import { ContainmentService, LocalInstallDirectory } from './containment-service';
+import { CapabilityBroker } from './capability-broker';
+import {
+  InMemoryCapabilityStore,
+  InMemoryLeaseStore,
+} from './stores/in-memory-capability-store';
+import { registerOperateRoutes } from './routes/operate.routes';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
 
@@ -105,6 +113,9 @@ const AGENTS_FILE = 'agents.json';
 const AUDIT_FILE = 'audit.jsonl';
 const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
+const SEAMS_FILE = 'seams.json';
+/** One machine, always reachable, because it is this process. */
+const LOCAL_INSTALL_LABEL = 'this machine';
 const STATED_FILE = 'organization.json';
 const AUTHORITY_FILE = 'authority.json';
 
@@ -229,6 +240,7 @@ export async function buildServer(
   const { lockService, sessionTaintStore } = await resolveCoordination(config, services);
 
   const taskStore = new InMemoryTaskStore();
+  const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
@@ -297,10 +309,27 @@ export async function buildServer(
     auditEvents: () => gateway.queryAuditEvents({}),
     semanticSearch,
   });
+  const broker = new CapabilityBroker({
+    capabilities: new InMemoryCapabilityStore(),
+    leases: new InMemoryLeaseStore(),
+    gateway,
+    logger: CONSOLE_LOGGER,
+  });
   const ctx: RouteContext = {
     gateway,
     config,
     explanations,
+    seams: seamStore,
+    containment: new ContainmentService({
+      seams: seamStore,
+      broker,
+      installs: new LocalInstallDirectory(LOCAL_INSTALL_LABEL),
+      logger: CONSOLE_LOGGER,
+      raiseEnvironments: async (modes) => {
+        await gateway.useEnforcement(modes);
+        return 1;
+      },
+    }),
     decisionMemory,
     organization: new OrganizationService({
       gateway,
@@ -379,6 +408,7 @@ export async function buildServer(
       scope.get('/healthz', async () => ({ status: 'ok', tenant: prefix.slice(1) }));
     registerDashboardRoutes(scope, ctx);
     registerTaskRoutes(scope, ctx);
+    registerOperateRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);
     registerAgentRoutes(scope, ctx);

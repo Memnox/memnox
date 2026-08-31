@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, RISK_LEVEL } from '@memnox/core';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
-import { registerDescribeCommand } from '../src/commands/describe.command';
+import { registerRulesCommand } from '../src/commands/rules.command';
 import { plainStyle } from '../src/style';
 import { FakeRuntime } from './cli-harness';
 
@@ -69,7 +69,7 @@ const governed = (): FakeRuntime =>
 async function run(args: string[], runtime: FakeRuntime): Promise<RecordedOutput> {
   const out = new RecordedOutput();
   const program = new Command();
-  registerDescribeCommand(
+  registerRulesCommand(
     program,
     new CliContext(out, runtime.transport, plainStyle, async () => ({}), {}),
     () => '/nowhere',
@@ -78,10 +78,10 @@ async function run(args: string[], runtime: FakeRuntime): Promise<RecordedOutput
   return out;
 }
 
-describe('memnox describe', () => {
+describe('memnox rules', () => {
   it('leads with the verdict, the risk, and the level a person granted', async () => {
     const out = await run(
-      ['describe', 'database.delete', 'production.users', '--token', 'mnx_test'],
+      ['rules', 'database.delete', 'production.users', '--token', 'mnx_test'],
       governed(),
     );
 
@@ -92,7 +92,7 @@ describe('memnox describe', () => {
 
   it('names what else the matched rule governs, minus what was asked about', async () => {
     const out = await run(
-      ['describe', 'database.delete', '--env', 'production', '--token', 'mnx_test'],
+      ['rules', 'database.delete', '--env', 'production', '--token', 'mnx_test'],
       governed(),
     );
 
@@ -106,7 +106,7 @@ describe('memnox describe', () => {
 
   it('lists who can authorise it', async () => {
     const out = await run(
-      ['describe', 'database.delete', '--token', 'mnx_test'],
+      ['rules', 'database.delete', '--token', 'mnx_test'],
       governed(),
     );
 
@@ -125,7 +125,7 @@ describe('memnox describe', () => {
       }),
     );
 
-    const out = await run(['describe', 'http.request', '--token', 'mnx_test'], runtime);
+    const out = await run(['rules', 'http.request', '--token', 'mnx_test'], runtime);
 
     expect(out.text).toContain('no rule your organization wrote covers this action');
     expect(out.text).toContain('not that it is safe');
@@ -144,10 +144,7 @@ describe('memnox describe', () => {
       },
     ]);
 
-    const out = await run(
-      ['describe', 'database.delete', '--token', 'mnx_test'],
-      runtime,
-    );
+    const out = await run(['rules', 'database.delete', '--token', 'mnx_test'], runtime);
 
     expect(out.text).toContain('DEC-003  Customer data is never deleted in production');
     expect(out.text).toContain('platform — Deletes are soft only.');
@@ -166,10 +163,7 @@ describe('memnox describe', () => {
       auditEvent({ id: 'evt_3', action: 'file.write' }),
     ]);
 
-    const out = await run(
-      ['describe', 'database.delete', '--token', 'mnx_test'],
-      runtime,
-    );
+    const out = await run(['rules', 'database.delete', '--token', 'mnx_test'], runtime);
 
     expect(out.text).toContain(
       '2 of the last 3 audited actions — 1 withheld, 1 held, 0 allowed',
@@ -180,10 +174,7 @@ describe('memnox describe', () => {
   it('says the action would be a first when the trail has never seen it', async () => {
     const runtime = governed().on('GET', AUDIT_PATH, []);
 
-    const out = await run(
-      ['describe', 'database.delete', '--token', 'mnx_test'],
-      runtime,
-    );
+    const out = await run(['rules', 'database.delete', '--token', 'mnx_test'], runtime);
 
     expect(out.text).toContain('this would be the first');
   });
@@ -191,10 +182,7 @@ describe('memnox describe', () => {
   it('narrows the report rather than failing when an admin surface is closed', async () => {
     const runtime = governed().on('GET', SEARCH_PATH, { error: 'forbidden' }, 403);
 
-    const out = await run(
-      ['describe', 'database.delete', '--token', 'mnx_test'],
-      runtime,
-    );
+    const out = await run(['rules', 'database.delete', '--token', 'mnx_test'], runtime);
 
     expect(out.notes.join('\n')).toContain('Could not read decision memory');
     expect(out.text).toContain('WITHHOLD');
@@ -203,7 +191,7 @@ describe('memnox describe', () => {
   it('never asks for a decision — every route it uses is read-only', async () => {
     const runtime = governed();
 
-    await run(['describe', 'database.delete', '--token', 'mnx_test'], runtime);
+    await run(['rules', 'database.delete', '--token', 'mnx_test'], runtime);
 
     expect(runtime.requests.map((sent) => sent.path)).not.toContain('/v1/actions/check');
   });
@@ -212,13 +200,13 @@ describe('memnox describe', () => {
     const runtime = governed();
     const out = new RecordedOutput();
     const program = new Command();
-    registerDescribeCommand(
+    registerRulesCommand(
       program,
       new CliContext(out, runtime.transport, plainStyle, async () => ({}), {}),
     );
 
     await expect(
-      program.parseAsync(['describe', 'database.delete'], { from: 'user' }),
+      program.parseAsync(['rules', 'database.delete'], { from: 'user' }),
     ).rejects.toThrow(/memnox setup/);
     expect(runtime.requests).toHaveLength(0);
   });

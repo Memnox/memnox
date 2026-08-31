@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ApprovalFlowSummary, ComplianceReport } from '@memnox/core';
+import type { ComplianceReport } from '@memnox/core';
 import { FakeRuntime, runCli } from './cli-harness';
 
 const REPORT_PATH = '/v1/reports/compliance';
-const APPROVAL_HEALTH_PATH = '/v1/approvals/health';
 
 const report = (over: Partial<ComplianceReport> = {}): ComplianceReport => ({
   generatedAt: '2026-07-27T12:00:00.000Z',
@@ -29,106 +28,11 @@ const report = (over: Partial<ComplianceReport> = {}): ComplianceReport => ({
   ...over,
 });
 
-const approvalHealth = (
-  over: Partial<ApprovalFlowSummary> = {},
-): ApprovalFlowSummary => ({
-  total: 8,
-  pending: 2,
-  approved: 4,
-  denied: 1,
-  lapsed: 1,
-  overrides: 1,
-  medianResolveMinutes: 45,
-  p90ResolveMinutes: 180,
-  oldestPendingMinutes: 2_880,
-  approverActivity: [{ approver: 'alice', grants: 4 }],
-  ...over,
-});
-
-/** insights reads two endpoints; both must be stubbed or the SDK throws on 404. */
-const insightsRuntime = (
-  reportBody = report(),
-  approvalsBody = approvalHealth(),
-): FakeRuntime =>
-  new FakeRuntime()
-    .on('GET', REPORT_PATH, reportBody)
-    .on('GET', APPROVAL_HEALTH_PATH, approvalsBody);
-
-describe('memnox insights', () => {
-  it('summarises what the runtime handled and stopped', async () => {
-    const { out } = await runCli(['insights'], insightsRuntime());
-
-    expect(out.text).toContain('Protected actions : 120');
-    expect(out.text).toContain('Allowed           : 100');
-    expect(out.text).toContain('Withheld           : 12');
-    expect(out.text).toContain('Sent to approval  : 8');
-  });
-
-  it('ranks the most withheld actions and the advisory signals', async () => {
-    const { out } = await runCli(['insights'], insightsRuntime());
-
-    expect(out.text).toContain('Most withheld actions:');
-    expect(out.text).toContain('- database.delete (7)');
-    expect(out.text).toContain('Behavioral signals:');
-    expect(out.text).toContain('- taint (3)');
-  });
-
-  it('omits both lists when there is nothing to rank', async () => {
-    const runtime = insightsRuntime(
-      report({ topBlockedActions: [], advisorySignals: [] }),
-    );
-
-    const { out } = await runCli(['insights'], runtime);
-
-    expect(out.text).not.toContain('Most withheld actions:');
-    expect(out.text).not.toContain('Behavioral signals:');
-  });
-
-  it('reports execution coverage without calling silence a failure', async () => {
-    const { out } = await runCli(['insights'], insightsRuntime());
-
-    expect(out.text).toContain('Outcomes reported : 60/100 allowed decisions');
-    expect(out.text).toContain('5 failed, 1 rollback failed');
-    expect(out.text).toContain('40 reported no outcome');
-    expect(out.text).toContain('did not use guarded execution');
-  });
-
-  it('reports where approvals stall, in units a human reads', async () => {
-    const { out } = await runCli(['insights'], insightsRuntime());
-
-    expect(out.text).toContain('Approval flow:');
-    expect(out.text).toContain('Waiting now     : 2');
-    expect(out.text).toContain('Lapsed unread   : 1');
-    expect(out.text).toContain('Break-glass     : 1');
-    expect(out.text).toContain('Time to resolve : 45m median, 3h p90');
-    expect(out.text).toContain('Oldest waiting  : 2d');
-  });
-
-  it('shows an em dash rather than 0m when nothing has resolved yet', async () => {
-    const runtime = insightsRuntime(
-      report(),
-      approvalHealth({ medianResolveMinutes: null, p90ResolveMinutes: null }),
-    );
-
-    const { out } = await runCli(['insights'], runtime);
-
-    expect(out.text).toContain('Time to resolve : — median, — p90');
-  });
-
-  it('omits the approval block entirely when nothing was ever raised', async () => {
-    const runtime = insightsRuntime(report(), approvalHealth({ total: 0 }));
-
-    const { out } = await runCli(['insights'], runtime);
-
-    expect(out.text).not.toContain('Approval flow:');
-  });
-});
-
-describe('memnox report', () => {
+describe('memnox evidence export', () => {
   it('emits the raw report with --format json', async () => {
     const runtime = new FakeRuntime().on('GET', REPORT_PATH, report());
 
-    const { out } = await runCli(['report', '--format', 'json'], runtime);
+    const { out } = await runCli(['evidence', '--format', 'json'], runtime);
 
     const parsed = JSON.parse(out.text) as { totals: { actions: number } };
     expect(parsed.totals.actions).toBe(120);
@@ -137,7 +41,7 @@ describe('memnox report', () => {
   it('renders markdown by default, not JSON', async () => {
     const runtime = new FakeRuntime().on('GET', REPORT_PATH, report());
 
-    const { out } = await runCli(['report'], runtime);
+    const { out } = await runCli(['evidence'], runtime);
 
     expect(out.text).not.toContain('"totals"');
     expect(out.text).toContain('120');
@@ -147,7 +51,7 @@ describe('memnox report', () => {
     const runtime = new FakeRuntime().on('GET', REPORT_PATH, report());
 
     await runCli(
-      ['report', '--from', '2026-07-01', '--to', '2026-07-27', '--format', 'json'],
+      ['evidence', '--from', '2026-07-01', '--to', '2026-07-27', '--format', 'json'],
       runtime,
     );
 

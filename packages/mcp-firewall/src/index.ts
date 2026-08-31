@@ -2,6 +2,7 @@ export * from './firewall.constants';
 export * from './json-rpc';
 export * from './tool-filter';
 export * from './tool-call';
+export * from './result-guard';
 export * from './call-authorizer';
 export * from './local-gate-loader';
 export * from './firewall-session';

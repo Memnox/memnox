@@ -80,7 +80,7 @@ describe('cloud read commands', () => {
     });
 
   it('points someone who has not signed in at the command that fixes it', async () => {
-    await run(['suggestions']);
+    await run(['queue']);
 
     expect(out.text).toContain('memnox login');
     expect(asked).toEqual([]);
@@ -90,7 +90,7 @@ describe('cloud read commands', () => {
   it('asks for a workspace rather than guessing one', async () => {
     await signedIn();
 
-    await run(['suggestions']);
+    await run(['queue']);
 
     expect(out.text).toContain('--workspace');
     expect(asked).toEqual([]);
@@ -108,7 +108,7 @@ describe('cloud read commands', () => {
       },
     ];
 
-    await run(['suggestions']);
+    await run(['queue']);
 
     expect(asked).toEqual(['suggestions:orbit']);
     expect(out.text).toContain('Finance owns billing');
@@ -118,7 +118,7 @@ describe('cloud read commands', () => {
   it('says nothing is waiting rather than printing an empty list', async () => {
     await signedIn('orbit');
 
-    await run(['suggestions']);
+    await run(['queue']);
 
     expect(out.text).toContain('Nothing waiting for review');
   });
@@ -126,7 +126,7 @@ describe('cloud read commands', () => {
   it('lets --workspace override the stored default', async () => {
     await signedIn('orbit');
 
-    await run(['suggestions', '--workspace', 'payments']);
+    await run(['queue', '--workspace', 'payments']);
 
     expect(asked).toEqual(['suggestions:payments']);
   });

@@ -55,9 +55,7 @@ export function registerCloudCommand(
   };
 
   withCloudFlags(
-    program
-      .command('suggestions')
-      .description('Organization decisions waiting for a human in the review queue'),
+    program.command('queue').description('Everything waiting on a person, in one place'),
   ).action(async function (this: Command) {
     const connected = await connect(this.opts() as CloudCommandFlags);
     if (connected === null) return;

@@ -9,8 +9,11 @@ import type {
   ComplianceReport,
   Decision,
   EnvironmentModes,
+  ContainmentAction,
+  ContainmentKind,
   ExecutionOutcomeReport,
   Explanation,
+  Seam,
   RiskAssessment,
 } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
@@ -122,6 +125,28 @@ export interface AuthorityGrantResponse extends AuthorityGrantPayload {
   workspaceId: string;
   grantedBy: string;
   grantedAt: string;
+}
+
+/** The coverage window plus what the seams behind it cannot see. */
+export interface CoverageResponse {
+  workspaceId: string;
+  actionsSeen: number;
+  actionsGoverned: number;
+  seamsCovered: number;
+  seamsTotal: number;
+  installsEnforcing: number;
+  installsTotal: number;
+  topUngoverned: string[];
+  coverage: number;
+  blindTo: string[];
+}
+
+export interface ContainmentRequestBody {
+  kind: ContainmentKind;
+  reason: string;
+  authorId: string;
+  subjectId?: string;
+  restorePath?: string;
 }
 
 export interface DecisionRecordPayload {
@@ -293,6 +318,31 @@ export class MemnoxClient {
       'POST',
       '/v1/agents',
       { name, kind, capabilities },
+      this.options.adminToken,
+    );
+  }
+
+  /** Governed against ungoverned, weighted by risk and by how much is actually watched. */
+  async coverage(): Promise<CoverageResponse> {
+    return this.request<CoverageResponse>(
+      'GET',
+      '/v1/coverage',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** Which seams are installed, in what mode, and what each one cannot see. */
+  async seams(): Promise<Seam[]> {
+    return this.request<Seam[]>('GET', '/v1/seams', undefined, this.options.adminToken);
+  }
+
+  /** Kill, quarantine or panic. The reply names every install it could not reach. */
+  async contain(request: ContainmentRequestBody): Promise<ContainmentAction> {
+    return this.request<ContainmentAction>(
+      'POST',
+      '/v1/containment',
+      request,
       this.options.adminToken,
     );
   }

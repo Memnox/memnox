@@ -28,16 +28,14 @@ const EFFECT_VERB: Record<DecisionEffect, string> = {
 type WorkingDirectory = () => string;
 
 /** What an action reaches, in the organization's terms: rules, decisions, people, history. */
-export function registerDescribeCommand(
+export function registerRulesCommand(
   program: Command,
   context: CliContext,
   cwd: WorkingDirectory = () => process.cwd(),
 ): void {
   program
-    .command('describe <action> [target]')
-    .description(
-      'Everything your organization attaches to one action, and what else it reaches',
-    )
+    .command('rules <action> [target]')
+    .description('What governs this action, and what else those rules reach')
     .option('--env <environment>', 'environment, e.g. production')
     .option(
       '--project <name>',
@@ -45,6 +43,7 @@ export function registerDescribeCommand(
     )
     .option('--token <token>', `agent token (default: the one from "memnox setup")`)
     .option('--admin-token <token>', 'admin token, to read decisions and the rule set')
+    .option('--brief', 'just the constraints, in the words whoever declared them used')
     .option('--json', 'emit the structured briefing instead of the report')
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .action(
@@ -56,6 +55,7 @@ export function registerDescribeCommand(
           project?: string;
           token?: string;
           adminToken?: string;
+          brief?: boolean;
           json?: boolean;
           url?: string;
         },
@@ -77,6 +77,17 @@ export function registerDescribeCommand(
             return projectId === undefined ? {} : { projectId };
           })(),
         };
+
+        // The pre-flight half of the gate: what governs this, before doing it.
+        if (options.brief === true) {
+          const briefing = await client.context(request);
+          out.line(
+            options.json === true
+              ? JSON.stringify(briefing.briefing, null, 2)
+              : briefing.text,
+          );
+          return;
+        }
 
         // Read-only throughout: nothing here decides, records, or raises an approval.
         const assessment = await client.evaluateRisk(request);
@@ -106,7 +117,7 @@ export function registerDescribeCommand(
 
         const subject = [action, target].filter(Boolean).join(' ');
         const scope = options.env === undefined ? '' : ` [${options.env}]`;
-        out.line(style.bold('MEMNOX IMPACT'));
+        out.line(style.bold('MEMNOX RULES'));
         out.line('');
         out.line(`  ${style.bold(subject)}${scope}`);
         out.line('');

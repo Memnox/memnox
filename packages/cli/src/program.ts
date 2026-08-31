@@ -6,33 +6,29 @@ import { registerApprovalsCommand } from './commands/approvals.command';
 import { registerAuditCommand } from './commands/audit.command';
 import { registerCheckCommand } from './commands/check.command';
 import { registerCloudCommand } from './commands/cloud.command';
-import { registerContextCommand } from './commands/context.command';
-import { registerDescribeCommand } from './commands/describe.command';
 import { registerDiscoverCommand } from './commands/discover.command';
 import { registerDoctorCommand } from './commands/doctor.command';
 import { registerHardenCommand } from './commands/harden.command';
 import { registerDriftCommand } from './commands/drift.command';
-import { registerComplianceCommand } from './commands/compliance.command';
 import { registerDraftCommand } from './commands/draft.command';
 import { registerWhyCommand } from './commands/why.command';
+import { registerRulesCommand } from './commands/rules.command';
+import { registerEvidenceCommand } from './commands/evidence.command';
+import { registerCoverageCommand } from './commands/coverage.command';
 import { registerInitCommand } from './commands/init.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerKeysCommand } from './commands/keys.command';
-import { registerInsightsCommand } from './commands/insights.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerMemoryCommand } from './commands/memory.command';
 import { registerOrgCommand } from './commands/org.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerPullCommand } from './commands/pull.command';
-import { registerQuickstartCommand } from './commands/quickstart.command';
 import { registerReplayCommand } from './commands/replay.command';
-import { registerReportCommand } from './commands/report.command';
 import { registerServeCommand } from './commands/serve.command';
 import { registerStatusCommand } from './commands/status.command';
 import { registerSetupCommand } from './commands/setup.command';
 import { registerStopCommand } from './commands/stop.command';
 import { registerTestCommand } from './commands/test.command';
-import { registerTraceCommand } from './commands/trace.command';
 import { registerValidateCommand } from './commands/validate.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -47,7 +43,6 @@ export function buildProgram(context: CliContext): Command {
   registerDoctorCommand(program, context);
   registerHardenCommand(program, context);
   registerSetupCommand(program, context);
-  registerQuickstartCommand(program, context);
   registerInitCommand(program, context);
   registerServeCommand(program, context);
   registerStopCommand(program, context);
@@ -57,11 +52,8 @@ export function buildProgram(context: CliContext): Command {
   registerPullCommand(program, context);
   registerValidateCommand(program, context);
   registerCheckCommand(program, context);
-  registerContextCommand(program, context);
-  registerDescribeCommand(program, context);
   registerTestCommand(program, context);
   registerDriftCommand(program, context);
-  registerTraceCommand(program, context);
   registerAuditCommand(program, context);
   registerAgentsCommand(program, context);
   registerApprovalsCommand(program, context);
@@ -69,13 +61,13 @@ export function buildProgram(context: CliContext): Command {
   registerMemoryCommand(program, context);
   registerOrgCommand(program, context);
   registerReplayCommand(program, context);
-  registerReportCommand(program, context);
-  registerInsightsCommand(program, context);
   registerDraftCommand(program, context);
   registerWhyCommand(program, context);
+  registerRulesCommand(program, context);
+  registerEvidenceCommand(program, context);
+  registerCoverageCommand(program, context);
   registerPolicyCommand(program, context);
   registerKeysCommand(program, context);
-  registerComplianceCommand(program, context);
 
   return program;
 }

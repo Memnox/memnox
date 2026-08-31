@@ -8,7 +8,12 @@ import {
   type ControlMapping,
   type Framework,
 } from '@memnox/core';
+import { renderComplianceReportMarkdown, type ComplianceReport } from '@memnox/runtime';
 import type { CliContext } from '../cli-context';
+import { DEFAULT_BASE_URL } from '../defaults';
+
+const FORMAT_MARKDOWN = 'md';
+const FORMAT_JSON = 'json';
 
 const FRAMEWORKS: Framework[] = Object.values(FRAMEWORK);
 
@@ -32,14 +37,48 @@ const DISCLAIMER = [
   'SOC 2 and ISO 27001 require an auditor; HIPAA and GDPR have no certification.',
 ];
 
-export function registerComplianceCommand(program: Command, context: CliContext): void {
-  const compliance = program
-    .command('compliance')
-    .description('Control readiness against SOC 2, ISO 27001, HIPAA, and GDPR');
+/**
+ * What you can hand an auditor. Produced from the trail continuously rather than
+ * assembled by a person over a week, and every number in it is about the
+ * organization's own behaviour rather than about this product.
+ */
+export function registerEvidenceCommand(program: Command, context: CliContext): void {
+  const evidence = program
+    .command('evidence')
+    .description('What you can hand an auditor: the trail, and the controls behind it');
 
-  compliance
-    .command('controls', { isDefault: true })
-    .description('List every mapped control, its status, and its evidence')
+  evidence
+    .command('export', { isDefault: true })
+    .description('The governance record for a period, from the audit trail')
+    .option('--from <iso-date>', 'period start (ISO 8601)')
+    .option('--to <iso-date>', 'period end (ISO 8601)')
+    .option('--format <format>', `${FORMAT_MARKDOWN}|${FORMAT_JSON}`, FORMAT_MARKDOWN)
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
+    .option('--admin-token <token>', 'admin token if the runtime requires one')
+    .action(
+      async (options: {
+        from?: string;
+        to?: string;
+        format: string;
+        url?: string;
+        adminToken?: string;
+      }) => {
+        const { client } = await context.connect(options);
+        const report: ComplianceReport = await client.complianceReport({
+          from: options.from,
+          to: options.to,
+        });
+        context.out.line(
+          options.format === FORMAT_JSON
+            ? JSON.stringify(report, null, 2)
+            : renderComplianceReportMarkdown(report),
+        );
+      },
+    );
+
+  evidence
+    .command('controls')
+    .description('Every mapped control, its status, and its evidence')
     .option('--framework <name>', `one of: ${FRAMEWORKS.join(', ')}`)
     .option('--gaps', 'show only what is missing')
     .action((options: { framework?: string; gaps?: boolean }) => {
@@ -50,7 +89,7 @@ export function registerComplianceCommand(program: Command, context: CliContext)
       for (const framework of frameworks) {
         const summary = readinessFor(framework);
         context.out.line(
-          `${FRAMEWORK_LABEL[framework]} — ${summary.implemented} implemented, ` +
+          `${FRAMEWORK_LABEL[framework]} \u2014 ${summary.implemented} implemented, ` +
             `${summary.partial} partial, ${summary.planned} not built, ` +
             `${summary.organizational} organizational`,
         );
@@ -60,17 +99,17 @@ export function registerComplianceCommand(program: Command, context: CliContext)
           );
           context.out.line(`      ${control.requirement}`);
           if (control.gap !== undefined) context.out.line(`      gap: ${control.gap}`);
-          for (const evidence of control.evidence) {
-            context.out.line(`      evidence: ${evidence}`);
+          for (const each of control.evidence) {
+            context.out.line(`      evidence: ${each}`);
           }
         }
         context.out.line('');
       }
     });
 
-  compliance
+  evidence
     .command('summary')
-    .description('One line per framework — what is ready and what is not')
+    .description('One line per framework \u2014 what is ready and what is not')
     .action(() => {
       for (const line of DISCLAIMER) context.out.line(line);
       context.out.line('');
@@ -84,7 +123,7 @@ export function registerComplianceCommand(program: Command, context: CliContext)
       }
       context.out.line('');
       context.out.line(
-        `${CONTROL_MAPPINGS.length} controls mapped. Run "memnox compliance controls --gaps" for the work left.`,
+        `${CONTROL_MAPPINGS.length} controls mapped. Run "memnox evidence controls --gaps" for the work left.`,
       );
     });
 }

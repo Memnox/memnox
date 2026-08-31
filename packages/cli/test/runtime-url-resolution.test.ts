@@ -13,9 +13,9 @@ const FLAG_URL = 'http://flag-runtime.test:9012';
 /** Every command that reads the runtime must resolve its address the same way. */
 const CLIENT_COMMANDS: { name: string; argv: string[] }[] = [
   { name: 'agents list', argv: ['agents', 'list'] },
-  { name: 'insights', argv: ['insights'] },
+  { name: 'coverage', argv: ['coverage'] },
   { name: 'audit', argv: ['audit'] },
-  { name: 'report', argv: ['report'] },
+  { name: 'evidence', argv: ['evidence'] },
   { name: 'memory list', argv: ['memory', 'list'] },
 ];
 
