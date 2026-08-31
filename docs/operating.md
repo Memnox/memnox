@@ -146,6 +146,10 @@ Against level 3 — act within bounds
 A met checklist is evidence for a person, never a grant. Somebody still decides.
 ```
 
+```bash
+memnox agents assign <agentId> --owner you   # closes the first item
+```
+
 Every item is a query against something already stored, so the answer cannot be
 aspirational and **nobody can tick one**. An item nothing answers yet is `unknown`,
 which is not a pass — a readiness checklist over stores that do not exist is a
