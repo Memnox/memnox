@@ -10,6 +10,6 @@ export interface RiskAssessment {
   reason: string;
   matchedPolicies: MatchedPolicy[];
   advisories: Advisory[];
-  /** The acting agent's current trust score, 0–100. */
-  trustScore: number;
+  /** The named level this agent holds. A level is granted; a score would be inferred. */
+  autonomyLevel?: number;
 }

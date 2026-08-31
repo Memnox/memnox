@@ -59,7 +59,6 @@ import {
   DEFAULT_MIN_APPROVALS,
   EXECUTION_OUTCOME_ACTION,
   EXECUTION_STATUS,
-  computeTrustScore,
   isApprovalExpired,
   RISK_LEVEL,
   SILENT_LOGGER,
@@ -408,7 +407,6 @@ export class ActionGateway {
         reason: DECISION_REASON.UNKNOWN_AGENT,
         matchedPolicies: [],
         advisories: [],
-        trustScore: 0,
       };
     }
 
@@ -425,7 +423,7 @@ export class ActionGateway {
         reason: DECISION_REASON.CAPABILITY,
         matchedPolicies: [],
         advisories: [],
-        trustScore: computeTrustScore(agent.stats),
+        ...levelOf(agent),
       };
     }
 
@@ -450,7 +448,7 @@ export class ActionGateway {
             : escalation.reason,
       matchedPolicies: evaluation.matchedPolicies,
       advisories,
-      trustScore: computeTrustScore(agent.stats),
+      ...levelOf(agent),
     };
   }
 
@@ -890,4 +888,9 @@ function subjectOf(request: ActionRequest): ScopeSubject {
     ...(request.projectId === undefined ? {} : { repository: request.projectId }),
     ...(request.environment === undefined ? {} : { environment: request.environment }),
   };
+}
+
+/** The named level a person granted, never a number this process worked out. */
+function levelOf(agent: AgentIdentity): { autonomyLevel?: number } {
+  return agent.autonomyLevel === undefined ? {} : { autonomyLevel: agent.autonomyLevel };
 }

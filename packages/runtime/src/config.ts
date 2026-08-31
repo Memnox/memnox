@@ -50,7 +50,6 @@ export interface RuntimeConfig {
   /** Enables the deterministic behavioral advisor (novel actions, bursts, probing). */
   behaviorGuard: boolean;
   /** Requires human approval for high/critical actions from low-trust agents. */
-  trustGuard: boolean;
   /** Sends an agent's destructive actions to a human while its outcomes go unreported. */
   verificationGuard: boolean;
   /** Enables decision memory: team decisions constrain actions. */
@@ -107,7 +106,6 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   apiKeys: [],
   allowLocalAdmin: false,
   behaviorGuard: false,
-  trustGuard: false,
   verificationGuard: false,
   memoryEnabled: true,
   shellGuard: true,

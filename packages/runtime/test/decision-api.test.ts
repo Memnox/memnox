@@ -109,7 +109,8 @@ describe('decision API', () => {
 
       const assessment = response.json() as RiskAssessment;
       expect(assessment.effect).toBe(DECISION_EFFECT.WITHHOLD);
-      expect(assessment.trustScore).toBeGreaterThanOrEqual(0);
+      // Authority is a named level a person granted, never a number computed here.
+      expect(assessment.autonomyLevel).toBeUndefined();
       // The whole point: asking must not look like attempting.
       expect((await auditEvents()).length).toBe(before);
     });

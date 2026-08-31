@@ -273,7 +273,7 @@ class MemnoxClient:
         )
 
     def list_agents(self) -> list[AgentSummary]:
-        """Every registered agent with its trust score."""
+        """Every registered agent with the level a person granted it."""
         payload = self._json("GET", PATH_AGENTS, None, self._admin_token)
         return [AgentSummary.from_json(item) for item in _as_maps(payload)]
 

@@ -434,7 +434,7 @@ function loadAgents() {
         el('td', { text: agent.name }),
         el('td', { class: 'dim', text: agent.kind }),
         el('td', {}, [el('span', { class: 'tag' + (suspended ? ' alarm' : ''), text: agent.status })]),
-        el('td', { class: 'n', text: agent.trustScore + '/100' }),
+        el('td', { class: 'n', text: agent.autonomyLevel === undefined ? '—' : String(agent.autonomyLevel) }),
         el('td', {}, [el('button', {
           class: suspended ? 'ghost' : 'danger',
           text: suspended ? 'Reinstate' : 'Suspend',

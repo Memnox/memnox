@@ -35,7 +35,6 @@ import {
   TaintAdvisor,
   ShellIndirectionAdvisor,
   TokenBudgetAdvisor,
-  TrustAdvisor,
   VerificationAdvisor,
 } from '@memnox/risk';
 import { ActionGateway } from './action-gateway';
@@ -471,9 +470,6 @@ function buildAdvisors(
   }
   if (config.behaviorGuard) {
     advisors.push(new BehaviorAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));
-  }
-  if (config.trustGuard) {
-    advisors.push(new TrustAdvisor([...DEFAULT_ADVISOR_APPROVERS]));
   }
   if (config.verificationGuard) {
     advisors.push(new VerificationAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));

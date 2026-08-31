@@ -9,7 +9,6 @@ const summary = (over: Record<string, unknown> = {}): Record<string, unknown> =>
   name: 'claude-code',
   kind: AGENT_KIND.CLAUDE_CODE,
   status: AGENT_STATUS.ACTIVE,
-  trustScore: 87,
   stats: { allowed: 12, withheld: 3, approvalsRequested: 1 },
   ...over,
 });
@@ -61,13 +60,13 @@ describe('memnox agents register', () => {
 });
 
 describe('memnox agents list', () => {
-  it('reports trust score and decision counts per agent', async () => {
+  it('reports the granted level and the decision counts per agent', async () => {
     const runtime = new FakeRuntime().on('GET', AGENTS_PATH, [summary()]);
 
     const { out } = await runCli(['agents', 'list'], runtime);
 
     expect(out.text).toContain('agt_1  claude-code');
-    expect(out.text).toContain('trust 87/100');
+    expect(out.text).toContain('level not granted');
     expect(out.text).toContain('allowed 12, withheld 3');
   });
 

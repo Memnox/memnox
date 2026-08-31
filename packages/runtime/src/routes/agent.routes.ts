@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AgentKind, AgentStatus } from '@memnox/core';
-import { AGENT_KIND, AGENT_STATUS, API_ROLE, computeTrustScore } from '@memnox/core';
+import { AGENT_KIND, AGENT_STATUS, API_ROLE } from '@memnox/core';
 import type { RouteContext } from './route-context';
 
 const VALID_AGENT_KINDS: readonly string[] = Object.values(AGENT_KIND);
@@ -58,7 +58,6 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
     // Token hashes never leave the runtime.
     return agents.map(({ tokenHash: _tokenHash, ...agent }) => ({
       ...agent,
-      trustScore: computeTrustScore(agent.stats),
     }));
   });
 
@@ -70,7 +69,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
     if (!agent) return reply.code(404).send({ error: 'agent not found' });
     // Token hashes never leave the runtime.
     const { tokenHash: _tokenHash, ...rest } = agent;
-    return { ...rest, trustScore: computeTrustScore(agent.stats) };
+    return rest;
   });
 
   app.post('/v1/agents/:id/status', async (request, reply) => {

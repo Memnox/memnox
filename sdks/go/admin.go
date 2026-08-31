@@ -11,7 +11,7 @@ func (c *Client) RegisterAgent(ctx context.Context, input AgentRegistrationInput
 	return decode[AgentRegistration](c.request(ctx, http.MethodPost, pathAgents, input, c.adminToken))
 }
 
-// ListAgents returns every registered agent with its trust score.
+// ListAgents returns every registered agent with the level it was granted.
 func (c *Client) ListAgents(ctx context.Context) ([]AgentSummary, error) {
 	return decode[[]AgentSummary](c.request(ctx, http.MethodGet, pathAgents, nil, c.adminToken))
 }

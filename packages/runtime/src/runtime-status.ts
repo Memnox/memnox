@@ -77,7 +77,6 @@ function enabledGuards(config: RuntimeConfig): string[] {
   guards.push('taint');
   if (config.memoryEnabled) guards.push('decision memory');
   if (config.behaviorGuard) guards.push('behavior');
-  if (config.trustGuard) guards.push('trust');
   if (config.verificationGuard) guards.push('verification');
   return guards;
 }

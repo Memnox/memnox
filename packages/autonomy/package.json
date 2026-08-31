@@ -1,0 +1,47 @@
+{
+  "name": "@memnox/autonomy",
+  "version": "0.3.1",
+  "description": "Named levels a person grants, and a readiness checklist nobody can tick.",
+  "keywords": [
+    "ai-agents",
+    "autonomy",
+    "readiness",
+    "governance",
+    "policy"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/autonomy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Memnox/memnox.git",
+    "directory": "packages/autonomy"
+  },
+  "bugs": {
+    "url": "https://github.com/Memnox/memnox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  }
+}

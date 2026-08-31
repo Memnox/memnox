@@ -25,7 +25,7 @@ const assessment = (over: Record<string, unknown> = {}): Record<string, unknown>
     },
   ],
   advisories: [],
-  trustScore: 74,
+  autonomyLevel: 2,
   ...over,
 });
 
@@ -79,7 +79,7 @@ async function run(args: string[], runtime: FakeRuntime): Promise<RecordedOutput
 }
 
 describe('memnox describe', () => {
-  it('leads with the verdict, the risk, and the agent trust behind it', async () => {
+  it('leads with the verdict, the risk, and the level a person granted', async () => {
     const out = await run(
       ['describe', 'database.delete', 'production.users', '--token', 'mnx_test'],
       governed(),
@@ -87,7 +87,7 @@ describe('memnox describe', () => {
 
     expect(out.text).toContain('WITHHOLD');
     expect(out.text).toContain('risk critical');
-    expect(out.text).toContain('agent trust 74/100');
+    expect(out.text).toContain('autonomy 2');
   });
 
   it('names what else the matched rule governs, minus what was asked about', async () => {

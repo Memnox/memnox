@@ -75,7 +75,7 @@ describe('memnox server', () => {
     const list = await server.app.inject({ method: 'GET', url: '/v1/agents' });
     const agents = list.json() as Array<Record<string, unknown>>;
     expect(agents[0]?.['tokenHash']).toBeUndefined();
-    expect(agents[0]?.['trustScore']).toBe(100);
+    expect(agents[0]?.['trustScore']).toBeUndefined();
   });
 
   it('accepts capabilities on registration and exposes them in the agent list', async () => {

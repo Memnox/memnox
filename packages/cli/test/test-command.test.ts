@@ -30,7 +30,6 @@ const answering = (decide: (action: unknown) => StubOptions): FakeRuntime =>
             ? []
             : [{ name: stub.policy, effect: stub.effect ?? DECISION_EFFECT.WITHHOLD }],
         advisories: [],
-        trustScore: 80,
       },
     };
   });

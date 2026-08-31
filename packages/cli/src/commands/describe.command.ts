@@ -129,7 +129,7 @@ function reportVerdict(context: CliContext, assessment: RiskAssessment): void {
   out.line(
     `  ${style.effect(assessment.effect, style.bold(VERDICT_LABEL[assessment.effect]))}` +
       `  ${style.dim('risk')} ${style.risk(assessment.riskLevel, assessment.riskLevel)}` +
-      `  ${style.dim('agent trust')} ${assessment.trustScore}/100`,
+      `  ${style.dim('autonomy')} ${assessment.autonomyLevel ?? 'not granted'}`,
   );
   out.line(`  ${assessment.reason}`);
   out.line('');

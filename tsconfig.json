@@ -7,6 +7,7 @@
       "@memnox/core": ["packages/core/src"],
       "@memnox/discovery": ["packages/discovery/src"],
       "@memnox/ledger": ["packages/ledger/src"],
+      "@memnox/autonomy": ["packages/autonomy/src"],
       "@memnox/policy-engine": ["packages/policy-engine/src"],
       "@memnox/local-gate": ["packages/local-gate/src"],
       "@memnox/org-graph": ["packages/org-graph/src"],

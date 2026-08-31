@@ -50,6 +50,13 @@ def _number(data: JsonMap, key: str) -> int:
     return int(value)
 
 
+def _optional_number(data: JsonMap, key: str) -> int | None:
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
 def _flag(data: JsonMap, key: str) -> bool:
     return data.get(key) is True
 
@@ -289,7 +296,7 @@ class AuditChainVerification:
 
 @dataclass(frozen=True)
 class AgentStats:
-    """Lifetime action counters used to derive an agent's trust score."""
+    """Lifetime action counters recorded against an agent. They grant nothing."""
 
     allowed: int = 0
     withheld: int = 0
@@ -312,7 +319,7 @@ class AgentSummary:
     name: str
     kind: str
     status: str
-    trust_score: int = 0
+    autonomy_level: int | None = None
     stats: AgentStats = field(default_factory=AgentStats)
     capabilities: list[str] = field(default_factory=list)
     created_at: str | None = None
@@ -325,7 +332,7 @@ class AgentSummary:
             name=_text(data, "name"),
             kind=_text(data, "kind"),
             status=_text(data, "status"),
-            trust_score=_number(data, "trustScore"),
+            autonomy_level=_optional_number(data, "autonomyLevel"),
             stats=AgentStats.from_json(_map(data, "stats")),
             capabilities=_texts(data, "capabilities"),
             created_at=_opt_text(data, "createdAt"),

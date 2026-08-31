@@ -125,7 +125,7 @@ def _agent(status: str = "active") -> dict[str, object]:
         "name": "claude-code",
         "kind": "claude-code",
         "status": status,
-        "trustScore": 98,
+        "autonomyLevel": 3,
         "stats": {"allowed": 12, "withheld": 1, "approvalsRequested": 2},
         "capabilities": ["repository.*"],
         "createdAt": "2026-01-01T00:00:00.000Z",
@@ -471,7 +471,7 @@ class AgentTest(MemnoxClientTestCase):
 
     def test_list_agents(self) -> None:
         agents = self.client.list_agents()
-        self.assertEqual(agents[0].trust_score, 98)
+        self.assertEqual(agents[0].autonomy_level, 3)
         self.assertEqual(agents[0].stats.approvals_requested, 2)
         self.assertEqual(agents[0].capabilities, ["repository.*"])
         self.assertEqual(self.last().method, "GET")

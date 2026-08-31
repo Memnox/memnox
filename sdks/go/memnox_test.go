@@ -39,7 +39,7 @@ const (
 		"approvalId":"apr-1"}`
 
 	agentJSON = `{"id":"agt-1","name":"claude-code","kind":"claude-code","status":"active",
-		"trustScore":98,"stats":{"allowed":12,"withheld":1,"approvalsRequested":2},
+		"autonomyLevel":3,"stats":{"allowed":12,"withheld":1,"approvalsRequested":2},
 		"capabilities":["repository.*"],"createdAt":"2026-01-01T00:00:00.000Z"}`
 
 	auditEventJSON = `{"id":"evt-1","occurredAt":"2026-01-01T00:00:00.000Z","agentId":"agt-1",
@@ -425,7 +425,8 @@ func TestListAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(agents) != 1 || agents[0].TrustScore != 98 || agents[0].Stats.ApprovalsRequested != 2 {
+	if len(agents) != 1 || agents[0].AutonomyLevel == nil || *agents[0].AutonomyLevel != 3 ||
+		agents[0].Stats.ApprovalsRequested != 2 {
 		t.Fatalf("unexpected agents: %+v", agents)
 	}
 	if len(agents[0].Capabilities) != 1 {

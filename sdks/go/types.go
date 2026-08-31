@@ -165,7 +165,7 @@ type AuditChainVerification struct {
 	BrokenReason string `json:"brokenReason,omitempty"`
 }
 
-// AgentStats are the lifetime counters behind an agent's trust score.
+// AgentStats are the lifetime counters recorded against an agent.
 type AgentStats struct {
 	// Allowed counts actions the runtime permitted.
 	Allowed int `json:"allowed"`
@@ -185,9 +185,9 @@ type AgentSummary struct {
 	Kind string `json:"kind"`
 	// Status is active or suspended.
 	Status string `json:"status"`
-	// TrustScore is the deterministic 0-100 reputation score.
-	TrustScore int `json:"trustScore"`
-	// Stats are the counters the trust score derives from.
+	// AutonomyLevel is the named level a person granted, when one has been granted.
+	AutonomyLevel *int `json:"autonomyLevel,omitempty"`
+	// Stats are the lifetime counters, which grant nothing on their own.
 	Stats AgentStats `json:"stats"`
 	// Capabilities are the action patterns this agent may attempt.
 	Capabilities []string `json:"capabilities,omitempty"`

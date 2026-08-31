@@ -102,7 +102,6 @@ export function registerServeCommand(
       'serve admin routes unauthenticated when no token is set (loopback binds do this already)',
     )
     .option('--behavior-guard', 'enable the deterministic behavioral advisor')
-    .option('--trust-guard', 'require approval for risky actions from low-trust agents')
     .option(
       '--verification-guard',
       'require approval for destructive actions while an agent leaves outcomes unreported',
@@ -194,7 +193,6 @@ export function registerServeCommand(
         adminToken?: string;
         allowLocalAdmin?: boolean;
         behaviorGuard?: boolean;
-        trustGuard?: boolean;
         verificationGuard?: boolean;
         tlsCert?: string;
         tlsKey?: string;
@@ -238,7 +236,6 @@ export function registerServeCommand(
           adminToken: envOr(options.adminToken, ENV_ADMIN_TOKEN),
           allowLocalAdmin: options.allowLocalAdmin ?? false,
           behaviorGuard: options.behaviorGuard ?? false,
-          trustGuard: options.trustGuard ?? false,
           verificationGuard: options.verificationGuard ?? false,
           tlsCertFile: envOr(options.tlsCert, ENV_TLS_CERT),
           tlsKeyFile: envOr(options.tlsKey, ENV_TLS_KEY),
@@ -297,7 +294,6 @@ export function registerServeCommand(
         );
         context.out.line(encryptionBanner(server.config));
         if (server.config.behaviorGuard) context.out.line('Behavior guard: enabled');
-        if (server.config.trustGuard) context.out.line('Trust guard: enabled');
         if (server.config.verificationGuard) {
           context.out.line('Verification guard: enabled');
         }

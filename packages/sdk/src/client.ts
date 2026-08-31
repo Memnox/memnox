@@ -169,7 +169,8 @@ export interface AgentSummary {
   name: string;
   kind: string;
   status: string;
-  trustScore: number;
+  /** The named level a person granted, when one has been. Never a computed score. */
+  autonomyLevel?: number;
   stats: { allowed: number; withheld: number; approvalsRequested: number };
   capabilities?: string[];
 }

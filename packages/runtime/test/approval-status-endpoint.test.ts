@@ -155,7 +155,7 @@ describe('GET /v1/approvals/:id', () => {
 });
 
 describe('GET /v1/agents/:id', () => {
-  it('returns one agent with its trust score and never its token hash', async () => {
+  it('returns one agent, with no score and never its token hash', async () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
@@ -171,7 +171,8 @@ describe('GET /v1/agents/:id', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as Record<string, unknown>;
     expect(body['id']).toBe(agent.id);
-    expect(body['trustScore']).toBeTypeOf('number');
+    // A number that narrows a permission is unauditable; authority is a granted level.
+    expect(body['trustScore']).toBeUndefined();
     expect(body['tokenHash']).toBeUndefined();
   });
 

@@ -96,13 +96,9 @@ describe('memnox serve — startup banner', () => {
   it('announces each guard that is enabled', async () => {
     const { launch } = launcher();
 
-    const { out } = await runServe(
-      ['--behavior-guard', '--trust-guard', '--verification-guard'],
-      launch,
-    );
+    const { out } = await runServe(['--behavior-guard', '--verification-guard'], launch);
 
     expect(out.text).toContain('Behavior guard: enabled');
-    expect(out.text).toContain('Trust guard: enabled');
     expect(out.text).toContain('Verification guard: enabled');
   });
 

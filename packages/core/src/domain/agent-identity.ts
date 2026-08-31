@@ -1,11 +1,5 @@
 import type { AgentKind, AgentStatus } from '../constants/agent.constants';
 import type { RiskLevel } from '../constants/risk.constants';
-import {
-  TRUST_PENALTY_PER_WITHHOLD,
-  TRUST_RECOVERY_ALLOWED_ACTIONS,
-  TRUST_SCORE_MAX,
-  TRUST_SCORE_MIN,
-} from '../constants/agent.constants';
 
 export interface AgentActionStats {
   allowed: number;
@@ -28,8 +22,10 @@ export interface AgentIdentity {
   owner?: string;
   /** The team it works for, §20. Scopes it in the organizational graph. */
   team?: string;
-  /** What it can reach, §20 — where the trust score says how it has behaved. */
+  /** What it can reach. Reported, and never a permission of its own. */
   risk?: RiskLevel;
+  /** The named level a person granted it. Authority lives here, never in a number. */
+  autonomyLevel?: number;
   /** Last credential rotation, when one has happened. */
   rotatedAt?: string;
   /** Owning org/workspace; unset = single-tenant deployment. */
@@ -41,11 +37,3 @@ export const EMPTY_AGENT_STATS: AgentActionStats = {
   withheld: 0,
   approvalsRequested: 0,
 };
-
-/** Deterministic reputation: withholds cost points, sustained good behavior earns them back. */
-export function computeTrustScore(stats: AgentActionStats): number {
-  const penalty = stats.withheld * TRUST_PENALTY_PER_WITHHOLD;
-  const recovery = Math.floor(stats.allowed / TRUST_RECOVERY_ALLOWED_ACTIONS);
-  const score = TRUST_SCORE_MAX - penalty + recovery;
-  return Math.min(TRUST_SCORE_MAX, Math.max(TRUST_SCORE_MIN, score));
-}

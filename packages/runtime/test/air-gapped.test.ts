@@ -46,7 +46,6 @@ describe('air-gapped operation', () => {
       enforcement: { default: 'enforce' },
       // Every guard on: the point is that none of them reaches out.
       behaviorGuard: true,
-      trustGuard: true,
       memoryEnabled: true,
       shellGuard: true,
       sessionTokenBudget: 1_000,

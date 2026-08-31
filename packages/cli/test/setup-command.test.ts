@@ -126,7 +126,6 @@ describe('memnox setup', () => {
       reason: DECISION_REASON.UNKNOWN_AGENT,
       matchedPolicies: [],
       advisories: [],
-      trustScore: 0,
     });
     runtime.on('POST', '/v1/agents', {
       token: 'mnx_fresh',
@@ -373,7 +372,6 @@ describe('security a local install gets by default', () => {
     // not a withheld agent.
     expect(launched[0]).toMatchObject({
       behaviorGuard: true,
-      trustGuard: true,
       verificationGuard: true,
     });
   });

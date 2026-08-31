@@ -21,7 +21,6 @@ const assessment = (over: Partial<RiskAssessment> = {}): RiskAssessment => ({
     },
   ],
   advisories: [],
-  trustScore: 100,
   ...over,
 });
 
