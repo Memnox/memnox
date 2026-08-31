@@ -51,6 +51,8 @@ export class LocalGateAuthorizer implements CallAuthorizer {
       effect: verdict.effect,
       reason: verdict.reason,
       signals: verdict.signals,
+      // A local refusal names its alternative too, or offline is a dead end.
+      ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
     };
   }
 }

@@ -1,4 +1,9 @@
-import type { ActionRequest, DecisionEffect, MatchedPolicy } from '@memnox/core';
+import type {
+  ActionRequest,
+  Alternative,
+  DecisionEffect,
+  MatchedPolicy,
+} from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
 import { loadPolicyFiles } from './policy-file';
@@ -22,6 +27,11 @@ export interface LocalVerdict {
   matchedPolicies: MatchedPolicy[];
   /** What a observed rule would have decided, had it been enforcing. */
   shadowEffect?: DecisionEffect;
+  /**
+   * Resolved from the rule that withheld, never invented. Without it an offline
+   * refusal is a dead end, and an agent told only no abandons the task.
+   */
+  alternative?: Alternative;
 }
 
 /** Evaluated where the call is made, so arguments never travel; only ids and signals do. */
@@ -65,6 +75,9 @@ export class LocalGate {
       ...(evaluation.shadowEffect === undefined
         ? {}
         : { shadowEffect: evaluation.shadowEffect }),
+      ...(evaluation.alternative === undefined
+        ? {}
+        : { alternative: evaluation.alternative }),
     };
   }
 }
