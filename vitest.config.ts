@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       '@memnox/core': packageSrc('core'),
       '@memnox/discovery': packageSrc('discovery'),
+      '@memnox/ledger': packageSrc('ledger'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
       '@memnox/local-gate': packageSrc('local-gate'),
       '@memnox/org-graph': packageSrc('org-graph'),
