@@ -141,6 +141,24 @@ export interface CoverageResponse {
   blindTo: string[];
 }
 
+/** The workforce, counted from four sources, with the gap against what they tracked. */
+export interface CensusResponse {
+  summary: {
+    total: number;
+    bySource: Record<string, number>;
+    noNamedOwner: number;
+    reachProduction: number;
+    reachCustomerData: number;
+    destructive: number;
+    ungovernable: number;
+  };
+  gap: number | null;
+  ungovernable: Array<{ evidence: string; source: string }>;
+  entries: Array<{ evidence: string; source: string; governable: boolean }>;
+  /** Sources that could not be read; a small count is not the same as a clean one. */
+  unavailable: string[];
+}
+
 /** A day of work, turned into a policy file in the format a person writes. */
 export interface LearnResponse {
   agentId: string;
@@ -347,6 +365,17 @@ export class MemnoxClient {
     return this.request<CoverageResponse>(
       'GET',
       '/v1/coverage',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** Every agent from every source, with the record that proved each one exists. */
+  async census(tracked?: number): Promise<CensusResponse> {
+    const query = tracked === undefined ? '' : `?tracked=${tracked}`;
+    return this.request<CensusResponse>(
+      'GET',
+      `/v1/census${query}`,
       undefined,
       this.options.adminToken,
     );

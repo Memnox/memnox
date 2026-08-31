@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { API_ROLE, CONTAINMENT_KIND, type ContainmentKind } from '@memnox/core';
 import { blindSpots, coverageFrom } from '../coverage';
+import {
+  censusGap,
+  summarizeCensus,
+  takeCensus,
+  ungovernable,
+} from '@memnox/organization';
 import { DEFAULT_LEARN_WINDOW_DAYS } from '../learn-service';
 import type { RouteContext } from './route-context';
 
@@ -40,6 +46,20 @@ export function registerOperateRoutes(app: FastifyInstance, ctx: RouteContext): 
   app.get('/v1/seams', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
     return ctx.seams.list();
+  });
+
+  app.get<{ Querystring: { tracked?: string } }>('/v1/census', async (request, reply) => {
+    if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
+    const { entries, unavailable } = await takeCensus(ctx.censusSources);
+    const tracked = Number(request.query.tracked ?? '0');
+    return {
+      summary: summarizeCensus(entries),
+      // The gap is theirs rather than ours, which is why the number they had is an input.
+      gap: Number.isFinite(tracked) ? censusGap(entries, tracked) : null,
+      ungovernable: ungovernable(entries),
+      entries,
+      unavailable,
+    };
   });
 
   app.post('/v1/containment', async (request, reply) => {

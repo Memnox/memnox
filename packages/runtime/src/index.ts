@@ -34,5 +34,6 @@ export * from './containment-service';
 export * from './coverage';
 export * from './learn-service';
 export * from './delegation-service';
+export * from './census-sources';
 export * from './stores/json-file-seam-store';
 export * from './policy-history';

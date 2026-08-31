@@ -39,3 +39,17 @@ export {
   type SupplyChainEvent,
   type SupplyChainEventKind,
 } from './subject';
+export {
+  CENSUS_SOURCES,
+  censusGap,
+  takeCensus,
+  ungovernable,
+  type CensusResult,
+  type CensusSource,
+} from './census';
+export {
+  assemblePassport,
+  passportGaps,
+  type Passport,
+  type PassportSources,
+} from './passport';

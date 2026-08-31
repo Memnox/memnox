@@ -17,6 +17,7 @@ import { registerEvidenceCommand } from './commands/evidence.command';
 import { registerCoverageCommand } from './commands/coverage.command';
 import { registerLearnCommand } from './commands/learn.command';
 import { registerContainCommands } from './commands/contain.command';
+import { registerCensusCommand } from './commands/census.command';
 import { registerInitCommand } from './commands/init.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerKeysCommand } from './commands/keys.command';
@@ -70,6 +71,7 @@ export function buildProgram(context: CliContext): Command {
   registerCoverageCommand(program, context);
   registerLearnCommand(program, context);
   registerContainCommands(program, context);
+  registerCensusCommand(program, context);
   registerPolicyCommand(program, context);
   registerKeysCommand(program, context);
 

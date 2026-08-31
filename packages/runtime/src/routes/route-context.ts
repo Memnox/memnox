@@ -18,6 +18,7 @@ import type { ContainmentService } from '../containment-service';
 import type { LearnService } from '../learn-service';
 import type { DelegationService } from '../delegation-service';
 import type { StateFactStore } from '../stores/json-file-state-store';
+import type { CensusSource } from '@memnox/organization';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { MetricsRegistry } from '../metrics';
@@ -82,6 +83,8 @@ export interface RouteContext {
   delegations: DelegationService;
   /** The company's current condition, read as a policy input. */
   state: StateFactStore;
+  /** Every source a census is taken from; each names the record that proved an agent. */
+  censusSources: readonly CensusSource[];
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

@@ -103,6 +103,7 @@ import { registerOperateRoutes } from './routes/operate.routes';
 import { LearnService } from './learn-service';
 import { DelegationService, InMemoryDelegationStore } from './delegation-service';
 import { JsonFileStateStore } from './stores/json-file-state-store';
+import { EnrolmentSource } from './census-sources';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
@@ -335,6 +336,7 @@ export async function buildServer(
       logger: CONSOLE_LOGGER,
     }),
     state: stateStore,
+    censusSources: [new EnrolmentSource(identityStore, seamStore)],
     learn: new LearnService({
       auditLog,
       rules: () => policies,
