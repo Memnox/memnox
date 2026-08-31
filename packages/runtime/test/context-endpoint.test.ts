@@ -13,7 +13,7 @@ policies:
       actions: ["code.modify"]
       targets: ["payment/*"]
     decision:
-      effect: require_approval
+      effect: escalate
       reason: Payment logic changes need security review.
       approvers: ["security-team"]
 `;
@@ -59,7 +59,7 @@ describe('POST /v1/context', () => {
     const body = response.json() as ContextResponse;
 
     expect(response.statusCode).toBe(200);
-    expect(body.briefing.wouldBe).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(body.briefing.wouldBe).toBe(DECISION_EFFECT.ESCALATE);
     expect(body.briefing.constraints[0]?.name).toBe('payment-code-approval');
     expect(body.text).toContain('Payment logic changes need security review.');
   });

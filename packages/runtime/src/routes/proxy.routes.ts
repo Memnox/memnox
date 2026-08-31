@@ -64,8 +64,8 @@ export function registerProxyRoutes(app: FastifyInstance, ctx: RouteContext): vo
       // Nothing reaches the provider unless policy allowed it.
       if (decision.effect !== DECISION_EFFECT.ALLOW) {
         ctx.metrics.increment(METRIC.PROXY_BLOCKED_TOTAL);
-        return reply.code(decision.effect === DECISION_EFFECT.BLOCK ? 403 : 409).send({
-          error: 'blocked by policy',
+        return reply.code(decision.effect === DECISION_EFFECT.WITHHOLD ? 403 : 409).send({
+          error: 'withheld by policy',
           effect: decision.effect,
           reason: decision.reason,
           eventId: decision.eventId,

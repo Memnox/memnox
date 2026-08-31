@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 JsonMap = Mapping[str, object]
 
 EFFECT_ALLOW = "allow"
-EFFECT_BLOCK = "block"
-EFFECT_REQUIRE_APPROVAL = "require_approval"
+EFFECT_WITHHOLD = "block"
+EFFECT_ESCALATE = "require_approval"
 
 RISK_LOW = "low"
 RISK_MEDIUM = "medium"
@@ -29,8 +29,8 @@ DECISION_STATUS_SUPERSEDED = "superseded"
 DECISION_STATUS_RETIRED = "retired"
 
 ENFORCEMENT_WARN = "warn"
-ENFORCEMENT_REQUIRE_APPROVAL = "require_approval"
-ENFORCEMENT_BLOCK = "block"
+ENFORCEMENT_ESCALATE = "require_approval"
+ENFORCEMENT_WITHHOLD = "block"
 
 
 def _text(data: JsonMap, key: str) -> str:
@@ -292,14 +292,14 @@ class AgentStats:
     """Lifetime action counters used to derive an agent's trust score."""
 
     allowed: int = 0
-    blocked: int = 0
+    withheld: int = 0
     approvals_requested: int = 0
 
     @staticmethod
     def from_json(data: JsonMap) -> AgentStats:
         return AgentStats(
             allowed=_number(data, "allowed"),
-            blocked=_number(data, "blocked"),
+            withheld=_number(data, "withheld"),
             approvals_requested=_number(data, "approvalsRequested"),
         )
 
@@ -499,7 +499,7 @@ class ComplianceTotals:
 
     actions: int = 0
     allowed: int = 0
-    blocked: int = 0
+    withheld: int = 0
     approvals_required: int = 0
 
     @staticmethod
@@ -507,14 +507,14 @@ class ComplianceTotals:
         return ComplianceTotals(
             actions=_number(data, "actions"),
             allowed=_number(data, "allowed"),
-            blocked=_number(data, "blocked"),
+            withheld=_number(data, "withheld"),
             approvals_required=_number(data, "approvalsRequired"),
         )
 
 
 @dataclass(frozen=True)
 class ActionCount:
-    """How often one action was blocked in the period."""
+    """How often one action was withheld in the period."""
 
     action: str
     count: int
@@ -542,14 +542,14 @@ class AgentActivity:
 
     agent: str
     actions: int
-    blocked: int
+    withheld: int
 
     @staticmethod
     def from_json(data: JsonMap) -> AgentActivity:
         return AgentActivity(
             agent=_text(data, "agent"),
             actions=_number(data, "actions"),
-            blocked=_number(data, "blocked"),
+            withheld=_number(data, "withheld"),
         )
 
 

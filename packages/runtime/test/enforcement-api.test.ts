@@ -13,7 +13,7 @@ policies:
     match:
       actions: ["shell.execute"]
     decision:
-      effect: block
+      effect: withhold
       reason: No shell for agents
 `;
 
@@ -30,7 +30,7 @@ describe('PUT /v1/enforcement', () => {
       dataDir,
       policyFile: join(dataDir, 'policies.yaml'),
       adminToken: ADMIN,
-      enforcement: { default: 'monitor' },
+      enforcement: { default: 'observe' },
     });
     const registration = await server.app.inject({
       method: 'POST',
@@ -75,7 +75,7 @@ describe('PUT /v1/enforcement', () => {
     // Monitor records the verdict without applying it.
     expect((await check('production')).json()).toMatchObject({
       effect: DECISION_EFFECT.ALLOW,
-      withheldEffect: DECISION_EFFECT.BLOCK,
+      shadowEffect: DECISION_EFFECT.WITHHOLD,
     });
 
     const response = await put({ environments: { production: 'enforce' } });
@@ -83,7 +83,7 @@ describe('PUT /v1/enforcement', () => {
     expect(response.json()).toMatchObject({ applied: true });
 
     expect((await check('production')).json()).toMatchObject({
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
     });
   });
 
@@ -93,7 +93,7 @@ describe('PUT /v1/enforcement', () => {
     // staging still takes the default the process started with.
     expect((await check('staging')).json()).toMatchObject({
       effect: DECISION_EFFECT.ALLOW,
-      withheldEffect: DECISION_EFFECT.BLOCK,
+      shadowEffect: DECISION_EFFECT.WITHHOLD,
     });
     expect(
       (
@@ -104,7 +104,7 @@ describe('PUT /v1/enforcement', () => {
         })
       ).json(),
     ).toEqual({
-      default: 'monitor',
+      default: 'observe',
       environments: { production: 'enforce' },
     });
   });
@@ -128,7 +128,7 @@ describe('PUT /v1/enforcement', () => {
     agentToken = (registration.json() as { token: string }).token;
 
     expect((await check('production')).json()).toMatchObject({
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
     });
   });
 
@@ -138,7 +138,7 @@ describe('PUT /v1/enforcement', () => {
 
     expect((await check('production')).json()).toMatchObject({
       effect: DECISION_EFFECT.ALLOW,
-      withheldEffect: DECISION_EFFECT.BLOCK,
+      shadowEffect: DECISION_EFFECT.WITHHOLD,
     });
   });
 

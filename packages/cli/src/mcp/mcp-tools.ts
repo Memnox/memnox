@@ -25,7 +25,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
       'Call this before writing or changing a file, running a shell command, deploying, ' +
       'adding a dependency, or touching a database — especially in an unfamiliar area of ' +
       'the codebase. Returns the constraints that apply, who must approve, and what is ' +
-      'blocked outright, in the words the team wrote them. It records nothing and changes ' +
+      'withheld outright, in the words the team wrote them. It records nothing and changes ' +
       'nothing: asking is free and always safe. ' +
       ACTION_GUIDE,
     inputSchema: {
@@ -52,7 +52,7 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
     name: TOOL_STATUS,
     description:
       'Check whether Memnox is governing this machine: how many rules are in force, ' +
-      'whether it is blocking or only observing, and whether any approvals are waiting ' +
+      'whether it is withholding or only observing, and whether any approvals are waiting ' +
       'on a human. Call this when a tool call was refused and you want to know why, or ' +
       'when the user asks what Memnox is doing.',
     inputSchema: { type: 'object', properties: {} },

@@ -13,9 +13,8 @@ const HASH_PREVIEW = 12;
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'ALLOW',
-  [DECISION_EFFECT.REDACT]: 'REDACT',
-  [DECISION_EFFECT.BLOCK]: 'BLOCK',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'REQUIRE APPROVAL',
+  [DECISION_EFFECT.WITHHOLD]: 'BLOCK',
+  [DECISION_EFFECT.ESCALATE]: 'REQUIRE APPROVAL',
 };
 
 /** Deterministic and offline, unlike `explain` — this is the record, not a reading of it. */
@@ -144,11 +143,11 @@ function reportChain(
     style.effect(event.effect, style.bold(VERDICT_LABEL[event.effect])),
   );
   detail(context, event.reason);
-  if (event.withheldEffect !== undefined) {
+  if (event.shadowEffect !== undefined) {
     detail(
       context,
       style.warn(
-        `withheld: the rules decided ${event.withheldEffect}, but ${event.environment ?? 'this environment'} is in ${event.enforcementMode ?? ENFORCEMENT_MODE.MONITOR} mode`,
+        `shadow: enforce would have said ${event.shadowEffect}, but ${event.environment ?? 'this environment'} is in ${event.enforcementMode ?? ENFORCEMENT_MODE.OBSERVE} mode`,
       ),
     );
   }

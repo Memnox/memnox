@@ -32,7 +32,7 @@ Environment:
   ${ENV_GATEWAY_HOST}   bind host (default ${DEFAULT_GATEWAY_HOST})
   ${ENV_GATEWAY_PORT}   bind port (default ${DEFAULT_GATEWAY_PORT})
   ${ENV_TOOLS_ALLOW}        regex — only matching tools are exposed
-  ${ENV_TOOLS_DENY}         regex — matching tools are hidden and blocked
+  ${ENV_TOOLS_DENY}         regex — matching tools are hidden and withheld
   ${ENV_FAIL_OPEN}      "true" to forward calls when the runtime is unreachable
   ${ENV_POLICIES}         policy files evaluated in-process, comma-separated —
                           the only place a call's arguments are ever read

@@ -14,14 +14,14 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
   - name: approve-payments
     match:
       actions: ["code.modify"]
       targets: ["payment/*"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["team-lead"]
 `;
 
@@ -41,7 +41,7 @@ describe('MetricsRegistry', () => {
     const registry = new MetricsRegistry();
     registry.increment(METRIC.ACTIONS_TOTAL, { effect: 'allow', risk: 'low' });
     registry.increment(METRIC.ACTIONS_TOTAL, { effect: 'allow', risk: 'low' });
-    registry.increment(METRIC.ACTIONS_TOTAL, { effect: 'block', risk: 'critical' });
+    registry.increment(METRIC.ACTIONS_TOTAL, { effect: 'withhold', risk: 'critical' });
 
     expect(registry.value(METRIC.ACTIONS_TOTAL, { effect: 'allow', risk: 'low' })).toBe(
       2,
@@ -50,7 +50,7 @@ describe('MetricsRegistry', () => {
       `${METRIC.ACTIONS_TOTAL}{effect="allow",risk="low"} 2`,
     );
     expect(registry.render()).toContain(
-      `${METRIC.ACTIONS_TOTAL}{effect="block",risk="critical"} 1`,
+      `${METRIC.ACTIONS_TOTAL}{effect="withhold",risk="critical"} 1`,
     );
   });
 });
@@ -104,13 +104,13 @@ describe('GET /v1/metrics', () => {
 
     expect(
       server.metrics.value(METRIC.ACTIONS_TOTAL, {
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         risk: RISK_LEVEL.CRITICAL,
       }),
     ).toBe(1);
     const response = await server.app.inject({ method: 'GET', url: '/v1/metrics' });
     expect(response.body).toContain(
-      `${METRIC.ACTIONS_TOTAL}{effect="${DECISION_EFFECT.BLOCK}",risk="${RISK_LEVEL.CRITICAL}"} 1`,
+      `${METRIC.ACTIONS_TOTAL}{effect="${DECISION_EFFECT.WITHHOLD}",risk="${RISK_LEVEL.CRITICAL}"} 1`,
     );
   });
 

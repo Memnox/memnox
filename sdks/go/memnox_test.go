@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// Assembled at runtime: literal credential-shaped strings are blocked in this repo.
+// Assembled at runtime: literal credential-shaped strings are withheld in this repo.
 var (
 	agentToken = strings.Join([]string{"mnx_", "agent", "fixture"}, "")
 	adminToken = strings.Join([]string{"mnx_", "admin", "fixture"}, "")
@@ -28,18 +28,18 @@ const (
 	allowDecisionJSON = `{"eventId":"evt-allow","effect":"allow","riskLevel":"low",
 		"reason":"no policy matched","matchedPolicies":[],"advisories":[]}`
 
-	blockDecisionJSON = `{"eventId":"evt-block","effect":"block","riskLevel":"critical",
+	withholdDecisionJSON = `{"eventId":"evt-withhold","effect":"withhold","riskLevel":"critical",
 		"reason":"policy applied",
-		"matchedPolicies":[{"name":"no-destruction","effect":"block","reason":"policy"}],
+		"matchedPolicies":[{"name":"no-destruction","effect":"withhold","reason":"policy"}],
 		"advisories":[{"source":"decision-memory","reason":"conflicts with a team decision",
-			"signals":["decision-memory:decision:dec-1"],"escalateTo":"block","nonOverridable":true}]}`
+			"signals":["decision-memory:decision:dec-1"],"escalateTo":"withhold","nonOverridable":true}]}`
 
-	approvalDecisionJSON = `{"eventId":"evt-approval","effect":"require_approval","riskLevel":"high",
+	approvalDecisionJSON = `{"eventId":"evt-approval","effect":"escalate","riskLevel":"high",
 		"reason":"human approval required and pending","matchedPolicies":[],"advisories":[],
 		"approvalId":"apr-1"}`
 
 	agentJSON = `{"id":"agt-1","name":"claude-code","kind":"claude-code","status":"active",
-		"trustScore":98,"stats":{"allowed":12,"blocked":1,"approvalsRequested":2},
+		"trustScore":98,"stats":{"allowed":12,"withheld":1,"approvalsRequested":2},
 		"capabilities":["repository.*"],"createdAt":"2026-01-01T00:00:00.000Z"}`
 
 	auditEventJSON = `{"id":"evt-1","occurredAt":"2026-01-01T00:00:00.000Z","agentId":"agt-1",
@@ -53,17 +53,17 @@ const (
 
 	complianceJSON = `{"generatedAt":"2026-02-01T00:00:00.000Z",
 		"period":{"from":"2026-01-01","to":"2026-02-01"},
-		"totals":{"actions":9,"allowed":6,"blocked":2,"approvalsRequired":1},
+		"totals":{"actions":9,"allowed":6,"withheld":2,"approvalsRequired":1},
 		"riskBreakdown":{"low":6,"critical":3},
-		"topBlockedActions":[{"action":"database.delete","count":2}],
+		"topWithheldActions":[{"action":"database.delete","count":2}],
 		"policyActivity":[{"policy":"no-destruction","count":2}],
-		"agentActivity":[{"agent":"claude-code","actions":9,"blocked":2}],
+		"agentActivity":[{"agent":"claude-code","actions":9,"withheld":2}],
 		"advisorySignals":[{"signal":"decision-memory:decision:dec-1","count":1}]}`
 
 	decisionRecordJSON = `{"id":"dec-1","title":"No schema migrations before Q4",
 		"statement":"Hold all migrations until the Q4 freeze lifts.","owner":"platform-team",
 		"decidedAt":"2026-01-01T00:00:00.000Z","actions":["database.migrate"],
-		"targets":["production.*"],"environments":["production"],"enforcement":"block",
+		"targets":["production.*"],"environments":["production"],"enforcement":"withhold",
 		"status":"active","reversibilityCost":"high","sourceType":"manual"}`
 
 	decisionHealthJSON = `{"score":80,"activeDecisions":2,"stale":1,"frequentlyViolated":0,
@@ -201,7 +201,7 @@ func decisionFor(rec recorded) string {
 	action, _ := rec.body["action"].(string)
 	switch action {
 	case "database.delete", ActionDelete:
-		return blockDecisionJSON
+		return withholdDecisionJSON
 	case ActionDeploy:
 		return approvalDecisionJSON
 	default:
@@ -276,7 +276,7 @@ func TestCheckParsesMatchedPoliciesAndAdvisories(t *testing.T) {
 		t.Fatalf("unexpected policies: %+v", decision.MatchedPolicies)
 	}
 	advisory := decision.Advisories[0]
-	if advisory.Source != "decision-memory" || !advisory.NonOverridable || advisory.EscalateTo != EffectBlock {
+	if advisory.Source != "decision-memory" || !advisory.NonOverridable || advisory.EscalateTo != EffectWithhold {
 		t.Fatalf("unexpected advisory: %+v", advisory)
 	}
 	if len(advisory.Signals) != 1 {
@@ -296,15 +296,15 @@ func TestGuardRunsAllowedWork(t *testing.T) {
 	}
 }
 
-func TestGuardReturnsBlockedError(t *testing.T) {
+func TestGuardReturnsWithheldError(t *testing.T) {
 	f := newFixture(t)
 	err := f.client.Guard(context.Background(), ActionRequest{Action: "database.delete"}, func() error {
-		t.Error("blocked work must not run")
+		t.Error("withheld work must not run")
 		return nil
 	})
-	var blocked *BlockedError
-	if !errors.As(err, &blocked) || blocked.Decision.Effect != EffectBlock {
-		t.Fatalf("expected *BlockedError, got %v", err)
+	var withheld *WithheldError
+	if !errors.As(err, &withheld) || withheld.Decision.Effect != EffectWithhold {
+		t.Fatalf("expected *WithheldError, got %v", err)
 	}
 }
 
@@ -314,9 +314,9 @@ func TestGuardReturnsApprovalRequiredError(t *testing.T) {
 		t.Error("pending work must not run")
 		return nil
 	})
-	var pending *ApprovalRequiredError
+	var pending *EscalationRequiredError
 	if !errors.As(err, &pending) || pending.Decision.ApprovalID != approvalID {
-		t.Fatalf("expected *ApprovalRequiredError, got %v", err)
+		t.Fatalf("expected *EscalationRequiredError, got %v", err)
 	}
 }
 
@@ -359,7 +359,7 @@ func TestCanDeployIsFalseWhenApprovalIsRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if verdict.Allowed || verdict.Decision.Effect != EffectRequireApproval {
+	if verdict.Allowed || verdict.Decision.Effect != EffectEscalate {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
 	if f.recorded(t).body["action"] != ActionDeploy {
@@ -382,13 +382,13 @@ func TestCanModify(t *testing.T) {
 	}
 }
 
-func TestCanDeleteIsFalseWhenBlocked(t *testing.T) {
+func TestCanDeleteIsFalseWhenWithheld(t *testing.T) {
 	f := newFixture(t)
 	verdict, err := f.client.CanDelete(context.Background(), "production.users", "production")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if verdict.Allowed || verdict.Decision.Effect != EffectBlock {
+	if verdict.Allowed || verdict.Decision.Effect != EffectWithhold {
 		t.Fatalf("unexpected verdict: %+v", verdict)
 	}
 	if f.recorded(t).body["action"] != ActionDelete {
@@ -533,7 +533,7 @@ func TestComplianceReport(t *testing.T) {
 	if report.Totals.Actions != 9 || report.RiskBreakdown["critical"] != 3 {
 		t.Fatalf("unexpected totals: %+v", report)
 	}
-	if report.TopBlockedActions[0].Action != "database.delete" ||
+	if report.TopWithheldActions[0].Action != "database.delete" ||
 		report.PolicyActivity[0].Policy != "no-destruction" ||
 		report.AgentActivity[0].Agent != "claude-code" ||
 		report.AdvisorySignals[0].Count != 1 {
@@ -567,7 +567,7 @@ func TestAddDecision(t *testing.T) {
 		Actions:           []string{"database.migrate"},
 		Targets:           []string{"production.*"},
 		Environments:      []string{"production"},
-		Enforcement:       EnforcementBlock,
+		Enforcement:       EnforcementWithhold,
 		ReversibilityCost: "high",
 		SourceType:        "manual",
 		Supersedes:        "dec-0",
@@ -575,7 +575,7 @@ func TestAddDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if record.ID != "dec-1" || record.Enforcement != EnforcementBlock {
+	if record.ID != "dec-1" || record.Enforcement != EnforcementWithhold {
 		t.Fatalf("unexpected record: %+v", record)
 	}
 	rec := f.recorded(t)

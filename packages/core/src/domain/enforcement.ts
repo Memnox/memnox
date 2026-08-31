@@ -2,6 +2,7 @@ import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.cons
 import {
   DEFAULT_ENFORCEMENT_MODE,
   ENFORCEMENT_MODE,
+  MODE_STRENGTH,
   type EnforcementMode,
 } from '../constants/enforcement.constants';
 
@@ -14,8 +15,8 @@ export interface EnvironmentModes {
 export interface AppliedDecision {
   /** What actually happened to the action. */
   effect: DecisionEffect;
-  /** What policy decided, when the mode kept it from being applied. */
-  withheldEffect?: DecisionEffect;
+  /** What enforce would have said, when the mode kept it from being applied. */
+  shadowEffect?: DecisionEffect;
 }
 
 export function isEnforcementMode(value: unknown): value is EnforcementMode {
@@ -81,12 +82,25 @@ export function resolveEnforcementMode(
   return mode === undefined ? fallback : mode;
 }
 
-/** Verdict apart from its application: monitor must never rewrite what was decided. */
+/**
+ * Mode downgrades the effect and never the reverse. Observe and advise must never rewrite
+ * what was decided: phase 03 has nothing to report and simulation nothing to replay unless
+ * the real verdict is computed and kept beside the permissive one.
+ */
 export function applyEnforcementMode(
   verdict: DecisionEffect,
   mode: EnforcementMode,
 ): AppliedDecision {
   if (mode === ENFORCEMENT_MODE.ENFORCE) return { effect: verdict };
   if (verdict === DECISION_EFFECT.ALLOW) return { effect: DECISION_EFFECT.ALLOW };
-  return { effect: DECISION_EFFECT.ALLOW, withheldEffect: verdict };
+  return { effect: DECISION_EFFECT.ALLOW, shadowEffect: verdict };
+}
+
+/** A span of environments reads at its softest, or one unramped machine reads as governed. */
+export function softestMode(modes: readonly EnforcementMode[]): EnforcementMode {
+  let softest: EnforcementMode = ENFORCEMENT_MODE.ENFORCE;
+  for (const mode of modes) {
+    if (MODE_STRENGTH[mode] < MODE_STRENGTH[softest]) softest = mode;
+  }
+  return softest;
 }

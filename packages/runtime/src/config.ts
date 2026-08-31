@@ -39,7 +39,7 @@ export interface RuntimeConfig {
   /** JSON file listing rule sources; re-read on reload so a new repo can join a live runtime. */
   policyRegistryFile?: string;
   defaultEffect: DecisionEffect;
-  /** Per-environment enforcement; unset means every environment is monitored. */
+  /** Per-environment enforcement; unset means every environment is observed. */
   enforcement?: EnvironmentModes;
   /** RBAC keys for management routes. Empty on a local runtime = open (local mode). */
   apiKeys: ApiKeyConfig[];

@@ -55,7 +55,7 @@ export const TAINT_UNREADABLE_SOURCE_TYPE = 'unreadable_state';
 export const TAINT_UNREADABLE_REASON =
   'session taint state unreadable — provenance cannot be proven clean';
 
-/** Blocked while a session is tainted; no approval, not even break-glass, lifts it. */
+/** Withheld while a session is tainted; no approval, not even break-glass, lifts it. */
 export const TAINT_NO_OVERRIDE_ACTIONS: readonly string[] = [
   'project.delete',
   'database.drop',

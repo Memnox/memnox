@@ -69,7 +69,7 @@ export class DecisionMemoryService {
       // An unrecognised enforcement falls back to the strictest safe default.
       enforcement: VALID_ENFORCEMENTS.includes(input.enforcement ?? '')
         ? (input.enforcement as DecisionEnforcement)
-        : DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
+        : DECISION_ENFORCEMENT.ESCALATE,
       reversibilityCost: VALID_REVERSIBILITY.includes(input.reversibilityCost ?? '')
         ? (input.reversibilityCost as ReversibilityCost)
         : undefined,

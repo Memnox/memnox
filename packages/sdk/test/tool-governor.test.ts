@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DECISION_EFFECT, RISK_LEVEL, type Decision } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  ENFORCEMENT_MODE,
+  RISK_LEVEL,
+  type Decision,
+} from '@memnox/core';
 import type { MemnoxClient } from '../src/client';
 import {
   governTool,
@@ -16,6 +21,9 @@ function decision(overrides: Partial<Decision> = {}): Decision {
     reason: 'no policy matched',
     matchedPolicies: [],
     advisories: [],
+    mode: ENFORCEMENT_MODE.ENFORCE,
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    latencyUs: 120,
     ...overrides,
   };
 }
@@ -45,9 +53,9 @@ describe('governTool', () => {
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  it('never runs the tool when the runtime blocks it', async () => {
+  it('never runs the tool when the runtime withholds it', async () => {
     const { client } = clientReturning(
-      decision({ effect: DECISION_EFFECT.BLOCK, reason: 'production is off limits' }),
+      decision({ effect: DECISION_EFFECT.WITHHOLD, reason: 'production is off limits' }),
     );
     const handler = vi.fn(async () => 'should not run');
 
@@ -59,7 +67,7 @@ describe('governTool', () => {
   it('refuses on require_approval too, carrying the approval id', async () => {
     const { client } = clientReturning(
       decision({
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         reason: 'needs security review',
         approvalId: 'apr-1',
       }),
@@ -67,13 +75,13 @@ describe('governTool', () => {
     const governed = governTool(client, { name: 'deploy', handler: async () => 'ok' });
 
     await expect(governed({})).rejects.toMatchObject({
-      refusal: { approvalId: 'apr-1', effect: DECISION_EFFECT.REQUIRE_APPROVAL },
+      refusal: { approvalId: 'apr-1', effect: DECISION_EFFECT.ESCALATE },
     });
   });
 
   it('hands the refusal back as a value when onRefused is supplied', async () => {
     const { client } = clientReturning(
-      decision({ effect: DECISION_EFFECT.BLOCK, reason: 'blocked' }),
+      decision({ effect: DECISION_EFFECT.WITHHOLD, reason: 'withheld' }),
     );
     const seen: ToolRefusal[] = [];
     const governed = governTool(

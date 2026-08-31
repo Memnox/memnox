@@ -66,19 +66,19 @@ describe('safety cases', () => {
 
     expect(controls.length).toBeGreaterThan(0);
     for (const control of controls) {
-      expect(meetsExpectation(control, DECISION_EFFECT.BLOCK)).toBe(false);
+      expect(meetsExpectation(control, DECISION_EFFECT.WITHHOLD)).toBe(false);
       expect(meetsExpectation(control, DECISION_EFFECT.ALLOW)).toBe(true);
     }
   });
 
-  it('treats a held action as stopped and a redacted one as proceeding', () => {
+  it('treats an escalated action as stopped and an allow as proceeding', () => {
     const dangerous = SAFETY_CASES.find(
       (safetyCase) => safetyCase.expect === SAFETY_EXPECTATION.STOP,
     );
     expect(dangerous).toBeDefined();
 
-    expect(meetsExpectation(dangerous!, DECISION_EFFECT.REQUIRE_APPROVAL)).toBe(true);
-    expect(meetsExpectation(dangerous!, DECISION_EFFECT.REDACT)).toBe(false);
+    expect(meetsExpectation(dangerous!, DECISION_EFFECT.ESCALATE)).toBe(true);
+    expect(meetsExpectation(dangerous!, DECISION_EFFECT.ALLOW)).toBe(false);
   });
 
   it('gives every case a distinct id', () => {

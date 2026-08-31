@@ -23,7 +23,7 @@ describe('what an approval is bound to', () => {
         '    match:',
         '      actions: ["payment.refund"]',
         '    decision:',
-        '      effect: require_approval',
+        '      effect: escalate',
         '      reason: Issuing a refund needs a human.',
         '      approvers: ["finance-team"]',
       ].join('\n'),
@@ -90,7 +90,7 @@ describe('what an approval is bound to', () => {
     ).toBe('allow');
     expect(
       (await check({ action: 'payment.refund', target: 'order-1', amount: 4500 })).effect,
-    ).toBe('require_approval');
+    ).toBe('escalate');
   });
 
   it('separates two people asking for the same action', async () => {
@@ -109,7 +109,7 @@ describe('what an approval is bound to', () => {
           principal: 'carlos@acme.test',
         })
       ).effect,
-    ).toBe('require_approval');
+    ).toBe('escalate');
   });
 
   it('shows the approver what they are authorizing', async () => {

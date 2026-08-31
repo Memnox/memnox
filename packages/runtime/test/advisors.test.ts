@@ -12,7 +12,7 @@ const blockingAdvisor: ActionAdvisor = {
   advise: async () => [
     {
       source: 'test-blocker',
-      escalateTo: DECISION_EFFECT.BLOCK,
+      escalateTo: DECISION_EFFECT.WITHHOLD,
       reason: 'conflicts with a recorded decision',
       signals: ['decision:dec-1'],
     },
@@ -52,7 +52,7 @@ describe('ActionGateway advisors', () => {
     const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
     const decision = await gateway.authorize(token, { action: 'database.migrate' });
 
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toContain('recorded decision');
 
     const [event] = await auditLog.recent(1);
@@ -73,7 +73,7 @@ describe('ActionGateway advisors', () => {
       advise: async () => [
         {
           source: 'approver',
-          escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+          escalateTo: DECISION_EFFECT.ESCALATE,
           reason: 'needs a human',
           approvers: ['team-lead'],
           signals: ['needs-human'],
@@ -90,7 +90,7 @@ describe('ActionGateway advisors', () => {
     const first = await gateway.authorize(token, { action: 'deploy.service' });
     const second = await gateway.authorize(token, { action: 'deploy.service' });
 
-    expect(first.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(first.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(second.approvalId).toBe(first.approvalId);
     expect(notified).toHaveLength(1);
     expect(notified[0]?.approvers).toEqual(['team-lead']);

@@ -4,13 +4,13 @@ export interface ComplianceReport {
   totals: {
     actions: number;
     allowed: number;
-    blocked: number;
+    withheld: number;
     approvalsRequired: number;
   };
   riskBreakdown: Record<string, number>;
   topBlockedActions: Array<{ action: string; count: number }>;
   policyActivity: Array<{ policy: string; count: number }>;
-  agentActivity: Array<{ agent: string; actions: number; blocked: number }>;
+  agentActivity: Array<{ agent: string; actions: number; withheld: number }>;
   advisorySignals: Array<{ signal: string; count: number }>;
   verification: VerificationCoverage;
 }

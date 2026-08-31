@@ -138,13 +138,13 @@ describe('cloud read commands', () => {
         kind: 'action',
         id: 'e1',
         occurredAt: '2026-08-07T10:00:00.000Z',
-        event: { effect: 'block', action: 'shell.execute', target: 'rm -rf /' },
+        event: { effect: 'withhold', action: 'shell.execute', target: 'rm -rf /' },
       },
     ];
 
     await run(['timeline']);
 
-    expect(out.text).toContain('BLOCK shell.execute rm -rf /');
+    expect(out.text).toContain('WITHHOLD shell.execute rm -rf /');
   });
 
   it('renders a source event, which carries no effect', async () => {

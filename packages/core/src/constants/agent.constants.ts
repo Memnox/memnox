@@ -17,8 +17,8 @@ export type AgentStatus = (typeof AGENT_STATUS)[keyof typeof AGENT_STATUS];
 
 export const TRUST_SCORE_MAX = 100;
 export const TRUST_SCORE_MIN = 0;
-/** Each blocked action costs this many points until offset by successful ones. */
-export const TRUST_PENALTY_PER_BLOCK = 2;
+/** Each withheld action costs this many points until offset by successful ones. */
+export const TRUST_PENALTY_PER_WITHHOLD = 2;
 /** Allowed actions needed to earn back one penalty point. */
 export const TRUST_RECOVERY_ALLOWED_ACTIONS = 50;
 

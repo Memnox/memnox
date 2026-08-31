@@ -22,7 +22,7 @@ from memnox import (  # noqa: E402
     may_proceed,
 )
 
-# Assembled at runtime: literal credential-shaped strings are blocked in this repo.
+# Assembled at runtime: literal credential-shaped strings are withheld in this repo.
 GRANT = "".join(["mnx_", "ask_", "fixture"])
 
 JSON_TYPE = "application/json"

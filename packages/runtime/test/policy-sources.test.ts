@@ -37,7 +37,7 @@ describe('policy sources', () => {
     expect(server.app).toBeDefined();
 
     // The second repository lands its rules and asks for a reload.
-    await writeFile(api, doc('acme', 'api-rule', 'block'), 'utf8');
+    await writeFile(api, doc('acme', 'api-rule', 'withhold'), 'utf8');
     await writeFile(registry, JSON.stringify({ files: [web, api] }), 'utf8');
     const response = await server.app.inject({
       method: 'POST',
@@ -57,7 +57,7 @@ describe('policy sources', () => {
   it('loads one file once even when it is configured and registered differently', async () => {
     const file = join(dir, 'web.yaml');
     const registry = join(dir, 'policies.json');
-    await writeFile(file, doc('acme', 'web-rule', 'block'), 'utf8');
+    await writeFile(file, doc('acme', 'web-rule', 'withhold'), 'utf8');
     // `setup` passes the file relatively and registers it absolutely.
     await writeFile(registry, JSON.stringify({ files: [file] }), 'utf8');
 

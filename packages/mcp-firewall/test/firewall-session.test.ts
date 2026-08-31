@@ -50,7 +50,7 @@ const ALLOW: CallVerdict = {
   reason: 'permitted by policy',
 };
 const BLOCK: CallVerdict = {
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   reason: 'writes to production',
 };
 
@@ -118,7 +118,7 @@ describe('FirewallSession — gating tools/call', () => {
     expect(channel.client).toHaveLength(0);
   });
 
-  it('answers the client directly when the call is blocked, and never forwards it', async () => {
+  it('answers the client directly when the call is withheld, and never forwards it', async () => {
     const { session, channel } = harness(BLOCK);
 
     await session.fromClient(toolCall('delete_repo', 7));
@@ -128,7 +128,7 @@ describe('FirewallSession — gating tools/call', () => {
     expect(reply.id).toBe(7);
     expect(reply.result?.['isError']).toBe(true);
     expect(JSON.stringify(reply.result)).toContain(
-      'Blocked by Memnox: writes to production',
+      'Withheld by Memnox: writes to production',
     );
   });
 
@@ -137,10 +137,10 @@ describe('FirewallSession — gating tools/call', () => {
 
     await session.fromClient(toolCall('delete_repo'));
 
-    expect(logs).toEqual(['blocked tools/call "delete_repo": writes to production']);
+    expect(logs).toEqual(['withheld tools/call "delete_repo": writes to production']);
   });
 
-  it('blocks a statically filtered tool without consulting the authorizer', async () => {
+  it('withholds a statically filtered tool without consulting the authorizer', async () => {
     const { session, channel, authorizer } = harness(
       ALLOW,
       new ToolFilter(undefined, '^delete_'),

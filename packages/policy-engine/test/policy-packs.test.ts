@@ -69,7 +69,7 @@ describe('mergePolicies', () => {
     {
       name: 'payment-code-approval',
       match: { actions: ['code.modify'] },
-      decision: { effect: DECISION_EFFECT.BLOCK },
+      decision: { effect: DECISION_EFFECT.WITHHOLD },
     },
   ];
 
@@ -81,7 +81,7 @@ describe('mergePolicies', () => {
     expect(merged.added).not.toContain('payment-code-approval');
     expect(
       merged.policies.find((p) => p.name === 'payment-code-approval')?.decision.effect,
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('appends the policies that are genuinely new', () => {

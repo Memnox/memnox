@@ -16,12 +16,12 @@ const POLICIES: Policy[] = [
   {
     name: 'production-database-protection',
     match: { actions: ['database.delete'], environments: ['production'] },
-    decision: { effect: DECISION_EFFECT.BLOCK, reason: 'No AI database deletion' },
+    decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'No AI database deletion' },
   },
   {
     name: 'deploy-approval',
     match: { actions: ['deploy.*'], environments: ['production'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
   },
 ];
 
@@ -61,35 +61,35 @@ describe('enforcement modes', () => {
       });
       const decision = await gateway.authorize(await agentToken(gateway), DELETE_REQUEST);
 
-      expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
-      expect(decision.withheldEffect).toBeUndefined();
+      expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
+      expect(decision.shadowEffect).toBeUndefined();
     });
   });
 
-  describe('monitor', () => {
+  describe('observe', () => {
     it('lets the action through but records what policy decided', async () => {
       const gateway = gatewayWith({
-        environments: { production: ENFORCEMENT_MODE.MONITOR },
+        environments: { production: ENFORCEMENT_MODE.OBSERVE },
       });
       const decision = await gateway.authorize(await agentToken(gateway), DELETE_REQUEST);
 
       expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
-      expect(decision.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
+      expect(decision.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
       expect(decision.matchedPolicies.map((policy) => policy.name)).toContain(
         'production-database-protection',
       );
 
       const [event] = await auditLog.recent(1);
       expect(event?.effect).toBe(DECISION_EFFECT.ALLOW);
-      expect(event?.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
-      expect(event?.enforcementMode).toBe(ENFORCEMENT_MODE.MONITOR);
+      expect(event?.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
+      expect(event?.enforcementMode).toBe(ENFORCEMENT_MODE.OBSERVE);
     });
 
     // An approval raised in monitor mode would page a human about an action that
     // already ran — the queue must stay empty.
     it('does not raise an approval for a withheld require_approval', async () => {
       const gateway = gatewayWith({
-        environments: { production: ENFORCEMENT_MODE.MONITOR },
+        environments: { production: ENFORCEMENT_MODE.OBSERVE },
       });
       const decision = await gateway.authorize(await agentToken(gateway), {
         action: 'deploy.service',
@@ -97,7 +97,7 @@ describe('enforcement modes', () => {
       });
 
       expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
-      expect(decision.withheldEffect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+      expect(decision.shadowEffect).toBe(DECISION_EFFECT.ESCALATE);
       expect(decision.approvalId).toBeUndefined();
       expect(await approvalStore.listByStatus(APPROVAL_STATUS.PENDING)).toHaveLength(0);
     });
@@ -108,18 +108,18 @@ describe('enforcement modes', () => {
       const gateway = gatewayWith({});
       const decision = await gateway.authorize(await agentToken(gateway), DELETE_REQUEST);
 
-      expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
-      expect(decision.withheldEffect).toBeUndefined();
+      expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
+      expect(decision.shadowEffect).toBeUndefined();
     });
 
     it('leaves an allowed action indistinguishable from enforced', async () => {
-      const gateway = gatewayWith({ default: ENFORCEMENT_MODE.MONITOR });
+      const gateway = gatewayWith({ default: ENFORCEMENT_MODE.OBSERVE });
       const decision = await gateway.authorize(await agentToken(gateway), {
         action: 'repository.read',
       });
 
       expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
-      expect(decision.withheldEffect).toBeUndefined();
+      expect(decision.shadowEffect).toBeUndefined();
     });
   });
 
@@ -141,7 +141,7 @@ describe('enforcement modes', () => {
   describe('per-environment isolation', () => {
     it('enforces production while monitoring staging with one rule set', async () => {
       const gateway = gatewayWith({
-        default: ENFORCEMENT_MODE.MONITOR,
+        default: ENFORCEMENT_MODE.OBSERVE,
         environments: { production: ENFORCEMENT_MODE.ENFORCE },
       });
       const token = await agentToken(gateway);
@@ -152,10 +152,10 @@ describe('enforcement modes', () => {
         environment: 'staging',
       });
 
-      expect(prod.effect).toBe(DECISION_EFFECT.BLOCK);
+      expect(prod.effect).toBe(DECISION_EFFECT.WITHHOLD);
       // The staging policy only matches production, so nothing was withheld either.
       expect(staging.effect).toBe(DECISION_EFFECT.ALLOW);
-      expect(staging.withheldEffect).toBeUndefined();
+      expect(staging.shadowEffect).toBeUndefined();
     });
   });
 
@@ -165,15 +165,15 @@ describe('enforcement modes', () => {
       const gateway = gatewayWith({ default: ENFORCEMENT_MODE.OFF });
       const decision = await gateway.authorize('mnx_forged', DELETE_REQUEST);
 
-      expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+      expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     });
 
     it('still blocks an unknown token in monitor mode', async () => {
-      const gateway = gatewayWith({ default: ENFORCEMENT_MODE.MONITOR });
+      const gateway = gatewayWith({ default: ENFORCEMENT_MODE.OBSERVE });
       const decision = await gateway.authorize('mnx_forged', DELETE_REQUEST);
 
-      expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
-      expect(decision.withheldEffect).toBeUndefined();
+      expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
+      expect(decision.shadowEffect).toBeUndefined();
     });
   });
 });

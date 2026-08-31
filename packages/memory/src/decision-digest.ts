@@ -1,7 +1,7 @@
 import type { DecisionRecord } from './decision-record';
 import { isEnforcing } from './decision-record';
 
-/** Preloads the constraints, rather than discovering them one blocked action at a time. */
+/** Preloads the constraints, rather than discovering them one withheld action at a time. */
 export function buildDecisionDigest(decisions: DecisionRecord[]): string {
   const active = decisions.filter(isEnforcing);
   if (active.length === 0)

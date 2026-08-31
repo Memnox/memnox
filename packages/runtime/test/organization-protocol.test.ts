@@ -23,14 +23,14 @@ policies:
       actions: ["payment.refund"]
       aboveAmount: 1000
     decision:
-      effect: require_approval
+      effect: escalate
       reason: Refunds above 1,000 need the Finance Manager
       approvers: ["finance-manager"]
   - name: no-database-deletion
     match:
       actions: ["database.delete"]
     decision:
-      effect: block
+      effect: withhold
       reason: Never
 `;
 

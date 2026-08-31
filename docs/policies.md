@@ -10,7 +10,7 @@ policies:
       actions: ["database.delete", "database.drop"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI-initiated destructive database operations in production.
 
   - name: payment-code-approval
@@ -18,7 +18,7 @@ policies:
       actions: ["code.modify"]
       targets: ["payment/*"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["security-team"]
 ```
 
@@ -38,7 +38,7 @@ A policy can demand several approvals, and apply only inside a time window:
         - { days: [1,2,3,4,5], startHour: 17, endHour: 9 }
         - { days: [0,6], startHour: 0, endHour: 24 }
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead", "security"]
       minApprovals: 2
 ```
@@ -59,7 +59,7 @@ A rule can match the call's own arguments, the directory it runs in, and the bra
         command: ["*rm -rf*"]
       workingDirectories: ["/srv/payments*"]
     decision:
-      effect: block
+      effect: withhold
       reason: Recursive delete is not an agent action here.
 
   - name: release-branches-need-a-human
@@ -68,7 +68,7 @@ A rule can match the call's own arguments, the directory it runs in, and the bra
       arguments: { command: ["*git push*--force*"] }
       branches: ["main", "release/*"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 ```
 
@@ -88,7 +88,7 @@ counts in: money refunded, rows deleted, seats granted.
       actions: ["payment.refund"]
       aboveAmount: 1000
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["finance-manager"]
 
   - name: no-refund-this-large
@@ -96,7 +96,7 @@ counts in: money refunded, rows deleted, seats granted.
       actions: ["payment.refund"]
       aboveAmount: 100000
     decision:
-      effect: block
+      effect: withhold
       reason: A refund this size is not an agent action.
 ```
 
@@ -120,17 +120,17 @@ both.
   - name: candidate-rule
     match: { actions: ["deploy.*"] }
     decision:
-      effect: block
-      mode: monitor           # record what it would have done; do not apply it
+      effect: withhold
+      mode: observe           # record what it would have done; do not apply it
 
   - name: deploy-budget
     match: { actions: ["deploy.*"] }
     decision:
       effect: allow
-      rateLimit: { max: 10, windowSeconds: 3600 }   # the 11th in an hour is blocked
+      rateLimit: { max: 10, windowSeconds: 3600 }   # the 11th in an hour is withheld
 ```
 
-**mode: monitor** rolls one rule out without enforcing it. The action proceeds and the audit event records the verdict it withheld, alongside the per-environment `--enforcement` modes.
+**mode: observe** rolls one rule out without enforcing it. The action proceeds and the audit event records the verdict it withheld, alongside the per-environment `--enforcement` modes.
 
 **rateLimit** is counted by the runtime per agent and per rule, and only an action that actually proceeds spends a slot. It needs a running runtime, because the local gate never counts.
 

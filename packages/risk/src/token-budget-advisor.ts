@@ -55,7 +55,7 @@ export class TokenBudgetAdvisor implements ActionAdvisor {
     return [
       {
         source: this.name,
-        escalateTo: DECISION_EFFECT.BLOCK,
+        escalateTo: DECISION_EFFECT.WITHHOLD,
         reason: `session token budget exceeded: ${spent + requested} of ${this.sessionBudget} tokens`,
         signals: [RISK_SIGNAL_TOKEN_BUDGET_EXCEEDED],
       },

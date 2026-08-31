@@ -69,7 +69,7 @@ The agent points at the firewall instead of the server and sees the same tools, 
 
 Nowhere, until you mint it. There is no dashboard, no account, and no file it sits in beforehand — the runtime creates the token at the moment you register an agent, and that is the only moment it exists in readable form.
 
-**Why an agent needs one at all.** Every decision Memnox makes is attributed to a named identity. That is what makes the rest work: a policy can name approvers for *this* agent, the audit trail can say *who* was blocked, trust scores and allow/block counts accumulate per agent, and `memnox agents suspend` can cut off one agent without touching the others. An unidentified caller supports none of that, so the token is not a password protecting a feature — it is the identity the whole decision record hangs on.
+**Why an agent needs one at all.** Every decision Memnox makes is attributed to a named identity. That is what makes the rest work: a policy can name approvers for *this* agent, the audit trail can say *who* was withheld, trust scores and allow/block counts accumulate per agent, and `memnox agents suspend` can cut off one agent without touching the others. An unidentified caller supports none of that, so the token is not a password protecting a feature — it is the identity the whole decision record hangs on.
 
 The simple path is `memnox setup`. It registers a machine-local agent and writes the token to `~/.memnox/config.json`, directory `0700` and file `0600`, so only your user account can read it. It reuses a token already there instead of minting a second identity every time you run it — two identities for one machine would split that machine's history in half.
 

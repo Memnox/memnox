@@ -12,13 +12,16 @@ const gate = (policies: Policy[]): LocalGate =>
 const blockRecursiveDelete: Policy = {
   name: 'no-rm-rf',
   match: { actions: ['mcp.*'], arguments: { command: ['*rm -rf*'] } },
-  decision: { effect: DECISION_EFFECT.BLOCK, reason: 'recursive delete' },
+  decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'recursive delete' },
 };
 
 const blockToolByName: Policy = {
   name: 'no-deploy-tool',
   match: { actions: ['mcp.deploy'] },
-  decision: { effect: DECISION_EFFECT.BLOCK, reason: 'deploys are not an agent action' },
+  decision: {
+    effect: DECISION_EFFECT.WITHHOLD,
+    reason: 'deploys are not an agent action',
+  },
 };
 
 /** Calls the policy engine directly, so it is its own path to a verdict. */
@@ -31,7 +34,7 @@ describe('LocalGate — a tool name dressed up to miss its rule', () => {
   ])('blocks it just the same with %s', (_name, action) => {
     const verdict = gate([blockToolByName]).evaluate({ action });
 
-    expect(verdict.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(verdict.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('still allows a tool no rule names', () => {
@@ -48,7 +51,7 @@ describe('LocalGate — argument rules', () => {
       arguments: { command: 'rm -rf /srv' },
     });
 
-    expect(verdict.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(verdict.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(verdict.reason).toContain('recursive delete');
   });
 
@@ -94,7 +97,7 @@ policies:
       arguments:
         file_path: ["*.env"]
     decision:
-      effect: block
+      effect: withhold
       reason: credentials file
 `,
       'utf8',
@@ -107,7 +110,7 @@ policies:
         action: 'file.write',
         arguments: { file_path: 'services/api/.env' },
       }).effect,
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
     expect(loaded.rules().map((rule) => rule.name)).toEqual(['no-env-writes']);
   });
 });

@@ -20,8 +20,8 @@ export interface LocalVerdict {
   /** Findings safe to send onward — rule ids only, never the matched text. */
   signals: string[];
   matchedPolicies: MatchedPolicy[];
-  /** What a monitored rule would have decided, had it been enforcing. */
-  withheldEffect?: DecisionEffect;
+  /** What a observed rule would have decided, had it been enforcing. */
+  shadowEffect?: DecisionEffect;
 }
 
 /** Evaluated where the call is made, so arguments never travel; only ids and signals do. */
@@ -62,9 +62,9 @@ export class LocalGate {
         (policy) => `${SIGNAL_POLICY_PREFIX}${policy.name}`,
       ),
       matchedPolicies: evaluation.matchedPolicies,
-      ...(evaluation.withheldEffect === undefined
+      ...(evaluation.shadowEffect === undefined
         ? {}
-        : { withheldEffect: evaluation.withheldEffect }),
+        : { shadowEffect: evaluation.shadowEffect }),
     };
   }
 }

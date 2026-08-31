@@ -13,7 +13,7 @@ policies:
       actions: ["file.write"]
       targets: ["*auth*"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["security"]
 `;
 
@@ -62,7 +62,7 @@ describe('retry after approval', () => {
 
   it('lets the bare retry through once a human has granted it', async () => {
     const first = await attempt();
-    expect(first.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(first.effect).toBe(DECISION_EFFECT.ESCALATE);
 
     await approve(first.approvalId ?? '');
     const retry = await attempt();
@@ -79,7 +79,7 @@ describe('retry after approval', () => {
 
     const third = await attempt();
 
-    expect(third.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(third.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(third.approvalId).not.toBe(first.approvalId);
   });
 
@@ -89,15 +89,15 @@ describe('retry after approval', () => {
 
     const other = await attempt('src/auth/login.ts');
 
-    expect(other.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(other.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(other.approvalId).not.toBe(first.approvalId);
   });
 
-  it('still blocks while the approval is only pending', async () => {
+  it('still withholds while the approval is only pending', async () => {
     const first = await attempt();
     const retry = await attempt();
 
-    expect(retry.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(retry.effect).toBe(DECISION_EFFECT.ESCALATE);
     // The same open hold is reused rather than a second one being raised.
     expect(retry.approvalId).toBe(first.approvalId);
   });
@@ -112,7 +112,7 @@ describe('retry after approval', () => {
 
     const retry = await attempt();
 
-    expect(retry.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(retry.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(retry.approvalId).not.toBe(first.approvalId);
   });
 });

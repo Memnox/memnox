@@ -32,7 +32,7 @@ describe('the SDK against a running runtime', () => {
     policyFile = join(dataDir, 'memnox.policies.yaml');
     await writeFile(
       policyFile,
-      'version: 1\npolicies:\n  - name: seed\n    match:\n      actions: ["deploy.*"]\n    decision:\n      effect: block\n      reason: seeded\n',
+      'version: 1\npolicies:\n  - name: seed\n    match:\n      actions: ["deploy.*"]\n    decision:\n      effect: withhold\n      reason: seeded\n',
       'utf8',
     );
     server = await buildServer({ dataDir, policyFile });
@@ -66,14 +66,14 @@ describe('the SDK against a running runtime', () => {
       {
         name: 'first',
         match: { actions: ['deploy.*'] },
-        decision: { effect: 'block', reason: 'first version' },
+        decision: { effect: 'withhold', reason: 'first version' },
       },
     ]);
     await client.applyPolicies([
       {
         name: 'second',
         match: { actions: ['file.write'] },
-        decision: { effect: 'block', reason: 'second version' },
+        decision: { effect: 'withhold', reason: 'second version' },
       },
     ]);
 
@@ -91,7 +91,7 @@ describe('the SDK against a running runtime', () => {
     });
 
     const decision = await agent.check({ action: 'deploy.service', target: 'api' });
-    expect(decision.effect).toBe('block');
+    expect(decision.effect).toBe('withhold');
 
     const audit = await client.recentAudit(5);
     expect(audit.some((event) => event.id === decision.eventId)).toBe(true);

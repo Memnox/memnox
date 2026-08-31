@@ -8,7 +8,7 @@ const YAML = `version: 1
 policies:
   - name: orbit-rule
     match: { actions: ["file.write"] }
-    decision: { effect: block, reason: orbit }
+    decision: { effect: withhold, reason: orbit }
 `;
 
 describe('the reported first-run failure', () => {

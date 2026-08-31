@@ -101,9 +101,9 @@ describe('memnox approvals', () => {
 describe('memnox check positional form', () => {
   it('reads the action and target as arguments', async () => {
     const runtime = new FakeRuntime().on('POST', CHECK_PATH, {
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
       riskLevel: RISK_LEVEL.HIGH,
-      reason: 'blocked',
+      reason: 'withheld',
       matchedPolicies: [],
     });
 
@@ -146,7 +146,7 @@ describe('memnox status', () => {
         {
           action: 'shell.execute',
           effect: DECISION_EFFECT.ALLOW,
-          withheldEffect: DECISION_EFFECT.BLOCK,
+          shadowEffect: DECISION_EFFECT.WITHHOLD,
           agentName: 'x',
         },
       ]);

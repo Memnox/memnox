@@ -11,7 +11,7 @@ function decision(overrides: Partial<DecisionRecord>): DecisionRecord {
     owner: 'team',
     decidedAt: new Date().toISOString(),
     actions: [],
-    enforcement: DECISION_ENFORCEMENT.BLOCK,
+    enforcement: DECISION_ENFORCEMENT.WITHHOLD,
     ...overrides,
   };
 }

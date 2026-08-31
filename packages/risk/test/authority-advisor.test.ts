@@ -70,7 +70,7 @@ describe('AuthorityAdvisor', () => {
     });
 
     expect(advisory?.source).toBe(AUTHORITY_ADVISOR);
-    expect(advisory?.escalateTo).toBe('require_approval');
+    expect(advisory?.escalateTo).toBe('escalate');
     expect(advisory?.approvers).toContain('alice');
     expect(advisory?.signals).toEqual(['authority:over-ceiling']);
   });
@@ -108,14 +108,14 @@ describe('AuthorityAdvisor', () => {
   });
 
   it('never returns an advisory that could loosen a decision', async () => {
-    const advisories = await advise([grant({ overLimit: 'block' })], {
+    const advisories = await advise([grant({ overLimit: 'withhold' })], {
       action: 'expense.approve',
       principal: 'alice',
       amount: 9_000,
     });
 
     for (const advisory of advisories) {
-      expect(['block', 'require_approval']).toContain(advisory.escalateTo);
+      expect(['withhold', 'escalate']).toContain(advisory.escalateTo);
     }
   });
 });

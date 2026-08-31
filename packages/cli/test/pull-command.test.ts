@@ -21,7 +21,7 @@ const ENV_VARS = [ENV_CLOUD_URL, ENV_CLOUD_TOKEN, 'MEMNOX_CLOUD_WORKSPACE'];
 const RULE = {
   name: 'credential-file-protection',
   match: { actions: ['file.write'], targets: ['.env'] },
-  decision: { effect: 'block', reason: 'Agents do not write credential files.' },
+  decision: { effect: 'withhold', reason: 'Agents do not write credential files.' },
 };
 
 const BUNDLE: CloudBundle = {

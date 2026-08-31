@@ -52,7 +52,7 @@ describe('agent credential rotation', () => {
   it('retires the old token immediately', async () => {
     expect((await checkWith(originalToken)).json()).toMatchObject({ effect: 'allow' });
     await rotate();
-    expect((await checkWith(originalToken)).json()).toMatchObject({ effect: 'block' });
+    expect((await checkWith(originalToken)).json()).toMatchObject({ effect: 'withhold' });
   });
 
   it('never returns the stored hash', async () => {

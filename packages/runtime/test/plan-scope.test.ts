@@ -92,7 +92,7 @@ describe('declared plan scope', () => {
   it('blocks an action the current step did not declare', async () => {
     await declare();
 
-    expect(await effect('file.write')).toBe(DECISION_EFFECT.BLOCK);
+    expect(await effect('file.write')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   // The point of step scoping: reaching step 2 must not carry step 1's grant.
@@ -103,7 +103,7 @@ describe('declared plan scope', () => {
     await post(`/v1/plans/${planId}/advance`);
 
     expect(await effect('file.write')).toBe(DECISION_EFFECT.ALLOW);
-    expect(await effect('repository.read')).toBe(DECISION_EFFECT.BLOCK);
+    expect(await effect('repository.read')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('closes the plan after the last step, allowing nothing', async () => {
@@ -112,15 +112,15 @@ describe('declared plan scope', () => {
     const closed = await post(`/v1/plans/${planId}/advance`);
 
     expect(closed.json().closedAt).toBeTruthy();
-    expect(await effect('file.write')).toBe(DECISION_EFFECT.BLOCK);
-    expect(await effect('repository.read')).toBe(DECISION_EFFECT.BLOCK);
+    expect(await effect('file.write')).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(await effect('repository.read')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('allows nothing once explicitly closed', async () => {
     const planId = (await declare()).json().id;
     await post(`/v1/plans/${planId}/close`);
 
-    expect(await effect('repository.read')).toBe(DECISION_EFFECT.BLOCK);
+    expect(await effect('repository.read')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   // Opting in is what turns scoping on; ordinary sessions must be untouched.
@@ -163,7 +163,7 @@ describe('declared plan scope', () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { action: 'repository.read', sessionId: 'empty-session' },
     });
-    expect(response.json().effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(response.json().effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   describe('ownership and validation', () => {

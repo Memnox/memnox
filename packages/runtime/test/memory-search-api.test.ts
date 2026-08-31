@@ -14,7 +14,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 

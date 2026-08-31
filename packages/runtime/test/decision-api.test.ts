@@ -14,7 +14,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 
@@ -65,7 +65,7 @@ describe('decision API', () => {
         environment: 'production',
       });
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ effect: DECISION_EFFECT.BLOCK });
+      expect(response.json()).toMatchObject({ effect: DECISION_EFFECT.WITHHOLD });
     });
 
     it('rejects a request with no action', async () => {
@@ -108,7 +108,7 @@ describe('decision API', () => {
       });
 
       const assessment = response.json() as RiskAssessment;
-      expect(assessment.effect).toBe(DECISION_EFFECT.BLOCK);
+      expect(assessment.effect).toBe(DECISION_EFFECT.WITHHOLD);
       expect(assessment.trustScore).toBeGreaterThanOrEqual(0);
       // The whole point: asking must not look like attempting.
       expect((await auditEvents()).length).toBe(before);

@@ -6,7 +6,7 @@ policies:
       actions:
         - payment.refund
     decision:
-      effect: require_approval
+      effect: escalate
       approvers:
         - finance-lead
   - name: production-database-protection
@@ -20,7 +20,7 @@ policies:
         - production
         - prod
     decision:
-      effect: block
+      effect: withhold
       reason: No AI-initiated destructive database operations in production.
   - name: production-deploy-approval
     description: A human signs off on anything reaching production.
@@ -31,7 +31,7 @@ policies:
         - production
         - prod
     decision:
-      effect: require_approval
+      effect: escalate
       reason: Production deployments need a human sign-off.
       approvers:
         - eng-lead
@@ -42,7 +42,7 @@ policies:
         - infrastructure.delete
         - infrastructure.destroy
     decision:
-      effect: require_approval
+      effect: escalate
       reason: Tearing down infrastructure needs a human.
       approvers:
         - platform-team

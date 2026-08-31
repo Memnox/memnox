@@ -30,7 +30,7 @@ export class TrustAdvisor implements ActionAdvisor {
     return [
       {
         source: this.name,
-        escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+        escalateTo: DECISION_EFFECT.ESCALATE,
         reason: `trust score ${score} is below ${TRUST_SCORE_APPROVAL_THRESHOLD} — ${risk}-risk actions need a human sign-off`,
         approvers: this.approvers,
         signals: [RISK_SIGNAL.LOW_TRUST_SCORE],

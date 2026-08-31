@@ -16,12 +16,12 @@ const POLICIES: Policy[] = [
   {
     name: 'production-database-protection',
     match: { actions: ['database.delete'], environments: ['production'] },
-    decision: { effect: DECISION_EFFECT.BLOCK, reason: 'No AI database deletion' },
+    decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'No AI database deletion' },
   },
   {
     name: 'deploy-approval',
     match: { actions: ['deploy.*'], environments: ['production'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
   },
 ];
 
@@ -43,7 +43,7 @@ describe('ActionGateway', () => {
 
   it('blocks unknown agent tokens and audits the attempt as critical', async () => {
     const decision = await gateway.authorize('mnx_forged', { action: 'repository.read' });
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.UNKNOWN_AGENT);
 
     const [event] = await auditLog.recent(1);
@@ -70,13 +70,13 @@ describe('ActionGateway', () => {
       target: 'users',
       environment: 'production',
     });
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.matchedPolicies.map((p) => p.name)).toContain(
       'production-database-protection',
     );
 
     const [event] = await auditLog.recent(1);
-    expect(event?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(event?.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(event?.matchedPolicies).toContain('production-database-protection');
   });
 
@@ -85,12 +85,12 @@ describe('ActionGateway', () => {
       'repository.*',
     ]);
     const decision = await gateway.authorize(token, { action: 'database.migrate' });
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.CAPABILITY);
     expect(decision.matchedPolicies).toHaveLength(0);
 
     const [event] = await auditLog.recent(1);
-    expect(event?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(event?.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(event?.reason).toBe(DECISION_REASON.CAPABILITY);
   });
 
@@ -112,7 +112,7 @@ describe('ActionGateway', () => {
     const { agent, token } = await gateway.registerAgent('rogue', AGENT_KIND.CUSTOM);
     await identityStore.save({ ...agent, status: AGENT_STATUS.SUSPENDED });
     const decision = await gateway.authorize(token, { action: 'repository.read' });
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.AGENT_SUSPENDED);
   });
 
@@ -125,14 +125,14 @@ describe('ActionGateway', () => {
     };
 
     const first = await gateway.authorize(token, request);
-    expect(first.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(first.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(first.approvalId).toBeDefined();
 
     const retryWhilePending = await gateway.authorize(token, {
       ...request,
       approvalId: first.approvalId,
     });
-    expect(retryWhilePending.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(retryWhilePending.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(retryWhilePending.approvalId).toBe(first.approvalId);
 
     const approval = await gateway.approvals.resolve(
@@ -165,7 +165,7 @@ describe('ActionGateway', () => {
       environment: 'production',
       approvalId: first.approvalId,
     });
-    expect(replayed.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(replayed.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('blocks after a denied approval', async () => {
@@ -182,7 +182,7 @@ describe('ActionGateway', () => {
       ...request,
       approvalId: first.approvalId,
     });
-    expect(denied.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(denied.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(denied.reason).toContain('denied');
   });
 });

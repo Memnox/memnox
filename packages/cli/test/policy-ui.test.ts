@@ -23,7 +23,7 @@ const UNREACHABLE: SimulationReport = { available: false, reason: 'no runtime' }
 const approvalRule = {
   name: 'production-deploy-approval',
   match: { actions: ['deploy.*'] },
-  decision: { effect: 'require_approval', approvers: ['eng-lead'] },
+  decision: { effect: 'escalate', approvers: ['eng-lead'] },
 };
 
 function request(
@@ -133,7 +133,7 @@ describe('policy editor server', () => {
   it('reports what is wrong with a rule instead of failing the request', async () => {
     const response = await harness().handle(
       request('POST', UI_PATH.VALIDATE, {
-        policies: [{ ...approvalRule, decision: { effect: 'require_approval' } }],
+        policies: [{ ...approvalRule, decision: { effect: 'escalate' } }],
       }),
     );
 
@@ -387,7 +387,7 @@ describe('memnox policy ui', () => {
           {
             name: 'allow-deploys',
             match: { actions: ['deploy.*'] },
-            decision: { effect: 'block', reason: 'not from an agent' },
+            decision: { effect: 'withhold', reason: 'not from an agent' },
           },
         ],
       }),
@@ -396,7 +396,7 @@ describe('memnox policy ui', () => {
     const payload = bodyOf(response);
     expect(payload['available']).toBe(true);
     expect(payload['changes']).toHaveLength(1);
-    expect((payload['changes'] as { after: string }[])[0]?.after).toBe('block');
+    expect((payload['changes'] as { after: string }[])[0]?.after).toBe('withhold');
   });
 
   it('tells the panel why it cannot replay when no runtime answers', async () => {

@@ -22,13 +22,13 @@ const answering = (decide: (action: unknown) => StubOptions): FakeRuntime =>
     const stub = decide(body);
     return {
       body: {
-        effect: stub.effect ?? DECISION_EFFECT.BLOCK,
+        effect: stub.effect ?? DECISION_EFFECT.WITHHOLD,
         riskLevel: RISK_LEVEL.HIGH,
         reason: 'a rule your organization wrote covers this',
         matchedPolicies:
           stub.policy === undefined
             ? []
-            : [{ name: stub.policy, effect: stub.effect ?? DECISION_EFFECT.BLOCK }],
+            : [{ name: stub.policy, effect: stub.effect ?? DECISION_EFFECT.WITHHOLD }],
         advisories: [],
         trustScore: 80,
       },
@@ -43,7 +43,7 @@ const wellGoverned = (): FakeRuntime =>
   answering((body) =>
     request(body).action === 'file.write' && request(body).target === 'src/index.ts'
       ? { effect: DECISION_EFFECT.ALLOW }
-      : { effect: DECISION_EFFECT.BLOCK, policy: 'terminal-safety' },
+      : { effect: DECISION_EFFECT.WITHHOLD, policy: 'terminal-safety' },
   );
 
 async function run(args: string[], runtime: FakeRuntime): Promise<RecordedOutput> {
@@ -76,7 +76,7 @@ describe('memnox test', () => {
   it('passes a case the gate stops and exits zero when nothing got through', async () => {
     const out = await run(['test', '--token', 'mnx_test'], wellGoverned());
 
-    expect(out.text).toContain('PASS  BLOCKED   Wipe a directory tree with rm -rf');
+    expect(out.text).toContain('PASS  WITHHELD  Wipe a directory tree with rm -rf');
     expect(out.text).toContain('Every dangerous capability tested was stopped.');
     expect(process.exitCode).toBe(0);
   });
@@ -85,7 +85,7 @@ describe('memnox test', () => {
     const runtime = answering((body) =>
       request(body).action === 'repository.force_push'
         ? { effect: DECISION_EFFECT.ALLOW }
-        : { effect: DECISION_EFFECT.BLOCK, policy: 'terminal-safety' },
+        : { effect: DECISION_EFFECT.WITHHOLD, policy: 'terminal-safety' },
     );
 
     const out = await run(['test', '--token', 'mnx_test'], runtime);
@@ -107,7 +107,7 @@ describe('memnox test', () => {
     const runtime = answering((body) =>
       request(body).target === 'src/index.ts'
         ? { effect: DECISION_EFFECT.ALLOW }
-        : { effect: DECISION_EFFECT.REQUIRE_APPROVAL, policy: 'human-approval' },
+        : { effect: DECISION_EFFECT.ESCALATE, policy: 'human-approval' },
     );
 
     const out = await run(['test', '--token', 'mnx_test'], runtime);
@@ -120,9 +120,9 @@ describe('memnox test', () => {
     const runtime = new FakeRuntime().handle('POST', CHECK_PATH, () => ({
       body: {
         eventId: 'evt_1',
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         riskLevel: RISK_LEVEL.HIGH,
-        reason: 'blocked',
+        reason: 'withheld',
         matchedPolicies: [],
         advisories: [],
       },

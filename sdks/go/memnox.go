@@ -25,10 +25,10 @@ const DefaultTimeout = 10 * time.Second
 const (
 	// EffectAllow permits the action.
 	EffectAllow = "allow"
-	// EffectBlock refuses the action outright.
-	EffectBlock = "block"
-	// EffectRequireApproval defers the action to a human.
-	EffectRequireApproval = "require_approval"
+	// EffectWithhold refuses the action outright.
+	EffectWithhold = "withhold"
+	// EffectEscalate defers the action to a human.
+	EffectEscalate = "escalate"
 )
 
 // Risk levels the runtime classifies actions into.
@@ -47,7 +47,7 @@ const (
 const (
 	// AgentStatusActive lets the agent act.
 	AgentStatusActive = "active"
-	// AgentStatusSuspended blocks every action from the agent.
+	// AgentStatusSuspended withholds every action from the agent.
 	AgentStatusSuspended = "suspended"
 )
 
@@ -77,10 +77,10 @@ const (
 const (
 	// EnforcementWarn records the conflict in the advisory trail only.
 	EnforcementWarn = "warn"
-	// EnforcementRequireApproval escalates conflicting actions to a human.
-	EnforcementRequireApproval = "require_approval"
-	// EnforcementBlock refuses conflicting actions.
-	EnforcementBlock = "block"
+	// EnforcementEscalate escalates conflicting actions to a human.
+	EnforcementEscalate = "escalate"
+	// EnforcementWithhold refuses conflicting actions.
+	EnforcementWithhold = "withhold"
 )
 
 const (
@@ -118,25 +118,25 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("memnox: %s %s failed with status %d: %s", e.Method, e.Path, e.Status, e.Body)
 }
 
-// BlockedError is returned by Guard when the runtime blocks the action.
-type BlockedError struct {
+// WithheldError is returned by Guard when the runtime withholds the action.
+type WithheldError struct {
 	// Decision carries the full verdict, including matched policies.
 	Decision Decision
 }
 
 // Error implements the error interface.
-func (e *BlockedError) Error() string {
-	return fmt.Sprintf("action blocked by Memnox: %s", e.Decision.Reason)
+func (e *WithheldError) Error() string {
+	return fmt.Sprintf("action withheld by Memnox: %s", e.Decision.Reason)
 }
 
-// ApprovalRequiredError is returned by Guard when a human must approve first.
-type ApprovalRequiredError struct {
+// EscalationRequiredError is returned by Guard when a human must approve first.
+type EscalationRequiredError struct {
 	// Decision carries the full verdict, including the pending approval ID.
 	Decision Decision
 }
 
 // Error implements the error interface.
-func (e *ApprovalRequiredError) Error() string {
+func (e *EscalationRequiredError) Error() string {
 	return fmt.Sprintf("action requires approval (%s): %s", e.Decision.ApprovalID, e.Decision.Reason)
 }
 
@@ -184,24 +184,24 @@ func New(opts Options) *Client {
 	}
 }
 
-// Check asks the runtime for a decision. It never returns an error on a block —
+// Check asks the runtime for a decision. It never returns an error on a withhold —
 // inspect Decision.Effect.
 func (c *Client) Check(ctx context.Context, request ActionRequest) (Decision, error) {
 	return decode[Decision](c.request(ctx, http.MethodPost, pathCheck, request, c.token))
 }
 
 // Guard runs execute only if the runtime allows the action. A refusal comes back
-// as *BlockedError or *ApprovalRequiredError, both matchable with errors.As.
+// as *WithheldError or *EscalationRequiredError, both matchable with errors.As.
 func (c *Client) Guard(ctx context.Context, request ActionRequest, execute func() error) error {
 	decision, err := c.Check(ctx, request)
 	if err != nil {
 		return err
 	}
 	switch decision.Effect {
-	case EffectBlock:
-		return &BlockedError{Decision: decision}
-	case EffectRequireApproval:
-		return &ApprovalRequiredError{Decision: decision}
+	case EffectWithhold:
+		return &WithheldError{Decision: decision}
+	case EffectEscalate:
+		return &EscalationRequiredError{Decision: decision}
 	default:
 		return execute()
 	}

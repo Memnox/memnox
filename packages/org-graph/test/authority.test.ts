@@ -43,7 +43,7 @@ describe('evaluateAuthority', () => {
       action: 'contract.sign',
     });
 
-    expect(verdict?.escalateTo).toBe('require_approval');
+    expect(verdict?.escalateTo).toBe('escalate');
     expect(verdict?.signal).toBe(AUTHORITY_SIGNAL.NO_GRANT);
     expect(verdict?.reason).toContain('contract.sign');
   });
@@ -55,15 +55,15 @@ describe('evaluateAuthority', () => {
   it('escalates an amount above the ceiling, naming the principal as approver', () => {
     const verdict = ask([grant({ limit: 5_000 })], { amount: 5_001 });
 
-    expect(verdict?.escalateTo).toBe('require_approval');
+    expect(verdict?.escalateTo).toBe('escalate');
     expect(verdict?.signal).toBe(AUTHORITY_SIGNAL.OVER_CEILING);
     expect(verdict?.approvers).toContain('alice');
   });
 
   it('blocks past the ceiling when the grant says so', () => {
-    const verdict = ask([grant({ limit: 10, overLimit: 'block' })], { amount: 99 });
+    const verdict = ask([grant({ limit: 10, overLimit: 'withhold' })], { amount: 99 });
 
-    expect(verdict?.escalateTo).toBe('block');
+    expect(verdict?.escalateTo).toBe('withhold');
   });
 
   it('takes the highest ceiling when several grants cover the action', () => {
@@ -79,7 +79,7 @@ describe('evaluateAuthority', () => {
   it('does not let an action escape a ceiling by omitting its size', () => {
     const verdict = ask([grant({ limit: 5_000 })], { amount: undefined });
 
-    expect(verdict?.escalateTo).toBe('require_approval');
+    expect(verdict?.escalateTo).toBe('escalate');
     expect(verdict?.reason).toContain('does not say how big it is');
   });
 
@@ -113,6 +113,6 @@ describe('evaluateAuthority', () => {
     const grants = [grant({ limit: 5_000, agents: ['assistant'] })];
 
     expect(ask(grants, { amount: 4_999 })).toBeNull();
-    expect(ask(grants, { amount: 50_000 })?.escalateTo).toBe('require_approval');
+    expect(ask(grants, { amount: 50_000 })?.escalateTo).toBe('escalate');
   });
 });

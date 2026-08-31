@@ -13,7 +13,7 @@ policies:
       actions: ["deploy.service"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead", "security"]
       minApprovals: 2
 `;
@@ -49,7 +49,7 @@ describe('two-person approval', () => {
       payload: { action: 'deploy.service', environment: 'production' },
     });
     const decision = response.json() as { effect: string; approvalId?: string };
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
     return decision.approvalId ?? '';
   };
 
@@ -112,7 +112,7 @@ describe('two-person approval', () => {
       },
     });
     expect(stillPending.json()).toMatchObject({
-      effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+      effect: DECISION_EFFECT.ESCALATE,
     });
 
     await resolve(id, true, 'bob');

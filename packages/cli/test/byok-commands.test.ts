@@ -19,7 +19,7 @@ function stubProvider(completion: string): LlmProviderFactory {
 const auditEvent = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'evt_1',
   occurredAt: '2026-07-27T10:00:00.000Z',
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   agentName: 'claude-code',
   action: 'database.delete',
   target: 'users',
@@ -49,7 +49,7 @@ describe('memnox explain', () => {
       runtime,
     );
 
-    expect(out.text).toContain(`database.delete → ${DECISION_EFFECT.BLOCK}`);
+    expect(out.text).toContain(`database.delete → ${DECISION_EFFECT.WITHHOLD}`);
     expect(out.text).toContain('It deleted production users.');
   });
 
@@ -144,7 +144,7 @@ describe('memnox draft', () => {
       {
         name: 'no-prod-deletes',
         match: { actions: ['database.delete'], environments: ['production'] },
-        decision: { effect: DECISION_EFFECT.BLOCK, reason: 'never' },
+        decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'never' },
       },
     ],
   });

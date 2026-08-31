@@ -19,7 +19,7 @@ export type ServerLauncher = (
 
 const VALID_DEFAULT_EFFECTS: readonly string[] = [
   DECISION_EFFECT.ALLOW,
-  DECISION_EFFECT.BLOCK,
+  DECISION_EFFECT.WITHHOLD,
 ];
 
 /** Container deployments configure secrets via environment; flags win when both are set. */

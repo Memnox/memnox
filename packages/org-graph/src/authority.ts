@@ -4,7 +4,7 @@ import { matchesAny } from '@memnox/policy-engine';
 import { AUTHORITY_SIGNAL } from './org-graph.constants';
 
 /** What exceeding a delegation costs. Never allow — a ceiling that allows is not one. */
-export type OverLimitEffect = Extract<DecisionEffect, 'require_approval' | 'block'>;
+export type OverLimitEffect = Extract<DecisionEffect, 'escalate' | 'withhold'>;
 
 /** A person's own authority and what their agent carries are different numbers. */
 export interface AuthorityGrant {
@@ -69,7 +69,7 @@ export function evaluateAuthority(
   );
   if (applicable.length === 0) {
     return {
-      escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+      escalateTo: DECISION_EFFECT.ESCALATE,
       reason: `${principal} has delegated nothing covering "${question.action}"`,
       approvers: approversOf(mine),
       signal: AUTHORITY_SIGNAL.NO_GRANT,
@@ -79,7 +79,7 @@ export function evaluateAuthority(
   const live = applicable.filter((grant) => !hasExpired(grant, now));
   if (live.length === 0) {
     return {
-      escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+      escalateTo: DECISION_EFFECT.ESCALATE,
       reason: `${principal}'s delegation for "${question.action}" has expired`,
       approvers: approversOf(applicable),
       signal: AUTHORITY_SIGNAL.EXPIRED,
@@ -92,7 +92,7 @@ export function evaluateAuthority(
   // The tightest grant names the consequence: when one delegation would block
   // and another only asks, the agent has been told no by the stricter of them.
   const strictest = live.reduce((tightest, grant) =>
-    overLimitOf(grant) === DECISION_EFFECT.BLOCK ? grant : tightest,
+    overLimitOf(grant) === DECISION_EFFECT.WITHHOLD ? grant : tightest,
   );
   return {
     escalateTo: overLimitOf(strictest),
@@ -115,7 +115,7 @@ function hasExpired(grant: AuthorityGrant, now: Date): boolean {
 }
 
 function overLimitOf(grant: AuthorityGrant): OverLimitEffect {
-  return grant.overLimit ?? DECISION_EFFECT.REQUIRE_APPROVAL;
+  return grant.overLimit ?? DECISION_EFFECT.ESCALATE;
 }
 
 /** The highest ceiling any live grant carries — grants add up, they do not cancel. */

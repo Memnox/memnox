@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum Effect {
     Allow,
-    Block,
-    RequireApproval,
+    Withhold,
+    Escalate,
 }
 
 /// One action to decide on. Only `action` is required.
@@ -82,9 +82,9 @@ pub struct Decision {
     pub matched_policies: Vec<MatchedPolicy>,
     #[serde(default)]
     pub approval_id: Option<String>,
-    /// Present when the environment's mode kept a verdict from being applied.
+    /// What enforce would have said, when the mode kept it from being applied.
     #[serde(default)]
-    pub withheld_effect: Option<Effect>,
+    pub shadow_effect: Option<Effect>,
 }
 
 impl Decision {
@@ -92,8 +92,8 @@ impl Decision {
         self.effect == Effect::Allow
     }
 
-    /// True when monitor mode let this through but policy would have stopped it.
+    /// True when observe mode let this through but enforce would have stopped it.
     pub fn would_have_stopped(&self) -> bool {
-        self.withheld_effect.is_some()
+        self.shadow_effect.is_some()
     }
 }

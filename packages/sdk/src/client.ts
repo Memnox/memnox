@@ -14,7 +14,7 @@ import type {
 } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import { POLICY_DOCUMENT_VERSION, type Policy } from '@memnox/policy-engine';
-import { ActionBlockedError, ApprovalRequiredError, MemnoxApiError } from './errors';
+import { ActionWithheldError, EscalationRequiredError, MemnoxApiError } from './errors';
 import type { PolicyApplyResult, PolicyReloadResult, PolicySetView } from './runtime-api';
 import {
   runGuarded,
@@ -110,7 +110,7 @@ export interface AuthorityGrantPayload {
   actions: string[];
   agents?: string[];
   limit?: number;
-  overLimit?: 'require_approval' | 'block';
+  overLimit?: 'escalate' | 'withhold';
   approvers?: string[];
   expiresAt?: string;
   grantedBy?: string;
@@ -169,7 +169,7 @@ export interface AgentSummary {
   kind: string;
   status: string;
   trustScore: number;
-  stats: { allowed: number; blocked: number; approvalsRequested: number };
+  stats: { allowed: number; withheld: number; approvalsRequested: number };
   capabilities?: string[];
 }
 
@@ -211,9 +211,10 @@ export class MemnoxClient {
   /** Runs `execute` only if the runtime allows the action; throws otherwise. */
   async guard<T>(request: ActionRequest, execute: () => Promise<T>): Promise<T> {
     const decision = await this.check(request);
-    if (decision.effect === DECISION_EFFECT.BLOCK) throw new ActionBlockedError(decision);
-    if (decision.effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
-      throw new ApprovalRequiredError(decision);
+    if (decision.effect === DECISION_EFFECT.WITHHOLD)
+      throw new ActionWithheldError(decision);
+    if (decision.effect === DECISION_EFFECT.ESCALATE) {
+      throw new EscalationRequiredError(decision);
     }
     return execute();
   }
@@ -224,9 +225,10 @@ export class MemnoxClient {
     plan: GuardedExecution<T>,
   ): Promise<ExecutionOutcome<T>> {
     const decision = await this.check(request);
-    if (decision.effect === DECISION_EFFECT.BLOCK) throw new ActionBlockedError(decision);
-    if (decision.effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
-      throw new ApprovalRequiredError(decision);
+    if (decision.effect === DECISION_EFFECT.WITHHOLD)
+      throw new ActionWithheldError(decision);
+    if (decision.effect === DECISION_EFFECT.ESCALATE) {
+      throw new EscalationRequiredError(decision);
     }
 
     const outcome = await runGuarded(plan);

@@ -118,10 +118,10 @@ describe('memnox setup', () => {
 
   it('registers again when the runtime does not know the stored token', async () => {
     // The scar: a token from an earlier runtime's identity store reported success
-    // here and then blocked every action as an unknown agent.
+    // here and then withheld every action as an unknown agent.
     await writeAgentConfig(home, { token: 'mnx_stale', url: 'http://127.0.0.1:7466' });
     runtime.on('POST', '/v1/evaluate-risk', {
-      effect: 'block',
+      effect: 'withhold',
       riskLevel: 'critical',
       reason: DECISION_REASON.UNKNOWN_AGENT,
       matchedPolicies: [],
@@ -160,15 +160,15 @@ describe('memnox setup', () => {
     expect(out.notes.join('\n')).toContain('stays inactive');
   });
 
-  it('observes rather than blocks on a first run', async () => {
+  it('observes rather than withholds on a first run', async () => {
     await run(['--file', join(workspace, 'policies.yaml')]);
 
-    expect(onlyLaunch().enforcement).toEqual({ default: 'monitor' });
+    expect(onlyLaunch().enforcement).toEqual({ default: 'observe' });
     expect(out.text).toContain('Observing only');
     expect(out.notes.join('\n')).toContain('memnox setup --enforce');
   });
 
-  it('blocks from the first request under --enforce', async () => {
+  it('withholds from the first request under --enforce', async () => {
     await run(['--file', join(workspace, 'policies.yaml'), '--enforce']);
 
     expect(onlyLaunch().enforcement).toBeUndefined();
@@ -370,7 +370,7 @@ describe('security a local install gets by default', () => {
     await run([]);
 
     // Safe because the first run observes: a guard that fires is an audit line,
-    // not a blocked agent.
+    // not a withheld agent.
     expect(launched[0]).toMatchObject({
       behaviorGuard: true,
       trustGuard: true,

@@ -48,14 +48,14 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
       }
       for (const agent of list) {
         context.out.line(
-          `${agent.id}  ${agent.name} (${agent.kind}) [${agent.status}] trust ${agent.trustScore}/100 — allowed ${agent.stats.allowed}, blocked ${agent.stats.blocked}`,
+          `${agent.id}  ${agent.name} (${agent.kind}) [${agent.status}] trust ${agent.trustScore}/100 — allowed ${agent.stats.allowed}, withheld ${agent.stats.withheld}`,
         );
       }
     });
 
   agents
     .command('suspend <id>')
-    .description('Suspend an agent — every action it attempts is blocked')
+    .description('Suspend an agent — every action it attempts is withheld')
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')
     .action(async (id: string, options: { url?: string; adminToken?: string }) => {

@@ -22,7 +22,7 @@ describe('serveArgs', () => {
         policyFile: 'memnox.policies.yaml',
         behaviorGuard: true,
         trustGuard: false,
-        enforcement: { default: ENFORCEMENT_MODE.MONITOR },
+        enforcement: { default: ENFORCEMENT_MODE.OBSERVE },
       }),
     ).toEqual([
       'serve',
@@ -34,7 +34,7 @@ describe('serveArgs', () => {
       'memnox.policies.yaml',
       '--behavior-guard',
       '--enforcement',
-      'monitor',
+      'observe',
     ]);
   });
 

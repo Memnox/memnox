@@ -11,7 +11,7 @@ const POLICIES: Policy[] = [
   {
     name: 'hold-everything',
     match: { actions: ['review.*'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['lead'] },
   },
 ];
 
@@ -52,7 +52,7 @@ describe('lapsed approvals', () => {
     await lapse(first.approvalId);
 
     const retry = await ask(0);
-    expect(retry.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(retry.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(retry.approvalId).toBeTruthy();
     expect(retry.approvalId).not.toBe(first.approvalId);
   });
@@ -85,7 +85,7 @@ describe('lapsed approvals', () => {
     }
 
     const overflow = await ask(99);
-    expect(overflow.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(overflow.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(overflow.approvalId).toBeTruthy();
   });
 

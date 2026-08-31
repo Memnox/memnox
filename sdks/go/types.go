@@ -42,11 +42,11 @@ type TaintAssessment struct {
 type MatchedPolicy struct {
 	// Name of the policy as written in the YAML file.
 	Name string `json:"name"`
-	// Effect the policy asks for: allow, block, or require_approval.
+	// Effect the policy asks for: allow, withhold, or escalate.
 	Effect string `json:"effect"`
 	// Reason is the policy's human-readable justification.
 	Reason string `json:"reason,omitempty"`
-	// Approvers named by the policy for require_approval effects.
+	// Approvers named by the policy for escalate effects.
 	Approvers []string `json:"approvers,omitempty"`
 }
 
@@ -60,7 +60,7 @@ type Advisory struct {
 	Reason string `json:"reason"`
 	// Approvers requested by the advisory, if any.
 	Approvers []string `json:"approvers,omitempty"`
-	// NonOverridable marks a block that no human approval can lift.
+	// NonOverridable marks a withhold that no approval can lift.
 	NonOverridable bool `json:"nonOverridable,omitempty"`
 	// Signals are stable identifiers recorded on the audit event.
 	Signals []string `json:"signals"`
@@ -70,7 +70,7 @@ type Advisory struct {
 type Decision struct {
 	// EventID is the audit event appended for this check.
 	EventID string `json:"eventId"`
-	// Effect is allow, block, or require_approval.
+	// Effect is allow, withhold, or escalate.
 	Effect string `json:"effect"`
 	// RiskLevel is the deterministic classification: low to critical.
 	RiskLevel string `json:"riskLevel"`
@@ -80,7 +80,7 @@ type Decision struct {
 	MatchedPolicies []MatchedPolicy `json:"matchedPolicies"`
 	// Advisories lists escalations and signals from advisors.
 	Advisories []Advisory `json:"advisories"`
-	// ApprovalID is set when Effect is require_approval.
+	// ApprovalID is set when Effect is escalate.
 	ApprovalID string `json:"approvalId,omitempty"`
 }
 
@@ -169,8 +169,8 @@ type AuditChainVerification struct {
 type AgentStats struct {
 	// Allowed counts actions the runtime permitted.
 	Allowed int `json:"allowed"`
-	// Blocked counts actions the runtime refused.
-	Blocked int `json:"blocked"`
+	// Withheld counts actions the runtime refused.
+	Withheld int `json:"withheld"`
 	// ApprovalsRequested counts actions that needed a human.
 	ApprovalsRequested int `json:"approvalsRequested"`
 }
@@ -263,7 +263,7 @@ type DecisionRecordInput struct {
 	Targets []string `json:"targets,omitempty"`
 	// Environments narrow the constraint to matching environments.
 	Environments []string `json:"environments,omitempty"`
-	// Enforcement is warn, require_approval, or block.
+	// Enforcement is warn, escalate, or withhold.
 	Enforcement string `json:"enforcement,omitempty"`
 	// ReversibilityCost is low, medium, or high.
 	ReversibilityCost string `json:"reversibilityCost,omitempty"`
@@ -295,7 +295,7 @@ type DecisionRecord struct {
 	Targets []string `json:"targets,omitempty"`
 	// Environments the constraint applies to.
 	Environments []string `json:"environments,omitempty"`
-	// Enforcement is warn, require_approval, or block.
+	// Enforcement is warn, escalate, or withhold.
 	Enforcement string `json:"enforcement"`
 	// Status is active, superseded, or retired.
 	Status string `json:"status,omitempty"`
@@ -359,13 +359,13 @@ type ComplianceTotals struct {
 	Actions int `json:"actions"`
 	// Allowed actions in the period.
 	Allowed int `json:"allowed"`
-	// Blocked actions in the period.
-	Blocked int `json:"blocked"`
+	// Withheld actions in the period.
+	Withheld int `json:"withheld"`
 	// ApprovalsRequired actions in the period.
 	ApprovalsRequired int `json:"approvalsRequired"`
 }
 
-// ActionCount is how often one action was blocked in the period.
+// ActionCount is how often one action was withheld in the period.
 type ActionCount struct {
 	// Action name.
 	Action string `json:"action"`
@@ -387,8 +387,8 @@ type AgentActivity struct {
 	Agent string `json:"agent"`
 	// Actions checked by this agent.
 	Actions int `json:"actions"`
-	// Blocked actions for this agent.
-	Blocked int `json:"blocked"`
+	// Withheld actions for this agent.
+	Withheld int `json:"withheld"`
 }
 
 // SignalCount is how often one advisory signal fired in the period.
@@ -414,8 +414,8 @@ type ComplianceReport struct {
 	Totals ComplianceTotals `json:"totals"`
 	// RiskBreakdown counts actions by risk level.
 	RiskBreakdown map[string]int `json:"riskBreakdown"`
-	// TopBlockedActions ranks the most-blocked actions.
-	TopBlockedActions []ActionCount `json:"topBlockedActions"`
+	// TopWithheldActions ranks the most-withheld actions.
+	TopWithheldActions []ActionCount `json:"topWithheldActions"`
 	// PolicyActivity ranks the busiest policies.
 	PolicyActivity []PolicyCount `json:"policyActivity"`
 	// AgentActivity ranks the busiest agents.

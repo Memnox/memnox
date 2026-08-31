@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ORG_DECISION, decideFrom, isHeld, isRedacted } from '../src/index';
+import { ORG_DECISION, decideFrom, isHeld } from '../src/index';
 
 const facts = (
   over: Partial<Parameters<typeof decideFrom>[0]> = {},
@@ -16,16 +16,16 @@ describe('decideFrom', () => {
     expect(decideFrom(facts())).toBe(ORG_DECISION.ALLOW);
   });
 
-  it('denies what the gate blocked', () => {
-    expect(decideFrom(facts({ effect: 'block' }))).toBe(ORG_DECISION.DENY);
+  it('denies what the gate withheld', () => {
+    expect(decideFrom(facts({ effect: 'withhold' }))).toBe(ORG_DECISION.DENY);
   });
 
   it('asks when approval is needed and nobody is named', () => {
-    expect(decideFrom(facts({ effect: 'require_approval' }))).toBe(ORG_DECISION.ASK);
+    expect(decideFrom(facts({ effect: 'escalate' }))).toBe(ORG_DECISION.ASK);
   });
 
   it('escalates when approval is needed and somebody is named', () => {
-    expect(decideFrom(facts({ effect: 'require_approval', hasApprovers: true }))).toBe(
+    expect(decideFrom(facts({ effect: 'escalate', hasApprovers: true }))).toBe(
       ORG_DECISION.ESCALATE,
     );
   });
@@ -42,7 +42,7 @@ describe('decideFrom', () => {
 
   it('never widens a refusal, whatever else is true', () => {
     const verdict = decideFrom(
-      facts({ effect: 'block', reliesOnWithheldFacts: true, unanswerable: true }),
+      facts({ effect: 'withhold', reliesOnWithheldFacts: true, unanswerable: true }),
     );
 
     expect(verdict).toBe(ORG_DECISION.DENY);
@@ -50,16 +50,10 @@ describe('decideFrom', () => {
 
   it('keeps approval ahead of delegation — a hold is a hold', () => {
     const verdict = decideFrom(
-      facts({ effect: 'require_approval', hasApprovers: true, unanswerable: true }),
+      facts({ effect: 'escalate', hasApprovers: true, unanswerable: true }),
     );
 
     expect(verdict).toBe(ORG_DECISION.ESCALATE);
-  });
-
-  it('treats a redacted allow as an allow', () => {
-    expect(decideFrom(facts({ effect: 'redact' }))).toBe(ORG_DECISION.ALLOW);
-    expect(isRedacted('redact')).toBe(true);
-    expect(isRedacted('allow')).toBe(false);
   });
 });
 

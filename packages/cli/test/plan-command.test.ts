@@ -8,7 +8,7 @@ import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import {
   EXIT_PLAN_APPROVAL,
-  EXIT_PLAN_BLOCKED,
+  EXIT_PLAN_WITHHELD,
   registerPlanCommand,
 } from '../src/commands/plan.command';
 import { plainStyle } from '../src/style';
@@ -42,11 +42,11 @@ interface Verdict {
 const VERDICTS: Record<string, Verdict> = {
   'file.write': { effect: DECISION_EFFECT.ALLOW },
   'database.migrate': {
-    effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+    effect: DECISION_EFFECT.ESCALATE,
     policy: 'production-migration-approval',
   },
   'shell.execute': {
-    effect: DECISION_EFFECT.BLOCK,
+    effect: DECISION_EFFECT.WITHHOLD,
     policy: 'recursive-delete-protection',
   },
 };
@@ -91,7 +91,7 @@ describe('memnox plan', () => {
     const out = await run(['plan', PLAN_FILE, '--token', 'mnx_test'], deciding());
 
     expect(out.text).toContain('Memnox plan — 3 action(s)');
-    expect(out.text).toContain('Plan: 1 to allow, 1 needing approval, 1 blocked.');
+    expect(out.text).toContain('Plan: 1 to allow, 1 needing approval, 1 withheld.');
   });
 
   it('says nothing happened, because nothing did', async () => {
@@ -110,10 +110,10 @@ describe('memnox plan', () => {
     expect(out.text).not.toContain('ruled by nothing');
   });
 
-  it('exits blocked when anything in the plan is blocked', async () => {
+  it('exits withheld when anything in the plan is withheld', async () => {
     await run(['plan', PLAN_FILE, '--token', 'mnx_test'], deciding());
 
-    expect(process.exitCode).toBe(EXIT_PLAN_BLOCKED);
+    expect(process.exitCode).toBe(EXIT_PLAN_WITHHELD);
   });
 
   it('exits approval when the worst verdict is a hold', async () => {
@@ -123,7 +123,7 @@ describe('memnox plan', () => {
         body: {
           effect:
             action === 'database.migrate'
-              ? DECISION_EFFECT.REQUIRE_APPROVAL
+              ? DECISION_EFFECT.ESCALATE
               : DECISION_EFFECT.ALLOW,
           riskLevel: RISK_LEVEL.MEDIUM,
           reason: 'held',
@@ -160,11 +160,11 @@ describe('memnox plan', () => {
         agentName: 'local-editor',
         action: 'shell.execute',
         target: 'rm -rf /',
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         riskLevel: RISK_LEVEL.CRITICAL,
         matchedPolicies: [],
         advisories: [],
-        reason: 'blocked',
+        reason: 'withheld',
       },
       {
         id: 'evt_2',

@@ -1,7 +1,7 @@
 import type { AgentKind, AgentStatus } from '../constants/agent.constants';
 import type { RiskLevel } from '../constants/risk.constants';
 import {
-  TRUST_PENALTY_PER_BLOCK,
+  TRUST_PENALTY_PER_WITHHOLD,
   TRUST_RECOVERY_ALLOWED_ACTIONS,
   TRUST_SCORE_MAX,
   TRUST_SCORE_MIN,
@@ -9,7 +9,7 @@ import {
 
 export interface AgentActionStats {
   allowed: number;
-  blocked: number;
+  withheld: number;
   approvalsRequested: number;
 }
 
@@ -38,13 +38,13 @@ export interface AgentIdentity {
 
 export const EMPTY_AGENT_STATS: AgentActionStats = {
   allowed: 0,
-  blocked: 0,
+  withheld: 0,
   approvalsRequested: 0,
 };
 
-/** Deterministic reputation: blocks cost points, sustained good behavior earns them back. */
+/** Deterministic reputation: withholds cost points, sustained good behavior earns them back. */
 export function computeTrustScore(stats: AgentActionStats): number {
-  const penalty = stats.blocked * TRUST_PENALTY_PER_BLOCK;
+  const penalty = stats.withheld * TRUST_PENALTY_PER_WITHHOLD;
   const recovery = Math.floor(stats.allowed / TRUST_RECOVERY_ALLOWED_ACTIONS);
   const score = TRUST_SCORE_MAX - penalty + recovery;
   return Math.min(TRUST_SCORE_MAX, Math.max(TRUST_SCORE_MIN, score));

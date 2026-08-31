@@ -4,12 +4,12 @@ import { parseEnforcement } from '../src/enforcement-args';
 
 describe('parseEnforcement', () => {
   it('reads a bare mode as the default', () => {
-    expect(parseEnforcement('monitor')).toEqual({ default: ENFORCEMENT_MODE.MONITOR });
+    expect(parseEnforcement('observe')).toEqual({ default: ENFORCEMENT_MODE.OBSERVE });
   });
 
   it('reads per-environment pairs', () => {
-    expect(parseEnforcement('default=monitor,production=enforce')).toEqual({
-      default: ENFORCEMENT_MODE.MONITOR,
+    expect(parseEnforcement('default=observe,production=enforce')).toEqual({
+      default: ENFORCEMENT_MODE.OBSERVE,
       environments: { production: ENFORCEMENT_MODE.ENFORCE },
     });
   });
@@ -21,8 +21,8 @@ describe('parseEnforcement', () => {
   });
 
   it('tolerates surrounding and inner whitespace', () => {
-    expect(parseEnforcement('  default = monitor , prod = enforce ')).toEqual({
-      default: ENFORCEMENT_MODE.MONITOR,
+    expect(parseEnforcement('  default = observe , prod = enforce ')).toEqual({
+      default: ENFORCEMENT_MODE.OBSERVE,
       environments: { prod: ENFORCEMENT_MODE.ENFORCE },
     });
   });
@@ -51,6 +51,6 @@ describe('parseEnforcement', () => {
 
   // Silently keeping one of two would enforce something the operator did not mean.
   it('rejects a repeated environment rather than picking one', () => {
-    expect(() => parseEnforcement('prod=enforce,prod=monitor')).toThrow(/twice/);
+    expect(() => parseEnforcement('prod=enforce,prod=observe')).toThrow(/twice/);
   });
 });

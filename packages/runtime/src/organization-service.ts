@@ -230,7 +230,6 @@ export class OrganizationService {
       missingContext: [...cited.withheld, ...cited.unknown],
       withheld: readable.withheld,
       ...(decision.approvalId === undefined ? {} : { approvalId: decision.approvalId }),
-      ...(decision.effect === DECISION_EFFECT.REDACT ? { redacted: true } : {}),
       ...(truncated ? { truncated: true as const } : {}),
       ...(request.reads === undefined || request.reads.length === 0
         ? { delegationNotAssessed: true as const }
@@ -281,7 +280,7 @@ export class OrganizationService {
     request: EvaluateRequest,
     now: Date,
   ): Approver[] {
-    if (decision.effect !== DECISION_EFFECT.REQUIRE_APPROVAL) return [];
+    if (decision.effect !== DECISION_EFFECT.ESCALATE) return [];
 
     const named = new Set<string>([
       ...decision.matchedPolicies.flatMap((policy) => policy.approvers ?? []),
@@ -657,8 +656,8 @@ function toPrecedent(event: ActionEvent): Precedent {
 }
 
 function precedentVerb(event: ActionEvent, to: readonly string[]): OrgDecision {
-  if (event.effect === DECISION_EFFECT.BLOCK) return ORG_DECISION.DENY;
-  if (event.effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
+  if (event.effect === DECISION_EFFECT.WITHHOLD) return ORG_DECISION.DENY;
+  if (event.effect === DECISION_EFFECT.ESCALATE) {
     return to.length > 0 ? ORG_DECISION.ESCALATE : ORG_DECISION.ASK;
   }
   return ORG_DECISION.ALLOW;

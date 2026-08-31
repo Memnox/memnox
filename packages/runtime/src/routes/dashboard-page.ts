@@ -11,9 +11,8 @@ const REFRESH_SECONDS = 5;
 
 const EFFECT_LABEL: Record<string, string> = {
   [DECISION_EFFECT.ALLOW]: 'ALLOW',
-  [DECISION_EFFECT.BLOCK]: 'BLOCK',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'APPROVAL',
-  [DECISION_EFFECT.REDACT]: 'REDACT',
+  [DECISION_EFFECT.WITHHOLD]: 'BLOCK',
+  [DECISION_EFFECT.ESCALATE]: 'APPROVAL',
 };
 
 const AGENT_KINDS = ['claude-code', 'cursor', 'openai-agent', 'mcp', 'custom'];
@@ -66,7 +65,7 @@ export function renderDashboard(status: RuntimeStatus, nonce: string): string {
     <button id="live" class="live" type="button" data-paused="false" title="Pause or resume polling"><span>live</span></button>
   </header>
 
-  <p id="banner" class="banner${observing ? '' : ' hidden'}">Nothing is being blocked. Decisions are recorded so you can read them before arming — switch the mode above, or run <code>memnox setup --enforce</code>.</p>
+  <p id="banner" class="banner${observing ? '' : ' hidden'}">Nothing is being withheld. Decisions are recorded so you can read them before arming — switch the mode above, or run <code>memnox setup --enforce</code>.</p>
 
   <section class="tiles">
     ${tile('policies', 'Policies', String(status.policyCount), `version ${escapeHtml(status.policyVersion)}`)}
@@ -205,8 +204,8 @@ function policiesPanel(): string {
         <div class="grid">
           <label><span>Name</span><input id="rule-name" class="mono" placeholder="payment-code-approval" autocomplete="off"></label>
           <label><span>Effect</span><select id="rule-effect">
-            <option value="require_approval">require approval</option>
-            <option value="block">block</option>
+            <option value="escalate">require approval</option>
+            <option value="withhold">block</option>
             <option value="allow">allow</option>
             <option value="redact">redact</option>
           </select></label>
@@ -249,8 +248,8 @@ function decisionsPanel(): string {
           <label><span>Actions</span><input id="decision-actions" class="mono" placeholder="database.write, database.migrate" autocomplete="off"></label>
           <label><span>Environments</span><input id="decision-environments" class="mono" placeholder="production" autocomplete="off"></label>
           <label><span>Enforcement</span><select id="decision-enforcement">
-            <option value="require_approval">require approval</option>
-            <option value="block">block</option>
+            <option value="escalate">require approval</option>
+            <option value="withhold">block</option>
             <option value="advisory">advisory</option>
           </select></label>
         </div>
@@ -317,11 +316,11 @@ function consolePanel(): string {
 
 function decisionRow(event: RecentDecision): string {
   // The withheld verdict is what policy decided; the effect is what happened.
-  const shown = event.withheldEffect ?? event.effect;
+  const shown = event.shadowEffect ?? event.effect;
   const label = EFFECT_LABEL[shown] ?? shown;
   const target = event.target === undefined ? '' : ` ${escapeHtml(event.target)}`;
   const withheldNote =
-    event.withheldEffect === undefined ? '' : `<span class="tag">withheld</span>`;
+    event.shadowEffect === undefined ? '' : `<span class="tag">withheld</span>`;
   return `<tr>
       <td class="n dim">${escapeHtml(event.occurredAt)}</td>
       <td><span class="verdict verdict-${escapeHtml(shown)}">${escapeHtml(label)}</span>${withheldNote}</td>

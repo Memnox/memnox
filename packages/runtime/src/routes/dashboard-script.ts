@@ -107,7 +107,7 @@ function time(iso) {
 
 function verdict(effect, withheld) {
   var shown = withheld || effect;
-  var label = shown === 'require_approval' ? 'APPROVAL' : shown.toUpperCase();
+  var label = shown === 'escalate' ? 'APPROVAL' : shown.toUpperCase();
   var cell = el('span', { class: 'verdict verdict-' + shown, text: label });
   if (!withheld) return cell;
   return el('span', {}, [cell, el('span', { class: 'tag', text: 'withheld' })]);
@@ -164,7 +164,7 @@ function paintStatus(status) {
   status.recent.forEach(function (event) {
     rows.appendChild(el('tr', {}, [
       el('td', { class: 'n dim', text: time(event.occurredAt) }),
-      el('td', {}, [verdict(event.effect, event.withheldEffect)]),
+      el('td', {}, [verdict(event.effect, event.shadowEffect)]),
       el('td', { text: event.agentName }),
       el('td', {}, [actionCell(event.action, event.target)]),
       el('td', { class: 'dim', text: event.reason }),
@@ -266,7 +266,7 @@ function loadPolicies() {
         ]),
         el('td', {}, [el('span', {
           class: 'verdict verdict-' + policy.decision.effect,
-          text: policy.decision.effect === 'require_approval' ? 'APPROVAL' : policy.decision.effect.toUpperCase(),
+          text: policy.decision.effect === 'escalate' ? 'APPROVAL' : policy.decision.effect.toUpperCase(),
         })]),
         el('td', { class: 'dim', text: describeMatch(match) }),
         el('td', {}, [
@@ -321,7 +321,7 @@ function addPolicy(event) {
   var effect = $('rule-effect').value;
   var approvers = patterns($('rule-approvers').value);
   // The rule the engine enforces anyway; saying it here saves a round trip.
-  if (effect === 'require_approval' && approvers.length === 0) {
+  if (effect === 'escalate' && approvers.length === 0) {
     toast('Who approves it? A rule that requires approval has to name someone.', 'bad');
     $('rule-approvers').focus();
     return;
@@ -336,7 +336,7 @@ function addPolicy(event) {
   var decision = { effect: effect };
   var reason = $('rule-reason').value.trim();
   if (reason) decision.reason = reason;
-  if (effect === 'require_approval') decision.approvers = approvers;
+  if (effect === 'escalate') decision.approvers = approvers;
 
   if (state.writable === null) {
     toast('This runtime cannot read the file it writes — fix it on disk first.', 'bad');
@@ -528,8 +528,8 @@ function runCheck(event) {
         }).join(', '));
       }
       if (decision.approvalId) lines.push('Approval : ' + decision.approvalId);
-      if (decision.withheldEffect) {
-        lines.push('Withheld : ' + decision.withheldEffect + ' (this environment is only being monitored)');
+      if (decision.shadowEffect) {
+        lines.push('Withheld : ' + decision.shadowEffect + ' (this environment is only being observed)');
       }
       $('console-result').textContent = lines.join('\n');
       $('console-result').classList.remove('hidden');
@@ -543,7 +543,7 @@ function runCheck(event) {
 /** Written out per mode: gluing "ing" on gave "enforceing" and "offing". */
 var ENFORCEMENT_SAID = {
   off: 'Governance is off — no action is being decided on.',
-  monitor: 'Now monitoring every environment. Decisions are recorded, nothing is blocked.',
+  monitor: 'Now monitoring every environment. Decisions are recorded, nothing is withheld.',
   enforce: 'Now enforcing every environment.',
 };
 

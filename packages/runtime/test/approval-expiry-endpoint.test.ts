@@ -15,7 +15,7 @@ policies:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 `;
 

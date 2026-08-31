@@ -22,16 +22,16 @@ public class MemnoxException extends RuntimeException {
     }
 
     /** Policy denied the action. */
-    public static final class Blocked extends MemnoxException {
-        Blocked(Decision decision) {
-            super("blocked by policy: " + decision.reason(), decision);
+    public static final class Withheld extends MemnoxException {
+        Withheld(Decision decision) {
+            super("withheld by policy: " + decision.reason(), decision);
         }
     }
 
-    /** A human must approve before this action may run. */
-    public static final class ApprovalRequired extends MemnoxException {
-        ApprovalRequired(Decision decision) {
-            super("approval required: " + decision.reason(), decision);
+    /** The action escalated: a person must answer before it may run. */
+    public static final class Escalated extends MemnoxException {
+        Escalated(Decision decision) {
+            super("escalated: " + decision.reason(), decision);
         }
     }
 

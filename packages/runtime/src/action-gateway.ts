@@ -43,6 +43,8 @@ import {
   ENFORCEMENT_SET_ACTION,
   applyEnforcementMode,
   resolveEnforcementMode,
+  DEFAULT_ENFORCEMENT_MODE,
+  MODE_STRENGTH,
   AGENT_ROTATE_ACTION,
   applyGrant,
   DEFAULT_MIN_APPROVALS,
@@ -83,11 +85,7 @@ function describeModes(modes: EnvironmentModes): string {
 
 /** True when any environment ends up applying less than it did. */
 function weakens(before: EnvironmentModes, after: EnvironmentModes): boolean {
-  const strength: Record<EnforcementMode, number> = {
-    [ENFORCEMENT_MODE.OFF]: 0,
-    [ENFORCEMENT_MODE.MONITOR]: 1,
-    [ENFORCEMENT_MODE.ENFORCE]: 2,
-  };
+  const strength = MODE_STRENGTH;
   const names = new Set([
     ...Object.keys(before.environments ?? {}),
     ...Object.keys(after.environments ?? {}),
@@ -162,7 +160,8 @@ function describeMeasurement(measurement: ExecutionMeasurement): string {
 function nonOverridableBlock(advisories: Advisory[]): Advisory | undefined {
   return advisories.find(
     (advisory) =>
-      advisory.nonOverridable === true && advisory.escalateTo === DECISION_EFFECT.BLOCK,
+      advisory.nonOverridable === true &&
+      advisory.escalateTo === DECISION_EFFECT.WITHHOLD,
   );
 }
 
@@ -178,7 +177,7 @@ export interface ActionGatewayDeps {
   agentJwt?: AgentJwtConfig;
   /** Counters for /v1/metrics; a private registry when the caller supplies none. */
   metrics?: MetricsRegistry;
-  /** Per-environment enforcement; unset means every environment is monitored. */
+  /** Per-environment enforcement; unset means every environment is observed. */
   enforcement?: EnvironmentModes;
   /** Open holds one agent may accumulate before further ones are refused. */
   maxPendingPerAgent?: number;
@@ -196,7 +195,7 @@ interface Outcome {
   approvers?: string[];
   enforcementMode?: EnforcementMode;
   /** Set when the mode kept a non-allow verdict from being applied. */
-  withheldEffect?: DecisionEffect;
+  shadowEffect?: DecisionEffect;
 }
 
 /** identity → policy → advisors → approval → audit; exactly one event per request. */
@@ -346,7 +345,7 @@ export class ActionGateway {
     return defied ? OUTCOME_DEFIED : OUTCOME_RECORDED;
   }
 
-  /** Bookkeeping, not a decision: blocking the record would freeze the ledger. */
+  /** Bookkeeping, not a decision: withholding the record would freeze the ledger. */
   async recordSpend(
     agentToken: string,
     tokens: number,
@@ -385,7 +384,7 @@ export class ActionGateway {
     const agent = await this.resolveAgent(agentToken);
     if (!agent) {
       return {
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         riskLevel: RISK_LEVEL.CRITICAL,
         reason: DECISION_REASON.UNKNOWN_AGENT,
         matchedPolicies: [],
@@ -402,7 +401,7 @@ export class ActionGateway {
       !matchesAny(capabilities, request.action)
     ) {
       return {
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         riskLevel,
         reason: DECISION_REASON.CAPABILITY,
         matchedPolicies: [],
@@ -439,20 +438,22 @@ export class ActionGateway {
     agent: AgentIdentity | null,
     incoming: ActionRequest,
   ): Promise<Decision> {
+    // Started before normalization, so the budget covers the whole hot path.
+    const startedAt = process.hrtime.bigint();
     /* Every decision funnels through here, so this is the one place a request
        becomes canonical. Before it, `database.delete ` missed a rule naming
        `database.delete` and a block answered allow. The audit records the
        normalized form, because that is the request that was ruled on. */
     const request = normalizeActionRequest(incoming);
     if (!agent) {
-      return this.finalize(null, request, {
-        effect: DECISION_EFFECT.BLOCK,
+      return this.finalize(startedAt, null, request, {
+        effect: DECISION_EFFECT.WITHHOLD,
         reason: DECISION_REASON.UNKNOWN_AGENT,
       });
     }
     if (agent.status === AGENT_STATUS.SUSPENDED) {
-      return this.finalize(agent, request, {
-        effect: DECISION_EFFECT.BLOCK,
+      return this.finalize(startedAt, agent, request, {
+        effect: DECISION_EFFECT.WITHHOLD,
         reason: DECISION_REASON.AGENT_SUSPENDED,
       });
     }
@@ -463,8 +464,8 @@ export class ActionGateway {
       capabilities.length > 0 &&
       !matchesAny(capabilities, request.action)
     ) {
-      return this.finalize(agent, request, {
-        effect: DECISION_EFFECT.BLOCK,
+      return this.finalize(startedAt, agent, request, {
+        effect: DECISION_EFFECT.WITHHOLD,
         reason: DECISION_REASON.CAPABILITY,
       });
     }
@@ -477,10 +478,10 @@ export class ActionGateway {
     };
 
     // Identity and capability are settled above and are never relaxed by the
-    // mode: monitoring a policy is a choice, admitting an unknown caller is not.
+    // mode: observeing a policy is a choice, admitting an unknown caller is not.
     const mode = resolveEnforcementMode(this.deps.enforcement ?? {}, request.environment);
     if (mode === ENFORCEMENT_MODE.OFF) {
-      return this.finalize(agent, request, {
+      return this.finalize(startedAt, agent, request, {
         effect: DECISION_EFFECT.ALLOW,
         reason: ENFORCEMENT_REASON.DISABLED,
         enforcementMode: mode,
@@ -488,7 +489,12 @@ export class ActionGateway {
     }
 
     if (request.approvalId) {
-      const resolved = await this.applyApproval(agent, request, await advise());
+      const resolved = await this.applyApproval(
+        startedAt,
+        agent,
+        request,
+        await advise(),
+      );
       if (resolved) return resolved;
     }
 
@@ -515,18 +521,18 @@ export class ActionGateway {
     const applied = applyEnforcementMode(limited.effect, mode);
     const effect = applied.effect;
     const reason =
-      applied.withheldEffect === undefined
+      applied.shadowEffect === undefined
         ? limited.reason
         : `${ENFORCEMENT_REASON.OBSERVED}: ${limited.reason}`;
     // Two things can withhold a verdict — the environment's mode and a rule of
     // its own in monitor mode — and the audit should name the stricter of them.
-    const withheldEffect = stricter(applied.withheldEffect, evaluation.withheldEffect);
+    const shadowEffect = stricter(applied.shadowEffect, evaluation.shadowEffect);
 
-    if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
+    if (effect === DECISION_EFFECT.ESCALATE) {
       // Claimed only here, so the extra lookup stays off the allow path.
       const granted = await this.approvals.claimGrantFor(agent, request);
       if (granted) {
-        return this.finalize(agent, request, {
+        return this.finalize(startedAt, agent, request, {
           effect: DECISION_EFFECT.ALLOW,
           reason: `${DECISION_REASON.APPROVAL_GRANTED} by ${granted.resolvedBy}`,
           matchedPolicies: evaluation.matchedPolicies,
@@ -554,15 +560,15 @@ export class ActionGateway {
       );
       // Past the ceiling, block rather than add a hold nobody will read.
       if (approval === APPROVAL_CAP_REACHED) {
-        return this.finalize(agent, request, {
-          effect: DECISION_EFFECT.BLOCK,
+        return this.finalize(startedAt, agent, request, {
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: `${reason} — too many approvals already pending for this agent`,
           matchedPolicies: evaluation.matchedPolicies,
           advisories,
           enforcementMode: mode,
         });
       }
-      return this.finalize(agent, request, {
+      return this.finalize(startedAt, agent, request, {
         effect,
         reason: `${DECISION_REASON.APPROVAL_PENDING}: ${reason}`,
         matchedPolicies: evaluation.matchedPolicies,
@@ -573,17 +579,17 @@ export class ActionGateway {
       });
     }
 
-    return this.finalize(agent, request, {
+    return this.finalize(startedAt, agent, request, {
       effect,
       reason,
       matchedPolicies: evaluation.matchedPolicies,
       advisories,
       enforcementMode: mode,
-      ...(withheldEffect === undefined ? {} : { withheldEffect }),
+      ...(shadowEffect === undefined ? {} : { shadowEffect }),
     });
   }
 
-  /** Only an action that proceeds consumes a slot; a blocked one never held one. */
+  /** Only an action that proceeds consumes a slot; a withheld one never held one. */
   private async applyRateLimits(
     agent: AgentIdentity,
     matched: MatchedPolicy[],
@@ -593,13 +599,11 @@ export class ActionGateway {
     const unchanged = { effect: verdict, reason: verdictReason };
     const limiter = this.deps.rateLimiter;
     if (limiter === undefined) return unchanged;
-    if (EFFECT_PRECEDENCE[verdict] > EFFECT_PRECEDENCE[DECISION_EFFECT.REDACT]) {
-      return unchanged;
-    }
+    if (verdict !== DECISION_EFFECT.ALLOW) return unchanged;
 
     for (const policy of matched) {
       const spec = policy.rateLimit;
-      if (spec === undefined || policy.monitored === true) continue;
+      if (spec === undefined || policy.observed === true) continue;
       try {
         const allowed = await limiter.allow(
           `${RATE_LIMIT_RULE_PREFIX}:${policy.name}:${agent.id}`,
@@ -608,7 +612,7 @@ export class ActionGateway {
         );
         if (allowed) continue;
         return {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: `${DECISION_REASON.RATE_LIMIT}: "${policy.name}" allows ${spec.max} per ${spec.windowSeconds}s`,
         };
       } catch (err) {
@@ -669,6 +673,7 @@ export class ActionGateway {
 
   /** Turns consent into a decision. Whether consent exists is the service's call. */
   private async applyApproval(
+    startedAt: bigint,
     agent: AgentIdentity,
     request: ActionRequest,
     advisories: Advisory[],
@@ -681,8 +686,8 @@ export class ActionGateway {
       const veto = nonOverridableBlock(advisories);
       // Spent either way — a vetoed grant must not stay claimable for a later try.
       await this.approvals.consume(approval);
-      return this.finalize(agent, request, {
-        effect: veto ? DECISION_EFFECT.BLOCK : DECISION_EFFECT.ALLOW,
+      return this.finalize(startedAt, agent, request, {
+        effect: veto ? DECISION_EFFECT.WITHHOLD : DECISION_EFFECT.ALLOW,
         reason: veto
           ? `${DECISION_REASON.NON_OVERRIDABLE}: ${veto.reason}`
           : `${DECISION_REASON.APPROVAL_GRANTED} by ${approval.resolvedBy}`,
@@ -691,8 +696,8 @@ export class ActionGateway {
       });
     }
     if (consent === CONSENT.DENIED) {
-      return this.finalize(agent, request, {
-        effect: DECISION_EFFECT.BLOCK,
+      return this.finalize(startedAt, agent, request, {
+        effect: DECISION_EFFECT.WITHHOLD,
         reason: `approval denied by ${approval.resolvedBy}`,
         advisories,
         approvalId: approval.id,
@@ -702,6 +707,7 @@ export class ActionGateway {
   }
 
   private async finalize(
+    startedAt: bigint,
     agent: AgentIdentity | null,
     request: ActionRequest,
     outcome: Outcome,
@@ -712,6 +718,7 @@ export class ActionGateway {
       : RISK_LEVEL.CRITICAL;
     const advisories = outcome.advisories ?? [];
 
+    const mode = outcome.enforcementMode ?? DEFAULT_ENFORCEMENT_MODE;
     const decision: Decision = {
       eventId: randomUUID(),
       effect: outcome.effect,
@@ -720,7 +727,10 @@ export class ActionGateway {
       matchedPolicies: outcome.matchedPolicies ?? [],
       advisories,
       approvalId: outcome.approvalId,
-      withheldEffect: outcome.withheldEffect,
+      shadowEffect: outcome.shadowEffect,
+      mode,
+      evaluatedAt: new Date().toISOString(),
+      latencyUs: Number((process.hrtime.bigint() - startedAt) / 1000n),
     };
 
     await this.appendEvent({
@@ -743,7 +753,7 @@ export class ActionGateway {
       branch: request.branch,
       effect: outcome.effect,
       enforcementMode: outcome.enforcementMode,
-      withheldEffect: outcome.withheldEffect,
+      shadowEffect: outcome.shadowEffect,
       riskLevel,
       matchedPolicies: (outcome.matchedPolicies ?? []).map((policy) => policy.name),
       policyVersion: this.deps.policyEngine.version,
@@ -783,12 +793,9 @@ export class ActionGateway {
 
   private async recordStats(agent: AgentIdentity, effect: DecisionEffect): Promise<void> {
     const stats = { ...agent.stats };
-    // A redacted call did run, so it counts as allowed — masked, not refused.
-    if (effect === DECISION_EFFECT.ALLOW || effect === DECISION_EFFECT.REDACT) {
-      stats.allowed += 1;
-    }
-    if (effect === DECISION_EFFECT.BLOCK) stats.blocked += 1;
-    if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) stats.approvalsRequested += 1;
+    if (effect === DECISION_EFFECT.ALLOW) stats.allowed += 1;
+    if (effect === DECISION_EFFECT.WITHHOLD) stats.withheld += 1;
+    if (effect === DECISION_EFFECT.ESCALATE) stats.approvalsRequested += 1;
     await this.agents.recordDecisionStats(agent, stats);
   }
 }

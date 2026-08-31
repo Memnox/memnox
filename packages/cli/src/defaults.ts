@@ -13,7 +13,7 @@ policies:
       actions: ["database.delete", "database.drop", "database.truncate"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI-initiated destructive database operations in production.
 
   - name: production-deploy-approval
@@ -22,7 +22,7 @@ policies:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 
   - name: payment-code-approval
@@ -31,7 +31,7 @@ policies:
       actions: ["code.modify", "code.delete"]
       targets: ["payment/*"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["security-team"]
 
   - name: destructive-shell-protection
@@ -40,7 +40,7 @@ policies:
       actions: ["shell.execute"]
       targets: ["*drop table*", "*drop database*", "*truncate table*", "*rm -rf /*"]
     decision:
-      effect: block
-      reason: Destructive shell commands are blocked for AI agents.
+      effect: withhold
+      reason: Destructive shell commands are withheld for AI agents.
 `;
 export const DEFAULT_CLOUD_URL = 'https://cloud.memnox.dev';

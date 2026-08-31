@@ -116,7 +116,7 @@ export interface PolicyPack {
   policies: Policy[];
 }
 
-/** Conservative by design: a pack that blocks legitimate work gets uninstalled. */
+/** Conservative by design: a pack that withholds legitimate work gets uninstalled. */
 export const POLICY_PACKS: readonly PolicyPack[] = [
   {
     name: 'production-safety',
@@ -135,7 +135,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'No AI-initiated destructive database operations in production.',
         },
       },
@@ -144,7 +144,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'A human signs off on anything reaching production.',
         match: { actions: ['deploy.*'], environments: ['production', 'prod'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Production deployments need a human sign-off.',
           approvers: ['eng-lead'],
         },
@@ -154,7 +154,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'Destroying infrastructure is not a routine agent action.',
         match: { actions: ['infrastructure.delete', 'infrastructure.destroy'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Tearing down infrastructure needs a human.',
           approvers: ['platform-team'],
         },
@@ -176,7 +176,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*payment*', '*billing*', '*checkout*', '*invoice*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Payment logic changes need security review.',
           approvers: ['security-team'],
         },
@@ -199,7 +199,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*auth*', '*session*', '*password*', '*permission*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Authentication and authorization changes need security review.',
           approvers: ['security-team'],
         },
@@ -212,7 +212,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*.env', '*.env.*', '*credentials*', '*.pem', '*.key'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Agents do not write credential files — use a secrets manager.',
         },
       },
@@ -231,7 +231,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'customer-data-export-approval',
         match: { actions: ['data.export', 'database.export'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Exporting data needs a human owner on the record.',
           approvers: ['data-protection-officer'],
         },
@@ -243,7 +243,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*users*', '*customers*', '*accounts*', '*profiles*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Operations on personal-data tables need a human.',
           approvers: ['data-protection-officer'],
         },
@@ -266,7 +266,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['.github/workflows/*', '*Dockerfile*', '*.gitlab-ci.yml'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'CI and build configuration changes need review.',
           approvers: ['platform-team'],
         },
@@ -275,7 +275,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'shell-execution-approval',
         match: { actions: ['shell.execute'], environments: ['production', 'prod'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Running shell commands against production needs a human.',
           approvers: ['platform-team'],
         },
@@ -302,7 +302,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Rewriting published git history is never automated.',
         },
       },
@@ -310,7 +310,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'branch-deletion-approval',
         match: { actions: ['repository.delete_branch', 'repository.delete_remote'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Deleting a branch or remote needs a human.',
           approvers: ['eng-lead'],
         },
@@ -337,7 +337,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Destroying or unlocking Terraform state is never automated.',
         },
       },
@@ -352,7 +352,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Disruptive cluster operations need a human.',
           approvers: ['platform-team'],
         },
@@ -370,7 +370,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Deleting cloud resources needs a human.',
           approvers: ['platform-team'],
         },
@@ -380,7 +380,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'A privilege change is how a small mistake becomes a large one.',
         match: { actions: ['cloud.modify_iam', 'cloud.attach_policy'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Changing cloud permissions needs a human.',
           approvers: ['security-team'],
         },
@@ -407,7 +407,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Resetting the database schema needs a human.',
           approvers: ['eng-lead'],
         },
@@ -419,7 +419,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Schema resets never run against production.',
         },
       },
@@ -447,7 +447,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'This environment is read-only.',
         },
       },
@@ -476,7 +476,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Governance configuration is not agent-writable.',
         },
       },
@@ -494,7 +494,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'subagent-spawn-approval',
         match: { actions: ['agent.delegate', 'agent.spawn'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Delegating work to a subagent needs a human.',
           approvers: ['eng-lead'],
         },
@@ -518,8 +518,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*rm -rf /*', '*rm -fr /*', '*rm -rf ~*', '*rm -rf .*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Recursive force-delete is blocked for agents.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Recursive force-delete is withheld for agents.',
         },
       },
       {
@@ -529,8 +529,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*mkfs*', '*dd if=*of=/dev/*', '*> /dev/sd*', '*fdisk*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Writing raw devices is blocked for agents.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Writing raw devices is withheld for agents.',
         },
       },
       {
@@ -541,7 +541,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*chmod 777*', '*chmod -R 777*', '*chown -R root*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Widening permissions needs a human.',
           approvers: ['platform-team'],
         },
@@ -568,7 +568,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Moving money needs a human.',
           approvers: ['finance-team'],
         },
@@ -578,7 +578,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'A bulk send cannot be recalled once it leaves.',
         match: { actions: ['email.send_bulk', 'notification.broadcast'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Sending to many recipients needs a human.',
           approvers: ['comms-team'],
         },
@@ -590,7 +590,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Writing production data needs a human.',
           approvers: ['eng-lead'],
         },
@@ -609,7 +609,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'scheduled-job-approval',
         match: { actions: ['schedule.create', 'schedule.update'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Installing a scheduled job needs a human.',
           approvers: ['platform-team'],
         },
@@ -633,7 +633,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Unattended persistence needs a human.',
           approvers: ['security-team'],
         },
@@ -656,8 +656,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*rm -rf*', '*drop table*', '*drop database*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Destructive shell is blocked for Claude Code.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Destructive shell is withheld for Claude Code.',
         },
       },
       {
@@ -668,7 +668,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Claude Code reaching production needs a human.',
           approvers: ['eng-lead'],
         },
@@ -691,8 +691,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*rm -rf*', '*drop table*', '*drop database*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Destructive shell is blocked for Codex.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Destructive shell is withheld for Codex.',
         },
       },
       {
@@ -703,7 +703,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Codex reaching production needs a human.',
           approvers: ['eng-lead'],
         },
@@ -726,8 +726,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*rm -rf*', '*drop table*', '*drop database*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Destructive shell is blocked for Cursor.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Destructive shell is withheld for Cursor.',
         },
       },
       {
@@ -738,7 +738,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Cursor reaching production needs a human.',
           approvers: ['eng-lead'],
         },
@@ -758,7 +758,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'A sent message cannot be recalled.',
         match: { actions: ['email.send', 'email.reply'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Sending mail on your behalf needs a human.',
           approvers: ['account-owner'],
         },
@@ -767,7 +767,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'calendar-write-approval',
         match: { actions: ['calendar.create', 'calendar.update', 'calendar.delete'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Changing your calendar needs a human.',
           approvers: ['account-owner'],
         },
@@ -790,7 +790,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*checkout*', '*payment*', '*purchase*', '*wire-transfer*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Browser agents do not complete purchases.',
         },
       },
@@ -801,7 +801,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*/admin*', '*/settings*', '*/account*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Changing account or admin settings needs a human.',
           approvers: ['account-owner'],
         },
@@ -810,7 +810,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'browser-export-protection',
         match: { actions: ['browser.download', 'browser.export'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Downloading data from a browser session needs a human.',
           approvers: ['data-protection-officer'],
         },
@@ -838,7 +838,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Destructive AWS operations are not automated.',
         },
       },
@@ -849,7 +849,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*aws iam *', '*aws sts assume-role*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Changing AWS permissions needs a human.',
           approvers: ['security-team'],
         },
@@ -877,7 +877,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Deleting Cloudflare resources is not automated.',
         },
       },
@@ -906,8 +906,8 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
-          reason: 'Transfers to unapproved destinations are blocked.',
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'Transfers to unapproved destinations are withheld.',
         },
       },
       {
@@ -917,7 +917,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*.zip', '*.tar.gz', '*.sql', '*.dump'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Uploading an archive or dump needs a human.',
           approvers: ['data-protection-officer'],
         },
@@ -943,7 +943,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           models: ['*fine-tune*', '*ft:*', '*preview*', '*experimental*', '*uncensored*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'This model family is not approved for inference.',
         },
       },
@@ -967,7 +967,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           providers: ['*replicate*', '*together*', '*huggingface*', '*self-hosted*'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Using an unreviewed inference provider needs a human.',
           approvers: ['security-team'],
         },
@@ -993,7 +993,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           jurisdictions: ['us', 'apac', 'global'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'EU personal data may not leave the EEA.',
         },
       },
@@ -1005,7 +1005,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           jurisdictions: ['eu', 'apac', 'global'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'HIPAA data stays in US jurisdiction.',
         },
       },
@@ -1026,7 +1026,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         description: 'PCI DSS — cardholder data is not handled unattended.',
         match: { actions: ['*'], dataClassifications: ['pci', 'cardholder*'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Cardholder data needs a human on the record.',
           approvers: ['compliance-team'],
         },
@@ -1035,7 +1035,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'health-data-approval',
         match: { actions: ['*'], dataClassifications: ['hipaa', 'phi'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Protected health information needs a human on the record.',
           approvers: ['compliance-team'],
         },
@@ -1048,7 +1048,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           dataClassifications: ['pci', 'hipaa', 'phi', 'pii.eu'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Regulated data is not exported by an agent.',
         },
       },
@@ -1071,7 +1071,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           jurisdictions: ['global', 'apac', 'eu'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Sovereign workloads do not leave their approved region.',
         },
       },
@@ -1092,7 +1092,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           actions: ['crm.export', 'crm.bulk_read', 'analytics.export'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Bulk customer data access needs a human.',
           approvers: ['data-protection-officer'],
         },
@@ -1104,7 +1104,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*customer*', '*contact*', '*lead*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Customer records are not shared by an agent.',
         },
       },
@@ -1126,7 +1126,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           actions: ['treasury.transfer', 'treasury.withdraw', 'wallet.send'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Treasury operations are never automated.',
         },
       },
@@ -1134,7 +1134,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'refund-issuance-approval',
         match: { actions: ['payment.refund', 'billing.credit'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Issuing a refund needs a human.',
           approvers: ['finance-team'],
         },
@@ -1145,7 +1145,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           actions: ['billing.update', 'subscription.update', 'subscription.cancel'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Changing billing or a subscription needs a human.',
           approvers: ['finance-team'],
         },
@@ -1167,7 +1167,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           actions: ['agent.grant_capability', 'agent.elevate', 'agent.assume_role'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Agents do not escalate their own privileges.',
         },
       },
@@ -1175,7 +1175,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'inter-agent-message-approval',
         match: { actions: ['agent.message', 'agent.broadcast'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Agent-to-agent messaging needs a human in high-assurance setups.',
           approvers: ['security-team'],
         },
@@ -1197,7 +1197,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           targets: ['*delete*', '*destroy*', '*drop*', '*purge*'],
         },
         decision: {
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Destructive steps do not run inside an unattended chain.',
         },
       },
@@ -1205,7 +1205,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         name: 'long-running-workflow-approval',
         match: { actions: ['workflow.start_unattended', 'workflow.extend'] },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'Starting or extending unattended automation needs a human.',
           approvers: ['platform-team'],
         },
@@ -1233,7 +1233,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           ],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'This destination is outside the browser agent’s normal range.',
           approvers: ['account-owner'],
         },
@@ -1262,7 +1262,7 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
           environments: ['production', 'prod'],
         },
         decision: {
-          effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+          effect: DECISION_EFFECT.ESCALATE,
           reason: 'This action needs executive sign-off from two people.',
           approvers: ['cto', 'ciso', 'cfo'],
           minApprovals: 2,

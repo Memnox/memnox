@@ -64,7 +64,7 @@ export class TaintAdvisor implements ActionAdvisor {
       return [
         {
           source: this.name,
-          escalateTo: DECISION_EFFECT.BLOCK,
+          escalateTo: DECISION_EFFECT.WITHHOLD,
           nonOverridable: true,
           reason: `"${request.action}" is irreversible and the context contains ${merged.sources.length} untrusted source(s) (${sourceSummary}) — no approval can unblock it`,
           signals,
@@ -75,7 +75,7 @@ export class TaintAdvisor implements ActionAdvisor {
     return [
       {
         source: this.name,
-        escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+        escalateTo: DECISION_EFFECT.ESCALATE,
         reason: `agent context contains ${merged.sources.length} untrusted source(s) (${sourceSummary}) — privileged action needs a human`,
         signals,
       },

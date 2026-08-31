@@ -33,7 +33,7 @@ function auditEvent(id: string, occurredAt: string): ActionEvent {
     agentId: 'agt_1',
     agentName: 'claude-code',
     action: 'database.delete',
-    effect: DECISION_EFFECT.BLOCK,
+    effect: DECISION_EFFECT.WITHHOLD,
     riskLevel: RISK_LEVEL.CRITICAL,
     reason: 'No AI database deletion',
     matchedPolicies: ['production-database-protection'],

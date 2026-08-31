@@ -2,7 +2,9 @@ import type { DecisionEffect } from '../constants/decision.constants';
 import type { EnforcementMode } from '../constants/enforcement.constants';
 import type { ExecutionStatus } from '../constants/execution.constants';
 import type { RiskLevel } from '../constants/risk.constants';
+import type { ContextBlock } from './context-block';
 import type { TaintAssessment } from './taint';
+import type { TaskRef } from './task';
 
 /** The core primitive: every AI action becomes an event Memnox can rule on and prove. */
 export interface ActionRequest {
@@ -21,6 +23,10 @@ export interface ActionRequest {
   reads?: readonly string[];
   /** Untrusted sources that influenced the agent's context, reported by the caller. */
   taint?: TaintAssessment;
+  /** What the agent read, each block carrying the trust of whoever supplied it. */
+  context?: readonly ContextBlock[];
+  /** What was actually asked for. Declared by the client; never inferred here. */
+  task?: TaskRef;
   /** The agent's stated intent — recorded verbatim for the audit trail. */
   reason?: string;
   metadata?: Record<string, unknown>;
@@ -66,12 +72,14 @@ export interface ActionEvent {
   jurisdiction?: string;
   workingDirectory?: string;
   branch?: string;
-  /** What actually happened — in monitor mode this is always allow. */
+  /** What actually happened — in observe mode this is always allow. */
   effect: DecisionEffect;
   /** Mode in force for this environment when the action was decided. */
   enforcementMode?: EnforcementMode;
-  /** What policy decided, when the mode kept it from being applied. */
-  withheldEffect?: DecisionEffect;
+  /** What enforce would have said, when the mode kept it from being applied. */
+  shadowEffect?: DecisionEffect;
+  /** The task this action was taken under, so a scope refusal is explicable later. */
+  taskId?: string;
   riskLevel: RiskLevel;
   matchedPolicies: string[];
   /** Content version of the rule set that decided this — see versionPolicySet. */

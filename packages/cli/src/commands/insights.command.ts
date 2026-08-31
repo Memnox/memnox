@@ -14,7 +14,7 @@ export function registerInsightsCommand(program: Command, context: CliContext): 
       const report = await client.complianceReport({});
       context.out.line(`Protected actions : ${report.totals.actions}`);
       context.out.line(`Allowed           : ${report.totals.allowed}`);
-      context.out.line(`Blocked           : ${report.totals.blocked}`);
+      context.out.line(`Withheld           : ${report.totals.withheld}`);
       context.out.line(`Sent to approval  : ${report.totals.approvalsRequired}`);
 
       const { verification } = report;
@@ -40,7 +40,7 @@ export function registerInsightsCommand(program: Command, context: CliContext): 
       }
 
       if (report.topBlockedActions.length > 0) {
-        context.out.line('\nMost blocked actions:');
+        context.out.line('\nMost withheld actions:');
         for (const entry of report.topBlockedActions) {
           context.out.line(`  - ${entry.action} (${entry.count})`);
         }

@@ -10,7 +10,7 @@ public final class Decision {
     private final Effect effect;
     private final String reason;
     private final String approvalId;
-    private final Effect withheldEffect;
+    private final Effect shadowEffect;
     private final List<String> matchedPolicies;
 
     Decision(
@@ -18,13 +18,13 @@ public final class Decision {
             Effect effect,
             String reason,
             String approvalId,
-            Effect withheldEffect,
+            Effect shadowEffect,
             List<String> matchedPolicies) {
         this.eventId = eventId;
         this.effect = effect;
         this.reason = reason;
         this.approvalId = approvalId;
-        this.withheldEffect = withheldEffect;
+        this.shadowEffect = shadowEffect;
         this.matchedPolicies = List.copyOf(matchedPolicies);
     }
 
@@ -40,11 +40,11 @@ public final class Decision {
 
     /** True when monitor mode let this through but policy would have stopped it. */
     public boolean wouldHaveStopped() {
-        return withheldEffect != null;
+        return shadowEffect != null;
     }
 
-    public Optional<Effect> withheldEffect() {
-        return Optional.ofNullable(withheldEffect);
+    public Optional<Effect> shadowEffect() {
+        return Optional.ofNullable(shadowEffect);
     }
 
     @SuppressWarnings("unchecked")
@@ -54,7 +54,7 @@ public final class Decision {
             throw new IllegalArgumentException("expected a decision object");
         }
         Map<String, Object> fields = (Map<String, Object>) map;
-        Object withheld = fields.get("withheldEffect");
+        Object withheld = fields.get("shadowEffect");
         Object matched = fields.get("matchedPolicies");
 
         return new Decision(

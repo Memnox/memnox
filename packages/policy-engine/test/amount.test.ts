@@ -12,7 +12,7 @@ const rule = (aboveAmount?: number): Policy => ({
     ...(aboveAmount === undefined ? {} : { aboveAmount }),
   },
   decision: {
-    effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+    effect: DECISION_EFFECT.ESCALATE,
     reason: 'a refund this size needs a person',
   },
 });
@@ -27,7 +27,7 @@ describe('a rule that triggers above a size', () => {
       { action: 'payment.refund', amount: 4_500 },
       CONTEXT,
     );
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('leaves a smaller one alone', () => {
@@ -35,7 +35,7 @@ describe('a rule that triggers above a size', () => {
       { action: 'payment.refund', amount: 500 },
       CONTEXT,
     );
-    expect(decision.effect).not.toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).not.toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('does not trigger exactly at the threshold, because "above" means above', () => {
@@ -43,14 +43,14 @@ describe('a rule that triggers above a size', () => {
       { action: 'payment.refund', amount: 1_000 },
       CONTEXT,
     );
-    expect(decision.effect).not.toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).not.toBe(DECISION_EFFECT.ESCALATE);
   });
 
   /* A caller that omits the number must not thereby escape the rule the number
      exists for. It cannot prove it is under the line, so it is held to it. */
   it('applies to an action that never said how big it was', () => {
     const decision = engine(rule(1_000)).evaluate({ action: 'payment.refund' }, CONTEXT);
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('is unset by default, so every existing rule is unchanged', () => {
@@ -58,7 +58,7 @@ describe('a rule that triggers above a size', () => {
       { action: 'payment.refund', amount: 1 },
       CONTEXT,
     );
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 });
 
@@ -69,7 +69,7 @@ describe('validating a threshold', () => {
       {
         name: 'large-refunds',
         match: { actions: ['payment.refund'], aboveAmount },
-        decision: { effect: 'require_approval', approvers: ['finance'] },
+        decision: { effect: 'escalate', approvers: ['finance'] },
       },
     ],
   });

@@ -8,7 +8,7 @@ let client = MemnoxClient(baseURL: "http://127.0.0.1:7466", token: "mnx_your_age
 do {
     try await client.guardAction(ActionRequest("database.delete").environment("production"))
     runTheDelete()
-} catch let MemnoxError.blocked(reason, _) {
+} catch let MemnoxError.withheld(reason, _) {
     print("refused: \(reason)")
 } catch let MemnoxError.approvalRequired(_, approvalId) {
     print("waiting on \(approvalId ?? "?")")

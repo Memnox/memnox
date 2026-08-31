@@ -81,10 +81,10 @@ describe('verification coverage', () => {
     expect(coverage.rollbackFailed).toBe(1);
   });
 
-  it('ignores blocked decisions — nothing ran, so nothing can be reported', () => {
+  it('ignores withheld decisions — nothing ran, so nothing can be reported', () => {
     const coverage = coverageOf([
-      decision('a', { effect: DECISION_EFFECT.BLOCK }),
-      decision('b', { effect: DECISION_EFFECT.REQUIRE_APPROVAL }),
+      decision('a', { effect: DECISION_EFFECT.WITHHOLD }),
+      decision('b', { effect: DECISION_EFFECT.ESCALATE }),
     ]);
 
     expect(coverage.allowed).toBe(0);

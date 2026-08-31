@@ -39,8 +39,8 @@ function reportComparison(
   out.line(`Changed         : ${changes.changes.length}`);
   out.line(
     `Candidate totals: allow ${changes.candidateTotals[DECISION_EFFECT.ALLOW]}, ` +
-      `approval ${changes.candidateTotals[DECISION_EFFECT.REQUIRE_APPROVAL]}, ` +
-      `block ${changes.candidateTotals[DECISION_EFFECT.BLOCK]}`,
+      `approval ${changes.candidateTotals[DECISION_EFFECT.ESCALATE]}, ` +
+      `block ${changes.candidateTotals[DECISION_EFFECT.WITHHOLD]}`,
   );
 
   if (changes.changes.length === 0) {

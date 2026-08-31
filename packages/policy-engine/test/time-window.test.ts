@@ -82,7 +82,7 @@ describe('time-scoped policies', () => {
         { days: [0, 6], startHour: 0, endHour: 24 },
       ],
     },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['on-call'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['on-call'] },
   };
 
   const engine = new PolicyEngine([outsideBusinessHours]);
@@ -94,11 +94,11 @@ describe('time-scoped policies', () => {
   });
 
   it('requires approval for a weeknight deploy', () => {
-    expect(evaluate(MONDAY_11PM).effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(evaluate(MONDAY_11PM).effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('requires approval all weekend', () => {
-    expect(evaluate(SATURDAY_10AM).effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(evaluate(SATURDAY_10AM).effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('is reproducible — the same instant always gives the same verdict', () => {
@@ -110,6 +110,6 @@ describe('time-scoped policies', () => {
       { action: 'deploy.service' },
       { agentName: 'ci' },
     );
-    expect(withoutTime.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(withoutTime.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 });

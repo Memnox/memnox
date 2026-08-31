@@ -16,7 +16,7 @@ export interface RecentDecision {
   occurredAt: string;
   effect: DecisionEffect;
   /** What policy decided when the mode kept it from being applied. */
-  withheldEffect?: DecisionEffect;
+  shadowEffect?: DecisionEffect;
   agentName: string;
   action: string;
   target?: string;
@@ -47,10 +47,10 @@ export async function readRuntimeStatus(
     gateway.recentAuditEvents(RECENT_WINDOW_EVENTS),
   ]);
 
-  const withheld = recent.filter((event) => event.withheldEffect !== undefined);
+  const withheld = recent.filter((event) => event.shadowEffect !== undefined);
 
   return {
-    enforcement: gateway.enforcement().default ?? ENFORCEMENT_MODE.MONITOR,
+    enforcement: gateway.enforcement().default ?? ENFORCEMENT_MODE.OBSERVE,
     policyCount: policies.length,
     policyVersion: versionPolicySet(policies).version,
     pendingApprovals: pending.length,
@@ -60,9 +60,7 @@ export async function readRuntimeStatus(
     recent: recent.slice(0, RECENT_SHOWN).map((event) => ({
       occurredAt: event.occurredAt,
       effect: event.effect,
-      ...(event.withheldEffect === undefined
-        ? {}
-        : { withheldEffect: event.withheldEffect }),
+      ...(event.shadowEffect === undefined ? {} : { shadowEffect: event.shadowEffect }),
       agentName: event.agentName,
       action: event.action,
       ...(event.target === undefined ? {} : { target: event.target }),

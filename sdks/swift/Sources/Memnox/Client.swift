@@ -90,9 +90,9 @@ public struct MemnoxClient: Sendable {
         switch decision.effect {
         case .allow:
             return decision
-        case .block:
-            throw MemnoxError.blocked(reason: decision.reason, eventId: decision.eventId)
-        case .requireApproval:
+        case .withhold:
+            throw MemnoxError.withheld(reason: decision.reason, eventId: decision.eventId)
+        case .escalate:
             throw MemnoxError.approvalRequired(
                 reason: decision.reason, approvalId: decision.approvalId)
         }

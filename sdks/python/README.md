@@ -3,7 +3,7 @@
 Standard-library-only client for the Memnox runtime.
 
 ```python
-from memnox import MemnoxClient, ActionBlockedError
+from memnox import MemnoxClient, ActionWithheldError
 
 memnox = MemnoxClient(token="mnx_...")
 
@@ -13,7 +13,7 @@ print(decision.effect)  # "block"
 # Or wrap the dangerous work — it only runs if the runtime allows it.
 try:
     memnox.guard("deploy.service", lambda: deploy(), environment="production")
-except ActionBlockedError as err:
+except ActionWithheldError as err:
     print(err.decision.reason)
 ```
 

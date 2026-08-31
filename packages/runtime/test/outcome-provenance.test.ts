@@ -31,8 +31,8 @@ describe('an outcome report, against the decision it names', () => {
         '      actions: ["shell.execute"]',
         '      targets: ["*rm -rf /*"]',
         '    decision:',
-        '      effect: block',
-        '      reason: Recursive force-delete is blocked for agents.',
+        '      effect: withhold',
+        '      reason: Recursive force-delete is withheld for agents.',
       ].join('\n'),
       'utf8',
     );
@@ -102,13 +102,13 @@ describe('an outcome report, against the decision it names', () => {
   });
 
   it('records a success claimed against a block, and flags it', async () => {
-    const blocked = await check({
+    const withheld = await check({
       action: 'shell.execute',
       target: 'rm -rf /',
     });
-    expect(blocked.effect).toBe('block');
+    expect(withheld.effect).toBe('withhold');
 
-    const response = await report({ decisionEventId: blocked.eventId });
+    const response = await report({ decisionEventId: withheld.eventId });
 
     expect(response.statusCode).toBe(202);
     expect(response.json()).toMatchObject({ recorded: true, defied: true });
@@ -133,10 +133,10 @@ describe('an outcome report, against the decision it names', () => {
   });
 
   it('does not flag a failure reported against a block — that is honesty, not defiance', async () => {
-    const blocked = await check({ action: 'shell.execute', target: 'rm -rf /' });
+    const withheld = await check({ action: 'shell.execute', target: 'rm -rf /' });
 
     const response = await report({
-      decisionEventId: blocked.eventId,
+      decisionEventId: withheld.eventId,
       status: EXECUTION_STATUS.PRECONDITION_FAILED,
     });
 

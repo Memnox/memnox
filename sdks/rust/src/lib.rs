@@ -66,11 +66,11 @@ impl Client {
         let decision = self.check(request)?;
         match decision.effect {
             Effect::Allow => Ok(decision),
-            Effect::Block => Err(MemnoxError::Blocked {
+            Effect::Withhold => Err(MemnoxError::Withheld {
                 reason: decision.reason,
                 event_id: decision.event_id,
             }),
-            Effect::RequireApproval => Err(MemnoxError::ApprovalRequired {
+            Effect::Escalate => Err(MemnoxError::ApprovalRequired {
                 reason: decision.reason,
                 approval_id: decision.approval_id,
             }),

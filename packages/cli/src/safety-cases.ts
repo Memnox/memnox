@@ -97,9 +97,9 @@ export const SAFETY_CASES: readonly SafetyCase[] = [
   },
 ];
 
-/** Blocked and held both stop the action; a redacted allow still proceeds. */
+/** Withheld and escalated both stop the action; an allow proceeds. */
 export function stopsAction(effect: DecisionEffect | string): boolean {
-  return effect === DECISION_EFFECT.BLOCK || effect === DECISION_EFFECT.REQUIRE_APPROVAL;
+  return effect === DECISION_EFFECT.WITHHOLD || effect === DECISION_EFFECT.ESCALATE;
 }
 
 /** A case passes when the organization did what the case says it should. */

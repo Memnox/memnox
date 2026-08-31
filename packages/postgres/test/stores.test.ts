@@ -41,7 +41,7 @@ function agent(id: string): AgentIdentity {
     status: 'active',
     tokenHash: `${TOKEN_HASH}-${id}`,
     createdAt: `2026-07-0${id.length}T00:00:00.000Z`,
-    stats: { allowed: 0, blocked: 0, approvalsRequested: 0 },
+    stats: { allowed: 0, withheld: 0, approvalsRequested: 0 },
   };
 }
 
@@ -53,7 +53,7 @@ function decision(id: string, decidedAt: string): DecisionRecord {
     owner: 'ana',
     decidedAt,
     actions: ['deploy.production'],
-    enforcement: DECISION_ENFORCEMENT.BLOCK,
+    enforcement: DECISION_ENFORCEMENT.WITHHOLD,
   };
 }
 

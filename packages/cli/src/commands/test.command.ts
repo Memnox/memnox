@@ -163,21 +163,18 @@ function because(result: CaseResult): string {
   return stopsAction(result.effect) ? result.reason : UNCOVERED;
 }
 
-/** The verdict in the reader's terms; "require_approval" is not a word. */
+/** The verdict in the reader's terms; "escalate" is not a word. */
 function verdictLabel(effect: DecisionEffect): string {
-  if (effect === DECISION_EFFECT.BLOCK) return 'BLOCKED';
-  if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) return 'HELD';
-  if (effect === DECISION_EFFECT.REDACT) return 'REDACTED';
+  if (effect === DECISION_EFFECT.WITHHOLD) return 'WITHHELD';
+  if (effect === DECISION_EFFECT.ESCALATE) return 'HELD';
   return 'ALLOWED';
 }
 
 function tally(results: readonly CaseResult[]): string {
-  const blocked = results.filter((r) => r.effect === DECISION_EFFECT.BLOCK).length;
-  const held = results.filter(
-    (r) => r.effect === DECISION_EFFECT.REQUIRE_APPROVAL,
-  ).length;
+  const withheld = results.filter((r) => r.effect === DECISION_EFFECT.WITHHOLD).length;
+  const held = results.filter((r) => r.effect === DECISION_EFFECT.ESCALATE).length;
   const allowed = results.filter((r) => !stopsAction(r.effect)).length;
-  return `${blocked} blocked, ${held} held for approval, ${allowed} allowed`;
+  return `${withheld} withheld, ${held} held for approval, ${allowed} allowed`;
 }
 
 function reportGaps(context: CliContext, gaps: readonly CaseResult[]): void {

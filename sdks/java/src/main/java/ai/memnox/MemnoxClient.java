@@ -47,8 +47,8 @@ public final class MemnoxClient {
         Decision decision = check(request);
         return switch (decision.effect()) {
             case ALLOW -> decision;
-            case BLOCK -> throw new MemnoxException.Blocked(decision);
-            case REQUIRE_APPROVAL -> throw new MemnoxException.ApprovalRequired(decision);
+            case WITHHOLD -> throw new MemnoxException.Withheld(decision);
+            case ESCALATE -> throw new MemnoxException.Escalated(decision);
         };
     }
 }

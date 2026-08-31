@@ -37,8 +37,8 @@ const decision = await client.check({
 });
 ```
 
-`check` returns the decision. `checkOrThrow` raises `ActionBlockedError` or
-`ApprovalRequiredError` instead, when a thrown error fits your control flow
+`check` returns the decision. `checkOrThrow` raises `ActionWithheldError` or
+`EscalationRequiredError` instead, when a thrown error fits your control flow
 better.
 
 ## Governing a tool registry
@@ -102,6 +102,6 @@ new MemnoxClient({ baseUrl, token, fetch: myTransport });
 
 | Error | Meaning |
 |---|---|
-| `ActionBlockedError` | a policy blocked the action |
-| `ApprovalRequiredError` | a human must approve; carries `approvalId` |
+| `ActionWithheldError` | a policy blocked the action |
+| `EscalationRequiredError` | a human must approve; carries `approvalId` |
 | `MemnoxApiError` | transport or server error, with the HTTP status |

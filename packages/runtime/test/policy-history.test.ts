@@ -15,7 +15,7 @@ policies:
     match:
       actions: ["shell.execute"]
     decision:
-      effect: block
+      effect: withhold
       reason: no shell
 `;
 
@@ -25,7 +25,7 @@ const document = (name: string, action: string): Record<string, unknown> => ({
     {
       name,
       match: { actions: [action] },
-      decision: { effect: DECISION_EFFECT.BLOCK, reason: 'x' },
+      decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'x' },
     },
   ],
 });
@@ -130,7 +130,7 @@ describe('policy history and rollback', () => {
 
     const response = await rollback(first);
     expect(response.statusCode).toBe(200);
-    expect(await decide('a.act')).toBe(DECISION_EFFECT.BLOCK);
+    expect(await decide('a.act')).toBe(DECISION_EFFECT.WITHHOLD);
     expect(await decide('b.act')).toBe(DECISION_EFFECT.ALLOW);
   });
 

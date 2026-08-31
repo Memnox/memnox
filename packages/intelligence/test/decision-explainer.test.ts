@@ -9,7 +9,7 @@ class InMemoryProvider implements LlmProvider {
 
   async complete(request: LlmCompletionRequest): Promise<string> {
     this.requests.push(request);
-    return 'Blocked because production database deletions are never allowed.';
+    return 'Withheld because production database deletions are never allowed.';
   }
 }
 
@@ -22,14 +22,14 @@ describe('DecisionExplainer', () => {
       action: 'database.delete',
       target: 'users',
       environment: 'production',
-      effect: 'block',
+      effect: 'withhold',
       riskLevel: 'critical',
       reason: 'No AI database deletion',
       matchedPolicies: ['production-database-protection'],
       advisories: ['decision-memory'],
     });
 
-    expect(explanation).toContain('Blocked because');
+    expect(explanation).toContain('Withheld because');
     const prompt = provider.requests[0]?.prompt ?? '';
     expect(prompt).toContain('database.delete');
     expect(prompt).toContain('production-database-protection');

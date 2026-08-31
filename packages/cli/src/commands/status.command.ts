@@ -29,7 +29,7 @@ export function registerStatusCommand(
         client.recentAudit(RECENT_WINDOW_EVENTS),
       ]);
 
-      const withheld = recent.filter((event) => event.withheldEffect !== undefined);
+      const withheld = recent.filter((event) => event.shadowEffect !== undefined);
       const workingDirectory = cwd();
       const policyFile = findPolicyFile(workingDirectory);
       const project = resolveProjectId(workingDirectory);

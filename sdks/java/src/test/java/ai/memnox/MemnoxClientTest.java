@@ -12,15 +12,15 @@ import org.junit.jupiter.api.Test;
 class MemnoxClientTest {
     private static final String ALLOWED =
             "{\"eventId\":\"e1\",\"effect\":\"allow\",\"reason\":\"no policy matched\"}";
-    private static final String BLOCKED =
-            "{\"eventId\":\"e2\",\"effect\":\"block\",\"reason\":\"no prod deletes\","
-                    + "\"matchedPolicies\":[{\"name\":\"prod-guard\",\"effect\":\"block\"}]}";
-    private static final String HELD =
-            "{\"eventId\":\"e3\",\"effect\":\"require_approval\",\"reason\":\"needs a human\","
-                    + "\"approvalId\":\"a1\"}";
     private static final String WITHHELD =
+            "{\"eventId\":\"e2\",\"effect\":\"withhold\",\"reason\":\"no prod deletes\","
+                    + "\"matchedPolicies\":[{\"name\":\"prod-guard\",\"effect\":\"withhold\"}]}";
+    private static final String HELD =
+            "{\"eventId\":\"e3\",\"effect\":\"escalate\",\"reason\":\"needs a human\","
+                    + "\"approvalId\":\"a1\"}";
+    private static final String SHADOWED =
             "{\"eventId\":\"e4\",\"effect\":\"allow\",\"reason\":\"observed only\","
-                    + "\"withheldEffect\":\"block\"}";
+                    + "\"shadowEffect\":\"withhold\"}";
 
     /** Records what the client sent and replies with a canned response. */
     private static final class FakeTransport implements Transport {
@@ -58,19 +58,19 @@ class MemnoxClientTest {
     }
 
     @Test
-    void checkReturnsABlockRatherThanThrowing() {
-        Decision decision = clientFor(200, BLOCKED).check(ActionRequest.of("database.delete"));
+    void checkReturnsAWithholdRatherThanThrowing() {
+        Decision decision = clientFor(200, WITHHELD).check(ActionRequest.of("database.delete"));
 
-        assertEquals(Effect.BLOCK, decision.effect());
+        assertEquals(Effect.WITHHOLD, decision.effect());
         assertFalse(decision.allowed());
         assertEquals(List.of("prod-guard"), decision.matchedPolicies());
     }
 
     // guard is the call that cannot be ignored by accident.
     @Test
-    void guardThrowsOnABlock() {
-        MemnoxException.Blocked err = assertThrows(MemnoxException.Blocked.class,
-                () -> clientFor(200, BLOCKED).guard(ActionRequest.of("database.delete")));
+    void guardThrowsOnAWithhold() {
+        MemnoxException.Withheld err = assertThrows(MemnoxException.Withheld.class,
+                () -> clientFor(200, WITHHELD).guard(ActionRequest.of("database.delete")));
 
         assertTrue(err.getMessage().contains("no prod deletes"));
         assertEquals("e2", err.decision().orElseThrow().eventId());
@@ -78,8 +78,8 @@ class MemnoxClientTest {
 
     @Test
     void guardThrowsOnAHoldAndCarriesTheApprovalId() {
-        MemnoxException.ApprovalRequired err =
-                assertThrows(MemnoxException.ApprovalRequired.class,
+        MemnoxException.Escalated err =
+                assertThrows(MemnoxException.Escalated.class,
                         () -> clientFor(200, HELD).guard(ActionRequest.of("deploy.service")));
 
         assertEquals("a1", err.decision().orElseThrow().approvalId().orElseThrow());
@@ -90,14 +90,14 @@ class MemnoxClientTest {
         assertTrue(clientFor(200, ALLOWED).guard(ActionRequest.of("repository.read")).allowed());
     }
 
-    // Monitor mode: the action ran, but the caller can still see it would not have.
+    // Observe mode: the action ran, but the caller can still see it would not have.
     @Test
-    void reportsWhatMonitorModeWithheld() {
-        Decision decision = clientFor(200, WITHHELD).check(ActionRequest.of("database.delete"));
+    void reportsWhatObserveModeSoftened() {
+        Decision decision = clientFor(200, SHADOWED).check(ActionRequest.of("database.delete"));
 
         assertTrue(decision.allowed());
         assertTrue(decision.wouldHaveStopped());
-        assertEquals(Effect.BLOCK, decision.withheldEffect().orElseThrow());
+        assertEquals(Effect.WITHHOLD, decision.shadowEffect().orElseThrow());
     }
 
     @Test

@@ -58,7 +58,7 @@ describe('per-rule rate limits', () => {
       DECISION_EFFECT.ALLOW,
       DECISION_EFFECT.ALLOW,
       DECISION_EFFECT.ALLOW,
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     ]);
   });
 
@@ -92,7 +92,7 @@ describe('per-rule rate limits', () => {
       {
         name: 'no-prod-deploys',
         match: { actions: ['deploy.*'], environments: ['production'] },
-        decision: { effect: DECISION_EFFECT.BLOCK, reason: 'not from an agent' },
+        decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'not from an agent' },
       },
     ]);
     const token = await tokenFor(gateway);
@@ -105,11 +105,11 @@ describe('per-rule rate limits', () => {
     expect(afterwards.effect).toBe(DECISION_EFFECT.ALLOW);
   });
 
-  it('leaves a monitored rule inert — it counts nothing and blocks nothing', async () => {
+  it('leaves a observed rule inert — it counts nothing and blocks nothing', async () => {
     const gateway = gatewayWith([
       {
         ...THREE_PER_MINUTE,
-        decision: { ...THREE_PER_MINUTE.decision, mode: 'monitor' },
+        decision: { ...THREE_PER_MINUTE.decision, mode: 'observe' },
       },
     ]);
     const token = await tokenFor(gateway);
@@ -134,7 +134,7 @@ describe('per-rule rate limits', () => {
   });
 });
 
-describe('a monitored rule in the audit trail', () => {
+describe('a observed rule in the audit trail', () => {
   it('records the verdict it withheld while letting the action through', async () => {
     const auditLog = new InMemoryAuditLog();
     const gateway = new ActionGateway({
@@ -146,8 +146,8 @@ describe('a monitored rule in the audit trail', () => {
           name: 'candidate-block',
           match: { actions: ['deploy.*'] },
           decision: {
-            effect: DECISION_EFFECT.BLOCK,
-            mode: 'monitor',
+            effect: DECISION_EFFECT.WITHHOLD,
+            mode: 'observe',
             reason: 'candidate rule',
           },
         },
@@ -159,8 +159,8 @@ describe('a monitored rule in the audit trail', () => {
     const [event] = await auditLog.recent(1);
 
     expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
-    expect(decision.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
-    expect(event?.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(event?.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(event?.matchedPolicies).toEqual(['candidate-block']);
   });
 });

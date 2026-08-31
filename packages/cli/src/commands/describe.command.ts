@@ -14,16 +14,14 @@ const LABEL_WIDTH = 8;
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'ALLOW',
-  [DECISION_EFFECT.REDACT]: 'REDACT',
-  [DECISION_EFFECT.BLOCK]: 'BLOCK',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'REQUIRE APPROVAL',
+  [DECISION_EFFECT.WITHHOLD]: 'BLOCK',
+  [DECISION_EFFECT.ESCALATE]: 'REQUIRE APPROVAL',
 };
 
 const EFFECT_VERB: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'allows',
-  [DECISION_EFFECT.REDACT]: 'withholds part of the context',
-  [DECISION_EFFECT.BLOCK]: 'blocks',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'requires approval',
+  [DECISION_EFFECT.WITHHOLD]: 'withholds',
+  [DECISION_EFFECT.ESCALATE]: 'requires approval',
 };
 
 /** Where the command is being run; injected so tests never depend on the real cwd. */
@@ -156,10 +154,10 @@ function reportGovernance(
   }
 
   for (const policy of assessment.matchedPolicies) {
-    const monitored =
-      policy.monitored === true ? ' (monitored — records, does not decide)' : '';
+    const observed =
+      policy.observed === true ? ' (observed — records, does not decide)' : '';
     out.line(
-      `  ${label('policy')}${policy.name} — ${EFFECT_VERB[policy.effect]}${monitored}`,
+      `  ${label('policy')}${policy.name} — ${EFFECT_VERB[policy.effect]}${observed}`,
     );
     if (policy.reason !== undefined)
       out.line(style.dim(`  ${''.padEnd(LABEL_WIDTH)}${policy.reason}`));
@@ -237,7 +235,7 @@ function reportDecisions(
 interface ObservedSummary {
   window: number;
   matched: number;
-  blocked: number;
+  withheld: number;
   held: number;
   allowed: number;
   lastSeen?: string;
@@ -251,8 +249,8 @@ function summarize(events: readonly ActionEvent[], action: string): ObservedSumm
   return {
     window: events.length,
     matched: matched.length,
-    blocked: matched.filter((e) => e.effect === DECISION_EFFECT.BLOCK).length,
-    held: matched.filter((e) => e.effect === DECISION_EFFECT.REQUIRE_APPROVAL).length,
+    withheld: matched.filter((e) => e.effect === DECISION_EFFECT.WITHHOLD).length,
+    held: matched.filter((e) => e.effect === DECISION_EFFECT.ESCALATE).length,
     allowed: matched.filter((e) => e.effect === DECISION_EFFECT.ALLOW).length,
     ...(last === undefined
       ? {}
@@ -277,7 +275,7 @@ function reportObserved(
   }
   out.line(
     `  ${observed.matched} of the last ${observed.window} audited actions — ` +
-      `${observed.blocked} blocked, ${observed.held} held, ${observed.allowed} allowed`,
+      `${observed.withheld} withheld, ${observed.held} held, ${observed.allowed} allowed`,
   );
   if (observed.lastSeen !== undefined) {
     out.line(style.dim(`  last ${observed.lastSeen} by ${observed.lastAgent}`));

@@ -49,7 +49,7 @@ export class FirewallSession {
     const verdict = await this.verdictFor(call);
     if (isAllowed(verdict)) return this.forward(message);
 
-    this.deps.log(`blocked tools/call "${call.name}": ${verdict.reason}`);
+    this.deps.log(`withheld tools/call "${call.name}": ${verdict.reason}`);
     this.deps.channel.toClient(serializeMessage(denial(message.id, verdict.reason)));
   }
 
@@ -68,7 +68,7 @@ export class FirewallSession {
   private async verdictFor(call: ToolCall): Promise<CallVerdict> {
     if (!this.deps.filter.isAllowed(call.name)) {
       return {
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         reason: `tool "${call.name}" is denied by the static filter`,
       };
     }
@@ -109,7 +109,7 @@ function denial(id: JsonRpcMessage['id'], reason: string): JsonRpcMessage {
     jsonrpc: '2.0',
     id,
     result: {
-      content: [{ type: 'text', text: `Blocked by Memnox: ${reason}` }],
+      content: [{ type: 'text', text: `Withheld by Memnox: ${reason}` }],
       isError: true,
     },
   };

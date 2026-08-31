@@ -79,8 +79,6 @@ export interface EvaluateResponse {
   withheld: number;
   /** Present when there is an approval to wait on. */
   approvalId?: string;
-  /** The action is allowed only with its content masked. */
-  redacted?: boolean;
   /** Withheld is what you could not see; this is what one answer did not read. */
   truncated?: true;
   /** The one thing that goes wrong quietly: no `reads`, so delegation went unassessed. */

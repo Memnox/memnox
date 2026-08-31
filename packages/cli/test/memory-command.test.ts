@@ -10,7 +10,7 @@ const record = (over: Record<string, unknown> = {}): Record<string, unknown> => 
   statement: 'Migrations run through the release pipeline.',
   owner: 'platform-team',
   actions: ['database.migrate'],
-  enforcement: DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
+  enforcement: DECISION_ENFORCEMENT.ESCALATE,
   decidedAt: '2026-07-01T00:00:00.000Z',
   ...over,
 });
@@ -63,7 +63,7 @@ describe('memnox memory add', () => {
     );
 
     expect(runtime.requests[0]?.body).toMatchObject({
-      enforcement: DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
+      enforcement: DECISION_ENFORCEMENT.ESCALATE,
     });
     expect(out.text).toContain('Decision recorded:');
   });

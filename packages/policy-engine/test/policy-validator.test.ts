@@ -7,7 +7,7 @@ const VALID_DOCUMENT = {
     {
       name: 'production-database-protection',
       match: { actions: ['database.delete'], environments: ['production'] },
-      decision: { effect: 'block', reason: 'No AI database deletion' },
+      decision: { effect: 'withhold', reason: 'No AI database deletion' },
     },
   ],
 };
@@ -34,7 +34,7 @@ describe('validatePolicyDocument', () => {
         {
           name: 'x',
           match: { actions: ['a'] },
-          decision: { effect: 'require_approval' },
+          decision: { effect: 'escalate' },
         },
       ],
     };
@@ -45,8 +45,8 @@ describe('validatePolicyDocument', () => {
     const invalid = {
       version: 2,
       policies: [
-        { name: 'dup', match: { actions: ['a'] }, decision: { effect: 'block' } },
-        { name: 'dup', match: { actions: ['b'] }, decision: { effect: 'block' } },
+        { name: 'dup', match: { actions: ['a'] }, decision: { effect: 'withhold' } },
+        { name: 'dup', match: { actions: ['b'] }, decision: { effect: 'withhold' } },
       ],
     };
     try {
@@ -101,7 +101,7 @@ describe('project declaration', () => {
 describe('validatePolicyDocument — argument, context and outcome fields', () => {
   const documentWith = (
     match: Record<string, unknown>,
-    decision: Record<string, unknown> = { effect: 'block' },
+    decision: Record<string, unknown> = { effect: 'withhold' },
   ): unknown => ({
     version: 1,
     policies: [{ name: 'rule', match: { actions: ['a'], ...match }, decision }],
@@ -140,20 +140,20 @@ describe('validatePolicyDocument — argument, context and outcome fields', () =
     expect(doc.policies[0]?.match.branches).toEqual(['main', 'release/*']);
   });
 
-  it('accepts the redact effect without demanding approvers', () => {
-    const doc = validatePolicyDocument(documentWith({}, { effect: 'redact' }));
+  it('accepts the withhold effect without demanding approvers', () => {
+    const doc = validatePolicyDocument(documentWith({}, { effect: 'withhold' }));
 
-    expect(doc.policies[0]?.decision.effect).toBe('redact');
+    expect(doc.policies[0]?.decision.effect).toBe('withhold');
   });
 
-  it('accepts monitor mode and rejects any other mode', () => {
+  it('accepts observe mode and rejects any other mode', () => {
     const doc = validatePolicyDocument(
-      documentWith({}, { effect: 'block', mode: 'monitor' }),
+      documentWith({}, { effect: 'withhold', mode: 'observe' }),
     );
-    expect(doc.policies[0]?.decision.mode).toBe('monitor');
+    expect(doc.policies[0]?.decision.mode).toBe('observe');
 
     expect(() =>
-      validatePolicyDocument(documentWith({}, { effect: 'block', mode: 'maybe' })),
+      validatePolicyDocument(documentWith({}, { effect: 'withhold', mode: 'maybe' })),
     ).toThrow(PolicyValidationError);
   });
 

@@ -18,7 +18,7 @@ Environment:
   ${ENV_RUNTIME_URL}          Memnox runtime base URL
   ${ENV_AGENT_TOKEN}  agent token for the runtime
   ${ENV_TOOLS_ALLOW}  regex — only matching tools are exposed
-  ${ENV_TOOLS_DENY}   regex — matching tools are hidden and blocked
+  ${ENV_TOOLS_DENY}   regex — matching tools are hidden and withheld
   ${ENV_FAIL_OPEN}    "true" to forward calls when the runtime is unreachable
   ${ENV_POLICIES}       policy files evaluated in-process, comma-separated —
                         the only place a call's arguments are ever read

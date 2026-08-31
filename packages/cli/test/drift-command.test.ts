@@ -38,7 +38,7 @@ const healthy = {
 /** A runtime whose rules and history agree; a test breaks one route at a time. */
 const aligned = (): FakeRuntime =>
   new FakeRuntime()
-    .on('GET', AUDIT_PATH, [event({ effect: DECISION_EFFECT.BLOCK })])
+    .on('GET', AUDIT_PATH, [event({ effect: DECISION_EFFECT.WITHHOLD })])
     .on('GET', ENFORCEMENT_PATH, { default: ENFORCEMENT_MODE.ENFORCE })
     .on('GET', POLICIES_PATH, {
       version: 'v1',
@@ -76,12 +76,12 @@ describe('memnox drift', () => {
     expect(process.exitCode).toBe(0);
   });
 
-  it('names verdicts a monitored environment let through', async () => {
+  it('names verdicts a observed environment let through', async () => {
     const runtime = aligned().on('GET', AUDIT_PATH, [
-      event({ withheldEffect: DECISION_EFFECT.BLOCK, environment: 'production' }),
+      event({ shadowEffect: DECISION_EFFECT.WITHHOLD, environment: 'production' }),
       event({
         id: 'evt_2',
-        withheldEffect: DECISION_EFFECT.BLOCK,
+        shadowEffect: DECISION_EFFECT.WITHHOLD,
         environment: 'production',
       }),
     ]);
@@ -98,7 +98,7 @@ describe('memnox drift', () => {
 
   it('flags a default mode that cannot stop anything', async () => {
     const runtime = aligned().on('GET', ENFORCEMENT_PATH, {
-      default: ENFORCEMENT_MODE.MONITOR,
+      default: ENFORCEMENT_MODE.OBSERVE,
     });
 
     const out = await run(['drift'], runtime);
@@ -187,7 +187,7 @@ describe('memnox drift', () => {
 
   it('emits the findings as JSON when asked', async () => {
     const runtime = aligned().on('GET', ENFORCEMENT_PATH, {
-      default: ENFORCEMENT_MODE.MONITOR,
+      default: ENFORCEMENT_MODE.OBSERVE,
     });
 
     const out = await run(['drift', '--json'], runtime);

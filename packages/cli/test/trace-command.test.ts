@@ -24,7 +24,7 @@ const decision = (over: Record<string, unknown> = {}): Record<string, unknown> =
   action: 'database.delete',
   target: 'production.users',
   environment: 'production',
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   riskLevel: RISK_LEVEL.CRITICAL,
   matchedPolicies: ['production-database-protection'],
   policyVersion: '8f21cdea41b2',
@@ -95,19 +95,19 @@ describe('memnox trace', () => {
     expect(out.text).toContain('· tamper evidence   this event is not chained');
   });
 
-  it('names the mode that withheld a verdict', async () => {
+  it('names the mode that softened a verdict', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [
       decision({
         effect: DECISION_EFFECT.ALLOW,
-        withheldEffect: DECISION_EFFECT.BLOCK,
-        enforcementMode: ENFORCEMENT_MODE.MONITOR,
+        shadowEffect: DECISION_EFFECT.WITHHOLD,
+        enforcementMode: ENFORCEMENT_MODE.OBSERVE,
       }),
     ]);
 
     const out = await run(['trace', 'evt_1'], runtime);
 
     expect(out.text).toContain(
-      'withheld: the rules decided block, but production is in monitor mode',
+      'shadow: enforce would have said withhold, but production is in observe mode',
     );
   });
 

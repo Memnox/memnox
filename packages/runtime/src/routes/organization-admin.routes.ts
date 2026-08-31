@@ -223,6 +223,6 @@ function readDelegateInput(body: unknown): DelegateInput | null {
     /* Only two values are meaningful and allow is not one of them: a ceiling
        that widens on being exceeded is not a ceiling. Anything else falls back
        to asking a person. */
-    ...(overLimit === 'block' ? { overLimit: 'block' as const } : {}),
+    ...(overLimit === 'withhold' ? { overLimit: 'withhold' as const } : {}),
   };
 }

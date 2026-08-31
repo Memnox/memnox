@@ -91,7 +91,7 @@ export class RuntimeAuthorizer implements CallAuthorizer {
         };
       }
       return {
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         reason:
           'Memnox runtime unreachable — failing closed. Start it or set MEMNOX_MCP_FAIL_OPEN=true.',
       };

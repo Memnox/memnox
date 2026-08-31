@@ -86,7 +86,7 @@ Memnox shows up on both sides, which is the confusing part:
 | **quorum** | Requiring more than one approver (`minApprovals: 2`) — the two-person rule. |
 | **break-glass** | An admin forcing through a pending approval (`memnox approvals override`). Requires a written reason and is permanently audited as critical. Some actions refuse it entirely. |
 | **capabilities** | An optional allowlist of action patterns for one agent. Anything outside is refused before policy even runs. |
-| **trust score** | A per-agent number out of 100. Each blocked action costs 2 points; 50 clean actions earn 1 back. With `--trust-guard`, a low score escalates risky actions to approval. |
+| **trust score** | A per-agent number out of 100. Each withheld action costs 2 points; 50 clean actions earn 1 back. With `--trust-guard`, a low score escalates risky actions to approval. |
 | **policy pack** | A prebuilt bundle of rules for a common concern — `production-safety`, `payments`. `memnox policy packs` lists them. |
 | **project scope** | If a policy file sets `project:`, requests must name that project or the rules do not apply. A common cause of "my rule never matches". |
 | **control plane** | An optional shared server several runtimes report to. Not needed for solo use. |

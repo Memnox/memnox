@@ -55,10 +55,10 @@ describe('memnox validate', () => {
 
     expect(out.text).toContain('is valid — 4 policy(ies)');
     expect(out.text).toContain(
-      `- production-database-protection → ${DECISION_EFFECT.BLOCK}`,
+      `- production-database-protection → ${DECISION_EFFECT.WITHHOLD}`,
     );
     expect(out.text).toContain(
-      `- production-deploy-approval → ${DECISION_EFFECT.REQUIRE_APPROVAL}`,
+      `- production-deploy-approval → ${DECISION_EFFECT.ESCALATE}`,
     );
   });
 

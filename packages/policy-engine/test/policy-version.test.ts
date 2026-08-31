@@ -6,13 +6,13 @@ import type { Policy } from '../src/policy';
 const FIRST: Policy = {
   name: 'a-policy',
   match: { actions: ['database.delete'] },
-  decision: { effect: DECISION_EFFECT.BLOCK },
+  decision: { effect: DECISION_EFFECT.WITHHOLD },
 };
 
 const SECOND: Policy = {
   name: 'b-policy',
   match: { actions: ['deploy.service'] },
-  decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL },
+  decision: { effect: DECISION_EFFECT.ESCALATE },
 };
 
 describe('versionPolicySet', () => {
@@ -25,7 +25,7 @@ describe('versionPolicySet', () => {
   it('changes when any rule changes', () => {
     const loosened: Policy = {
       ...FIRST,
-      decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL },
+      decision: { effect: DECISION_EFFECT.ESCALATE },
     };
     expect(versionPolicySet([FIRST]).version).not.toBe(
       versionPolicySet([loosened]).version,

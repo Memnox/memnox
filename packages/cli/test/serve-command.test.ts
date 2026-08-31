@@ -191,16 +191,16 @@ describe('memnox serve — option mapping', () => {
   it('accepts block as a default effect', async () => {
     const { launch, launched } = launcher();
 
-    await runServe(['--default-effect', DECISION_EFFECT.BLOCK], launch);
+    await runServe(['--default-effect', DECISION_EFFECT.WITHHOLD], launch);
 
-    expect(launched.overrides.defaultEffect).toBe(DECISION_EFFECT.BLOCK);
+    expect(launched.overrides.defaultEffect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('rejects a default effect that is not allow or block', async () => {
     const { launch } = launcher();
 
     await expect(
-      runServe(['--default-effect', DECISION_EFFECT.REQUIRE_APPROVAL], launch),
+      runServe(['--default-effect', DECISION_EFFECT.ESCALATE], launch),
     ).rejects.toThrow(/--default-effect must be one of/);
   });
 });

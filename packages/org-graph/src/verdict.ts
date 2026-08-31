@@ -16,8 +16,8 @@ export interface VerdictFacts {
 
 /** One gate verdict in the organization's vocabulary; refusal wins, nothing widens a deny. */
 export function decideFrom(facts: VerdictFacts): OrgDecision {
-  if (facts.effect === DECISION_EFFECT.BLOCK) return ORG_DECISION.DENY;
-  if (facts.effect === DECISION_EFFECT.REQUIRE_APPROVAL) {
+  if (facts.effect === DECISION_EFFECT.WITHHOLD) return ORG_DECISION.DENY;
+  if (facts.effect === DECISION_EFFECT.ESCALATE) {
     return facts.hasApprovers ? ORG_DECISION.ESCALATE : ORG_DECISION.ASK;
   }
   // Past here the gate allowed it, so what remains is whether this caller is
@@ -30,9 +30,4 @@ export function decideFrom(facts: VerdictFacts): OrgDecision {
 /** Whether this answer means "stop and involve somebody". */
 export function isHeld(decision: OrgDecision): boolean {
   return HELD_DECISIONS.includes(decision);
-}
-
-/** A redacted allow is still an allow — masked, not refused. */
-export function isRedacted(effect: DecisionEffect): boolean {
-  return effect === DECISION_EFFECT.REDACT;
 }

@@ -43,8 +43,8 @@ const ALLOW_DECISION = {
 
 const BLOCK_DECISION = {
   ...ALLOW_DECISION,
-  effect: 'block',
-  reason: 'policy: production writes are blocked',
+  effect: 'withhold',
+  reason: 'policy: production writes are withheld',
 };
 
 function startRuntime(decision: Record<string, unknown>): Promise<FakeRuntime> {
@@ -209,7 +209,7 @@ describe('McpGateway gates a call against the runtime', () => {
     });
   });
 
-  it('never reaches the server when policy blocks the call', async () => {
+  it('never reaches the server when policy withholds the call', async () => {
     const { url, upstream } = await startGoverned(BLOCK_DECISION);
 
     const response = await post(url, TOOL_CALL, authorized);

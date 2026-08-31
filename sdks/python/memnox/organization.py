@@ -89,7 +89,6 @@ class Answer:
     #: How much bearing evidence was withheld. Non-zero means ask a person.
     withheld: int = 0
     approval_id: str | None = None
-    redacted: bool = False
 
 
 @dataclass(frozen=True)
@@ -304,7 +303,6 @@ def _answer(payload: Mapping[str, Any]) -> Answer:
         missing_context=tuple(_strings(payload.get("missingContext"))),
         withheld=int(payload.get("withheld") or 0),
         approval_id=_optional_str(payload.get("approvalId")),
-        redacted=payload.get("redacted") is True,
     )
 
 

@@ -40,9 +40,8 @@ const UNKNOWN_AGENT = 'simulated-agent';
 
 const emptyTotals = (): Record<DecisionEffect, number> => ({
   [DECISION_EFFECT.ALLOW]: 0,
-  [DECISION_EFFECT.REDACT]: 0,
-  [DECISION_EFFECT.BLOCK]: 0,
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 0,
+  [DECISION_EFFECT.WITHHOLD]: 0,
+  [DECISION_EFFECT.ESCALATE]: 0,
 });
 
 /** Evaluates cases against a rule set without touching identity, advisors, or audit. */
@@ -71,7 +70,7 @@ export function simulate(
   });
 }
 
-/** Against real history, "would this have blocked anything?" stops being hypothetical. */
+/** Against real history, "would this have withheld anything?" stops being hypothetical. */
 export function comparePolicySets(
   baseline: PolicyEngine,
   candidate: PolicyEngine,

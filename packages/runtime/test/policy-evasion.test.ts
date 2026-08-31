@@ -12,7 +12,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: no deletes in prod
 `;
 
@@ -52,8 +52,8 @@ describe('dressing an action up to miss the rule that names it', () => {
     return (response.json() as { effect: string }).effect;
   }
 
-  it('blocks the action named exactly', async () => {
-    expect(await effectOf('database.delete', 'production')).toBe('block');
+  it('withholds the action named exactly', async () => {
+    expect(await effectOf('database.delete', 'production')).toBe('withhold');
   });
 
   it.each([
@@ -64,8 +64,8 @@ describe('dressing an action up to miss the rule that names it', () => {
     ['a zero-width space', 'database.delete​', 'production'],
     ['padding on the environment', 'database.delete', 'production '],
     ['a newline on the environment', 'database.delete', '\nproduction'],
-  ])('blocks it just the same with %s', async (_name, action, environment) => {
-    expect(await effectOf(action, environment)).toBe('block');
+  ])('withholds it just the same with %s', async (_name, action, environment) => {
+    expect(await effectOf(action, environment)).toBe('withhold');
   });
 
   /** The audit trail has to show the request that was actually ruled on. */
@@ -73,8 +73,8 @@ describe('dressing an action up to miss the rule that names it', () => {
     await effectOf('database.delete ', 'production');
 
     const events = await server.gateway.queryAuditEvents({});
-    const blocked = events.filter((event) => event.action.includes('delete'));
-    expect(blocked).toHaveLength(1);
-    expect(blocked[0]?.action).toBe('database.delete');
+    const withheld = events.filter((event) => event.action.includes('delete'));
+    expect(withheld).toHaveLength(1);
+    expect(withheld[0]?.action).toBe('database.delete');
   });
 });

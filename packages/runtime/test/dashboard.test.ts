@@ -10,7 +10,7 @@ import type { RuntimeStatus } from '../src/runtime-status';
 const ADMIN = ['admin', 'token', 'value'].join('-');
 
 const STATUS: RuntimeStatus = {
-  enforcement: ENFORCEMENT_MODE.MONITOR,
+  enforcement: ENFORCEMENT_MODE.OBSERVE,
   policyCount: 10,
   policyVersion: 'e852ac2d63d0',
   pendingApprovals: 1,
@@ -110,7 +110,7 @@ describe('rendering the page', () => {
         recent: [
           {
             occurredAt: '2026-08-11T05:16:00Z',
-            effect: 'block',
+            effect: 'withhold',
             agentName: 'local-editor',
             action: 'file.write',
             target: '<img src=x onerror=alert(1)>',

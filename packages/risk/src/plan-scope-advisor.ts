@@ -30,7 +30,7 @@ export class PlanScopeAdvisor implements ActionAdvisor {
     return [
       {
         source: this.name,
-        escalateTo: DECISION_EFFECT.BLOCK,
+        escalateTo: DECISION_EFFECT.WITHHOLD,
         reason: `${verdict.reason} (step "${step}")`,
         signals: [RISK_SIGNAL_OUT_OF_PLAN_SCOPE],
       },

@@ -95,7 +95,7 @@ Other reasons a rule can miss:
 
 ```
 Decision : ALLOW
-Reason   : observed only: Recursive force-delete is blocked for agents.
+Reason   : observed only: Recursive force-delete is withheld for agents.
 Withheld : block (this environment is only being monitored)
 ```
 
@@ -106,23 +106,23 @@ recorded but not applied. That is what a first run does deliberately.
 memnox setup --enforce
 ```
 
-Monitor mode never rewrites the verdict — an audit record claiming it blocked
+Monitor mode never rewrites the verdict — an audit record claiming it withheld
 when it did not would be worse than no record.
 
 ---
 
-## A human approved it and the agent is still blocked
+## A human approved it and the agent is still withheld
 
 Retry the action. The grant is claimed by **fingerprint**, so the agent does not
 need to present an approval id.
 
-If it is still blocked, check in this order:
+If it is still withheld, check in this order:
 
 ```bash
 memnox approvals status <id>
 ```
 
-- **`Status: approved` but blocked again** — the grant was already spent. Grants
+- **`Status: approved` but withheld again** — the grant was already spent. Grants
   are single-use: one grant authorizes one action. Approve again.
 - **`Granted: 1/2`** — the policy set `minApprovals: 2`. A second, different
   person must approve; one person counts once.
@@ -141,7 +141,7 @@ memnox approvals status <id>
 | Irreversible action from a tainted session | `…is irreversible and the context contains N untrusted source(s) — no approval can unblock it` |
 
 The last one is by design: `project.delete` and `database.drop` from a session
-that saw untrusted content are blocked outright, and break-glass is refused with
+that saw untrusted content are withheld outright, and break-glass is refused with
 403 and audited as critical.
 
 ---

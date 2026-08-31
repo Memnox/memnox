@@ -27,9 +27,9 @@ private struct FakeTransport: Transport {
 
 final class MemnoxClientTests: XCTestCase {
     private let allowed = #"{"eventId":"e1","effect":"allow","reason":"no policy matched"}"#
-    private let blocked = #"{"eventId":"e2","effect":"block","reason":"no prod deletes","matchedPolicies":[{"name":"prod-guard","effect":"block"}]}"#
-    private let held = #"{"eventId":"e3","effect":"require_approval","reason":"needs a human","approvalId":"a1"}"#
-    private let withheld = #"{"eventId":"e4","effect":"allow","reason":"observed only","withheldEffect":"block"}"#
+    private let withheld = #"{"eventId":"e2","effect":"withhold","reason":"no prod deletes","matchedPolicies":[{"name":"prod-guard","effect":"withhold"}]}"#
+    private let held = #"{"eventId":"e3","effect":"escalate","reason":"needs a human","approvalId":"a1"}"#
+    private let shadowed = #"{"eventId":"e4","effect":"allow","reason":"observed only","shadowEffect":"withhold"}"#
 
     private func client(_ status: Int, _ body: String, recorder: Recorder = Recorder())
         -> MemnoxClient
@@ -47,24 +47,24 @@ final class MemnoxClientTests: XCTestCase {
         XCTAssertTrue(decision.allowed)
     }
 
-    func testCheckReturnsABlockRatherThanThrowing() async throws {
-        let decision = try await client(200, blocked).check(ActionRequest("database.delete"))
+    func testCheckReturnsAWithholdRatherThanThrowing() async throws {
+        let decision = try await client(200, withheld).check(ActionRequest("database.delete"))
 
-        XCTAssertEqual(decision.effect, .block)
+        XCTAssertEqual(decision.effect, .withhold)
         XCTAssertFalse(decision.allowed)
         XCTAssertEqual(decision.matchedPolicies.first?.name, "prod-guard")
     }
 
     // guardAction is the call that cannot be ignored by accident.
-    func testGuardThrowsOnABlock() async {
+    func testGuardThrowsOnAWithhold() async {
         do {
-            _ = try await client(200, blocked).guardAction(ActionRequest("database.delete"))
-            XCTFail("expected a block")
-        } catch let MemnoxError.blocked(reason, eventId) {
+            _ = try await client(200, withheld).guardAction(ActionRequest("database.delete"))
+            XCTFail("expected a withhold")
+        } catch let MemnoxError.withheld(reason, eventId) {
             XCTAssertEqual(reason, "no prod deletes")
             XCTAssertEqual(eventId, "e2")
         } catch {
-            XCTFail("expected .blocked, got \(error)")
+            XCTFail("expected .withheld, got \(error)")
         }
     }
 
@@ -85,13 +85,13 @@ final class MemnoxClientTests: XCTestCase {
         XCTAssertTrue(decision.allowed)
     }
 
-    // Monitor mode: the action ran, but the caller can still see it would not have.
-    func testReportsWhatMonitorModeWithheld() async throws {
-        let decision = try await client(200, withheld).check(ActionRequest("database.delete"))
+    // Observe mode: the action ran, but the caller can still see it would not have.
+    func testReportsWhatObserveModeSoftened() async throws {
+        let decision = try await client(200, shadowed).check(ActionRequest("database.delete"))
 
         XCTAssertTrue(decision.allowed)
         XCTAssertTrue(decision.wouldHaveStopped)
-        XCTAssertEqual(decision.withheldEffect, .block)
+        XCTAssertEqual(decision.shadowEffect, .withhold)
     }
 
     func testAnHttpErrorIsNotADecision() async {

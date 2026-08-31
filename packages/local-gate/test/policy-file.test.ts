@@ -50,7 +50,7 @@ describe('policy sources', () => {
     const web = join(dir, 'web.yaml');
     const api = join(dir, 'api.yaml');
     await writeFile(web, doc('acme', 'web-rule', 'allow'), 'utf8');
-    await writeFile(api, doc('acme', 'api-rule', 'block'), 'utf8');
+    await writeFile(api, doc('acme', 'api-rule', 'withhold'), 'utf8');
 
     const policies = await loadPolicyFiles([web, api]);
 

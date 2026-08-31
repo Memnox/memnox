@@ -9,10 +9,10 @@ import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from typing import TypeVar
 
-from .errors import ActionBlockedError, ApprovalRequiredError, MemnoxApiError
+from .errors import ActionWithheldError, EscalationRequiredError, MemnoxApiError
 from .models import (
-    EFFECT_BLOCK,
-    EFFECT_REQUIRE_APPROVAL,
+    EFFECT_WITHHOLD,
+    EFFECT_ESCALATE,
     ActionEvent,
     AgentRegistration,
     AgentSummary,
@@ -134,7 +134,7 @@ class MemnoxClient:
         metadata: Mapping[str, object] | None = None,
         taint: TaintAssessment | None = None,
     ) -> Decision:
-        """Ask the runtime for a decision. Never raises on a block - inspect the effect."""
+        """Ask the runtime for a decision. Never raises on a withhold - inspect the effect."""
         body: dict[str, object] = {"action": action}
         if target is not None:
             body["target"] = target
@@ -175,10 +175,10 @@ class MemnoxClient:
             metadata=metadata,
             taint=taint,
         )
-        if decision.effect == EFFECT_BLOCK:
-            raise ActionBlockedError(decision)
-        if decision.effect == EFFECT_REQUIRE_APPROVAL:
-            raise ApprovalRequiredError(decision)
+        if decision.effect == EFFECT_WITHHOLD:
+            raise ActionWithheldError(decision)
+        if decision.effect == EFFECT_ESCALATE:
+            raise EscalationRequiredError(decision)
         return execute()
 
     # --- Runtime API helpers ----------------------------------------------

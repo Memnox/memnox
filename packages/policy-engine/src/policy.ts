@@ -25,10 +25,10 @@ export interface PolicyMatch {
   windows?: TimeWindow[];
 }
 
-/** Per-rule mode. A monitored rule matches and is recorded, but never decides. */
+/** Per-rule mode. A observed rule matches and is recorded, but never decides. */
 export const POLICY_MODE = {
   ENFORCE: 'enforce',
-  MONITOR: 'monitor',
+  MONITOR: 'observe',
 } as const;
 
 export type PolicyMode = (typeof POLICY_MODE)[keyof typeof POLICY_MODE];
@@ -41,7 +41,7 @@ export interface PolicyDecision {
   approvers?: string[];
   /** Distinct people required to approve; defaults to one. */
   minApprovals?: number;
-  /** "monitor" records the verdict as withheld and lets the action proceed. */
+  /** "observe" records the verdict as withheld and lets the action proceed. */
   mode?: PolicyMode;
   /** Counted by the gateway: a ceiling needs state and a clock, which the engine lacks. */
   rateLimit?: RateLimitSpec;

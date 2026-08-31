@@ -9,7 +9,7 @@ function engine(...policies: Policy[]): PolicyEngine {
 }
 
 const rule = (over: Partial<Policy> & Pick<Policy, 'name' | 'match'>): Policy => ({
-  decision: { effect: DECISION_EFFECT.BLOCK, reason: over.name },
+  decision: { effect: DECISION_EFFECT.WITHHOLD, reason: over.name },
   ...over,
 });
 
@@ -25,7 +25,7 @@ describe('argument matching', () => {
       AGENT,
     );
 
-    expect(result.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(result.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('leaves the same tool alone when the argument does not match', () => {
@@ -67,7 +67,7 @@ describe('argument matching', () => {
       AGENT,
     );
 
-    expect(inScope.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(inScope.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(elsewhere.effect).toBe(DECISION_EFFECT.ALLOW);
   });
 
@@ -82,7 +82,7 @@ describe('argument matching', () => {
         { action: 'file.write', arguments: { file_path: 'services/api/.env' } },
         AGENT,
       ).effect,
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 });
 
@@ -100,7 +100,7 @@ describe('working directory and branch matching', () => {
         { action: 'file.write', workingDirectory: '/srv/payments/api' },
         AGENT,
       ).effect,
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
     expect(
       engineUnderTest.evaluate(
         { action: 'file.write', workingDirectory: '/srv/marketing' },
@@ -114,14 +114,14 @@ describe('working directory and branch matching', () => {
       rule({
         name: 'release-branches-need-a-human',
         match: { actions: ['shell.execute'], branches: ['main', 'release/*'] },
-        decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+        decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
       }),
     );
 
     expect(
       engineUnderTest.evaluate({ action: 'shell.execute', branch: 'release/24.3' }, AGENT)
         .effect,
-    ).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    ).toBe(DECISION_EFFECT.ESCALATE);
     expect(
       engineUnderTest.evaluate({ action: 'shell.execute', branch: 'spike/idea' }, AGENT)
         .effect,
@@ -130,44 +130,44 @@ describe('working directory and branch matching', () => {
 });
 
 describe('per-rule monitor mode', () => {
-  const monitored = rule({
+  const observed = rule({
     name: 'candidate-rule',
     match: { actions: ['deploy.*'] },
-    decision: { effect: DECISION_EFFECT.BLOCK, mode: 'monitor', reason: 'candidate' },
+    decision: { effect: DECISION_EFFECT.WITHHOLD, mode: 'observe', reason: 'candidate' },
   });
 
   it('records what it would have done without applying it', () => {
-    const result = engine(monitored).evaluate({ action: 'deploy.service' }, AGENT);
+    const result = engine(observed).evaluate({ action: 'deploy.service' }, AGENT);
 
     expect(result.effect).toBe(DECISION_EFFECT.ALLOW);
-    expect(result.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
-    expect(result.matchedPolicies[0]?.monitored).toBe(true);
+    expect(result.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(result.matchedPolicies[0]?.observed).toBe(true);
   });
 
   it('never softens what an enforcing rule decided', () => {
     const result = engine(
-      monitored,
+      observed,
       rule({
         name: 'enforced-approval',
         match: { actions: ['deploy.*'] },
-        decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+        decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
       }),
     ).evaluate({ action: 'deploy.service' }, AGENT);
 
-    expect(result.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
-    expect(result.withheldEffect).toBe(DECISION_EFFECT.BLOCK);
+    expect(result.effect).toBe(DECISION_EFFECT.ESCALATE);
+    expect(result.shadowEffect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('reports no withheld effect when monitoring is no stricter than the verdict', () => {
     const result = engine(
       rule({
-        name: 'monitored-allow',
+        name: 'observed-allow',
         match: { actions: ['deploy.*'] },
-        decision: { effect: DECISION_EFFECT.ALLOW, mode: 'monitor' },
+        decision: { effect: DECISION_EFFECT.ALLOW, mode: 'observe' },
       }),
     ).evaluate({ action: 'deploy.service' }, AGENT);
 
-    expect(result.withheldEffect).toBeUndefined();
+    expect(result.shadowEffect).toBeUndefined();
   });
 });
 
@@ -198,15 +198,15 @@ describe('redact as an effect', () => {
       rule({
         name: 'mask-it',
         match: { actions: ['mcp.*'] },
-        decision: { effect: DECISION_EFFECT.REDACT },
+        decision: { effect: DECISION_EFFECT.ESCALATE },
       }),
       rule({
         name: 'ask-a-human',
         match: { actions: ['mcp.*'] },
-        decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+        decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
       }),
     ).evaluate({ action: 'mcp.send_message' }, AGENT);
 
-    expect(result.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(result.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 });

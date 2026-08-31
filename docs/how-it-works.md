@@ -8,7 +8,7 @@ Every call takes the same five steps, in the same order, with no LLM and no netw
 Identity → Policy → Advisors → Approval → Audit
 ```
 
-1. **Identity.** The agent authenticates with its token, or optionally with an mTLS client certificate whose subject CN is the agent name (`--tls-cert`, `--tls-key`, `--tls-ca`). Unknown tokens are blocked and audited as critical, because identity fails closed. Suspended agents are blocked. An agent registered with `capabilities` (wildcard action patterns) is blocked for any action outside them, before policy even runs.
+1. **Identity.** The agent authenticates with its token, or optionally with an mTLS client certificate whose subject CN is the agent name (`--tls-cert`, `--tls-key`, `--tls-ca`). Unknown tokens are withheld and audited as critical, because identity fails closed. Suspended agents are withheld. An agent registered with `capabilities` (wildcard action patterns) is withheld for any action outside them, before policy even runs.
 
 2. **Policy.** Every matching policy is collected and the most restrictive effect wins. When nothing matches, the configured default effect applies. That default is `allow`, so onboarding can start in monitor-first mode; run with `--default-effect block` for strict mode. See [writing policies](policies.md).
 
@@ -64,7 +64,7 @@ Postconditions that fail trigger the rollback, and the result is reported to `PO
 
 A caller reports where an agent's context came from through `taint` on `/v1/actions/check`. Classification is deterministic and actor-aware rather than only source-type-aware. `github_file`, `github_symbol`, `github_line_chunk`, and `extracted_decision` are ground truth and never tainted. A GitHub issue or comment from an `OWNER`, `MEMBER`, or `COLLABORATOR` is trusted, while the same issue from `NONE` is not. A Slack message is trusted only from a workspace member, and everything else falls back to a source-authority threshold. `_enriched` derivatives inherit their base classification, so an LLM rewrite cannot launder taint.
 
-Taint attaches to the **session** rather than to strings, and merges monotonically, so once tainted a session stays tainted for the store's TTL. Privileged actions from a tainted session need a human, covering `file.write`, `shell.execute`, `deploy.*`, `database.*`, `mcp.*`, `data.export`, and `*.delete`. `project.delete` and `database.drop` are non-overridable: they are blocked outright and no approval, routine or break-glass, lifts the block.
+Taint attaches to the **session** rather than to strings, and merges monotonically, so once tainted a session stays tainted for the store's TTL. Privileged actions from a tainted session need a human, covering `file.write`, `shell.execute`, `deploy.*`, `database.*`, `mcp.*`, `data.export`, and `*.delete`. `project.delete` and `database.drop` are non-overridable: they are withheld outright and no approval, routine or break-glass, lifts the block.
 
 Provenance is fail-closed, which is the one exception to "advisor failure means no escalation". If the session taint store cannot be read, the session is treated as tainted rather than assumed clean.
 

@@ -137,7 +137,7 @@ export function createPolicyUiHandler(deps: PolicyUiDeps): PolicyUiHandler {
     filePath: deps.filePath,
     sessionToken: deps.sessionToken,
     effects: EFFECTS,
-    approvalEffect: DECISION_EFFECT.REQUIRE_APPROVAL,
+    approvalEffect: DECISION_EFFECT.ESCALATE,
     modes: Object.values(POLICY_MODE),
     defaultMode: DEFAULT_POLICY_MODE,
     packs: POLICY_PACKS.map((pack) => ({

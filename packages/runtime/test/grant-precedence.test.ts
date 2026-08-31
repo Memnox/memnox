@@ -22,12 +22,12 @@ const POLICIES: Policy[] = [
   {
     name: 'drops-need-approval',
     match: { actions: ['database.drop'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['dba'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['dba'] },
   },
   {
     name: 'deletes-need-approval',
     match: { actions: ['project.delete'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
   },
 ];
 
@@ -108,7 +108,7 @@ describe('what outranks a granted approval', () => {
 
     const decision = await gateway.authorize(token, request);
 
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.CAPABILITY);
     // Never reached the claim path, so the human's grant is still theirs to spend.
     expect((await stored('apr_seeded'))?.consumedAt).toBeUndefined();
@@ -122,7 +122,7 @@ describe('what outranks a granted approval', () => {
 
     const decision = await gateway.authorize(token, request);
 
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.AGENT_SUSPENDED);
     expect((await stored('apr_seeded'))?.consumedAt).toBeUndefined();
   });
@@ -139,7 +139,7 @@ describe('what outranks a granted approval', () => {
 
     const decision = await gateway.authorize(token, request);
 
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     // The advisory's own words: it escalated to block before any approval was
     // consulted, which is why the reason is not the approval-veto phrasing.
     expect(decision.reason).toContain('no approval can unblock it');
@@ -158,7 +158,7 @@ describe('what outranks a granted approval', () => {
 
     const decision = await gateway.authorize(token, request);
 
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toContain('no approval can unblock it');
   });
 
@@ -171,7 +171,7 @@ describe('what outranks a granted approval', () => {
       target: 'production_users',
     });
 
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(decision.approvalId).not.toBe('apr_seeded');
     expect((await stored('apr_seeded'))?.consumedAt).toBeUndefined();
   });
@@ -184,7 +184,7 @@ describe('what outranks a granted approval', () => {
 
     const decision = await gateway.authorize(other.token, request);
 
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect((await stored('apr_seeded'))?.consumedAt).toBeUndefined();
   });
 });

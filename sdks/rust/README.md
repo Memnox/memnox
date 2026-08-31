@@ -10,7 +10,7 @@ let client = Client::new("http://127.0.0.1:7466", "mnx_your_agent_token");
 // guard returns only when the action was allowed.
 match client.guard(ActionRequest::new("database.delete").environment("production")) {
     Ok(_) => run_the_delete(),
-    Err(MemnoxError::Blocked { reason, .. }) => eprintln!("refused: {reason}"),
+    Err(MemnoxError::Withheld { reason, .. }) => eprintln!("refused: {reason}"),
     Err(MemnoxError::ApprovalRequired { approval_id, .. }) => {
         eprintln!("waiting on approval {approval_id:?}")
     }

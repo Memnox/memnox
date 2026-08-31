@@ -10,7 +10,7 @@ const summary = (over: Record<string, unknown> = {}): Record<string, unknown> =>
   kind: AGENT_KIND.CLAUDE_CODE,
   status: AGENT_STATUS.ACTIVE,
   trustScore: 87,
-  stats: { allowed: 12, blocked: 3, approvalsRequested: 1 },
+  stats: { allowed: 12, withheld: 3, approvalsRequested: 1 },
   ...over,
 });
 
@@ -68,7 +68,7 @@ describe('memnox agents list', () => {
 
     expect(out.text).toContain('agt_1  claude-code');
     expect(out.text).toContain('trust 87/100');
-    expect(out.text).toContain('allowed 12, blocked 3');
+    expect(out.text).toContain('allowed 12, withheld 3');
   });
 
   it('says so plainly when no agents are registered', async () => {

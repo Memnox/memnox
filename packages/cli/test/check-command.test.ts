@@ -23,7 +23,7 @@ writeFileSync(
 );
 
 const decision = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   riskLevel: RISK_LEVEL.CRITICAL,
   reason: 'No AI-initiated destructive database operations in production',
   matchedPolicies: [{ name: 'production-database-protection' }],
@@ -49,7 +49,7 @@ describe('memnox check', () => {
       runtime,
     );
 
-    expect(out.text).toContain('Decision : BLOCK');
+    expect(out.text).toContain('Decision : WITHHOLD');
     expect(out.text).toContain(`Risk     : ${RISK_LEVEL.CRITICAL}`);
     expect(out.text).toContain('No AI-initiated destructive database operations');
     expect(out.text).toContain('Policies : production-database-protection');
@@ -97,7 +97,7 @@ describe('memnox check', () => {
       'POST',
       CHECK_PATH,
       decision({
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         approvalId: 'apr_42',
         matchedPolicies: [],
       }),
@@ -108,7 +108,7 @@ describe('memnox check', () => {
       runtime,
     );
 
-    expect(out.text).toContain('Decision : REQUIRE_APPROVAL');
+    expect(out.text).toContain('Decision : ESCALATE');
     expect(out.text).toContain('Approval : apr_42');
     expect(out.text).not.toContain('Policies :');
   });
@@ -157,7 +157,7 @@ describe('memnox check', () => {
     const runtime = new FakeRuntime().on(
       'POST',
       CHECK_PATH,
-      decision({ effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvalId: 'apr_7' }),
+      decision({ effect: DECISION_EFFECT.ESCALATE, approvalId: 'apr_7' }),
     );
 
     const { out } = await runCli(
@@ -230,11 +230,11 @@ describe('memnox check', () => {
     });
 
     it(`exits ${EXIT_REQUIRE_APPROVAL} when a human still has to decide`, async () => {
-      expect(await runFor(DECISION_EFFECT.REQUIRE_APPROVAL)).toBe(EXIT_REQUIRE_APPROVAL);
+      expect(await runFor(DECISION_EFFECT.ESCALATE)).toBe(EXIT_REQUIRE_APPROVAL);
     });
 
-    it(`exits ${EXIT_BLOCKED} when the action is blocked`, async () => {
-      expect(await runFor(DECISION_EFFECT.BLOCK)).toBe(EXIT_BLOCKED);
+    it(`exits ${EXIT_BLOCKED} when the action is withheld`, async () => {
+      expect(await runFor(DECISION_EFFECT.WITHHOLD)).toBe(EXIT_BLOCKED);
     });
   });
 });

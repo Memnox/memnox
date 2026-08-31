@@ -18,7 +18,7 @@ describe('writing one rule source', () => {
       '    match:',
       `      actions: ["${action}"]`,
       '    decision:',
-      '      effect: block',
+      '      effect: withhold',
       `      reason: ${name}`,
     ].join('\n');
 
@@ -73,12 +73,12 @@ describe('writing one rule source', () => {
           {
             name: 'mine',
             match: { actions: ['file.write'] },
-            decision: { effect: 'block' },
+            decision: { effect: 'withhold' },
           },
           {
             name: 'added',
             match: { actions: ['file.read'] },
-            decision: { effect: 'block' },
+            decision: { effect: 'withhold' },
           },
         ],
       },
@@ -105,7 +105,7 @@ describe('writing one rule source', () => {
           {
             name: 'mine',
             match: { actions: ['file.write'] },
-            decision: { effect: 'block' },
+            decision: { effect: 'withhold' },
           },
         ],
       },
@@ -117,7 +117,7 @@ describe('writing one rule source', () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { action: 'deploy.service', target: 'api' },
     });
-    expect(decision.json()).toMatchObject({ effect: 'block' });
+    expect(decision.json()).toMatchObject({ effect: 'withhold' });
   });
 
   it('names only its own file as editable', async () => {

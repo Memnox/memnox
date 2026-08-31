@@ -23,7 +23,7 @@ describe('resolving an approval', () => {
         '    match:',
         '      actions: ["payment.refund"]',
         '    decision:',
-        '      effect: require_approval',
+        '      effect: escalate',
         '      reason: Issuing a refund needs a human.',
         '      approvers: ["finance-team"]',
         '      minApprovals: 2',
@@ -75,7 +75,7 @@ describe('resolving an approval', () => {
 
     const partial = (await audit()).find((event) => event.reason.includes('priya'));
     expect(partial).toBeDefined();
-    expect(partial?.effect).toBe('require_approval');
+    expect(partial?.effect).toBe('escalate');
     expect(partial?.reason).toContain('1 of 2');
     expect(partial?.action).toBe('payment.refund');
   });
@@ -98,7 +98,7 @@ describe('resolving an approval', () => {
     await resolve(id, false, 'carlos');
 
     const denial = (await audit()).find((event) => event.reason.includes('carlos'));
-    expect(denial?.effect).toBe('block');
+    expect(denial?.effect).toBe('withhold');
     expect(denial?.reason).toBe('approval denied by carlos');
   });
 

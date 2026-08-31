@@ -15,14 +15,14 @@ policies:
       actions: ["llm.infer"]
       models: ["ft:*"]
     decision:
-      effect: block
+      effect: withhold
       reason: Fine-tuned variants are not approved
   - name: review-anthropic
     match:
       actions: ["llm.infer"]
       providers: ["anthropic"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["security-team"]
 `;
 
@@ -151,7 +151,7 @@ describe('BYOK inference proxy', () => {
     const body = response.json() as { approvalId?: string; effect: string };
 
     expect(response.statusCode).toBe(409);
-    expect(body.effect).toBe('require_approval');
+    expect(body.effect).toBe('escalate');
     expect(body.approvalId).toBeTruthy();
     expect(sent).toHaveLength(0);
   });

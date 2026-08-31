@@ -19,7 +19,7 @@ function decision(overrides: Partial<DecisionRecord>): DecisionRecord {
     owner: 'CTO',
     decidedAt: new Date().toISOString(),
     actions: ['database.migrate'],
-    enforcement: DECISION_ENFORCEMENT.BLOCK,
+    enforcement: DECISION_ENFORCEMENT.WITHHOLD,
     ...overrides,
   };
 }

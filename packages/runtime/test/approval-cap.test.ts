@@ -10,7 +10,7 @@ const POLICIES: Policy[] = [
   {
     name: 'hold-everything',
     match: { actions: ['review.*'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['lead'] },
   },
 ];
 
@@ -42,7 +42,7 @@ describe('approval ceiling', () => {
   it('holds up to the ceiling', async () => {
     for (let n = 0; n < CEILING; n += 1) {
       const decision = await ask(n);
-      expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+      expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
       expect(decision.approvalId).toBeTruthy();
     }
   });
@@ -52,7 +52,7 @@ describe('approval ceiling', () => {
     for (let n = 0; n < CEILING; n += 1) await ask(n);
 
     const overflow = await ask(99);
-    expect(overflow.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(overflow.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(overflow.approvalId).toBeUndefined();
     expect(overflow.reason).toContain('already pending');
   });
@@ -68,7 +68,7 @@ describe('approval ceiling', () => {
     for (let n = 0; n < CEILING; n += 1) await ask(n);
 
     const repeat = await ask(0);
-    expect(repeat.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(repeat.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(await pending()).toHaveLength(CEILING);
   });
 
@@ -78,7 +78,7 @@ describe('approval ceiling', () => {
     if (first === undefined) throw new Error('expected a pending approval');
     await approvalStore.save({ ...first, status: APPROVAL_STATUS.APPROVED });
 
-    expect((await ask(99)).effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect((await ask(99)).effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('counts per agent, so one noisy agent cannot starve another', async () => {
@@ -86,7 +86,7 @@ describe('approval ceiling', () => {
     const other = await gateway.registerAgent('cursor', AGENT_KIND.CURSOR);
 
     const decision = await gateway.authorize(other.token, { action: 'review.x' });
-    expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('leaves the ceiling generous when nobody configures one', async () => {
@@ -103,7 +103,7 @@ describe('approval ceiling', () => {
       const decision = await uncapped.authorize(agent.token, {
         action: `review.item${n}`,
       });
-      expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+      expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
     }
   });
 });

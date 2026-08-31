@@ -20,20 +20,20 @@ export function buildComplianceReport(
   const riskBreakdown: Record<string, number> = {};
   const blockedActions = new Map<string, number>();
   const policies = new Map<string, number>();
-  const agents = new Map<string, { actions: number; blocked: number }>();
+  const agents = new Map<string, { actions: number; withheld: number }>();
   const signals = new Map<string, number>();
   let allowed = 0;
-  let blocked = 0;
+  let withheld = 0;
   let approvalsRequired = 0;
 
   for (const event of events) {
     riskBreakdown[event.riskLevel] = (riskBreakdown[event.riskLevel] ?? 0) + 1;
     if (event.effect === DECISION_EFFECT.ALLOW) allowed += 1;
-    if (event.effect === DECISION_EFFECT.BLOCK) {
-      blocked += 1;
+    if (event.effect === DECISION_EFFECT.WITHHOLD) {
+      withheld += 1;
       blockedActions.set(event.action, (blockedActions.get(event.action) ?? 0) + 1);
     }
-    if (event.effect === DECISION_EFFECT.REQUIRE_APPROVAL) approvalsRequired += 1;
+    if (event.effect === DECISION_EFFECT.ESCALATE) approvalsRequired += 1;
 
     for (const policy of event.matchedPolicies) {
       policies.set(policy, (policies.get(policy) ?? 0) + 1);
@@ -41,16 +41,16 @@ export function buildComplianceReport(
     for (const signal of event.advisories) {
       signals.set(signal, (signals.get(signal) ?? 0) + 1);
     }
-    const agent = agents.get(event.agentName) ?? { actions: 0, blocked: 0 };
+    const agent = agents.get(event.agentName) ?? { actions: 0, withheld: 0 };
     agent.actions += 1;
-    if (event.effect === DECISION_EFFECT.BLOCK) agent.blocked += 1;
+    if (event.effect === DECISION_EFFECT.WITHHOLD) agent.withheld += 1;
     agents.set(event.agentName, agent);
   }
 
   return {
     generatedAt: now.toISOString(),
     period,
-    totals: { actions: events.length, allowed, blocked, approvalsRequired },
+    totals: { actions: events.length, allowed, withheld, approvalsRequired },
     riskBreakdown,
     topBlockedActions: topEntries(blockedActions).map(([action, count]) => ({
       action,
@@ -145,9 +145,9 @@ export function renderComplianceReportMarkdown(report: ComplianceReport): string
     '',
     '## Totals',
     '',
-    `| Actions | Allowed | Blocked | Approvals required |`,
+    `| Actions | Allowed | Withheld | Approvals required |`,
     `|---------|---------|---------|--------------------|`,
-    `| ${report.totals.actions} | ${report.totals.allowed} | ${report.totals.blocked} | ${report.totals.approvalsRequired} |`,
+    `| ${report.totals.actions} | ${report.totals.allowed} | ${report.totals.withheld} | ${report.totals.approvalsRequired} |`,
     '',
     '## Risk breakdown',
     '',
@@ -193,7 +193,7 @@ export function renderComplianceReportMarkdown(report: ComplianceReport): string
   }
 
   if (report.topBlockedActions.length > 0) {
-    lines.push('', '## Top blocked actions', '');
+    lines.push('', '## Top withheld actions', '');
     lines.push(
       ...report.topBlockedActions.map((entry) => `- ${entry.action}: ${entry.count}`),
     );
@@ -208,7 +208,8 @@ export function renderComplianceReportMarkdown(report: ComplianceReport): string
     lines.push('', '## Agent activity', '');
     lines.push(
       ...report.agentActivity.map(
-        (entry) => `- ${entry.agent}: ${entry.actions} actions, ${entry.blocked} blocked`,
+        (entry) =>
+          `- ${entry.agent}: ${entry.actions} actions, ${entry.withheld} withheld`,
       ),
     );
   }

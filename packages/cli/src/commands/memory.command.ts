@@ -27,11 +27,7 @@ export function registerMemoryCommand(program: Command, context: CliContext): vo
     )
     .option('--targets <patterns>', 'comma-separated target patterns')
     .option('--envs <patterns>', 'comma-separated environment patterns')
-    .option(
-      '--enforcement <effect>',
-      VALID_ENFORCEMENTS,
-      DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
-    )
+    .option('--enforcement <effect>', VALID_ENFORCEMENTS, DECISION_ENFORCEMENT.ESCALATE)
     .option(
       '--review-after <iso-date>',
       'flag the decision as due for review after this date',

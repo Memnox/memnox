@@ -69,7 +69,7 @@ own arguments, before it asks the runtime anything:
     actions: ["mcp.run_shell"]
     arguments:
       command: ["*rm -rf*"]
-  decision: { effect: block, reason: recursive delete is not an agent action }
+  decision: { effect: withhold, reason: recursive delete is not an agent action }
 ```
 
 The runtime is still asked, and the stricter of the two verdicts applies — but what it

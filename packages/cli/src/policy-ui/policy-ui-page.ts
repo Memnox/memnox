@@ -533,7 +533,7 @@ function renderList() {
       }, [
         el('span', { class: 'dot effect-' + policy.decision.effect }, []),
         el('span', { class: 'rule-name', text: policy.name || 'unnamed rule' }, []),
-        policy.decision.mode === 'monitor' ? el('span', { class: 'monitor', text: 'monitor' }, []) : null,
+        policy.decision.mode === 'observe' ? el('span', { class: 'observe', text: 'observe' }, []) : null,
       ]),
     ])));
 }

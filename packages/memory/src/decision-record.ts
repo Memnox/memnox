@@ -1,8 +1,8 @@
 export const DECISION_ENFORCEMENT = {
   /** Recorded in the advisory trail only. */
   WARN: 'warn',
-  REQUIRE_APPROVAL: 'require_approval',
-  BLOCK: 'block',
+  ESCALATE: 'escalate',
+  WITHHOLD: 'withhold',
 } as const;
 
 export type DecisionEnforcement =

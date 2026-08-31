@@ -15,14 +15,14 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
   - name: deploy-approval
     match:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 `;
 
@@ -90,7 +90,7 @@ describe('air-gapped operation', () => {
       sessionId: 's1',
     });
 
-    expect(response.json().effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(response.json().effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(attempted).toEqual([]);
   });
 
@@ -108,7 +108,7 @@ describe('air-gapped operation', () => {
       sessionId: 's1',
     });
 
-    expect(response.json().effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(response.json().effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(attempted).toEqual([]);
   });
 
@@ -119,7 +119,7 @@ describe('air-gapped operation', () => {
       sessionId: 's1',
     });
 
-    expect(response.json().effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(response.json().effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(attempted).toEqual([]);
   });
 
@@ -159,7 +159,7 @@ describe('air-gapped operation', () => {
       effects.add(response.json().effect);
     }
 
-    expect([...effects]).toEqual([DECISION_EFFECT.BLOCK]);
+    expect([...effects]).toEqual([DECISION_EFFECT.WITHHOLD]);
     expect(attempted).toEqual([]);
   });
 });

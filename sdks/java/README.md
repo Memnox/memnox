@@ -8,7 +8,7 @@ MemnoxClient client = new MemnoxClient("http://127.0.0.1:7466", "mnx_your_agent_
 try {
     client.guard(ActionRequest.of("database.delete").environment("production"));
     runTheDelete();
-} catch (MemnoxException.Blocked err) {
+} catch (MemnoxException.Withheld err) {
     log.warn("refused: {}", err.getMessage());
 } catch (MemnoxException.ApprovalRequired err) {
     log.info("waiting on {}", err.decision().orElseThrow().approvalId().orElse("?"));

@@ -15,7 +15,7 @@ import { detectStack } from '../stack-detection';
 import type { ServerLauncher } from './serve.command';
 
 /** A first run observes; a wrong rule must not wedge someone's agent on minute one. */
-const FIRST_RUN_ENFORCEMENT = 'monitor';
+const FIRST_RUN_ENFORCEMENT = 'observe';
 
 /** Safe because the first run observes: a firing guard is an audit line, not a block. */
 const LOCAL_GUARDS = {
@@ -155,9 +155,9 @@ export function registerSetupCommand(
           out.line(`${style.dim('Policies:')} ${options.file}`);
           out.line(
             enforcing
-              ? style.ok('Enforcing — blocking decisions take effect now.')
+              ? style.ok('Enforcing — withholding decisions take effect now.')
               : style.warn(
-                  'Observing only — decisions are recorded, nothing is blocked yet.',
+                  'Observing only — decisions are recorded, nothing is withheld yet.',
                 ),
           );
         }
@@ -207,7 +207,7 @@ export function registerSetupCommand(
         }
         out.note(style.dim('→ See what it decided:  memnox audit'));
         if (!joined && !enforcing) {
-          out.note(style.dim('→ Start blocking:       memnox setup --enforce'));
+          out.note(style.dim('→ Start withholding:       memnox setup --enforce'));
         }
         if (!joined) out.note(style.dim('→ Stop it:              memnox stop'));
       },
@@ -256,7 +256,7 @@ async function installMcp(
   return installedAny;
 }
 
-/** A token from an earlier runtime reported success, then blocked every action. */
+/** A token from an earlier runtime reported success, then withheld every action. */
 async function tokenIsKnown(
   context: CliContext,
   url: string,
@@ -290,7 +290,7 @@ async function ensureAgentToken(
   }
   if (stored.token !== undefined) {
     // A token minted against a previous runtime's identity store reports success
-    // here and then blocks every action as an unknown agent.
+    // here and then withholds every action as an unknown agent.
     context.out.note(
       'The stored agent token is not known to this runtime — registering again.',
     );

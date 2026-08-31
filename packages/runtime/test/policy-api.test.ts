@@ -14,7 +14,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 
@@ -74,7 +74,7 @@ describe('policy API', () => {
         payload: {
           version: 1,
           policies: [
-            { name: 'p', match: { actions: ['a'] }, decision: { effect: 'block' } },
+            { name: 'p', match: { actions: ['a'] }, decision: { effect: 'withhold' } },
           ],
         },
       });

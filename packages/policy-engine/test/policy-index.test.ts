@@ -8,7 +8,7 @@ const AGENT = { agentName: 'claude-code' };
 const rule = (name: string, actions: string[]): Policy => ({
   name,
   match: { actions },
-  decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL },
+  decision: { effect: DECISION_EFFECT.ESCALATE },
 });
 
 /** What a scan of every policy would match — the index must agree exactly. */

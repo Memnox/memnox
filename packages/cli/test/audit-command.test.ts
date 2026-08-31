@@ -6,7 +6,7 @@ const AUDIT_PATH = '/v1/audit';
 
 const event = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   occurredAt: '2026-07-27T10:00:00.000Z',
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   agentName: 'claude-code',
   action: 'database.delete',
   target: 'users',
@@ -22,7 +22,7 @@ describe('memnox audit', () => {
     const { out } = await runCli(['audit'], runtime);
 
     expect(out.text).toContain('2026-07-27T10:00:00.000Z');
-    expect(out.text).toContain('BLOCK');
+    expect(out.text).toContain('WITHHOLD');
     expect(out.text).toContain('claude-code: database.delete users [production]');
     expect(out.text).toContain('destructive operation');
   });

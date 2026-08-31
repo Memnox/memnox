@@ -13,13 +13,13 @@ const SEARCH_PATH = '/v1/memory/decisions/search';
 const AUDIT_PATH = '/v1/audit';
 
 const assessment = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   riskLevel: RISK_LEVEL.CRITICAL,
   reason: 'No AI-initiated destructive database operations in production.',
   matchedPolicies: [
     {
       name: 'production-database-protection',
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
       reason: 'Production data is not agent-deletable.',
       approvers: ['platform-lead'],
     },
@@ -50,11 +50,11 @@ const auditEvent = (over: Record<string, unknown> = {}): Record<string, unknown>
   agentId: 'agt_1',
   agentName: 'local-editor',
   action: 'database.delete',
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   riskLevel: RISK_LEVEL.CRITICAL,
   matchedPolicies: ['production-database-protection'],
   advisories: [],
-  reason: 'blocked',
+  reason: 'withheld',
   ...over,
 });
 
@@ -140,7 +140,7 @@ describe('memnox describe', () => {
         owner: 'platform',
         actions: ['database.delete'],
         decidedAt: '2026-01-04T00:00:00.000Z',
-        enforcement: 'block',
+        enforcement: 'withhold',
       },
     ]);
 
@@ -158,7 +158,7 @@ describe('memnox describe', () => {
     const runtime = governed().on('GET', AUDIT_PATH, [
       auditEvent({
         id: 'evt_2',
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         occurredAt: '2026-08-25T11:00:00.000Z',
         agentName: 'ci-runner',
       }),
@@ -172,7 +172,7 @@ describe('memnox describe', () => {
     );
 
     expect(out.text).toContain(
-      '2 of the last 3 audited actions — 1 blocked, 1 held, 0 allowed',
+      '2 of the last 3 audited actions — 1 withheld, 1 held, 0 allowed',
     );
     expect(out.text).toContain('last 2026-08-25T11:00:00.000Z by ci-runner');
   });

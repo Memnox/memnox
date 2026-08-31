@@ -5,7 +5,7 @@ export const TOKEN_BUDGET_WINDOW_EVENTS = 1_000;
 /** Burst detection: this many actions inside BURST_WINDOW_MS raises a signal. */
 export const BURST_THRESHOLD_ACTIONS = 30;
 export const BURST_WINDOW_MS = 60_000;
-/** Blocked attempts inside the window before repeated probing escalates. */
+/** Withheld attempts inside the window before repeated probing escalates. */
 export const REPEATED_BLOCK_THRESHOLD = 3;
 export const REPEATED_BLOCK_WINDOW_MS = 10 * 60_000;
 /** Trust score below which high/critical-risk actions need a human. */
@@ -16,7 +16,7 @@ export const UNREPORTED_OUTCOME_THRESHOLD = 5;
 export const RISK_SIGNAL = {
   NOVEL_DESTRUCTIVE_ACTION: 'novel-destructive-action',
   ACTION_BURST: 'action-burst',
-  REPEATED_BLOCKS: 'repeated-blocks',
+  REPEATED_BLOCKS: 'repeated-withholds',
   LOW_TRUST_SCORE: 'low-trust-score',
   UNVERIFIED_EXECUTION: 'unverified-execution',
 } as const;

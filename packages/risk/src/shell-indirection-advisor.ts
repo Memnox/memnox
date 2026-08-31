@@ -51,7 +51,7 @@ export class ShellIndirectionAdvisor implements ActionAdvisor {
       return [
         {
           source: this.name,
-          escalateTo: DECISION_EFFECT.BLOCK,
+          escalateTo: DECISION_EFFECT.WITHHOLD,
           reason: `destructive command behind indirection: ${hidden[0]}`,
           signals: [RISK_SIGNAL_HIDDEN_COMMAND],
         },
@@ -63,7 +63,7 @@ export class ShellIndirectionAdvisor implements ActionAdvisor {
       return [
         {
           source: this.name,
-          escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+          escalateTo: DECISION_EFFECT.ESCALATE,
           reason: `command could not be fully resolved (${opaque.join(', ')})`,
           signals: [RISK_SIGNAL_OPAQUE_COMMAND],
           approvers: this.approvers,

@@ -55,7 +55,7 @@ describe('TaintAdvisor', () => {
       { action: 'file.write', target: 'payment/checkout.ts', taint: EMAIL_TAINT },
       { agent: AGENT },
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
     expect(advisories[0]?.signals).toContain('taint:email_message');
     expect(advisories[0]?.nonOverridable).toBeUndefined();
   });
@@ -70,7 +70,7 @@ describe('TaintAdvisor', () => {
       { action: 'shell.execute', target: 'git push', sessionId: 'sess-1' },
       { agent: AGENT },
     );
-    expect(later[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(later[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('leaves unprivileged actions and clean sessions alone', async () => {
@@ -95,7 +95,7 @@ describe('TaintAdvisor', () => {
       { action: 'project.delete', target: 'acme', taint: EMAIL_TAINT },
       { agent: AGENT },
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.BLOCK);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.WITHHOLD);
     expect(advisories[0]?.nonOverridable).toBe(true);
   });
 
@@ -105,7 +105,7 @@ describe('TaintAdvisor', () => {
       { action: 'file.write', sessionId: 'sess-1' },
       { agent: AGENT },
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
     expect(advisories[0]?.signals).toContain('taint:unreadable_state');
   });
 
@@ -115,6 +115,6 @@ describe('TaintAdvisor', () => {
       { action: 'file.write', sessionId: 'sess-1', taint: EMAIL_TAINT },
       { agent: AGENT },
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
   });
 });

@@ -8,15 +8,14 @@ import { resolveProjectId } from '../project-identity';
 
 /** The same codes `memnox check` uses, so one pipeline can branch on either. */
 export const EXIT_PLAN_APPROVAL = 2;
-export const EXIT_PLAN_BLOCKED = 3;
+export const EXIT_PLAN_WITHHELD = 3;
 
 const VERDICT_WIDTH = 9;
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'allow',
-  [DECISION_EFFECT.REDACT]: 'redact',
-  [DECISION_EFFECT.BLOCK]: 'block',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'approval',
+  [DECISION_EFFECT.WITHHOLD]: 'withhold',
+  [DECISION_EFFECT.ESCALATE]: 'approval',
 };
 
 interface PlannedAction {
@@ -39,7 +38,7 @@ export function registerPlanCommand(
   program
     .command('plan [file]')
     .description(
-      `Rule on a whole run before it starts — nothing is recorded (exit ${EXIT_PLAN_APPROVAL} = needs approval, ${EXIT_PLAN_BLOCKED} = blocked)`,
+      `Rule on a whole run before it starts — nothing is recorded (exit ${EXIT_PLAN_APPROVAL} = needs approval, ${EXIT_PLAN_WITHHELD} = withheld)`,
     )
     .option('--from-session <id>', 'plan the actions an audited session already took')
     .option('--env <environment>', 'environment for entries that do not name one')
@@ -175,23 +174,20 @@ function reportAction(context: CliContext, action: PlannedAction): void {
 
 function tally(planned: readonly PlannedAction[]): string {
   const allow = planned.filter((a) => a.effect === DECISION_EFFECT.ALLOW).length;
-  const approval = planned.filter(
-    (a) => a.effect === DECISION_EFFECT.REQUIRE_APPROVAL,
-  ).length;
-  const block = planned.filter((a) => a.effect === DECISION_EFFECT.BLOCK).length;
-  const redact = planned.filter((a) => a.effect === DECISION_EFFECT.REDACT).length;
+  const approval = planned.filter((a) => a.effect === DECISION_EFFECT.ESCALATE).length;
+  const withheld = planned.filter((a) => a.effect === DECISION_EFFECT.WITHHOLD).length;
   const parts = [
     `${allow} to allow`,
     `${approval} needing approval`,
-    `${block} blocked`,
-    ...(redact > 0 ? [`${redact} redacted`] : []),
+    `${withheld} withheld`,
   ];
   return `Plan: ${parts.join(', ')}.`;
 }
 
 function exitCodeFor(planned: readonly PlannedAction[]): number {
-  if (planned.some((a) => a.effect === DECISION_EFFECT.BLOCK)) return EXIT_PLAN_BLOCKED;
-  if (planned.some((a) => a.effect === DECISION_EFFECT.REQUIRE_APPROVAL)) {
+  if (planned.some((a) => a.effect === DECISION_EFFECT.WITHHOLD))
+    return EXIT_PLAN_WITHHELD;
+  if (planned.some((a) => a.effect === DECISION_EFFECT.ESCALATE)) {
     return EXIT_PLAN_APPROVAL;
   }
   return 0;

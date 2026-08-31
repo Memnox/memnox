@@ -14,7 +14,7 @@ policies:
     match:
       actions: ["never.matches"]
     decision:
-      effect: block
+      effect: withhold
 `;
 
 /** Blocks production deletes; staging is deliberately left alone. */
@@ -24,7 +24,7 @@ const CANDIDATE = {
     {
       name: 'block-prod-delete',
       match: { actions: ['database.delete'], environments: ['production'] },
-      decision: { effect: DECISION_EFFECT.BLOCK, reason: 'prod data' },
+      decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'prod data' },
     },
   ],
 };
@@ -97,13 +97,13 @@ describe('policy simulation against real history', () => {
     const body = response.json() as Simulation;
 
     expect(body.sampled).toBeGreaterThanOrEqual(2);
-    const blocked = body.changes.filter(
-      (change) => change.after === DECISION_EFFECT.BLOCK,
+    const withheld = body.changes.filter(
+      (change) => change.after === DECISION_EFFECT.WITHHOLD,
     );
-    expect(blocked).toHaveLength(1);
-    expect(blocked[0]?.case.environment).toBe('production');
+    expect(withheld).toHaveLength(1);
+    expect(withheld[0]?.case.environment).toBe('production');
     // Tightening is the usual reason to publish; the flag is what a UI sorts on.
-    expect(blocked[0]?.stricter).toBe(true);
+    expect(withheld[0]?.stricter).toBe(true);
   });
 
   it('leaves the running rule set untouched', async () => {

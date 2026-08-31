@@ -26,7 +26,7 @@ const POLICIES: Policy[] = [
   {
     name: 'project-deletion-approval',
     match: { actions: ['project.delete'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['eng-lead'] },
+    decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['eng-lead'] },
   },
 ];
 
@@ -70,7 +70,7 @@ describe('session taint through the gateway', () => {
       target: 'payment/checkout.ts',
       sessionId: SESSION_ID,
     });
-    expect(later.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(later.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(auditLog.filters).toEqual([]);
     expect(await auditLog.recent(10)).toHaveLength(2);
   });
@@ -83,11 +83,11 @@ describe('session taint through the gateway', () => {
       sessionId: SESSION_ID,
       taint: EMAIL_TAINT,
     });
-    expect(decision.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
 
     const events = await auditLog.recent(10);
     expect(events).toHaveLength(1);
-    expect(events[0]?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(events[0]?.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(events[0]?.advisories).toContain('taint-guard:taint:email_message');
   });
 
@@ -97,7 +97,7 @@ describe('session taint through the gateway', () => {
 
     // The approval is created while the session is clean, then replayed once it is tainted.
     const pending = await gateway.authorize(token, request);
-    expect(pending.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(pending.effect).toBe(DECISION_EFFECT.ESCALATE);
     const approval = await gateway.approvals.resolve(
       pending.approvalId ?? '',
       true,
@@ -111,15 +111,15 @@ describe('session taint through the gateway', () => {
       sessionId: SESSION_ID,
       taint: EMAIL_TAINT,
     });
-    expect(replayed.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(replayed.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(replayed.reason).toContain(DECISION_REASON.NON_OVERRIDABLE);
     // Three on the record: the hold, the human granting it, and the refusal
     // that grant could not buy.
     const trail = await auditLog.recent(10);
     expect(trail.map((event) => event.effect)).toEqual([
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
       DECISION_EFFECT.ALLOW,
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     ]);
   });
 
@@ -139,7 +139,7 @@ describe('session taint through the gateway', () => {
     expect(result.approval?.status).toBe(APPROVAL_STATUS.PENDING);
 
     const [event] = await auditLog.recent(1);
-    expect(event?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(event?.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(event?.reason).toContain(DECISION_REASON.NON_OVERRIDABLE);
   });
 });

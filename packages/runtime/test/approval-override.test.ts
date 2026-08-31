@@ -13,13 +13,13 @@ policies:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
   - name: project-deletion-approval
     match:
       actions: ["project.delete"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 `;
 

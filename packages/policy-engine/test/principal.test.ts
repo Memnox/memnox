@@ -10,7 +10,7 @@ const rule = (principals?: string[]): Policy => ({
     ...(principals === undefined ? {} : { principals }),
   },
   decision: {
-    effect: 'require_approval',
+    effect: 'escalate',
     reason: 'refunds taken for the CFO need a second pair of eyes',
     approvers: ['finance-manager'],
   },
@@ -27,9 +27,7 @@ const evaluate = (
 
 describe('matching on the person an agent acts for', () => {
   it('applies to the principal it names', () => {
-    expect(evaluate([rule(['cfo@acme.com'])], 'cfo@acme.com').effect).toBe(
-      'require_approval',
-    );
+    expect(evaluate([rule(['cfo@acme.com'])], 'cfo@acme.com').effect).toBe('escalate');
   });
 
   it('leaves another principal alone', () => {
@@ -38,13 +36,13 @@ describe('matching on the person an agent acts for', () => {
 
   it('matches a principal pattern, so a team is one rule', () => {
     expect(evaluate([rule(['*@finance.acme.com'])], 'lead@finance.acme.com').effect).toBe(
-      'require_approval',
+      'escalate',
     );
   });
 
   it('applies to every principal when the rule names none', () => {
-    expect(evaluate([rule()], 'anyone@acme.com').effect).toBe('require_approval');
-    expect(evaluate([rule()], undefined).effect).toBe('require_approval');
+    expect(evaluate([rule()], 'anyone@acme.com').effect).toBe('escalate');
+    expect(evaluate([rule()], undefined).effect).toBe('escalate');
   });
 
   it('does not apply a principal-scoped rule to an action that names nobody', () => {
@@ -56,7 +54,7 @@ describe('matching on the person an agent acts for', () => {
     const forCfo = { action: 'payment.refund', principal: 'cfo@acme.com' };
 
     for (const agentName of ['assistant', 'finance-bot', 'a-tool-nobody-has-built-yet']) {
-      expect(engine.evaluate(forCfo, { agentName }).effect).toBe('require_approval');
+      expect(engine.evaluate(forCfo, { agentName }).effect).toBe('escalate');
     }
   });
 
@@ -67,7 +65,7 @@ describe('matching on the person an agent acts for', () => {
         {
           name: 'cfo-refunds',
           match: { actions: ['payment.refund'], principals: ['cfo@acme.com'] },
-          decision: { effect: 'require_approval', approvers: ['finance-manager'] },
+          decision: { effect: 'escalate', approvers: ['finance-manager'] },
         },
       ],
     });

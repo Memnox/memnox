@@ -20,15 +20,15 @@ class MemnoxApiError(MemnoxError):
         self.status = status
 
 
-class ActionBlockedError(MemnoxError):
-    """Raised by guard() when the runtime blocks the action."""
+class ActionWithheldError(MemnoxError):
+    """Raised by guard() when the runtime withholds the action."""
 
     def __init__(self, decision: Decision) -> None:
-        super().__init__(f"Action blocked by Memnox: {decision.reason}")
+        super().__init__(f"Action withheld by Memnox: {decision.reason}")
         self.decision = decision
 
 
-class ApprovalRequiredError(MemnoxError):
+class EscalationRequiredError(MemnoxError):
     """Raised by guard() when the runtime requires a human approval first."""
 
     def __init__(self, decision: Decision) -> None:

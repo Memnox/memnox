@@ -13,7 +13,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 
@@ -49,12 +49,12 @@ describe('memnox server', () => {
       payload: { action: 'database.delete', target: 'users', environment: 'production' },
     });
     expect(check.statusCode).toBe(200);
-    expect((check.json() as { effect: string }).effect).toBe(DECISION_EFFECT.BLOCK);
+    expect((check.json() as { effect: string }).effect).toBe(DECISION_EFFECT.WITHHOLD);
 
     const audit = await server.app.inject({ method: 'GET', url: '/v1/audit' });
     const events = audit.json() as Array<{ action: string; effect: string }>;
     expect(events[0]?.action).toBe('database.delete');
-    expect(events[0]?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(events[0]?.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('rejects checks without a bearer token', async () => {

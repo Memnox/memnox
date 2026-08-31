@@ -243,7 +243,7 @@ export function registerOrgCommand(
     .requiredOption('--actions <patterns>', 'comma-separated action patterns')
     .option('--agents <names>', 'comma-separated agent names; default is every agent')
     .option('--limit <amount>', 'the largest amount an agent may act on alone', Number)
-    .option('--over-limit <effect>', 'require_approval|block', 'require_approval')
+    .option('--over-limit <effect>', 'require_approval|block', 'escalate')
     .option('--approvers <who>', 'comma-separated approvers past the ceiling')
     .option('--expires <iso-date>', 'when the delegation stops applying')
     .option('--by <who>', 'who granted it')
@@ -273,7 +273,9 @@ export function registerOrgCommand(
               ? {}
               : { agents: splitList(options.agents) }),
             ...(options.limit === undefined ? {} : { limit: options.limit }),
-            ...(options.overLimit === 'block' ? { overLimit: 'block' as const } : {}),
+            ...(options.overLimit === 'withhold'
+              ? { overLimit: 'withhold' as const }
+              : {}),
             ...(options.approvers === undefined
               ? {}
               : { approvers: splitList(options.approvers) }),

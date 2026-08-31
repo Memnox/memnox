@@ -3,14 +3,14 @@ package ai.memnox;
 /** What the runtime decided. Anything other than ALLOW stops the action. */
 public enum Effect {
     ALLOW,
-    BLOCK,
-    REQUIRE_APPROVAL;
+    WITHHOLD,
+    ESCALATE;
 
     static Effect from(String wire) {
         return switch (wire) {
             case "allow" -> ALLOW;
-            case "block" -> BLOCK;
-            case "require_approval" -> REQUIRE_APPROVAL;
+            case "withhold" -> WITHHOLD;
+            case "escalate" -> ESCALATE;
             default -> throw new IllegalArgumentException("unknown effect: " + wire);
         };
     }

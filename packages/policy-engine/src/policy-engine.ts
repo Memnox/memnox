@@ -27,8 +27,8 @@ export interface EvaluationResult {
   riskLevel: RiskLevel;
   reason: string;
   matchedPolicies: MatchedPolicy[];
-  /** What the monitored rules would have decided, when that is stricter than the effect. */
-  withheldEffect?: DecisionEffect;
+  /** What the observed rules would have decided, when that is stricter than the effect. */
+  shadowEffect?: DecisionEffect;
 }
 
 export interface PolicyEngineOptions {
@@ -93,10 +93,10 @@ export class PolicyEngine {
       .filter((policy) => this.matches(policy, request, context))
       .map(toMatchedPolicy);
 
-    // A monitored rule is recorded but never decides, so the verdict comes from
+    // A observed rule is recorded but never decides, so the verdict comes from
     // the enforcing ones alone — and their absence means no rule decided at all.
-    const enforcing = matchedPolicies.filter((policy) => policy.monitored !== true);
-    const withheldEffect = strictestMonitored(matchedPolicies);
+    const enforcing = matchedPolicies.filter((policy) => policy.observed !== true);
+    const shadowEffect = strictestMonitored(matchedPolicies);
 
     if (enforcing.length === 0) {
       return {
@@ -104,7 +104,7 @@ export class PolicyEngine {
         riskLevel,
         reason: DECISION_REASON.NO_POLICY_MATCHED,
         matchedPolicies,
-        ...withheld(this.defaultEffect, withheldEffect),
+        ...withheld(this.defaultEffect, shadowEffect),
       };
     }
 
@@ -118,7 +118,7 @@ export class PolicyEngine {
       riskLevel,
       reason: winner.reason ?? `policy "${winner.name}" applied`,
       matchedPolicies,
-      ...withheld(winner.effect, withheldEffect),
+      ...withheld(winner.effect, shadowEffect),
     };
   }
 
@@ -154,14 +154,14 @@ export class PolicyEngine {
 }
 
 function toMatchedPolicy(policy: Policy): MatchedPolicy {
-  const monitored = policy.decision.mode === POLICY_MODE.MONITOR;
+  const observed = policy.decision.mode === POLICY_MODE.MONITOR;
   return {
     name: policy.name,
     effect: policy.decision.effect,
     reason: policy.decision.reason,
     approvers: policy.decision.approvers,
     minApprovals: policy.decision.minApprovals,
-    ...(monitored ? { monitored } : {}),
+    ...(observed ? { observed } : {}),
     ...(policy.decision.rateLimit === undefined
       ? {}
       : { rateLimit: policy.decision.rateLimit }),
@@ -170,7 +170,7 @@ function toMatchedPolicy(policy: Policy): MatchedPolicy {
 
 function strictestMonitored(matched: MatchedPolicy[]): DecisionEffect | undefined {
   return matched
-    .filter((policy) => policy.monitored === true)
+    .filter((policy) => policy.observed === true)
     .map((policy) => policy.effect)
     .reduce<DecisionEffect | undefined>(
       (strictest, effect) =>
@@ -185,11 +185,11 @@ function strictestMonitored(matched: MatchedPolicy[]): DecisionEffect | undefine
 /** Reporting a withheld effect no stricter than the applied one would be noise. */
 function withheld(
   applied: DecisionEffect,
-  monitored: DecisionEffect | undefined,
-): { withheldEffect?: DecisionEffect } {
-  if (monitored === undefined) return {};
-  if (EFFECT_PRECEDENCE[monitored] <= EFFECT_PRECEDENCE[applied]) return {};
-  return { withheldEffect: monitored };
+  observed: DecisionEffect | undefined,
+): { shadowEffect?: DecisionEffect } {
+  if (observed === undefined) return {};
+  if (EFFECT_PRECEDENCE[observed] <= EFFECT_PRECEDENCE[applied]) return {};
+  return { shadowEffect: observed };
 }
 
 /** Each named argument narrows the rule further — all of them must hold. */

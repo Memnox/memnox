@@ -9,7 +9,7 @@ const productionProtection: Policy = {
   name: 'production-database-protection',
   match: { actions: ['database.delete', 'database.drop'], environments: ['production'] },
   decision: {
-    effect: DECISION_EFFECT.BLOCK,
+    effect: DECISION_EFFECT.WITHHOLD,
     reason: 'No AI database deletion in production',
   },
 };
@@ -17,7 +17,7 @@ const productionProtection: Policy = {
 const paymentApproval: Policy = {
   name: 'payment-code-approval',
   match: { actions: ['code.modify'], targets: ['payment/*'] },
-  decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['security-team'] },
+  decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['security-team'] },
 };
 
 describe('PolicyEngine', () => {
@@ -28,7 +28,7 @@ describe('PolicyEngine', () => {
       { action: 'database.delete', target: 'users', environment: 'production' },
       CONTEXT,
     );
-    expect(result.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(result.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(result.reason).toBe('No AI database deletion in production');
     expect(result.matchedPolicies.map((p) => p.name)).toEqual([
       'production-database-protection',
@@ -41,7 +41,7 @@ describe('PolicyEngine', () => {
       { action: 'code.modify', target: 'payment/checkout.ts' },
       CONTEXT,
     );
-    expect(result.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(result.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(result.matchedPolicies[0]?.approvers).toEqual(['security-team']);
   });
 
@@ -56,34 +56,34 @@ describe('PolicyEngine', () => {
     const alsoApprove: Policy = {
       name: 'database-approval',
       match: { actions: ['database.*'] },
-      decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['dba'] },
+      decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['dba'] },
     };
     const combined = new PolicyEngine([alsoApprove, productionProtection]);
     const result = combined.evaluate(
       { action: 'database.delete', environment: 'production' },
       CONTEXT,
     );
-    expect(result.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(result.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(result.matchedPolicies).toHaveLength(2);
   });
 
   it('honours a block-by-default configuration', () => {
-    const strict = new PolicyEngine([], { defaultEffect: DECISION_EFFECT.BLOCK });
+    const strict = new PolicyEngine([], { defaultEffect: DECISION_EFFECT.WITHHOLD });
     const result = strict.evaluate({ action: 'anything.goes' }, CONTEXT);
-    expect(result.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(result.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('scopes policies to specific agents', () => {
     const cursorOnly: Policy = {
       name: 'cursor-restriction',
       match: { actions: ['deploy.*'], agents: ['cursor'] },
-      decision: { effect: DECISION_EFFECT.BLOCK },
+      decision: { effect: DECISION_EFFECT.WITHHOLD },
     };
     const engineWithAgentScope = new PolicyEngine([cursorOnly]);
     expect(
       engineWithAgentScope.evaluate({ action: 'deploy.service' }, { agentName: 'cursor' })
         .effect,
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
     expect(
       engineWithAgentScope.evaluate({ action: 'deploy.service' }, CONTEXT).effect,
     ).toBe(DECISION_EFFECT.ALLOW);

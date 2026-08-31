@@ -24,7 +24,7 @@ const auditEvent = (...advisories: string[]): ActionEvent =>
   ({
     id: 'evt_1',
     occurredAt: '2026-07-27T10:00:00.000Z',
-    effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+    effect: DECISION_EFFECT.ESCALATE,
     agentName: 'claude-code',
     action: 'database.migrate',
     reason: 'decision memory',
@@ -57,9 +57,7 @@ describe('DecisionMemoryService.record', () => {
 
     await memory.record(VALID);
 
-    expect((await memory.list())[0]?.enforcement).toBe(
-      DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
-    );
+    expect((await memory.list())[0]?.enforcement).toBe(DECISION_ENFORCEMENT.ESCALATE);
   });
 
   it('falls back to require_approval when the enforcement is unrecognised', async () => {
@@ -67,17 +65,15 @@ describe('DecisionMemoryService.record', () => {
 
     await memory.record({ ...VALID, enforcement: 'please-allow-everything' });
 
-    expect((await memory.list())[0]?.enforcement).toBe(
-      DECISION_ENFORCEMENT.REQUIRE_APPROVAL,
-    );
+    expect((await memory.list())[0]?.enforcement).toBe(DECISION_ENFORCEMENT.ESCALATE);
   });
 
   it('keeps a recognised enforcement', async () => {
     const memory = service();
 
-    await memory.record({ ...VALID, enforcement: DECISION_ENFORCEMENT.BLOCK });
+    await memory.record({ ...VALID, enforcement: DECISION_ENFORCEMENT.WITHHOLD });
 
-    expect((await memory.list())[0]?.enforcement).toBe(DECISION_ENFORCEMENT.BLOCK);
+    expect((await memory.list())[0]?.enforcement).toBe(DECISION_ENFORCEMENT.WITHHOLD);
   });
 
   it('drops an unrecognised reversibility cost rather than storing it', async () => {

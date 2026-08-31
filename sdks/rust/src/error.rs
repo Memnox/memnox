@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum MemnoxError {
     /// Policy denied the action. The agent must not proceed.
-    Blocked { reason: String, event_id: String },
+    Withheld { reason: String, event_id: String },
     /// A human must approve before this action may run.
     ApprovalRequired { reason: String, approval_id: Option<String> },
     /// The runtime answered, but not with a decision.
@@ -16,7 +16,7 @@ pub enum MemnoxError {
 impl fmt::Display for MemnoxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Blocked { reason, .. } => write!(f, "blocked by policy: {reason}"),
+            Self::Withheld { reason, .. } => write!(f, "withheld by policy: {reason}"),
             Self::ApprovalRequired { reason, .. } => {
                 write!(f, "approval required: {reason}")
             }

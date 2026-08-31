@@ -16,17 +16,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from memnox import (  # noqa: E402
     EFFECT_ALLOW,
-    EFFECT_BLOCK,
-    EFFECT_REQUIRE_APPROVAL,
-    ActionBlockedError,
-    ApprovalRequiredError,
+    EFFECT_WITHHOLD,
+    EFFECT_ESCALATE,
+    ActionWithheldError,
+    EscalationRequiredError,
     MemnoxApiError,
     MemnoxClient,
     TaintAssessment,
     TaintSourceRef,
 )
 
-# Assembled at runtime: literal credential-shaped strings are blocked in this repo.
+# Assembled at runtime: literal credential-shaped strings are withheld in this repo.
 AGENT_TOKEN = "".join(["mnx_", "agent", "fixture"])
 ADMIN_TOKEN = "".join(["mnx_", "admin", "fixture"])
 
@@ -63,18 +63,18 @@ def _decision_for(action: str) -> dict[str, object]:
     if action in BLOCKED_ACTIONS:
         return {
             "eventId": "evt-block",
-            "effect": EFFECT_BLOCK,
+            "effect": EFFECT_WITHHOLD,
             "riskLevel": "critical",
             "reason": "policy applied",
             "matchedPolicies": [
-                {"name": "no-destruction", "effect": EFFECT_BLOCK, "reason": "policy"}
+                {"name": "no-destruction", "effect": EFFECT_WITHHOLD, "reason": "policy"}
             ],
             "advisories": [
                 {
                     "source": "decision-memory",
                     "reason": "conflicts with a team decision",
                     "signals": ["decision-memory:decision:dec-1"],
-                    "escalateTo": EFFECT_BLOCK,
+                    "escalateTo": EFFECT_WITHHOLD,
                     "nonOverridable": True,
                 }
             ],
@@ -82,7 +82,7 @@ def _decision_for(action: str) -> dict[str, object]:
     if action in APPROVAL_ACTIONS:
         return {
             "eventId": "evt-approval",
-            "effect": EFFECT_REQUIRE_APPROVAL,
+            "effect": EFFECT_ESCALATE,
             "riskLevel": "high",
             "reason": "human approval required and pending",
             "matchedPolicies": [],
@@ -126,7 +126,7 @@ def _agent(status: str = "active") -> dict[str, object]:
         "kind": "claude-code",
         "status": status,
         "trustScore": 98,
-        "stats": {"allowed": 12, "blocked": 1, "approvalsRequested": 2},
+        "stats": {"allowed": 12, "withheld": 1, "approvalsRequested": 2},
         "capabilities": ["repository.*"],
         "createdAt": "2026-01-01T00:00:00.000Z",
     }
@@ -201,11 +201,11 @@ ROUTES: dict[tuple[str, str], Route] = {
         {
             "generatedAt": "2026-02-01T00:00:00.000Z",
             "period": {"from": "2026-01-01", "to": "2026-02-01"},
-            "totals": {"actions": 9, "allowed": 6, "blocked": 2, "approvalsRequired": 1},
+            "totals": {"actions": 9, "allowed": 6, "withheld": 2, "approvalsRequired": 1},
             "riskBreakdown": {"low": 6, "critical": 3},
             "topBlockedActions": [{"action": "database.delete", "count": 2}],
             "policyActivity": [{"policy": "no-destruction", "count": 2}],
-            "agentActivity": [{"agent": "claude-code", "actions": 9, "blocked": 2}],
+            "agentActivity": [{"agent": "claude-code", "actions": 9, "withheld": 2}],
             "advisorySignals": [{"signal": "decision-memory:decision:dec-1", "count": 1}],
         }
     ),
@@ -388,7 +388,7 @@ class ActionTest(MemnoxClientTestCase):
 
     def test_check_parses_matched_policies_and_advisories(self) -> None:
         decision = self.client.check("database.delete", environment="production")
-        self.assertEqual(decision.effect, EFFECT_BLOCK)
+        self.assertEqual(decision.effect, EFFECT_WITHHOLD)
         self.assertEqual(decision.matched_policies[0].name, "no-destruction")
         self.assertEqual(decision.advisories[0].source, "decision-memory")
         self.assertTrue(decision.advisories[0].non_overridable)
@@ -400,13 +400,13 @@ class ActionTest(MemnoxClientTestCase):
         self.assertEqual(self.client.guard("repository.read", lambda: "done"), "done")
 
     def test_guard_raises_action_blocked(self) -> None:
-        with self.assertRaises(ActionBlockedError) as ctx:
+        with self.assertRaises(ActionWithheldError) as ctx:
             self.client.guard("database.delete", lambda: "never")
-        self.assertEqual(ctx.exception.decision.effect, EFFECT_BLOCK)
+        self.assertEqual(ctx.exception.decision.effect, EFFECT_WITHHOLD)
         self.assertIn("policy applied", str(ctx.exception))
 
     def test_guard_raises_approval_required(self) -> None:
-        with self.assertRaises(ApprovalRequiredError) as ctx:
+        with self.assertRaises(EscalationRequiredError) as ctx:
             self.client.guard("deploy.service", lambda: "never")
         self.assertEqual(ctx.exception.decision.approval_id, APPROVAL_ID)
 
@@ -435,7 +435,7 @@ class RuntimeApiHelperTest(MemnoxClientTestCase):
     def test_can_deploy_is_falsy_when_approval_is_required(self) -> None:
         verdict = self.client.can_deploy("checkout", environment="production")
         self.assertFalse(verdict)
-        self.assertEqual(verdict.decision.effect, EFFECT_REQUIRE_APPROVAL)
+        self.assertEqual(verdict.decision.effect, EFFECT_ESCALATE)
         self.assertEqual(self.last().body["action"], "deploy.service")
         self.assertEqual(self.last().body["environment"], "production")
 
@@ -446,7 +446,7 @@ class RuntimeApiHelperTest(MemnoxClientTestCase):
     def test_can_delete_is_falsy_when_blocked(self) -> None:
         verdict = self.client.can_delete("production.users", environment="production")
         self.assertFalse(verdict)
-        self.assertEqual(verdict.decision.effect, EFFECT_BLOCK)
+        self.assertEqual(verdict.decision.effect, EFFECT_WITHHOLD)
         self.assertEqual(self.last().body["action"], "resource.delete")
 
 

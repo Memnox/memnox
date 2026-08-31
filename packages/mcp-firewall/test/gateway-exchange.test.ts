@@ -40,7 +40,7 @@ const ALLOW: CallVerdict = {
   reason: 'permitted by policy',
 };
 const BLOCK: CallVerdict = {
-  effect: DECISION_EFFECT.BLOCK,
+  effect: DECISION_EFFECT.WITHHOLD,
   reason: 'writes to production',
 };
 
@@ -97,7 +97,7 @@ describe('GatewayExchange gates a POSTed tools/call', () => {
   });
 
   // The whole point of a remote gateway: the server is never reached.
-  it('never reaches the server when policy blocks the call', async () => {
+  it('never reaches the server when policy withholds the call', async () => {
     const h = harness(BLOCK);
 
     const result = await h.exchange.handle(toolCall('delete_database'));
@@ -108,7 +108,7 @@ describe('GatewayExchange gates a POSTed tools/call', () => {
     expect(JSON.stringify(result.replies[0])).toContain('writes to production');
   });
 
-  it('answers the blocked call on its own id, so the client is not left waiting', async () => {
+  it('answers the withheld call on its own id, so the client is not left waiting', async () => {
     const h = harness(BLOCK);
 
     const result = await h.exchange.handle(toolCall('delete_database', 'abc'));
@@ -139,7 +139,7 @@ describe('GatewayExchange gates a POSTed tools/call', () => {
     expect(tools).toEqual([{ name: 'read_file' }]);
   });
 
-  it('blocks a statically denied tool without asking the runtime', async () => {
+  it('withholds a statically denied tool without asking the runtime', async () => {
     const h = harness(ALLOW, ECHO_RESULT, new ToolFilter(undefined, 'drop_'));
 
     const result = await h.exchange.handle(toolCall('drop_table'));

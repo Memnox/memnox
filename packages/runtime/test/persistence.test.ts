@@ -113,7 +113,7 @@ describe('JsonFileIdentityStore codec', () => {
       status: 'active',
       tokenHash: 'hash',
       createdAt: new Date().toISOString(),
-      stats: { allowed: 0, blocked: 0, approvalsRequested: 0 },
+      stats: { allowed: 0, withheld: 0, approvalsRequested: 0 },
     });
     expect(readFileSync(path, 'utf8')).not.toContain('claude-code');
     expect((await new JsonFileIdentityStore(path, codec).findById('a1'))?.name).toBe(

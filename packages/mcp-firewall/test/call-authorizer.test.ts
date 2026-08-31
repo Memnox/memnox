@@ -85,7 +85,11 @@ describe('RuntimeAuthorizer', () => {
 
   it('blocks a call the runtime blocks', async () => {
     const { subject } = authorizer(
-      respondWith({ ...allowed, effect: DECISION_EFFECT.BLOCK, reason: 'destructive' }),
+      respondWith({
+        ...allowed,
+        effect: DECISION_EFFECT.WITHHOLD,
+        reason: 'destructive',
+      }),
     );
 
     const verdict = await subject.authorize(call('delete_repo'));
@@ -98,7 +102,7 @@ describe('RuntimeAuthorizer', () => {
     const { subject } = authorizer(
       respondWith({
         ...allowed,
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         reason: 'needs sign-off',
         approvalId: 'apr_7',
       }),

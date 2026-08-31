@@ -89,9 +89,8 @@ function fromAdvisory(advisory: Advisory): BriefingConstraint {
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'be allowed',
-  [DECISION_EFFECT.REDACT]: 'proceed with part of its supporting context withheld',
-  [DECISION_EFFECT.BLOCK]: 'be BLOCKED',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'need human approval before it proceeds',
+  [DECISION_EFFECT.WITHHOLD]: 'be WITHHELD',
+  [DECISION_EFFECT.ESCALATE]: 'need human approval before it proceeds',
 };
 
 /** "advisor" names a Memnox internal; "signal" says what the reader is looking at. */
@@ -103,9 +102,8 @@ const SOURCE_LABEL: Record<ConstraintSource, string> = {
 /** What one constraint does on its own, in words rather than the stored enum. */
 const CONSTRAINT_EFFECT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'allows',
-  [DECISION_EFFECT.REDACT]: 'withholds part of the context',
-  [DECISION_EFFECT.BLOCK]: 'blocks',
-  [DECISION_EFFECT.REQUIRE_APPROVAL]: 'requires approval',
+  [DECISION_EFFECT.WITHHOLD]: 'withholds',
+  [DECISION_EFFECT.ESCALATE]: 'requires approval',
 };
 
 /** Fixed, never the terminal width, so a briefing stays cacheable and diffable. */
@@ -149,13 +147,13 @@ function appendScopeNote(lines: string[]): void {
 
 /** Derived from the verdict: a reader who is stopped still has to be told by whom. */
 function describeNextStep(briefing: ActionBriefing): string | undefined {
-  if (briefing.wouldBe === DECISION_EFFECT.BLOCK) {
+  if (briefing.wouldBe === DECISION_EFFECT.WITHHOLD) {
     const sealed = briefing.constraints.some((c) => c.nonOverridable === true);
     return sealed
       ? 'Next: no approval can satisfy this — it will not proceed as described.'
       : 'Next: this will not proceed until the rule above no longer applies.';
   }
-  if (briefing.wouldBe !== DECISION_EFFECT.REQUIRE_APPROVAL) return undefined;
+  if (briefing.wouldBe !== DECISION_EFFECT.ESCALATE) return undefined;
   const approvers = approversOf(briefing);
   return approvers.length === 0
     ? 'Next: a human has to approve this before it proceeds.'

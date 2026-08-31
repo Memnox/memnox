@@ -75,7 +75,7 @@ export const CONTROL_MAPPINGS: readonly ControlMapping[] = [
   {
     reference: 'CC7.2',
     framework: FRAMEWORK.SOC2,
-    requirement: 'Anomalies are monitored and detected.',
+    requirement: 'Anomalies are observed and detected.',
     status: CONTROL_STATUS.PARTIAL,
     evidence: [`${RUNTIME}/packages/runtime/src/metrics.ts`],
     gap: 'Counters only — no gauges or histograms, so no latency or error-rate SLI. No alerting, and no evidence of alert acknowledgement.',
@@ -159,10 +159,10 @@ export const CONTROL_MAPPINGS: readonly ControlMapping[] = [
   {
     reference: 'A.8.16',
     framework: FRAMEWORK.ISO_27001,
-    requirement: 'Networks and systems are monitored for anomalous behaviour.',
+    requirement: 'Networks and systems are observed for anomalous behaviour.',
     status: CONTROL_STATUS.PARTIAL,
     evidence: [`${RUNTIME}/packages/risk/src/behavior-advisor.ts`],
-    gap: 'Agent behaviour is monitored; the platform itself is not. No alerting.',
+    gap: 'Agent behaviour is observed; the platform itself is not. No alerting.',
   },
   {
     reference: 'A.5.30',

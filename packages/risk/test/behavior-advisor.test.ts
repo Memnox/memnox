@@ -71,7 +71,7 @@ describe('BehaviorAdvisor', () => {
     expect(advisories.map((a) => a.signals).flat()).toContain(
       RISK_SIGNAL.NOVEL_DESTRUCTIVE_ACTION,
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('stays quiet for a destructive action the agent has done before', async () => {
@@ -95,11 +95,11 @@ describe('BehaviorAdvisor', () => {
     expect(advisories).toHaveLength(0);
   });
 
-  it('escalates when an agent keeps hitting blocks', async () => {
-    const blocked = Array.from({ length: REPEATED_BLOCK_THRESHOLD }, () =>
-      event({ effect: DECISION_EFFECT.BLOCK }),
+  it('escalates when an agent keeps hitting withholds', async () => {
+    const withheld = Array.from({ length: REPEATED_BLOCK_THRESHOLD }, () =>
+      event({ effect: DECISION_EFFECT.WITHHOLD }),
     );
-    const advisor = new BehaviorAdvisor(new StubAuditLog(blocked), ['security-team']);
+    const advisor = new BehaviorAdvisor(new StubAuditLog(withheld), ['security-team']);
     const advisories = await advisor.advise(
       { action: 'repository.read' },
       { agent: AGENT },

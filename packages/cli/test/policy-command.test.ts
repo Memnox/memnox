@@ -46,7 +46,7 @@ describe('memnox policy version', () => {
   it('prints the content version and every policy name', async () => {
     await writeFile(
       policyFile,
-      policyYaml('no-prod-deletes', DECISION_EFFECT.BLOCK, 'database.delete'),
+      policyYaml('no-prod-deletes', DECISION_EFFECT.WITHHOLD, 'database.delete'),
       'utf8',
     );
 
@@ -60,7 +60,7 @@ describe('memnox policy version', () => {
   it('gives the same version for the same rule set', async () => {
     await writeFile(
       policyFile,
-      policyYaml('a', DECISION_EFFECT.BLOCK, 'database.delete'),
+      policyYaml('a', DECISION_EFFECT.WITHHOLD, 'database.delete'),
       'utf8',
     );
     const first = await runCli(['policy', 'version', '--file', policyFile]);
@@ -74,7 +74,7 @@ describe('memnox policy simulate', () => {
   beforeEach(async () => {
     await writeFile(
       policyFile,
-      policyYaml('no-prod-deletes', DECISION_EFFECT.BLOCK, 'database.delete'),
+      policyYaml('no-prod-deletes', DECISION_EFFECT.WITHHOLD, 'database.delete'),
       'utf8',
     );
   });
@@ -121,7 +121,7 @@ describe('memnox policy simulate', () => {
     const baseline = join(workspace, 'baseline.yaml');
     await writeFile(
       baseline,
-      policyYaml('strict', DECISION_EFFECT.BLOCK, 'database.delete'),
+      policyYaml('strict', DECISION_EFFECT.WITHHOLD, 'database.delete'),
       'utf8',
     );
     await writeFile(

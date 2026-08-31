@@ -79,12 +79,9 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
     `${path}.decision.approvers`,
     issues,
   );
-  if (
-    effect === DECISION_EFFECT.REQUIRE_APPROVAL &&
-    (!approvers || approvers.length === 0)
-  ) {
+  if (effect === DECISION_EFFECT.ESCALATE && (!approvers || approvers.length === 0)) {
     issues.push(
-      `${path}.decision.approvers is required when effect is "${DECISION_EFFECT.REQUIRE_APPROVAL}"`,
+      `${path}.decision.approvers is required when effect is "${DECISION_EFFECT.ESCALATE}"`,
     );
   }
 

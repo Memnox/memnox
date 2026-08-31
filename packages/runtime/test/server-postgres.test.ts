@@ -15,7 +15,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 
@@ -53,7 +53,7 @@ describe('server on postgres stores', () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { action: 'database.delete', target: 'users', environment: 'production' },
     });
-    expect((check.json() as { effect: string }).effect).toBe(DECISION_EFFECT.BLOCK);
+    expect((check.json() as { effect: string }).effect).toBe(DECISION_EFFECT.WITHHOLD);
 
     const audit = await server.app.inject({ method: 'GET', url: '/v1/audit' });
     const events = audit.json() as Array<{ action: string; effect: string }>;

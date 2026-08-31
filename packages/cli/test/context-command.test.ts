@@ -9,12 +9,12 @@ const response = () => ({
     action: 'code.modify',
     target: 'payment/checkout.ts',
     riskLevel: RISK_LEVEL.MEDIUM,
-    wouldBe: DECISION_EFFECT.REQUIRE_APPROVAL,
+    wouldBe: DECISION_EFFECT.ESCALATE,
     constraints: [
       {
         source: 'policy',
         name: 'payment-code-approval',
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         statement: 'Payment logic changes need security review.',
       },
     ],
@@ -47,7 +47,7 @@ describe('memnox context', () => {
     );
 
     expect(JSON.parse(out.text)).toMatchObject({
-      wouldBe: DECISION_EFFECT.REQUIRE_APPROVAL,
+      wouldBe: DECISION_EFFECT.ESCALATE,
     });
   });
 

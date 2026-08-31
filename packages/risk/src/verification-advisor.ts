@@ -48,7 +48,7 @@ export class VerificationAdvisor implements ActionAdvisor {
     return [
       {
         source: this.name,
-        escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+        escalateTo: DECISION_EFFECT.ESCALATE,
         reason: `${overdue} of this agent's recent allowed actions never reported an outcome — its trail is unverified`,
         approvers: this.approvers,
         signals: [RISK_SIGNAL.UNVERIFIED_EXECUTION],

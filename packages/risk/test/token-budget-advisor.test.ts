@@ -80,7 +80,7 @@ describe('TokenBudgetAdvisor', () => {
       { action: LLM_SPEND_ACTION, target: '5000', sessionId: 'sess-1' },
       { agent: AGENT },
     );
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.BLOCK);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.WITHHOLD);
     expect(advisories[0]?.reason).toContain('13000 of 10000');
   });
 

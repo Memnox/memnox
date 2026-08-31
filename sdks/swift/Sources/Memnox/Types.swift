@@ -3,8 +3,8 @@ import Foundation
 /// What the runtime decided. Anything other than `allow` stops the action.
 public enum Effect: String, Codable, Sendable {
     case allow
-    case block
-    case requireApproval = "require_approval"
+    case withhold
+    case escalate
 }
 
 /// One action to decide on. Only `action` is required.
@@ -51,15 +51,15 @@ public struct Decision: Decodable, Sendable {
     public let matchedPolicies: [MatchedPolicy]
     public let approvalId: String?
     /// Set when the environment's mode kept a verdict from being applied.
-    public let withheldEffect: Effect?
+    public let shadowEffect: Effect?
 
     public var allowed: Bool { effect == .allow }
 
     /// True when monitor mode let this through but policy would have stopped it.
-    public var wouldHaveStopped: Bool { withheldEffect != nil }
+    public var wouldHaveStopped: Bool { shadowEffect != nil }
 
     private enum CodingKeys: String, CodingKey {
-        case eventId, effect, reason, matchedPolicies, approvalId, withheldEffect
+        case eventId, effect, reason, matchedPolicies, approvalId, shadowEffect
     }
 
     public init(from decoder: Decoder) throws {
@@ -70,14 +70,14 @@ public struct Decision: Decodable, Sendable {
         matchedPolicies =
             try container.decodeIfPresent([MatchedPolicy].self, forKey: .matchedPolicies) ?? []
         approvalId = try container.decodeIfPresent(String.self, forKey: .approvalId)
-        withheldEffect = try container.decodeIfPresent(Effect.self, forKey: .withheldEffect)
+        shadowEffect = try container.decodeIfPresent(Effect.self, forKey: .shadowEffect)
     }
 }
 
 /// Why a call did not produce a decision, or why the decision was not allow.
 public enum MemnoxError: Error, Sendable {
     /// Policy denied the action. The agent must not proceed.
-    case blocked(reason: String, eventId: String)
+    case withheld(reason: String, eventId: String)
     /// A human must approve before this action may run.
     case approvalRequired(reason: String, approvalId: String?)
     /// The runtime answered, but not with a decision.
@@ -89,7 +89,7 @@ public enum MemnoxError: Error, Sendable {
 extension MemnoxError: CustomStringConvertible {
     public var description: String {
         switch self {
-        case let .blocked(reason, _): return "blocked by policy: \(reason)"
+        case let .withheld(reason, _): return "withheld by policy: \(reason)"
         case let .approvalRequired(reason, _): return "approval required: \(reason)"
         case let .api(status, message): return "runtime error \(status): \(message)"
         case let .transport(message): return "transport error: \(message)"

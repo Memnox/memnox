@@ -22,14 +22,12 @@ describe('repository-protection', () => {
   const engine = packEngine('repository-protection');
 
   it('blocks history rewrites outright', () => {
-    expect(decide(engine, 'repository.force_push')).toBe(DECISION_EFFECT.BLOCK);
-    expect(decide(engine, 'repository.reset_hard')).toBe(DECISION_EFFECT.BLOCK);
+    expect(decide(engine, 'repository.force_push')).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(decide(engine, 'repository.reset_hard')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('escalates branch deletion rather than blocking it', () => {
-    expect(decide(engine, 'repository.delete_branch')).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
-    );
+    expect(decide(engine, 'repository.delete_branch')).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('leaves ordinary repository work alone', () => {
@@ -42,14 +40,14 @@ describe('infrastructure', () => {
   const engine = packEngine('infrastructure');
 
   it('blocks terraform state destruction', () => {
-    expect(decide(engine, 'terraform.destroy')).toBe(DECISION_EFFECT.BLOCK);
-    expect(decide(engine, 'terraform.state_remove')).toBe(DECISION_EFFECT.BLOCK);
+    expect(decide(engine, 'terraform.destroy')).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(decide(engine, 'terraform.state_remove')).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('escalates disruptive cluster and cloud operations', () => {
-    expect(decide(engine, 'kubernetes.drain')).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
-    expect(decide(engine, 'cloud.delete_bucket')).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
-    expect(decide(engine, 'cloud.modify_iam')).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decide(engine, 'kubernetes.drain')).toBe(DECISION_EFFECT.ESCALATE);
+    expect(decide(engine, 'cloud.delete_bucket')).toBe(DECISION_EFFECT.ESCALATE);
+    expect(decide(engine, 'cloud.modify_iam')).toBe(DECISION_EFFECT.ESCALATE);
   });
 
   it('routes permission changes to security, not the platform team', () => {
@@ -71,14 +69,14 @@ describe('framework-db-reset', () => {
 
   it('escalates a schema reset outside production', () => {
     expect(decide(engine, 'database.migrate_reset', { environment: 'staging' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
   });
 
   // Two policies match in production; the most restrictive must win.
   it('blocks outright in production, where approval is not enough', () => {
     expect(decide(engine, 'database.migrate_reset', { environment: 'production' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
   });
 
@@ -94,10 +92,10 @@ describe('read-only-production', () => {
 
   it('freezes writes in production', () => {
     expect(decide(engine, 'database.write', { environment: 'production' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
     expect(decide(engine, 'database.alter', { environment: 'prod' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
   });
 
@@ -120,14 +118,14 @@ describe('policy-bypass-protection', () => {
   // The pack exists for exactly this: an agent must not disarm its own governor.
   it('blocks writes to the policy file and hook config', () => {
     expect(decide(engine, 'file.write', { target: 'memnox.policies.yaml' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
     expect(decide(engine, 'file.delete', { target: '.memnox/agents.json' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
     expect(
       decide(engine, 'file.write', { target: '/home/dev/.claude/settings.json' }),
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('leaves ordinary source files alone', () => {
@@ -141,7 +139,7 @@ describe('agent-delegation', () => {
   const engine = packEngine('agent-delegation');
 
   it('escalates spawning a subagent', () => {
-    expect(decide(engine, 'agent.delegate')).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
-    expect(decide(engine, 'agent.spawn')).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(decide(engine, 'agent.delegate')).toBe(DECISION_EFFECT.ESCALATE);
+    expect(decide(engine, 'agent.spawn')).toBe(DECISION_EFFECT.ESCALATE);
   });
 });

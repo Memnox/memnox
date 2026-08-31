@@ -19,7 +19,7 @@ describe('memnox replay', () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [
       event(),
       event({
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
         action: 'database.delete',
         target: 'users',
         environment: 'production',

@@ -81,7 +81,7 @@ function withheldVerdicts(
   events: readonly ActionEvent[],
   modes: EnvironmentModes,
 ): DriftFinding | null {
-  const withheld = events.filter((event) => event.withheldEffect !== undefined);
+  const withheld = events.filter((event) => event.shadowEffect !== undefined);
   if (withheld.length === 0) return null;
 
   const byAction = new Map<string, number>();

@@ -31,7 +31,7 @@ const NO_MIGRATION: DecisionRecord = {
   owner: 'CTO',
   decidedAt: '2026-03-01T00:00:00.000Z',
   actions: ['database.migrate', 'database.replace'],
-  enforcement: DECISION_ENFORCEMENT.BLOCK,
+  enforcement: DECISION_ENFORCEMENT.WITHHOLD,
 };
 
 describe('DecisionMemoryAdvisor', () => {
@@ -45,7 +45,7 @@ describe('DecisionMemoryAdvisor', () => {
       { agent: AGENT },
     );
     expect(advisories).toHaveLength(1);
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.BLOCK);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.WITHHOLD);
     expect(advisories[0]?.reason).toContain('No database migration before Q4');
     expect(advisories[0]?.signals).toContain('decision:dec-1');
   });
@@ -107,7 +107,7 @@ describe('project scope', () => {
     owner: 'dana',
     decidedAt: '2026-01-01T00:00:00.000Z',
     actions: ['database.migrate'],
-    enforcement: DECISION_ENFORCEMENT.BLOCK,
+    enforcement: DECISION_ENFORCEMENT.WITHHOLD,
     projectId,
   });
 

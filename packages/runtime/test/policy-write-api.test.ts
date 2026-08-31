@@ -15,7 +15,7 @@ policies:
       actions: ["database.delete"]
       environments: ["production"]
     decision:
-      effect: block
+      effect: withhold
       reason: No AI database deletion
 `;
 
@@ -25,7 +25,7 @@ const REPLACEMENT = {
     {
       name: 'shell-block',
       match: { actions: ['shell.execute'] },
-      decision: { effect: DECISION_EFFECT.BLOCK, reason: 'No shell for agents' },
+      decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'No shell for agents' },
     },
   ],
 };
@@ -98,7 +98,7 @@ describe('PUT /v1/policies', () => {
     await put(REPLACEMENT);
 
     expect((await check('shell.execute')).json()).toMatchObject({
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
     });
   });
 
@@ -148,7 +148,7 @@ describe('PUT /v1/policies', () => {
       expect((response.json() as { applied: boolean }).applied).toBe(false);
       // The original rule is still enforced.
       expect((await check('database.delete', 'production')).json()).toMatchObject({
-        effect: DECISION_EFFECT.BLOCK,
+        effect: DECISION_EFFECT.WITHHOLD,
       });
     });
 

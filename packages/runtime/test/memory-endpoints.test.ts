@@ -92,7 +92,7 @@ describe('POST /v1/memory/decisions', () => {
 
     const list = await server.app.inject({ method: 'GET', url: DECISIONS_URL });
     const decisions = list.json() as Array<{ enforcement: string }>;
-    expect(decisions[0]?.enforcement).toBe(DECISION_ENFORCEMENT.REQUIRE_APPROVAL);
+    expect(decisions[0]?.enforcement).toBe(DECISION_ENFORCEMENT.ESCALATE);
   });
 });
 

@@ -26,7 +26,7 @@ export function registerCheckCommand(
     // asked; --action/--target still work for scripts already written that way.
     .command('check [action] [target]')
     .description(
-      `Ask the runtime for a decision on one action (exit ${EXIT_REQUIRE_APPROVAL} = needs approval, ${EXIT_BLOCKED} = blocked)`,
+      `Ask the runtime for a decision on one action (exit ${EXIT_REQUIRE_APPROVAL} = needs approval, ${EXIT_BLOCKED} = withheld)`,
     )
     .option('--token <token>', `agent token (default: the one from "memnox setup")`)
     .option('--action <action>', 'namespaced action, e.g. database.delete')
@@ -99,9 +99,9 @@ export function registerCheckCommand(
           );
         }
         if (decision.approvalId) out.line(`${label('Approval')}: ${decision.approvalId}`);
-        if (decision.withheldEffect !== undefined) {
+        if (decision.shadowEffect !== undefined) {
           out.line(
-            `${label('Withheld')}: ${decision.withheldEffect} (this environment is only being monitored)`,
+            `${label('Withheld')}: ${decision.shadowEffect} (this environment is only being observed)`,
           );
         }
 
@@ -112,10 +112,10 @@ export function registerCheckCommand(
     );
 }
 
-/** Zero only when the action may proceed. A monitored environment allows, so it is 0. */
+/** Zero only when the action may proceed. A observed environment allows, so it is 0. */
 function exitCodeFor(effect: string): number {
-  if (effect === DECISION_EFFECT.BLOCK) return EXIT_BLOCKED;
-  if (effect === DECISION_EFFECT.REQUIRE_APPROVAL) return EXIT_REQUIRE_APPROVAL;
+  if (effect === DECISION_EFFECT.WITHHOLD) return EXIT_BLOCKED;
+  if (effect === DECISION_EFFECT.ESCALATE) return EXIT_REQUIRE_APPROVAL;
   return 0;
 }
 
@@ -124,7 +124,7 @@ function reportNextStep(
   effect: string,
   approvalId: string | undefined,
 ): void {
-  if (effect !== DECISION_EFFECT.REQUIRE_APPROVAL || approvalId === undefined) return;
+  if (effect !== DECISION_EFFECT.ESCALATE || approvalId === undefined) return;
   context.out.note('');
   context.out.note(`→ A human approves it:  memnox approve ${approvalId}`);
   context.out.note(`→ Then retry with:      --approval ${approvalId}`);

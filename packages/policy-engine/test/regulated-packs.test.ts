@@ -20,10 +20,10 @@ describe('model-governance', () => {
 
   it('blocks ad-hoc fine-tuned and preview variants', () => {
     expect(decide(engine, { action: 'llm.infer', model: 'ft:gpt-4:acme:custom' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
     expect(decide(engine, { action: 'llm.infer', model: 'claude-preview-x' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
   });
 
@@ -44,7 +44,7 @@ describe('provider-governance', () => {
 
   it('escalates an unreviewed provider', () => {
     expect(decide(engine, { action: 'llm.infer', provider: 'replicate' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
   });
 
@@ -65,7 +65,7 @@ describe('data-residency', () => {
         dataClassification: 'pii.eu',
         jurisdiction: 'us',
       }),
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('allows EU personal data staying in the EEA', () => {
@@ -85,7 +85,7 @@ describe('data-residency', () => {
         dataClassification: 'hipaa',
         jurisdiction: 'eu',
       }),
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   // Both dimensions are required; one alone must not trigger a residency block.
@@ -107,17 +107,17 @@ describe('regulated-data', () => {
 
   it('escalates cardholder and health data', () => {
     expect(decide(engine, { action: 'database.read', dataClassification: 'pci' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
     expect(decide(engine, { action: 'database.read', dataClassification: 'phi' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
   });
 
   // Export is the one verb no approval makes safe — block must win over approval.
   it('blocks export of regulated data even though another rule would escalate', () => {
     expect(decide(engine, { action: 'data.export', dataClassification: 'pci' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
   });
 
@@ -137,7 +137,7 @@ describe('sovereignty', () => {
         dataClassification: 'classified',
         jurisdiction: 'global',
       }),
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('allows a sovereign workload in its own region', () => {
@@ -155,16 +155,16 @@ describe('money-movement', () => {
   const engine = packEngine('money-movement');
 
   it('blocks treasury movement outright', () => {
-    expect(decide(engine, { action: 'treasury.transfer' })).toBe(DECISION_EFFECT.BLOCK);
-    expect(decide(engine, { action: 'wallet.send' })).toBe(DECISION_EFFECT.BLOCK);
+    expect(decide(engine, { action: 'treasury.transfer' })).toBe(
+      DECISION_EFFECT.WITHHOLD,
+    );
+    expect(decide(engine, { action: 'wallet.send' })).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('escalates refunds and billing changes', () => {
-    expect(decide(engine, { action: 'payment.refund' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
-    );
+    expect(decide(engine, { action: 'payment.refund' })).toBe(DECISION_EFFECT.ESCALATE);
     expect(decide(engine, { action: 'subscription.cancel' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
   });
 });
@@ -174,15 +174,15 @@ describe('agent-chain', () => {
 
   it('blocks an agent escalating its own privileges', () => {
     expect(decide(engine, { action: 'agent.grant_capability' })).toBe(
-      DECISION_EFFECT.BLOCK,
+      DECISION_EFFECT.WITHHOLD,
     );
-    expect(decide(engine, { action: 'agent.assume_role' })).toBe(DECISION_EFFECT.BLOCK);
+    expect(decide(engine, { action: 'agent.assume_role' })).toBe(
+      DECISION_EFFECT.WITHHOLD,
+    );
   });
 
   it('escalates agent-to-agent messaging', () => {
-    expect(decide(engine, { action: 'agent.message' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
-    );
+    expect(decide(engine, { action: 'agent.message' })).toBe(DECISION_EFFECT.ESCALATE);
   });
 });
 
@@ -192,12 +192,12 @@ describe('workflow-autonomy', () => {
   it('blocks destructive steps inside an unattended chain', () => {
     expect(
       decide(engine, { action: 'workflow.chain', target: 'purge-old-records' }),
-    ).toBe(DECISION_EFFECT.BLOCK);
+    ).toBe(DECISION_EFFECT.WITHHOLD);
   });
 
   it('escalates starting unattended automation', () => {
     expect(decide(engine, { action: 'workflow.start_unattended' })).toBe(
-      DECISION_EFFECT.REQUIRE_APPROVAL,
+      DECISION_EFFECT.ESCALATE,
     );
   });
 

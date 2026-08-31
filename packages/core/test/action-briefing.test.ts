@@ -9,13 +9,13 @@ import { RISK_LEVEL } from '../src/constants/risk.constants';
 import type { RiskAssessment } from '../src/domain/risk-assessment';
 
 const assessment = (over: Partial<RiskAssessment> = {}): RiskAssessment => ({
-  effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+  effect: DECISION_EFFECT.ESCALATE,
   riskLevel: RISK_LEVEL.MEDIUM,
   reason: 'payment code',
   matchedPolicies: [
     {
       name: 'payment-code-approval',
-      effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+      effect: DECISION_EFFECT.ESCALATE,
       reason: 'Payment logic changes need security review.',
       approvers: ['security-team'],
     },
@@ -32,12 +32,12 @@ describe('buildActionBriefing', () => {
       assessment(),
     );
 
-    expect(briefing.wouldBe).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(briefing.wouldBe).toBe(DECISION_EFFECT.ESCALATE);
     expect(briefing.constraints).toEqual([
       {
         source: CONSTRAINT_SOURCE.POLICY,
         name: 'payment-code-approval',
-        effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+        effect: DECISION_EFFECT.ESCALATE,
         statement: 'Payment logic changes need security review.',
         approvers: ['security-team'],
       },
@@ -52,7 +52,7 @@ describe('buildActionBriefing', () => {
         advisories: [
           {
             source: 'decision-memory',
-            escalateTo: DECISION_EFFECT.BLOCK,
+            escalateTo: DECISION_EFFECT.WITHHOLD,
             reason: 'conflicts with team decision "PCI data stays out" (finance)',
             signals: ['decision:d-1'],
           },
@@ -72,7 +72,7 @@ describe('buildActionBriefing', () => {
         advisories: [
           {
             source: 'taint-guard',
-            escalateTo: DECISION_EFFECT.BLOCK,
+            escalateTo: DECISION_EFFECT.WITHHOLD,
             nonOverridable: true,
             reason: 'irreversible action from a tainted session',
             signals: [],
@@ -145,17 +145,17 @@ describe('renderActionBriefing', () => {
     expect(text).toContain('Next: ask security-team to approve before this proceeds.');
   });
 
-  it('says a sealed block cannot be approved past', () => {
+  it('says a sealed withhold cannot be approved past', () => {
     const text = renderActionBriefing(
       buildActionBriefing(
         { action: 'database.drop' },
         assessment({
-          effect: DECISION_EFFECT.BLOCK,
+          effect: DECISION_EFFECT.WITHHOLD,
           matchedPolicies: [],
           advisories: [
             {
               source: 'taint-guard',
-              escalateTo: DECISION_EFFECT.BLOCK,
+              escalateTo: DECISION_EFFECT.WITHHOLD,
               nonOverridable: true,
               reason: 'irreversible action from a tainted session',
               signals: [],
@@ -166,7 +166,7 @@ describe('renderActionBriefing', () => {
     );
 
     expect(text).toContain('Next: no approval can satisfy this');
-    expect(text).toContain('taint-guard — signal, blocks (no override)');
+    expect(text).toContain('taint-guard — signal, withholds (no override)');
   });
 
   it('wraps at a fixed column rather than the terminal width', () => {
@@ -177,7 +177,7 @@ describe('renderActionBriefing', () => {
           matchedPolicies: [
             {
               name: 'per-object-authorization',
-              effect: DECISION_EFFECT.REQUIRE_APPROVAL,
+              effect: DECISION_EFFECT.ESCALATE,
               reason:
                 'Authorize the specific object being touched, not just that the caller is logged in — skipping the per-object check is IDOR.',
             },

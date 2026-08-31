@@ -13,7 +13,7 @@ policies:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: require_approval
+      effect: escalate
       approvers: ["eng-lead"]
 `;
 
@@ -36,7 +36,7 @@ async function raiseApproval(): Promise<{ token: string; approvalId: string }> {
     payload: { action: 'deploy.api', environment: 'production' },
   });
   const decision = check.json() as { effect: string; approvalId: string };
-  expect(decision.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+  expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
   return { token, approvalId: decision.approvalId };
 }
 

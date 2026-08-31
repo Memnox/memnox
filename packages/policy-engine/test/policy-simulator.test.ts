@@ -7,13 +7,13 @@ import type { Policy } from '../src/policy';
 const BLOCK_PROD_DELETE: Policy = {
   name: 'production-database-protection',
   match: { actions: ['database.delete'], environments: ['production'] },
-  decision: { effect: DECISION_EFFECT.BLOCK, reason: 'no prod deletes' },
+  decision: { effect: DECISION_EFFECT.WITHHOLD, reason: 'no prod deletes' },
 };
 
 const APPROVE_PAYMENTS: Policy = {
   name: 'payment-code-approval',
   match: { actions: ['code.modify'], targets: ['payment/*'] },
-  decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, approvers: ['security'] },
+  decision: { effect: DECISION_EFFECT.ESCALATE, approvers: ['security'] },
 };
 
 const CASES = [
@@ -27,17 +27,17 @@ describe('simulate', () => {
   it('reports the effect and matching policies for each case', () => {
     const outcomes = simulate(new PolicyEngine([BLOCK_PROD_DELETE]), CASES);
 
-    expect(outcomes[0]?.effect).toBe(DECISION_EFFECT.BLOCK);
+    expect(outcomes[0]?.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(outcomes[0]?.matchedPolicies).toEqual(['production-database-protection']);
     expect(outcomes[1]?.effect).toBe(DECISION_EFFECT.ALLOW);
     expect(outcomes[1]?.matchedPolicies).toEqual([]);
   });
 
   it('respects the engine default effect for unmatched actions', () => {
-    const strict = new PolicyEngine([], { defaultEffect: DECISION_EFFECT.BLOCK });
-    expect(simulate(strict, CASES).every((o) => o.effect === DECISION_EFFECT.BLOCK)).toBe(
-      true,
-    );
+    const strict = new PolicyEngine([], { defaultEffect: DECISION_EFFECT.WITHHOLD });
+    expect(
+      simulate(strict, CASES).every((o) => o.effect === DECISION_EFFECT.WITHHOLD),
+    ).toBe(true);
   });
 });
 
@@ -53,7 +53,7 @@ describe('comparePolicySets', () => {
     expect(comparison.changes).toHaveLength(1);
     expect(comparison.changes[0]?.case.target).toBe('payment/checkout.ts');
     expect(comparison.changes[0]?.before).toBe(DECISION_EFFECT.ALLOW);
-    expect(comparison.changes[0]?.after).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(comparison.changes[0]?.after).toBe(DECISION_EFFECT.ESCALATE);
     expect(comparison.changes[0]?.stricter).toBe(true);
     expect(comparison.unchanged).toBe(3);
   });
@@ -77,8 +77,8 @@ describe('comparePolicySets', () => {
       CASES,
     );
 
-    expect(comparison.candidateTotals[DECISION_EFFECT.BLOCK]).toBe(1);
-    expect(comparison.candidateTotals[DECISION_EFFECT.REQUIRE_APPROVAL]).toBe(1);
+    expect(comparison.candidateTotals[DECISION_EFFECT.WITHHOLD]).toBe(1);
+    expect(comparison.candidateTotals[DECISION_EFFECT.ESCALATE]).toBe(1);
     expect(comparison.candidateTotals[DECISION_EFFECT.ALLOW]).toBe(2);
   });
 
@@ -98,7 +98,7 @@ describe('project-scoped rules', () => {
     name: 'auth-code-review',
     project: 'memnox-client',
     match: { actions: ['file.write'], targets: ['*/auth/*'] },
-    decision: { effect: DECISION_EFFECT.REQUIRE_APPROVAL, reason: 'auth needs review' },
+    decision: { effect: DECISION_EFFECT.ESCALATE, reason: 'auth needs review' },
   };
 
   it('applies a scoped rule to a case that names the same project', () => {
@@ -106,7 +106,7 @@ describe('project-scoped rules', () => {
       { action: 'file.write', target: 'app/auth/login.ts', projectId: 'memnox-client' },
     ]);
 
-    expect(outcome?.effect).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(outcome?.effect).toBe(DECISION_EFFECT.ESCALATE);
     expect(outcome?.matchedPolicies).toEqual(['auth-code-review']);
   });
 

@@ -1,6 +1,6 @@
 # Getting started
 
-From nothing to a governed agent, then to one that actually blocks. Every
+From nothing to a governed agent, then to one that actually withholds. Every
 command and every output below is real.
 
 > **New to Memnox?** [concepts.md](concepts.md) explains the mental model and
@@ -48,7 +48,7 @@ Registered the Memnox MCP server with claude-code
 Memnox runtime listening on http://127.0.0.1:7466
 Running in the background: pid 4821
 Logs: ~/.memnox/runtime.log
-Observing only — decisions are recorded, nothing is blocked yet.
+Observing only — decisions are recorded, nothing is withheld yet.
 
 → Stop it:             memnox stop
 ```
@@ -125,14 +125,14 @@ memnox check shell.execute "rm -rf /"
 ```
 Decision : ALLOW
 Risk     : critical
-Reason   : Recursive force-delete is blocked for agents.
+Reason   : Recursive force-delete is withheld for agents.
 Policies : recursive-delete-protection
 Withheld : block (this environment is only being monitored)
 ```
 
 Four things are true in that output and all four are the product: a rule
 scaffolded from your own repository matched, it is named, the runtime rated the
-risk, and `Withheld` says what enforcing would have done. Nothing was blocked to
+risk, and `Withheld` says what enforcing would have done. Nothing was withheld to
 produce it.
 
 Try one that ends somewhere else:
@@ -142,7 +142,7 @@ memnox check payment.refund --target acme-corp
 ```
 
 The exit code carries the verdict, so `memnox check … && deploy` works in a
-pipeline: `0` may proceed, `2` needs approval, `3` blocked.
+pipeline: `0` may proceed, `2` needs approval, `3` withheld.
 
 ### The whole surface at once
 
@@ -155,7 +155,7 @@ memnox test
 ```
 
 ```
-  PASS  BLOCKED   Wipe a directory tree with rm -rf
+  PASS  WITHHELD   Wipe a directory tree with rm -rf
         shell.execute "rm -rf /" — destructive-shell-protection
   PASS  HELD      Deploy to production unattended
         deploy.release "api" — production-deploy-approval
@@ -164,7 +164,7 @@ memnox test
 
 Result
   11 capabilities tested
-  4 blocked, 1 held for approval, 6 allowed
+  4 withheld, 1 held for approval, 6 allowed
 
   5 of these your agent can do right now, unattended:
     - Rewrite a credential file
@@ -183,7 +183,7 @@ can see it.
 
 ## 2. Observe — do not skip this
 
-Nothing is blocked yet, deliberately. A rule you have not read must not wedge
+Nothing is withheld yet, deliberately. A rule you have not read must not wedge
 your agent on minute one.
 
 ```bash
@@ -208,7 +208,7 @@ memnox audit
 ```
 
 ```
-2026-08-06T05:16Z  ALLOW  local-editor: shell.execute rm -rf ./build — observed only: Recursive force-delete is blocked for agents.
+2026-08-06T05:16Z  ALLOW  local-editor: shell.execute rm -rf ./build — observed only: Recursive force-delete is withheld for agents.
 ```
 
 `observed only:` is what *would* have been stopped, quoting the rule that would
@@ -227,7 +227,7 @@ fired, what was decided, and whether anyone ever reported back:
   Rules       destructive-shell-protection
        ↓
   Decision    BLOCK
-              Destructive shell commands are blocked for AI agents.
+              Destructive shell commands are withheld for AI agents.
        ↓
   Outcome     the action did not proceed
 
@@ -307,7 +307,7 @@ policies:
       actions: ["code.modify", "file.write"]
       targets: ["*payment*", "*billing*"]
     decision:
-      effect: require_approval
+      effect: escalate
       reason: Payment logic changes need security review.
       approvers: ["security-team"]
 ```
@@ -363,7 +363,7 @@ the approval id. Two things to know:
   environment`. It will not carry to a different file, and it does not override
   an agent's capabilities, a suspension, or a non-overridable block.
 
-**Blocked and it should not be?** Fix the rule and `memnox reload`. Do not use
+**Withheld and it should not be?** Fix the rule and `memnox reload`. Do not use
 `memnox approvals override` — break-glass requires a reason and is permanently
 audited as critical.
 
@@ -439,16 +439,16 @@ how the same action has gone in the recent trail.
 
 ```
 Governed by
-  policy  production-database-protection — blocks
+  policy  production-database-protection — withholds
           also governs database.drop, database.truncate
   signal  behavior-guard — requires approval
-          4 blocked attempts in the last 10 minutes — agent is probing policy boundaries
+          4 withheld attempts in the last 10 minutes — agent is probing policy boundaries
 
 Who can authorise it
   team-lead
 
 Observed
-  1 of the last 11 audited actions — 1 blocked, 0 held, 0 allowed
+  1 of the last 11 audited actions — 1 withheld, 0 held, 0 allowed
 ```
 
 `also governs` is the reach Memnox can compute honestly: the other actions and
@@ -479,7 +479,7 @@ Memnox plan — 3 action(s)
   ✗ block     shell.execute rm -rf ./dist
               destructive command behind indirection: rm -f -r ./dist
 
-Plan: 0 to allow, 2 needing approval, 1 blocked.
+Plan: 0 to allow, 2 needing approval, 1 withheld.
 Nothing was done and nothing was recorded — this is what would happen.
 ```
 
@@ -508,7 +508,7 @@ memnox mcp uninstall claude-code
 memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github
 
 # a script or a pipeline step: one decision, printed with the rules behind it.
-# exits 0 to proceed, 2 when a human must approve first, 3 when blocked — so
+# exits 0 to proceed, 2 when a human must approve first, 3 when withheld — so
 # "check && deploy" stops at the gate.
 memnox check deploy.service checkout-api --env production
 

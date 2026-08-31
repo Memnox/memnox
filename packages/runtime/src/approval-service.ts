@@ -236,7 +236,7 @@ export class ApprovalService {
       await this.deps.approvalStore.save(denied);
       await this.auditResolution(
         denied,
-        DECISION_EFFECT.BLOCK,
+        DECISION_EFFECT.WITHHOLD,
         `approval denied by ${resolvedBy}`,
       );
       this.countResolved(denied);
@@ -250,7 +250,7 @@ export class ApprovalService {
     await this.deps.approvalStore.save(updated);
     await this.auditResolution(
       updated,
-      satisfied ? DECISION_EFFECT.ALLOW : DECISION_EFFECT.REQUIRE_APPROVAL,
+      satisfied ? DECISION_EFFECT.ALLOW : DECISION_EFFECT.ESCALATE,
       satisfied
         ? `approval granted by ${resolvedBy}`
         : `approval granted by ${resolvedBy} — ${updated.grants.length} of ${updated.minApprovals}`,
@@ -283,7 +283,7 @@ export class ApprovalService {
     if (matchesAny([...TAINT_NO_OVERRIDE_ACTIONS], approval.action)) {
       await this.auditOverride(
         approval,
-        DECISION_EFFECT.BLOCK,
+        DECISION_EFFECT.WITHHOLD,
         `${DECISION_REASON.NON_OVERRIDABLE}: break-glass refused for "${approval.action}" by ${resolvedBy}: ${reason}`,
       );
       return { outcome: OVERRIDE_OUTCOME.FORBIDDEN, approval };
@@ -309,7 +309,7 @@ export class ApprovalService {
   /** Break-glass and its refusal are both security events, both critical. */
   private async auditOverride(
     approval: Approval,
-    effect: typeof DECISION_EFFECT.ALLOW | typeof DECISION_EFFECT.BLOCK,
+    effect: typeof DECISION_EFFECT.ALLOW | typeof DECISION_EFFECT.WITHHOLD,
     reason: string,
   ): Promise<void> {
     await this.auditResolution(approval, effect, reason, RISK_LEVEL.CRITICAL);

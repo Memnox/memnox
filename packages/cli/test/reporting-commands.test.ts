@@ -8,11 +8,11 @@ const APPROVAL_HEALTH_PATH = '/v1/approvals/health';
 const report = (over: Partial<ComplianceReport> = {}): ComplianceReport => ({
   generatedAt: '2026-07-27T12:00:00.000Z',
   period: { from: '2026-07-01T00:00:00.000Z', to: '2026-07-27T00:00:00.000Z' },
-  totals: { actions: 120, allowed: 100, blocked: 12, approvalsRequired: 8 },
+  totals: { actions: 120, allowed: 100, withheld: 12, approvalsRequired: 8 },
   riskBreakdown: { low: 80, medium: 20, high: 15, critical: 5 },
   topBlockedActions: [{ action: 'database.delete', count: 7 }],
   policyActivity: [{ policy: 'production-database-protection', count: 7 }],
-  agentActivity: [{ agent: 'claude-code', actions: 120, blocked: 12 }],
+  agentActivity: [{ agent: 'claude-code', actions: 120, withheld: 12 }],
   advisorySignals: [{ signal: 'taint', count: 3 }],
   verification: {
     allowed: 100,
@@ -60,14 +60,14 @@ describe('memnox insights', () => {
 
     expect(out.text).toContain('Protected actions : 120');
     expect(out.text).toContain('Allowed           : 100');
-    expect(out.text).toContain('Blocked           : 12');
+    expect(out.text).toContain('Withheld           : 12');
     expect(out.text).toContain('Sent to approval  : 8');
   });
 
-  it('ranks the most blocked actions and the advisory signals', async () => {
+  it('ranks the most withheld actions and the advisory signals', async () => {
     const { out } = await runCli(['insights'], insightsRuntime());
 
-    expect(out.text).toContain('Most blocked actions:');
+    expect(out.text).toContain('Most withheld actions:');
     expect(out.text).toContain('- database.delete (7)');
     expect(out.text).toContain('Behavioral signals:');
     expect(out.text).toContain('- taint (3)');
@@ -80,7 +80,7 @@ describe('memnox insights', () => {
 
     const { out } = await runCli(['insights'], runtime);
 
-    expect(out.text).not.toContain('Most blocked actions:');
+    expect(out.text).not.toContain('Most withheld actions:');
     expect(out.text).not.toContain('Behavioral signals:');
   });
 

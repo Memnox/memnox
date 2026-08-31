@@ -83,7 +83,7 @@ describe('VerificationAdvisor', () => {
     const advisories = await advise(unreported(UNREPORTED_OUTCOME_THRESHOLD));
 
     expect(advisories).toHaveLength(1);
-    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.REQUIRE_APPROVAL);
+    expect(advisories[0]?.escalateTo).toBe(DECISION_EFFECT.ESCALATE);
     expect(advisories[0]?.signals).toEqual([RISK_SIGNAL.UNVERIFIED_EXECUTION]);
     expect(advisories[0]?.approvers).toEqual(APPROVERS);
     expect(advisories[0]?.reason).toContain(`${UNREPORTED_OUTCOME_THRESHOLD}`);
@@ -131,9 +131,9 @@ describe('VerificationAdvisor', () => {
     expect(await advise(history)).toEqual([]);
   });
 
-  it('ignores blocked decisions — nothing ran, so nothing can be reported', async () => {
+  it('ignores withheld decisions — nothing ran, so nothing can be reported', async () => {
     const history = unreported(UNREPORTED_OUTCOME_THRESHOLD, {
-      effect: DECISION_EFFECT.BLOCK,
+      effect: DECISION_EFFECT.WITHHOLD,
     });
 
     expect(await advise(history)).toEqual([]);

@@ -61,7 +61,7 @@ export class BehaviorAdvisor implements ActionAdvisor {
     if (history.length === 0) return null;
     return {
       source: this.name,
-      escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
+      escalateTo: DECISION_EFFECT.ESCALATE,
       reason: `first time this agent attempts "${request.action}" — outside its behavioral baseline`,
       approvers: this.approvers,
       signals: [RISK_SIGNAL.NOVEL_DESTRUCTIVE_ACTION],
@@ -80,18 +80,18 @@ export class BehaviorAdvisor implements ActionAdvisor {
     };
   }
 
-  /** An agent repeatedly hitting blocks is probing its boundaries — require a human. */
+  /** An agent repeatedly hitting withholds is probing its boundaries — require a human. */
   private detectRepeatedBlocks(history: ActionEvent[]): Advisory | null {
     const windowStart = new Date(Date.now() - REPEATED_BLOCK_WINDOW_MS).toISOString();
     const blockedCount = history.filter(
       (event) =>
-        event.occurredAt >= windowStart && event.effect === DECISION_EFFECT.BLOCK,
+        event.occurredAt >= windowStart && event.effect === DECISION_EFFECT.WITHHOLD,
     ).length;
     if (blockedCount < REPEATED_BLOCK_THRESHOLD) return null;
     return {
       source: this.name,
-      escalateTo: DECISION_EFFECT.REQUIRE_APPROVAL,
-      reason: `${blockedCount} blocked attempts in the last ${REPEATED_BLOCK_WINDOW_MS / 60_000} minutes — agent is probing policy boundaries`,
+      escalateTo: DECISION_EFFECT.ESCALATE,
+      reason: `${blockedCount} withheld attempts in the last ${REPEATED_BLOCK_WINDOW_MS / 60_000} minutes — agent is probing policy boundaries`,
       approvers: this.approvers,
       signals: [RISK_SIGNAL.REPEATED_BLOCKS],
     };
