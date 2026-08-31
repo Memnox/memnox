@@ -29,13 +29,14 @@ observe and learn, `§10` for what never ships).
 |---|---|---|
 | `@memnox/discovery` | §00 | what can act here, what it reaches, findings, reversible harden steps |
 | `@memnox/core` + `@memnox/policy-engine` | §01 | the decision object, declared scope, the explanation built from the match |
-| `@memnox/mcp-firewall`, `CapabilityBroker` | §02 | seams, the MCP proxy both ways, capabilities and leases |
-| `@memnox/ledger` | §03, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains |
-| `@memnox/organization` | §04 | subjects in three parts, the census, supply chain events, installs |
+| `@memnox/mcp-firewall`, `CapabilityBroker` | §02 | seams, the MCP proxy **both ways**, capabilities and leases |
+| `@memnox/ledger`, `LearnService` | §03, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains, cost, incidents |
+| `@memnox/organization`, `census-sources.ts` | §04 | subjects in three parts, the census, supply chain events, installs, the passport |
 | `@memnox/policy-engine` | §05 | policies, proposals, simulation, blast radius |
-| `@memnox/org-graph` | §06, §07 | authority, ownership, state facts |
-| `@memnox/workflow` | §08 | the gate invariant, runs, steps, briefings |
-| `@memnox/autonomy` | §10 | levels, readiness, synthesis, role economics |
+| `DelegationService`, `ContainmentService` | §06 | chains that only narrow; kill, quarantine, panic |
+| `@memnox/org-graph` | §07 | authority, ownership, state facts read as a policy input |
+| `@memnox/workflow` | §08 | the gate invariant, the durable engine, runs, steps, briefings |
+| `@memnox/autonomy`, `ReadinessService` | §10 | levels, readiness as queries, synthesis, role economics |
 
 ### The application layer is split by responsibility
 
@@ -103,6 +104,10 @@ different product.
 6. **The explanation is built from the match.** `buildExplanation` reads the decision, the request and the scope comparison. An explanation a model wrote afterwards is a plausible story about a decision, which is worse than none.
 7. **Every harden step states its inverse.** `HardenStep.revert` is not optional, and the undo is printed before anything runs.
 8. **A secret value never leaves the process that read it.** Discovery stores a path, a kind and a fingerprint; the ledger stores a `payloadDigest`. A report carrying the shape of somebody's SSH key is the worst bug this product could ship.
+9. **The MCP proxy checks both directions.** The call on the way out, the result on the way back. A tool result is wrapped as an untrusted `ContextBlock` whatever it says, instruction-shaped content is recorded and framed rather than removed, and `promotedToIntent` is an invariant rather than a field anything sets.
+10. **Containment names what it did not reach.** `ContainmentAction.unreached` is never empty because it was inconvenient. A kill reporting success while one machine is asleep is the worst possible lie, and the CLI exits non-zero on a partial one.
+11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored.
+12. **Every route to a delegation passes a gate.** `validateWorkflow` walks backward from every delegate node to the trigger; a gated happy path proves nothing about the branch added underneath it later.
 
 ## What this codebase will not grow back
 
@@ -126,6 +131,28 @@ These were removed on purpose. Adding one back is a product decision, not a refa
 7. **Secrets never appear as literals in test files** — assemble them at runtime (`['AKIA','…'].join('')`).
 8. **Deterministic-IV encryption is banned** on anything searched by content (legacy scar; see ARCHITECTURE.md).
 9. **No optional chaining (`?.`).** Write the check: `if (x === undefined) return …`. `?.` turns a broken invariant into a silent no-op — `child?.stdin?.write()` dropped an authorized MCP call and hung the client, with no log and no error. When a nested read off untrusted input is genuinely optional, give it a named helper (`fieldPath(payload, 'data', 'content')`) rather than a chain.
+
+## Command names
+
+The product answers seven questions, so the CLI is named for them rather than for its
+internals. A command is a plain word somebody would reach for: `check`, `rules`, `why`,
+`audit`, `learn`, `coverage`, `census`, `queue`, `evidence`, `kill`, `panic`.
+
+| The question | The command |
+|---|---|
+| what can act here | `memnox` (default), `doctor`, `harden` |
+| should this proceed | `check` |
+| what may it do | `rules`, `policy`, `simulate` |
+| why | `why`, `why --evidence`, `replay` |
+| who authorised it | `approvals`, `approve`, `deny`, `queue` |
+| who is it | `agents`, `census`, `readiness` |
+| what happened | `audit`, `learn`, `coverage`, `drift`, `evidence` |
+
+Four names went and are not coming back: `explain` (a model narrating a decision),
+`intent` (a model inferring one), `insights` (reporting about this product rather than
+the organization), and `plan`. Two pairs merged, because one question deserves one
+command: `context` + `describe` became `rules`, and `report` + `compliance` became
+`evidence`. `trace` became `why --evidence`.
 
 ## Naming
 
