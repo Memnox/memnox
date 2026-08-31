@@ -15,6 +15,7 @@ import { registerWhyCommand } from './commands/why.command';
 import { registerRulesCommand } from './commands/rules.command';
 import { registerEvidenceCommand } from './commands/evidence.command';
 import { registerCoverageCommand } from './commands/coverage.command';
+import { registerLearnCommand } from './commands/learn.command';
 import { registerInitCommand } from './commands/init.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerKeysCommand } from './commands/keys.command';
@@ -66,6 +67,7 @@ export function buildProgram(context: CliContext): Command {
   registerRulesCommand(program, context);
   registerEvidenceCommand(program, context);
   registerCoverageCommand(program, context);
+  registerLearnCommand(program, context);
   registerPolicyCommand(program, context);
   registerKeysCommand(program, context);
 

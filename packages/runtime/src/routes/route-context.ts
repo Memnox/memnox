@@ -15,6 +15,7 @@ import type { Policy } from '@memnox/policy-engine';
 import type { PolicyHistory } from '../policy-history';
 import type { ActionGateway } from '../action-gateway';
 import type { ContainmentService } from '../containment-service';
+import type { LearnService } from '../learn-service';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { MetricsRegistry } from '../metrics';
@@ -73,6 +74,8 @@ export interface RouteContext {
   seams: SeamStore;
   /** Kill, quarantine and panic, each recording what it could not reach. */
   containment: ContainmentService;
+  /** Usage against grant, and the least-privilege proposal that falls out of it. */
+  learn: LearnService;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

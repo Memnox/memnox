@@ -141,6 +141,26 @@ export interface CoverageResponse {
   blindTo: string[];
 }
 
+/** A day of work, turned into a policy file in the format a person writes. */
+export interface LearnResponse {
+  agentId: string;
+  agentName: string;
+  usage: Array<{ action: string; count: number; distinctResources: number }>;
+  unused: Array<{ action: string; grantedVia: string; observedWindowDays: number }>;
+  proposal: {
+    allow: string[];
+    requireApproval: string[];
+    deny: string[];
+    derivedFrom: {
+      windowDays: number;
+      actions: number;
+      sessions: number;
+      coverage: number;
+    };
+  };
+  policyFile: string;
+}
+
 export interface ContainmentRequestBody {
   kind: ContainmentKind;
   reason: string;
@@ -327,6 +347,17 @@ export class MemnoxClient {
     return this.request<CoverageResponse>(
       'GET',
       '/v1/coverage',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** What each agent was permitted, what it used, and the gap between them. */
+  async learn(days?: number): Promise<LearnResponse[]> {
+    const query = days === undefined ? '' : `?days=${days}`;
+    return this.request<LearnResponse[]>(
+      'GET',
+      `/v1/learn${query}`,
       undefined,
       this.options.adminToken,
     );

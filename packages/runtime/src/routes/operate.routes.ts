@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { API_ROLE, CONTAINMENT_KIND, type ContainmentKind } from '@memnox/core';
 import { blindSpots, coverageFrom } from '../coverage';
+import { DEFAULT_LEARN_WINDOW_DAYS } from '../learn-service';
 import type { RouteContext } from './route-context';
 
 const COVERAGE_WINDOW = 1_000;
@@ -24,6 +25,16 @@ export function registerOperateRoutes(app: FastifyInstance, ctx: RouteContext): 
     });
     // Coverage without the blind spots reads as completeness, which it never is.
     return { ...window, blindTo: blindSpots(seams) };
+  });
+
+  app.get<{ Querystring: { days?: string } }>('/v1/learn', async (request, reply) => {
+    if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
+    const raw = request.query.days;
+    const days = raw === undefined ? DEFAULT_LEARN_WINDOW_DAYS : Number(raw);
+    if (!Number.isFinite(days) || days <= 0) {
+      return reply.code(400).send({ error: '"days" must be a positive number' });
+    }
+    return ctx.learn.learn(days);
   });
 
   app.get('/v1/seams', async (request, reply) => {

@@ -100,6 +100,8 @@ import {
   InMemoryLeaseStore,
 } from './stores/in-memory-capability-store';
 import { registerOperateRoutes } from './routes/operate.routes';
+import { LearnService } from './learn-service';
+import { JsonlFrameStore } from './stores/jsonl-frame-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
 
@@ -114,6 +116,7 @@ const AUDIT_FILE = 'audit.jsonl';
 const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
 const SEAMS_FILE = 'seams.json';
+const FRAMES_FILE = 'frames.jsonl';
 /** One machine, always reachable, because it is this process. */
 const LOCAL_INSTALL_LABEL = 'this machine';
 const STATED_FILE = 'organization.json';
@@ -241,6 +244,7 @@ export async function buildServer(
 
   const taskStore = new InMemoryTaskStore();
   const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
+  const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
@@ -255,6 +259,7 @@ export async function buildServer(
   const gateway = new ActionGateway({
     explanations,
     tasks: taskStore,
+    frames: frameStore,
     identityStore,
     auditLog,
     metrics,
@@ -320,6 +325,11 @@ export async function buildServer(
     config,
     explanations,
     seams: seamStore,
+    learn: new LearnService({
+      auditLog,
+      rules: () => policies,
+      seams: () => seamStore.list(),
+    }),
     containment: new ContainmentService({
       seams: seamStore,
       broker,

@@ -35,6 +35,13 @@ import type {
   TaskStore,
 } from '@memnox/core';
 import {
+  digest,
+  FRAME_KIND,
+  keepFrame,
+  type Frame,
+  type FrameStore,
+} from '@memnox/ledger';
+import {
   AGENT_STATUS,
   buildActionBriefing,
   buildExplanation,
@@ -195,6 +202,8 @@ export interface ActionGatewayDeps {
   explanations?: ExplanationStore;
   /** Declared tasks, so an out-of-scope request is a fact a rule can match on. */
   tasks?: TaskStore;
+  /** The flight recorder. Full fidelity on anything not simply allowed, sampled otherwise. */
+  frames?: FrameStore;
 }
 
 interface Outcome {
@@ -763,6 +772,7 @@ export class ActionGateway {
     };
 
     await this.saveExplanation(decision, request, agent, outcome.scope);
+    await this.recordFrames(decision, request, agent);
 
     await this.appendEvent({
       id: decision.eventId,
@@ -869,6 +879,70 @@ export class ActionGateway {
       this.logger.error(
         `explanation store failed for ${decision.eventId}: ${String(err)}`,
       );
+    }
+  }
+
+  /**
+   * Not only the verdict: the intent it ran under, the context it read and its trust,
+   * and the verdict itself. Full fidelity on anything withheld or escalated, sampled on
+   * the allowed majority, which is where the bytes are.
+   */
+  private async recordFrames(
+    decision: Decision,
+    request: ActionRequest,
+    agent: AgentIdentity | null,
+  ): Promise<void> {
+    const store = this.deps.frames;
+    const sessionId = request.sessionId;
+    if (store === undefined || sessionId === undefined) return;
+
+    const allowed = decision.effect === DECISION_EFFECT.ALLOW;
+    if (!keepFrame(allowed, decision.eventId)) return;
+
+    const agentId = agent === null ? UNKNOWN_AGENT_ID : agent.id;
+    const base = {
+      sessionId,
+      agentId,
+      decisionId: decision.eventId,
+      at: decision.evaluatedAt,
+    };
+    const frames: Frame[] = [];
+
+    const task = request.task;
+    if (task !== undefined) {
+      frames.push({
+        ...base,
+        id: `${decision.eventId}:intent`,
+        kind: FRAME_KIND.INTENT,
+        summary: task.statement,
+      });
+    }
+    for (const block of request.context ?? []) {
+      frames.push({
+        ...base,
+        id: `${decision.eventId}:retrieval:${digest(block.source)}`,
+        kind: FRAME_KIND.RETRIEVAL,
+        summary: block.source,
+        // A ledger that stored what an agent read would be the thing worth stealing.
+        payloadDigest: digest(block.content),
+        contextTrust: block.trust,
+      });
+    }
+    frames.push({
+      ...base,
+      id: `${decision.eventId}:verdict`,
+      kind: FRAME_KIND.VERDICT,
+      summary: `${decision.effect}: ${decision.reason}`,
+    });
+
+    for (const frame of frames) {
+      try {
+        await store.append(frame);
+      } catch (err) {
+        // The record is worth having, but never at the cost of the verdict.
+        this.logger.error(`frame append failed for ${decision.eventId}: ${String(err)}`);
+        return;
+      }
     }
   }
 
