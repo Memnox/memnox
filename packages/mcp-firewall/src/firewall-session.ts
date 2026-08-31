@@ -48,7 +48,11 @@ function describe(message: JsonRpcMessage): string {
 export class FirewallSession {
   private readonly listRequestIds = new Set<MessageId>();
   /** Open tool calls, so a reply can be matched to the call that asked for it. */
-  private readonly openCalls = new Map<MessageId, ToolCall>();
+  /** The verdict rides with the call, so its result joins the same decision. */
+  private readonly openCalls = new Map<
+    MessageId,
+    { call: ToolCall; decisionId?: string }
+  >();
 
   constructor(private readonly deps: FirewallSessionDeps) {}
 
@@ -66,7 +70,13 @@ export class FirewallSession {
     const call = readToolCall(message.params);
     const verdict = await this.verdictFor(call);
     if (isAllowed(verdict)) {
-      if (id !== null) this.openCalls.set(id, call);
+      if (id !== null) {
+        this.openCalls.set(id, {
+          call,
+          ...(verdict.decisionId === undefined ? {} : { decisionId: verdict.decisionId }),
+        });
+      }
+      this.record(call, undefined, verdict);
       return this.forward(message);
     }
 
@@ -87,8 +97,9 @@ export class FirewallSession {
       return this.deps.channel.toClient(serializeMessage(this.filterListing(message)));
     }
 
-    const call = id === null ? undefined : this.openCalls.get(id);
-    if (call === undefined) return this.deps.channel.toClient(serializeMessage(message));
+    const open = id === null ? undefined : this.openCalls.get(id);
+    if (open === undefined) return this.deps.channel.toClient(serializeMessage(message));
+    const call = open.call;
     if (id !== null) this.openCalls.delete(id);
 
     /* Data cannot become authority because an agent read it. The result is wrapped as
@@ -96,7 +107,7 @@ export class FirewallSession {
        recorded and framed rather than removed: silently editing a payload is a bug the
        agent cannot see and the reader cannot audit. */
     const result = recordResult(message);
-    this.record(call, result);
+    this.record(call, result, { decisionId: open.decisionId });
     if (result.containsInstruction) {
       this.deps.log(
         `tool result for "${call.name}" carried instruction-shaped content; it was quoted, not obeyed`,
@@ -116,7 +127,7 @@ export class FirewallSession {
   private record(
     call: ToolCall,
     result: ReturnType<typeof recordResult> | undefined,
-    verdict?: CallVerdict,
+    verdict?: { decisionId?: string },
   ): void {
     const sink = this.deps.record;
     if (sink === undefined) return;

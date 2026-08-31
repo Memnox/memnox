@@ -8,6 +8,7 @@ import type {
   Logger,
 } from '@memnox/core';
 import { DECISION_EFFECT, isLeaseLive, leaseExpiry, scopeSatisfies } from '@memnox/core';
+import { FRAME_KIND, type FrameStore } from '@memnox/ledger';
 import type { ActionGateway } from './action-gateway';
 
 export const LEASE_ACTION_PREFIX = 'capability.issue';
@@ -34,6 +35,8 @@ export interface CapabilityBrokerDeps {
   leases: LeaseStore;
   gateway: ActionGateway;
   logger: Logger;
+  /** Absent leaves a runtime that issues leases and keeps no timeline of them. */
+  frames?: FrameStore;
   /** Injected so a lease's window is reproducible in a test. */
   clock?: () => Date;
 }
@@ -96,7 +99,35 @@ export class CapabilityBroker {
       usedCount: 0,
     };
     await this.deps.leases.save(lease);
+    await this.recordFrame(lease, capability, request.sessionId);
     return { issued: true, lease };
+  }
+
+  /**
+   * The ledger holds why an agent held a credential and for how long, which is the
+   * whole reason leases are decisions. A frame that cannot be written must not undo a
+   * lease that was already issued.
+   */
+  private async recordFrame(
+    lease: Lease,
+    capability: Capability,
+    sessionId: string | undefined,
+  ): Promise<void> {
+    const frames = this.deps.frames;
+    if (frames === undefined || sessionId === undefined) return;
+    try {
+      await frames.append({
+        id: `frm_${lease.id}`,
+        sessionId,
+        agentId: lease.agentId,
+        decisionId: lease.decisionId,
+        at: lease.issuedAt,
+        kind: FRAME_KIND.CAPABILITY,
+        summary: `${capability.operation} on ${lease.target}, until ${lease.expiresAt}`,
+      });
+    } catch (err) {
+      this.deps.logger.error(`capability frame failed for ${lease.id}: ${String(err)}`);
+    }
   }
 
   /** Expiry belongs to the issuer, so a holder asking about a dead lease is told no. */
@@ -116,5 +147,15 @@ export class CapabilityBroker {
 
   async grant(capability: Capability): Promise<void> {
     await this.deps.capabilities.save(capability);
+  }
+
+  /** What this agent may ask for, which is a different question from what it holds. */
+  async capabilitiesFor(agentId: string): Promise<Capability[]> {
+    return this.deps.capabilities.listByAgent(agentId);
+  }
+
+  /** What it holds right now, dead ones included: a revoked lease is part of the record. */
+  async leasesFor(agentId: string): Promise<Lease[]> {
+    return this.deps.leases.listByAgent(agentId);
   }
 }

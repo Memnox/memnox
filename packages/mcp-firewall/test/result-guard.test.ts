@@ -54,15 +54,18 @@ const reply = (id: number, text: string) =>
 const allowed: CallVerdict = { effect: DECISION_EFFECT.ALLOW, reason: 'no rule matched' };
 
 describe('the result on the way back', () => {
-  it('records the result of a call it let through', async () => {
+  /** Both directions reach the ledger: the call on the way out, the result back. */
+  it('records the call it let through and the result that came back', async () => {
     const { session, records } = harness(allowed);
 
     await session.fromClient(call(1));
     session.fromServer(reply(1, 'issue 42 is open'));
 
-    expect(records).toHaveLength(1);
-    expect(records[0]?.result?.bytes).toBeGreaterThan(0);
-    expect(records[0]?.result?.containsInstruction).toBe(false);
+    expect(records).toHaveLength(2);
+    expect(records[0]?.result).toBeUndefined();
+    expect(records[0]?.argsDigest).toBeDefined();
+    expect(records[1]?.result?.bytes).toBeGreaterThan(0);
+    expect(records[1]?.result?.containsInstruction).toBe(false);
   });
 
   it('catches a tool result trying to become an instruction', async () => {
@@ -71,7 +74,7 @@ describe('the result on the way back', () => {
     await session.fromClient(call(1));
     session.fromServer(reply(1, POISONED));
 
-    expect(records[0]?.result?.containsInstruction).toBe(true);
+    expect(records[1]?.result?.containsInstruction).toBe(true);
     // Recorded and framed, never removed: silently editing a payload is a bug the
     // agent cannot see and the reader cannot audit.
     expect(toClient.join('')).toContain(QUOTED_PREFIX);

@@ -377,7 +377,40 @@ export class ActionGateway {
       rollbackFailed: report.rollbackError !== undefined,
       ...(defied ? { defiedVerdict: true as const } : {}),
     });
+    await this.recordSideEffect(agent, report, defied);
     return defied ? OUTCOME_DEFIED : OUTCOME_RECORDED;
+  }
+
+  /**
+   * What the action actually did, on the same timeline as the verdict that permitted
+   * it. Without this a session shows what was decided and never what followed.
+   */
+  private async recordSideEffect(
+    agent: AgentIdentity,
+    report: ExecutionOutcomeReport,
+    defied: boolean,
+  ): Promise<void> {
+    const store = this.deps.frames;
+    const sessionId = report.sessionId;
+    if (store === undefined || sessionId === undefined) return;
+    try {
+      await store.append({
+        id: `frm_${randomUUID()}`,
+        sessionId,
+        agentId: agent.id,
+        decisionId: report.decisionEventId,
+        at: new Date().toISOString(),
+        kind: FRAME_KIND.SIDE_EFFECT,
+        summary: defied
+          ? `${describeOutcome(report)} — after a verdict that was not allow`
+          : describeOutcome(report),
+      });
+    } catch (err) {
+      // The record is worth having, but never at the cost of the outcome.
+      this.logger.error(
+        `side-effect frame failed for ${report.decisionEventId}: ${String(err)}`,
+      );
+    }
   }
 
   /** Bookkeeping, not a decision: withholding the record would freeze the ledger. */
