@@ -1,0 +1,50 @@
+{
+  "name": "@memnox/workflow",
+  "version": "0.3.1",
+  "description": "Work that keeps moving, with a gate on every route that hands something out.",
+  "keywords": [
+    "ai-agents",
+    "workflow",
+    "orchestration",
+    "approvals",
+    "governance"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/workflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Memnox/memnox.git",
+    "directory": "packages/workflow"
+  },
+  "bugs": {
+    "url": "https://github.com/Memnox/memnox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  },
+  "dependencies": {
+    "@memnox/core": "0.3.1"
+  }
+}

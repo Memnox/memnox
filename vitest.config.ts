@@ -12,6 +12,7 @@ export default defineConfig({
       '@memnox/discovery': packageSrc('discovery'),
       '@memnox/ledger': packageSrc('ledger'),
       '@memnox/autonomy': packageSrc('autonomy'),
+      '@memnox/workflow': packageSrc('workflow'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
       '@memnox/local-gate': packageSrc('local-gate'),
       '@memnox/org-graph': packageSrc('org-graph'),

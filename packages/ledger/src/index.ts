@@ -4,3 +4,5 @@ export * from './usage';
 export * from './least-privilege';
 export * from './lineage';
 export * from './counterfactual';
+export * from './coverage';
+export * from './drift';

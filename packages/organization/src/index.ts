@@ -20,3 +20,22 @@ export {
   type Precedent,
   type ShareResponse,
 } from './types';
+export {
+  isEnrollable,
+  installDrift,
+  summarizeCensus,
+  OWNER_STATUS,
+  REGISTERED_VIA,
+  SUBJECT_KIND,
+  SUPPLY_CHAIN_EVENT_KIND,
+  type AgentRole,
+  type CensusEntry,
+  type CensusSummary,
+  type Install,
+  type OwnerStatus,
+  type RegisteredVia,
+  type Subject,
+  type SubjectKind,
+  type SupplyChainEvent,
+  type SupplyChainEventKind,
+} from './subject';

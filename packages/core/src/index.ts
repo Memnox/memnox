@@ -26,6 +26,8 @@ export * from './domain/decision';
 export * from './domain/explanation';
 export * from './domain/seam';
 export * from './domain/capability';
+export * from './domain/delegation';
+export * from './domain/containment';
 export * from './domain/risk-assessment';
 export * from './domain/approval';
 export * from './domain/approval-consent';

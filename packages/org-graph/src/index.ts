@@ -4,4 +4,5 @@ export * from './stated-search';
 export * from './authority';
 export * from './ownership';
 export * from './fact';
+export * from './state-fact';
 export * from './verdict';

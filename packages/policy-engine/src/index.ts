@@ -6,4 +6,5 @@ export * from './policy-validator';
 export * from './policy-engine';
 export * from './policy-version';
 export * from './policy-simulator';
+export * from './proposal';
 export * from './policy-packs';
