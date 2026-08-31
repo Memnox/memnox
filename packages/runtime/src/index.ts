@@ -36,5 +36,6 @@ export * from './learn-service';
 export * from './delegation-service';
 export * from './census-sources';
 export * from './readiness-service';
+export * from './ingestion-service';
 export * from './stores/json-file-seam-store';
 export * from './policy-history';
