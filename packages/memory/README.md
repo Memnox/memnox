@@ -18,7 +18,7 @@ await registry.register({
   owner: 'platform-team',
   actions: ['database.migrate'],
   environments: ['production'],
-  enforcement: 'require_approval',
+  enforcement: 'escalate',
   sourceRef: 'https://slack.com/archives/...',
 });
 ```

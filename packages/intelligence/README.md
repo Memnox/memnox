@@ -1,7 +1,11 @@
 # @memnox/intelligence
 
-The optional LLM layer. It drafts, explains, and classifies — it **never
-decides**.
+The optional LLM layer. It **drafts**, and that is all it does.
+
+It never decides, never explains a decision, and never infers what somebody
+meant. Two things that used to live here are gone on purpose: a decision is
+explained by `buildExplanation`, built from the same match the verdict came from,
+and intent arrives as a declared `Task` from the client that already knows it.
 
 Everything here sits beside the decision path, never on it. Remove this package
 entirely and every decision the runtime makes is unchanged.
@@ -31,20 +35,22 @@ memnox draft "nobody should delete production data" > candidate.yaml
 memnox validate candidate.yaml
 ```
 
-**Explain a decision.** Turns a decision plus its matched policies into plain
-language for a Slack message or an audit summary. The decision already happened; this
-only narrates it.
+**Extract structure from a source.** `OrganizationExtractor` proposes candidate
+statements out of a connected system, each carrying the excerpt it came from.
+Deterministic rules run first; the model reaches only what rules cannot.
 
-**Classify intent.** `IntentClassifier` expands a stated goal into the candidate
-actions it would involve, each rated by the **deterministic** risk classifier
-rather than by the model. The model proposes the action list; the engine rates it.
+## What it will not grow back
 
-```bash
-memnox intent "clean up the staging database"
-```
+**Explaining a decision.** An explanation produced after the fact by a model is a
+plausible story about a decision, which is worse than none. `buildExplanation` in
+`@memnox/core` reads the decision, the request and the scope comparison, and
+every line it emits cites the rule version or the context block behind it.
 
-Advisory only — the gate still decides on each action when it is actually
-attempted.
+**Inferring intent.** Asking whether an action fits the task is the strongest
+check in the category and the easiest to build badly. The version that infers it
+puts a model on the hot path. A client declares a `Task` with its scope,
+`compareDeclaredScope` compares deterministically, and the ambiguous middle
+escalates to a person rather than to a classifier.
 
 ## Providers
 

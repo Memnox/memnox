@@ -128,7 +128,7 @@ memnox approvals status <id>
   person must approve; one person counts once.
 - **`Status: expired`** — the hold lapsed before anyone acted. The agent must
   re-request.
-- **Still `require_approval` with a *different* id** — the retry was not the same
+- **Still `escalate` with a *different* id** — the retry was not the same
   action. The fingerprint is `agent | action | target | environment`; a different
   file or environment is a different request.
 

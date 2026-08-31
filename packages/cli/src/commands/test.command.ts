@@ -166,7 +166,7 @@ function because(result: CaseResult): string {
 /** The verdict in the reader's terms; "escalate" is not a word. */
 function verdictLabel(effect: DecisionEffect): string {
   if (effect === DECISION_EFFECT.WITHHOLD) return 'WITHHELD';
-  if (effect === DECISION_EFFECT.ESCALATE) return 'HELD';
+  if (effect === DECISION_EFFECT.ESCALATE) return 'ESCALATED';
   return 'ALLOWED';
 }
 

@@ -1,1311 +1,486 @@
-# The Memnox vision
+# The Memnox build sequence
 
-The architecture this project is built toward. `ARCHITECTURE.md` describes what
-the runtime is today; this describes what the whole of Memnox is for, across the
-open runtime and the cloud control plane. Where the two disagree, this document
-is the intent and `ARCHITECTURE.md` is the state.
+The architecture this project is built toward. `ARCHITECTURE.md` describes what the
+runtime is today; this describes the intent, across the open runtime and the cloud
+control plane. Where the two disagree, this is the intent and `ARCHITECTURE.md` is the
+state.
 
-If we take the whole Memnox vision seriously, not just "memory for AI agents", it
-is an open-source organizational runtime plus a cloud control plane.
+Eleven phases. Each answers one question, and none can answer its question before the
+one above it has answered theirs. Cite a phase by number (`§03` for observe and learn,
+`§08` for execution) when a change is answering to it.
 
-The key is to avoid building another Viktor, another connector marketplace, or
-another generic RAG system.
-
-The core thing Memnox owns is:
-
-> The machine-readable operating model of an organization: what it knows, who
-> can know it, who can do what, why, and what should happen next.
-
-That gives a clean separation between the open-source infrastructure anyone can
-run and the cloud product companies pay for.
+> Given this person, this task, this context, this agent, these tools and this moment:
+> should this action happen? Everything in the product exists to make that one question
+> answerable.
 
 ---
 
-## 1. The complete Memnox architecture
+## Three layers, and only one of them is a moat
 
-At the highest level:
+Runtime enforcement is commoditising: the large vendors ship open source policy engines,
+identity, isolation and kill switches. Agent discovery and continuous evidence are
+commoditising from the other side, out of the compliance tools. **The space between them
+is not.**
 
-```
-                         ORGANIZATION
-                              │
-          ┌───────────────────┼───────────────────┐
-          │                   │                   │
-        HUMANS             AI WORKERS          SYSTEMS
-          │                   │                   │
-      Employees          Viktor / Lindy       Slack
-      Managers           Claude agents        GitHub
-      Executives         Copilot              Jira
-      Customers          Custom agents        Salesforce
-          │                   │                   │
-          └───────────────────┼───────────────────┘
-                              │
-                              ▼
-                    ┌───────────────────┐
-                    │      MEMNOX       │
-                    │                   │
-                    │ ORGANIZATIONAL    │
-                    │     RUNTIME       │
-                    └───────────────────┘
-                              │
-       ┌──────────────────────┼────────────────────────┐
-       │                      │                        │
-       ▼                      ▼                        ▼
- ORGANIZATIONAL          GOVERNANCE              EXECUTION
-    CONTEXT               & TRUST                 CONTROL
-       │                      │                        │
-       ▼                      ▼                        ▼
- Knowledge Graph          Identity                Action Gateway
- Decision Graph           Permissions             Policy Engine
- Memory                   Policies                Approvals
- Relationships            Classification          Delegation
- Ownership                Risk                    Verification
- History                  Constraints              Audit Ledger
-       │                      │                        │
-       └──────────────────────┼────────────────────────┘
-                              │
-                              ▼
-                    COMPANY SYSTEMS / APIs
-```
+| Layer | The question | Alone it is |
+|---|---|---|
+| Memory | what is known, who owns it, what was decided, and why | a search product, and a crowded one |
+| Authority | who this is, what it may know, what ceiling it holds, at which level | an access control product the platforms will ship |
+| Execution | given all of that and a real intercepted action, does this one proceed | **the moat** — unbuildable holding only one of the other two |
 
-The important thing is that Memnox is not necessarily in the middle of every
-network request.
+**What this rules out:** charging for the enforcement primitive. Give the engine away
+and sell the organizational layer around it.
 
-It can operate in three modes:
+**What it rules in:** every paid feature has to need the graph, the fleet, or another
+person. If a capability works on one laptop with no account, it belongs in the open half.
 
-1. **Context mode.** Agent asks Memnox what it should know.
-2. **Governance mode.** Agent asks Memnox whether it is allowed to do something.
-3. **Enforcement mode.** Memnox actually sits in the execution path and blocks or
-   allows actions.
+**The sentence to sell on:** know every agent, know what it knows, know who it acts for,
+control what it can do.
 
-That is extremely important for adoption.
+## The product ships no fictional agent
 
----
+One decision sits under every screen in the open half: **the demo is the reader's own
+machine**. No sample workspace, no seeded assistant, no simulated tool call, no staged
+attack. The agents are the ones they already run.
 
-## 2. Two products, one architecture
+It forces three things: every screen has to be honest when empty, discovery has to be
+genuinely good, and every number on screen has to be derived. It forbids three: no
+staged attack as the default demo, no estimated loss, no comparison score.
 
-Memnox divides explicitly:
+## The two minutes
 
-```
-                 MEMNOX
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-      OPEN SOURCE            CLOUD
-       RUNTIME             PLATFORM
-          │                   │
-    Self-hostable         Memnox Cloud
-    Apache-2.0            Managed
-          │                   │
-      Developers          Organizations
-      Platforms           Enterprises
-      AI companies        AI teams
-```
+At minute zero there is exactly one aggregate a machine can earn without traffic and
+without an account: **what on this machine is already able to act**. Everything else at
+that timestamp is a promise.
 
-The mistake would be making the OSS version a crippled demo.
+| | |
+|---|---|
+| 0:00 | `npx memnox` runs with no account, no key, no network. **The single most important decision in the plan**; phases 00 to 03 all follow from it. |
+| 0:20 | Discovery names the workforce and its reach, read off the disk rather than earned over a day |
+| 0:45 | `memnox doctor` ranks it into findings, each with the one change that closes it |
+| 1:10 | `memnox harden` closes most of them, every step individually revertible and printing its undo |
+| 1:30 | They go back to their actual task. Memnox is invisible for every ordinary action. |
+| 1:50 | The first refusal redirects, the work still lands, and `memnox why` explains it in five lines |
 
-Instead: the runtime is genuinely useful and fully capable. The cloud sells
-coordination, scale, management, collaboration, observability, enterprise
-security and convenience.
+**Secrets are fingerprinted, never stored.** Finding a credential requires reading the
+file it lives in; the value never leaves the process. A shareable report carrying the
+shape of somebody's SSH key would be the worst bug this product could ship.
+
+## Where Memnox can actually stand
+
+A verdict only exists if something has to ask for it, and **most real agents will never
+voluntarily call an evaluate function**. Each product has a different seam, some have
+none in process, and the plan names them one by one.
+
+| Agent | Seam Memnox can hold | Blind to |
+|---|---|---|
+| Claude Code | tool hooks, MCP proxy, shell wrapper, git credential helper, egress | the model's reasoning |
+| Cursor, Cline, Roo | MCP proxy, terminal, filesystem, egress | in-editor edits |
+| Codex CLI | shell, filesystem, git, plus the credentials it was handed | provider-side execution |
+| Copilot coding agent | issue assignment, PR gate, required checks, Actions boundary | everything before the PR |
+| Devin, OpenHands | network egress, brokered credentials, the systems it reaches | the whole interior |
+| Connector agents | MCP if it speaks it, otherwise only the credential and its scope | everything the vendor does |
+| Any MCP client | the proxy, every tool call and every tool result | little — the best seam there is |
+
+**MCP is the flagship seam.** It is the one place that is provider neutral, already in
+the developer's config, and carries both the request and the result. Build it first and
+best. **The seam that always exists** is the credential and the network: an agent that
+cannot be wrapped can still be starved.
 
 ---
 
-## 3. What belongs in open source
+## The spine
 
-The core runtime is Apache-2.0:
-
-```
-memnox/
-│
-├── runtime/
-├── sdk/
-├── agent-sdk/
-├── policy-engine/
-├── context-engine/
-├── decision-engine/
-├── identity/
-├── ledger/
-├── local-storage/
-├── MCP server/
-├── API server/
-├── connector SDK/
-└── CLI
-```
-
-The OSS runtime should allow:
-
-```
-npx memnox setup
-```
-
-and give a developer:
-
-```
-Agent
-  ↓
-Memnox
-  ├── context
-  ├── policies
-  ├── identity
-  ├── approvals
-  ├── decisions
-  └── audit
-```
-
-without needing Memnox Cloud. That is the developer adoption engine.
+| | Phase | The question it answers | Owns |
+|---|---|---|---|
+| | **Local. No account, no cloud, no network. The open runtime.** | | |
+| 00 | The machine | What can act here, and what can it reach? | agent, surface, reachability, finding, harden step |
+| 01 | The one call | What does a verdict look like, and how is it explained? | decision, explanation, policy bundle |
+| 02 | Interception | How does the verdict reach an agent that never asked? | seam, MCP proxy, capability, lease |
+| 03 | Observe and learn | What did they actually do, and what did they never need? | local ledger, frame, usage, lineage, proposal |
+| | **The account arrives here, and only because a second person does.** | | |
+| 04 | Census and scope | How many agents are there, who does each act for, who owns none? | org, member, workspace, subject, role, census entry |
+| 05 | Govern | Which actions should be refused, agreed by more than one person? | policy, proposal, simulation |
+| 06 | Authority | Who is asked, and who can stop it? | approval, delegation, grant, containment |
+| 07 | The graph | How does the company know who answers for what? | node, edge, evidence, source, state fact |
+| 08 | Execution | How does work move without anybody chasing it? | workflow, run, step, briefing |
+| 09 | Operate | What did it cost, what is covered, what can we prove? | cost event, coverage, incident, export |
+| 10 | Autonomy | Can this company safely give its agents more authority? | readiness, level, synthesis, detector |
 
 ---
 
-## 4. The cloud should not just be "hosted Memnox"
+## §00 The machine
 
-This is where the commercial moat appears.
+The whole first act happens on one laptop with no account.
 
-```
-                  MEMNOX CLOUD
-                       │
-       ┌───────────────┼────────────────┐
-       │               │                │
- Organization       AI Fleet         Governance
-   Management       Management        Center
-       │               │                │
-       ▼               ▼                ▼
- Teams              Agents            Policies
- Users              Capabilities      Approvals
- Sources            Identity          Audit
- Projects           Usage             Compliance
-```
+**Discover.** Read what is on disk: agent config, MCP manifests, editor settings, shell
+profiles, CI workflow files, container sockets, cloud credential chains. Identify the
+**kind, not the instance** — Claude Code on four machines is one agent kind, or the
+roster is noise by week two. Enumerate MCP by listing tools over the protocol, and take
+each tool's effect from its own annotation where one exists, inferring with a **stated
+method** where it does not.
 
-Cloud features: organization management, team management, agent registry,
-centralized policies, shared organizational graph, cross-agent context, approval
-workflows, audit, compliance exports, analytics, fleet management, policy
-distribution, managed connectors, managed event ingestion, SSO and SAML,
-enterprise isolation, backups, retention, monitoring, billing, support.
+**Map the reach.** Counts and names, not percentages. **Reachability is transitive**: an
+agent that can run a shell reaches everything the shell can, and stating that is most of
+the value.
 
-So: **OSS is the organizational runtime. Cloud is the organizational control
-plane.**
+**Doctor.** Findings ranked by consequence, each naming the agent, the resource, the
+evidence and the single change that closes it. The score decomposes or it does not
+exist: it grants nothing, changes no permission, and is never a rank against anybody
+else. No estimated loss, ever.
 
----
+**Harden.** Propose, apply, revert. Every step prints its undo before it runs. Nothing
+lands in their repository. Default to advise on anything ambiguous.
 
-## 5. The first major component: Organization Graph
+**Detectors are the maintenance burden.** Every one depends on somebody else's
+undocumented config format; treat them as a versioned, separately releasable set, or a
+single upstream rename silently empties the discovery screen.
 
-One of Memnox's deepest assets. Not `documents → embeddings → vector search`.
+*Fails when:* harden is not reversible per step.
 
-```
-                     ORGANIZATION GRAPH
+## §01 The one call
 
-                          ACME
-                           │
-       ┌───────────────────┼──────────────────┐
-       │                   │                  │
-     People              Teams             Agents
-       │                   │                  │
-   ┌───┴───┐          ┌────┴────┐       ┌────┴────┐
-   │       │          │         │       │         │
- Alice    Bob       Finance   Eng     Viktor   Claude
-   │                   │         │       │
-   ▼                   ▼         ▼       ▼
-Projects             Policies   GitHub  Salesforce
-```
+The atom is a single function answering whether an action may proceed.
 
-**Entities:** Organization, Person, Team, Agent, Application, Project,
-Repository, Customer, Resource, Document, Decision, Policy, Workflow, Role,
-Permission, Task, Incident, Meeting, Conversation.
+**Three effects, not two.** `allow`, `withhold`, `escalate`. The third keeps a governed
+system from being a wall.
 
-**Relationships:** `reports_to`, `member_of`, `owns`, `created_by`,
-`approved_by`, `responsible_for`, `works_on`, `uses`, `can_access`,
-`cannot_access`, `depends_on`, `replaces`, `supersedes`, `derived_from`,
-`decided_by`, `applies_to`, `delegated_to`.
+**An alternative wherever one exists.** A refusal that names the permitted path gets
+taken, and a coding agent will take it without being asked twice. The `alternative` is
+**resolved from the rule, not invented**.
 
-This is much more defensible than a vector database.
+**In process, on cached rules.** No network on the hot path, and a p99 under a
+millisecond, which rules out a model inside `evaluate` permanently.
 
----
+**Intent is declared, never inferred.** A session declares a task and the scope it
+implies: these paths, this repository, this environment. **Scope is compared, not
+judged** — out of scope is a fact a rule matches on, exactly like an environment. The
+ambiguous middle escalates to a person rather than to a classifier. An undeclared
+dimension is undeclared, never a guess.
 
-## 6. The Decision Graph
+**Untrusted context is stripped of instruction authority before matching.** Data cannot
+become authority because an agent read it. A type, not a classifier: a detector can be
+wrong; a type cannot be talked around.
 
-Its own layer. Memnox converts organizational events into structured decisions.
+**`shadowEffect` is the hinge of the whole plan.** Phase 03 has nothing to report and
+phase 05 nothing to simulate unless observe mode still computes the real verdict and
+stores it beside the permissive one.
 
-```json
-{
-  "decision_id": "dec_481",
-  "statement": "Use Stripe for European payments",
-  "status": "active",
-  "owner": "finance",
-  "approved_by": ["cfo"],
-  "scope": { "region": "EU", "system": "payments" },
-  "created_at": "...",
-  "sources": ["slack:message_123", "meeting:456"]
-}
-```
+**Why, in five lines.** Source, resource, authority, rule, outcome — built from the
+match and stored beside the decision, so it reads the same a year later. An explanation
+produced after the fact by a model is a plausible story about a decision, which is worse
+than none.
 
-But importantly:
+## §02 Interception
 
-```
-Decision
-   │
-   ├── evidence
-   ├── owner
-   ├── approver
-   ├── scope
-   ├── expiration
-   ├── exceptions
-   ├── supersedes
-   └── consequences
-```
+A verdict nobody is obliged to ask for is advice.
 
-Now an agent asking "What payment provider should I use?" is not retrieving a
-document. Memnox answers with the decision, the reason, the scope, the status,
-the confidence, the authority and the exceptions.
+**The MCP proxy, first and best.** One proxy governs Claude Desktop, Cursor and VS Code
+at once. **Both directions**: the call on the way out and the result on the way back,
+which is the only place a tool result can be caught trying to become an instruction.
+Tool-level policy, not server-level. Install by rewriting their client config,
+reversibly, with the original kept.
 
-That is organizational memory becoming machine-readable organizational state.
+**The other seams**, one per agent kind, named and tested. Local, never a cloud round
+trip. **Degradation is declared**: each seam states what it cannot see, because a
+governed agent with an unwatched side channel is worse than an ungoverned one. Turn on
+one at a time.
 
----
+**Capabilities, not keys.** Nothing long lived is handed to an agent. The broker
+exchanges a request for a lease scoped to one operation, one resource and a few minutes.
+Ask by operation, not by secret. **Every lease is a decision.** Expiry belongs to the
+issuer, never to the agent's good behaviour.
 
-## 7. Memory architecture
+**Egress**: destination and payload both. Cheap and certain checks only — credential
+shapes, known fingerprints, marked fields. Name the field in the refusal, and never
+silently strip.
 
-Not one giant memory store. Multiple memory types.
+**Kill and panic live here.** Kill is: revoke leases, close seams, cancel pending calls
+for one agent. Panic raises every seam to enforce and denies capability issuance, with a
+reason, an author and a restore path. Neither is a demo feature.
 
-```
-                    MEMNOX MEMORY
-                         │
-       ┌─────────────────┼─────────────────┐
-       │                 │                 │
-    Episodic          Semantic          Structural
-       │                 │                 │
- conversations        knowledge         relationships
- events               concepts          ownership
- meetings             facts             hierarchy
-       │                 │                 │
-       └─────────────────┼─────────────────┘
-                         │
-                    Decision Memory
-                         │
-                   organizational
-                      decisions
-```
+## §03 Observe and learn
 
-Technically: event store, document store, relational metadata, graph, vector
-index. The vector database is only one component.
+Watch for a day, then say what nobody could have said before: not only what the agents
+did, but **what they never needed**.
 
----
+**The local ledger.** Every verdict on disk, chained, the developer's own. **Arguments
+hashed, results summarised** — a ledger that stores what an agent read becomes the thing
+worth stealing. Retention is a setting with a default.
 
-## 8. The ingestion architecture
+**The flight recorder.** Intent, context retrieved and its trust, capability issued, tool
+called, result, side effects. One session, one timeline. Full fidelity on anything
+withheld or escalated, sampled on the allowed majority. **The counterfactual is computed,
+not imagined**: derived from the attempt actually made and from nothing else.
 
-Where Memnox actually gets the organization's knowledge. Four ingestion paths.
+**Lineage.** Who caused this — a person, through a tool, through an agent, through a
+repository, through a pipeline, to a system. Propagate where possible, stitch where not,
+and **every hop states its method and confidence**. An inferred hop pretending to be a
+propagated one is worse than a gap.
 
-```
-                 MEMNOX INGESTION
-                       │
-       ┌───────────────┼────────────────┐
-       │               │                │
- Direct connectors   Agent APIs       SDK/events
-       │               │                │
- Slack              Viktor            Custom app
- GitHub             Lindy             Backend
- Notion             Agentforce        Agent SDK
- Jira               Custom agent      Webhooks
-       │               │                │
-       └───────────────┼────────────────┘
-                       │
-                       ▼
-                 Event Gateway
-                       │
-                       ▼
-                 Normalization
-                       │
-                       ▼
-                Entity Resolution
-                       │
-                       ▼
-                Knowledge Engine
-```
+**Learn.** Usage against grant. **Unused is the finding.** Propose least privilege as a
+real policy file in the format a person writes, diffed against what is in force. **Say
+the window and the coverage** on the proposal itself, where they cannot be dropped in
+the retelling.
 
-This means no customer is forced to connect their tools to Memnox.
+*The line that sells the project:* you granted this agent everything and it used twenty
+seven percent of it.
 
----
+*Fails when:* the ledger stores payloads.
 
-## 9. The Viktor scenario
+## §04 Census and scope
 
-Viktor already has 3000+ connectors. Do not rebuild those.
+The account arrives here, and only because a second person does.
 
-```
-                   ACME
-                    │
-             ┌──────┴──────┐
-             │             │
-          Viktor         Memnox
-             │             │
-       3000+ tools       Org Graph
-             │             │
-             └──────┬──────┘
-                    │
-             Memnox integration
-```
+**The census is the paid product's own opening.** Four independent sources — runtime
+enrolment, provider APIs, pipeline configuration, vendor products. Every count links to
+its evidence. **Name the ungovernable**, and **the gap is the finding**: what they were
+tracking against what is there.
 
-Viktor sends Memnox: agent identity, user identity, workspace or team, task,
-tool invocation, resource, action, result, audit event. Memnox learns from those
-events.
+**Identity in three parts.** The **kind** is the product. The **role** is the job —
+policy is written about the role, because a rule about Claude Code governs a product and
+will be wrong the moment the company adopts another one. The **principal** is the person
+it acts for. All three or it is not enrolled.
 
----
+**One subject table.** Humans and agents differ in how they authenticate and in nothing
+else. **Governability is a field, not a filter**, or the dashboard quietly reports only
+the agents that were easy.
 
-## 10. Viktor plus Memnox, technically
+**Ids are the seam.** Local ids are globally unique from the first run, so promotion is
+an update rather than a re-registration. **Nothing is uploaded silently.**
 
-```
-Viktor
-  │
-  ├── API
-  ├── MCP
-  ├── webhooks/events
-  └── SDK
-        │
-        ▼
-   Memnox Adapter
-        │
-        ▼
-   Memnox Runtime
-```
+**Drift between machines is the finding.** One laptop with the proxy off is the story,
+not the thirty-nine with it on.
 
-```ts
-const decision = await memnox.authorize({
-  actor: "viktor-agent",
-  user: "user_123",
-  action: "send_email",
-  resource: "customer_456",
-  context: { amount: 4500 },
-});
-```
+*Fails when:* enrolment uploads by default.
 
-```json
-{
-  "decision": "approval_required",
-  "policy": "finance.external_communication",
-  "approver": "finance_manager"
-}
-```
+## §05 Govern
 
-Viktor remains responsible for doing the work. Memnox is responsible for
-organizational authority. That is the boundary.
+A rule written, tested, approved by somebody other than its author, and put in force
+across a fleet.
 
----
+**Rules take cases** — a ceiling that allows, a band that needs a manager, a band that
+needs two, a band that refuses, as one ordered list. Splitting that across four policies
+means four things to keep consistent.
 
-## 11. MCP becomes an important interface
+**Policies have unit tests**, kept beside the rule and run in the customer's pipeline.
+The test file is the specification a non-engineer can read.
 
-```
-memnox.get_context()
-memnox.search_knowledge()
-memnox.get_decision()
-memnox.get_policy()
-memnox.get_owner()
-memnox.check_permission()
-memnox.authorize_action()
-memnox.request_approval()
-memnox.delegate()
-memnox.record_decision()
-```
+**Simulation replays thirty days using the runtime's own compiled evaluator.** A second
+implementation would drift within weeks, and the simulation would then be fiction.
+**Report both directions**: what it would newly refuse, and what it would newly permit.
 
-But do not rely exclusively on MCP. Also: REST API, SDKs, webhooks, events, MCP,
-CLI.
+**Blast radius names who is affected** — agents, installs, environments, owners,
+resolved rather than counted — and is attached to the proposal, so the approver reads the
+consequence and not the syntax.
 
----
+**Proposed, not added.** Versions, diffs and rollback; every change is a new version
+pointing back. Predicates compile to a small closed expression form, never to code
+evaluated at runtime.
 
-## 12. The Context Gateway
+**Time travel is a consequence, not a feature.** If policies, grants and capabilities all
+carry validity intervals, "what would have happened last Tuesday" is a query.
 
-The brain's retrieval interface. An agent asks: "I need to prepare a pricing
-proposal."
+*Fails when:* simulation is a second evaluator in the cloud.
 
-Memnox determines who is asking, what agent, which user, which team, which
-project, what the task is, what information is relevant, what is restricted,
-what decisions apply and what policies apply.
+## §06 Authority
 
-```
-                 CONTEXT REQUEST
-                        │
-                        ▼
-                  Identity check
-                        │
-                        ▼
-                  Scope resolution
-                        │
-                        ▼
-                 Policy evaluation
-                        │
-                        ▼
-                  Retrieval
-                        │
-                        ▼
-                  Re-ranking
-                        │
-                        ▼
-                Context assembly
-                        │
-                        ▼
-                     Agent
-```
+**Escalate names a target**, resolved from the organization rather than typed into the
+rule. **A room, not an inbox** — delivery is the highest-leverage unbuilt thing, and
+every phase above this one is discounted until a question reaches a person where they
+already work. **Deadlines are real**, with a defined outcome, and the safe one is the
+default.
 
-Far more powerful than `agent → vector DB → documents`.
+**Delegation is an object**: issuer, delegate, authority, scope, expiry, and whether it
+can be passed on. **An agent cannot delegate what it does not hold**, checked at issue
+and again at use, so a chain can only narrow. Agent-to-agent is the same check, which
+makes multi-agent systems governable rather than a new category.
 
----
+**Stopping things.** Kill one agent everywhere, in one recorded action. Quarantine is
+read-only with no capability issuance, which keeps an agent debuggable instead of dead.
+**Containment across a fleet is partial by nature** — the action records which installs
+it reached and **which it did not**. A kill reporting success while one machine is
+offline is the worst possible lie.
 
-## 13. Context should be permission-aware BEFORE retrieval
+*Fails when:* the timeout default is allow.
 
-Do not do:
+## §07 The graph
 
-```
-retrieve everything
-      ↓
-filter afterwards
-```
+Everything so far can be configured. This is the part that cannot.
 
-Do:
+**Ownership as a query.** For any object and action, who answers — resolved rather than
+configured, returning the chain rather than a name.
 
-```
-identity
-   ↓
-authorization
-   ↓
-eligible knowledge
-   ↓
-retrieval
-   ↓
-context
-```
+**State, not only structure.** A deployment freeze, an open incident, a change window, a
+contract clause. **State is a policy input**: a merge refused because incident 928 is
+open and the freeze is active is organizational intelligence enforcing an action, which
+is the whole thesis in one verdict. Facts are small, versioned, and **carry a mandatory
+expiry** — a freeze that outlives its incident is worse than no freeze, because the next
+one gets ignored. They ride inside the bundle, so the evaluator still decides locally.
 
-That minimizes accidental exposure.
+**The memory firewall.** The same store answers differently by role. What an agent may
+know is governed by the same objects as what it may do. **Every read is filtered in the
+query** — filtering after retrieval means the material was already in a process answering
+to a different identity.
+
+**Refuse rather than guess**, and carry a withheld count so a caller is told there was
+more it could not see. **Edges carry validFrom and validTo** rather than being deleted.
+
+**Do not start with a graph database.** Ownership resolution is two to four hops.
+
+*Fails when:* scoping is a filter over the response.
+
+## §08 Execution
+
+**The invariant:** every route to a delegation passes a decision or an approval.
+Validation walks backward from every delegate node to the trigger; if any path reaches
+the trigger without crossing a gate, the save is refused. The console mirrors it while
+drawing; the server enforces it regardless.
+
+**Dispatch carries four things:** the objective, the context with its trust levels, the
+constraints, and a capability rather than a key. **Context trust survives the handoff**,
+or the injection path §01 closed reopens at the boundary. **The correlation id travels
+too**, so a delegated run is a lineage hop rather than an unexplained new actor.
+
+**Durable and resumable.** The workflow version is pinned at run start. A step row is
+written as pending before anything happens. Execution is keyed by run, node and attempt.
+**Memnox never does the work.**
+
+*Fails when:* the engine keeps run state in process.
+
+## §09 Operate
+
+**Coverage, defined:** distinct actions governed over distinct actions seen, weighted by
+risk, times seam coverage, times install coverage. A read loop otherwise shows
+ninety-nine percent while every irreversible action in the company is ungoverned.
+
+**Cost** per workspace, per agent, per model. **Ceilings that bite**, expressed as a
+policy input rather than a separate switch, so a breach produces a verdict with a reason.
+Keys are write-only across the seam.
+
+**Evidence** an auditor accepts, continuous rather than assembled, with the chain
+travelling with it so it verifies outside the product.
+
+**Drift needs a cause, not an alarm.** A widened agent is usually somebody installing a
+tool. The finding names the cause from §04's supply chain events, so the common case
+reads as a change to approve and the rare case stands out.
+
+**Chains are invisible one action at a time.** Each hop is individually permitted, so no
+local evaluator will ever see one. It takes the fleet ledger and the lineage joined
+across systems — the clearest technical argument for why the paid half exists.
+
+**Detector discipline:** every detector is scored against the ledger before it acts
+alone. Detection proposes containment; a person confirms it.
+
+*Fails when:* reporting describes the product rather than the organization.
+
+## §10 Autonomy
+
+Every phase before this restricts. This one is why a company keeps paying.
+
+**Levels, not scores.** Observe, suggest, act reversibly, act within bounds, act
+autonomously, hold delegated authority. **A level is a policy bundle**, not a number in a
+field. A scalar that silently widens permission is unauditable and impossible to explain
+to a regulator.
+
+**Down is automatic, up is not.** An incident demotes on its own; nothing promotes
+without a person. **Trust never widens authority on its own** — it is evidence in front
+of a person, and the moment it becomes an automatic grant the product has removed the
+accountable human it sells.
+
+**Readiness is a checklist, not a score**, and **every item is a query** against
+something already stored, so nobody can tick one. An item nothing answers yet is unknown,
+which is not a pass.
+
+**Least privilege and synthesis are the same idea at two scales:** unused capability
+narrows a grant locally, repeated approval widens a rule organizationally. Nothing gets a
+private path into policy.
+
+**Two kinds of number, kept apart.** Actions, interventions, retries and spend are
+**measured**. Hours saved and value delivered are **modelled** from a rate the customer
+sets, and the result is labelled as theirs.
+
+**The one measure:** approvals removed without a rise in incidents.
+
+**Standing limit:** self-proposing is the ceiling in perpetuity. There is no version of
+this product that enacts its own rules.
 
 ---
 
-## 14. The Policy Engine
+## Open source and cloud
 
-Deterministic wherever possible.
+**Everything one person needs to govern the agents on their own machine is open and
+works with no account.** Anything that only means something across more than one person
+is the cloud. The transition is not a paywall; it is the moment a second person arrives,
+which is exactly where §04 sits.
 
-```
-Finance agents may:        read invoices
-Finance agents may not:    approve refunds > $1,000
-Finance managers may:      approve refunds ≤ $10,000
-CFO may:                   approve any refund
-```
-
-A policy language of `subject`, `action`, `resource`, `conditions`, `effect`:
-
-```
-ALLOW
-  subject = finance_manager
-  action = approve_refund
-  amount <= 10000
-
-DENY
-  subject = finance_agent
-  action = approve_refund
-```
-
-The LLM can interpret intent. The policy engine makes the final deterministic
-decision.
-
----
-
-## 15. The Action Gateway
-
-Where Memnox moves from memory to execution trust.
-
-```
-Agent
-  │ wants to act
-  ▼
-Memnox Action Gateway
-  │
-  ├── Identity
-  ├── Authorization
-  ├── Policy
-  ├── Context
-  ├── Risk
-  ├── Approval
-  └── Verification
-        │
-        ▼
-     ALLOW
-        │
-        ▼
-External system
-```
-
-```
-Viktor → refund $4,500 → Memnox
-  → policy: > $1,000 requires approval
-  → HOLD → Finance manager → APPROVE
-  → Viktor → Stripe
-```
+| Capability | Open runtime | Cloud |
+|---|---|---|
+| Discovery, map, doctor, harden | yes | yes |
+| Decision object, evaluator, why | yes | yes |
+| MCP proxy, seams, broker, egress | yes | yes |
+| Local ledger, replay, lineage | yes | yes |
+| Observe, learn, least privilege | yes | yes |
+| Kill, quarantine, panic | local | fleet |
+| Chained ledger across machines | local only | yes |
+| Proposal, review, fleet distribution | files only | yes |
+| Approvals into a room, review queue | terminal only | yes |
+| Organizational graph and ask | — | yes |
+| Fleet view, coverage, spend, evidence | — | yes |
+| Detectors, synthesis, readiness, levels | — | yes |
+| Census of agents nobody enrolled | — | yes |
+| Role and principal identity | kind only | yes |
+| Organizational state as a policy input | — | yes |
+| Cross-agent chain detection | — | yes |
+| Compliance evidence, SSO, SIEM | — | yes |
 
 ---
 
-## 16. Risk engine
-
-Not every action needs the same treatment.
-
-```
-LOW       └── read public information
-MEDIUM    └── create internal task
-HIGH      ├── send external email
-          ├── modify production data
-          └── change customer records
-CRITICAL  ├── transfer money
-          ├── delete production data
-          ├── change security configuration
-          └── expose restricted information
-```
-
-Then policies can say:
-
-```
-LOW       → automatic
-MEDIUM    → automatic + logging
-HIGH      → policy evaluation
-CRITICAL  → human approval
-```
-
----
-
-## 17. Verification engine
-
-Do not simply ask "Is this allowed?" Ask "Did the action actually achieve what
-was authorized?"
-
-Agent says "delete customer record", Memnox denies. Agent says "update customer
-email", Memnox allows, execution succeeds, and then verification asks: did the
-email actually change, did the audit event arrive, is the database state
-consistent?
-
-```
-Intent
- ↓
-Authorization
- ↓
-Execution
- ↓
-Verification
- ↓
-Ledger
-```
-
----
-
-## 18. Human approval system
-
-Approvals are a first-class primitive.
-
-```
-Agent → Memnox → Approval required
-  → Slack / Teams / Dashboard → Human → Approve
-  → Memnox → Agent
-```
-
-The approval object contains: who requested, what action, which resource, why,
-policy triggered, risk, context, proposed action, expiration, approver, decision,
-timestamp. This becomes part of the organizational memory.
-
----
-
-## 19. Delegation
-
-Agents should not only ask "Can I do this?" They should ask "Who should do this?"
-
-```
-Viktor Finance Agent
-       │ can't approve $20k
-       ▼
-Memnox
-       │ responsibility graph
-       ▼
-Finance Director
-       ▼
-Approval
-```
-
-Memnox knows who owns it, who can approve it, who is responsible, who is
-unavailable and who can substitute. That is organizational intelligence.
-
----
-
-## 20. Agent registry
-
-Every organization should have an AI workforce registry.
-
-```
-AGENTS
-
-Viktor Finance
-    owner: CFO
-    team: Finance
-    capabilities: invoices, CRM, email
-    risk: high
-
-Claude Coding Agent
-    owner: CTO
-    team: Engineering
-    capabilities: GitHub, Jira
-    risk: high
-
-Customer Support Agent
-    owner: Support
-    capabilities: CRM, email, knowledge base
-```
-
-**The registry federates; it does not discover.** §39 says not to build another
-IAM, and the market has since made that boundary sharper rather than softer:
-non-human identities outnumber people roughly 45 to 1, most organizations say
-their existing tools cannot manage agent identities, and Okta, Entro, Astrix and
-the rest sell exactly that discovery. Memnox must not compete for it, and must
-not be unable to answer the question buyers walk in holding — *which agents
-exist here?*
-
-So a census is **pushed in, never crawled**. Okta, Entro, a CMDB export or a
-script all submit the same shape, Memnox holds none of their credentials, and
-what comes back is the reconciliation none of them can produce:
-
-```
-FLEET
-
-Governed      9     Memnox issued the credential; every action is gated
-Ungoverned  403     something in the estate runs it and nothing decides what it may do
-```
-
-A reported agent counts as governed only when the census **names the Memnox
-agent it is**. Matching on similar names is the obvious third rule and is left
-out on purpose: a wrong match reports an ungoverned agent as governed, and that
-is the one direction this number must never fail in.
-
----
-
-## 21. Human plus AI organizational graph
-
-```
-                 ORGANIZATION
-                      │
-          ┌───────────┴───────────┐
-          │                       │
-        HUMAN                    AI
-          │                       │
-    ┌─────┼─────┐          ┌──────┼──────┐
-    │     │     │          │      │      │
-   CEO   CFO   CTO       Viktor  Claude  Custom
-    │     │     │          │      │
-    └─────┴─────┴──────────┴──────┘
-                      │
-                  MEMNOX GRAPH
-```
-
-This is where the vision becomes much larger than AI governance.
-
----
-
-## 22. Organizational learning loop
-
-The moat to focus on. Every action creates information.
-
-```
-Agent action → Policy decision → Human response
-  → Execution result → Outcome
-  → Memnox learns → Organizational graph updated
-```
-
-```
-Agent repeatedly requests approval
-  → Manager always approves
-  → Memnox detects pattern
-  → Suggest policy change
-  → Human approves policy
-  → Future requests become automatic
-```
-
-The organization becomes increasingly machine-readable.
-
----
-
-## 23. The Organizational Twin
-
-The internal name for the concept. Memnox maintains a continuously updated
-representation of: WHO, WHAT, WHY, WHERE, WHEN, WHO OWNS IT, WHO CAN ACCESS IT,
-WHO CAN CHANGE IT, WHAT HAS BEEN DECIDED, WHAT IS ALLOWED, WHAT IS HAPPENING,
-WHAT SHOULD HAPPEN.
-
-That is the core intellectual property.
-
----
-
-## 24. Data pipeline
-
-```
-Source
-  ▼
-Connector / Adapter
-  ▼
-Event Gateway
-  ▼
-Normalizer
-  ▼
-Entity Resolver
-  ▼
-Classifier
-  ├──────────────┐
-  ▼              ▼
-Knowledge      Event Store
-  ▼              ▼
-Graph          Timeline
-  └──────┬───────┘
-         ▼
-    Decision Engine
-         ▼
-    Policy Engine
-         ▼
-    Context Engine
-```
-
----
-
-## 25. The ingestion layer should be pluggable
-
-Do not hardcode the business around six connectors.
-
-```ts
-interface MemnoxSource {
-  authenticate(): Promise<void>;
-  sync(): AsyncIterable<MemnoxEvent>;
-  subscribe?(): AsyncIterable<MemnoxEvent>;
-  capabilities(): SourceCapabilities;
-}
-```
-
-Slack, GitHub, Notion, Jira, Viktor, Salesforce and custom adapters. The OSS SDK
-lets other companies build their own. That matters enormously.
-
----
-
-## 26. AI-agent adapter architecture
-
-```ts
-interface AgentAdapter {
-  identify(): AgentIdentity;
-  observe(event): Promise<void>;
-  getContext(request): Promise<Context>;
-  authorize(action): Promise<Decision>;
-  reportResult(result): Promise<void>;
-}
-```
-
-`ViktorAdapter`, `LindyAdapter`, `CustomAgentAdapter`, `LangGraphAdapter`,
-`OpenAIAgentAdapter`, `MCPAdapter`.
-
-You do not need to control the agent. You become the organizational interface.
-
----
-
-## 27. Three deployment models
-
-**A. Embedded.** An AI company embeds Memnox into its own product.
-
-```
-Viktor
- └── Memnox SDK
-       └── customer's organization
-```
-
-**B. Sidecar.** Useful for enterprises.
-
-```
-Agent
- ├── Memnox sidecar
- └── tools
-```
-
-**C. Gateway.** Useful when you need enforcement.
-
-```
-Agent → Memnox → Tools
-```
-
-Memnox should support all three eventually.
-
----
-
-## 28. OSS architecture
-
-```
-                    memnox runtime
-                          │
-       ┌──────────────────┼──────────────────┐
-       │                  │                  │
-     API                 SDK                MCP
-       │                  │                  │
-       └──────────────────┼──────────────────┘
-                          │
-                   Runtime Core
-                          │
-        ┌─────────────────┼─────────────────┐
-        │                 │                 │
-    Identity          Context            Policy
-        │                 │                 │
-        ├──────────── Decision ─────────────┤
-        │                 │                 │
-     Actions          Approvals           Ledger
-        │                 │                 │
-        └─────────────────┼─────────────────┘
-                          │
-                    Storage Layer
-                          │
-       ┌──────────────────┼─────────────────┐
-       │                  │                 │
-    SQLite/Postgres      Graph            Vector
-```
-
-Local development: SQLite, embedded vector index, local graph, filesystem.
-Production: Postgres, pgvector, graph storage, object storage, event stream. The
-interfaces stay identical.
-
----
-
-## 29. Cloud architecture
-
-```
-                         MEMNOX CLOUD
-                              │
-                     Global Control Plane
-                              │
-       ┌──────────────────────┼─────────────────────┐
-       │                      │                     │
- Organization API       Agent Management       Billing
-       │                      │                     │
-       └──────────────────────┼─────────────────────┘
-                              │
-                       Tenant Control Plane
-                              │
-       ┌──────────────────────┼─────────────────────┐
-       │                      │                     │
-    Ingestion             Governance            Analytics
-       │                      │                     │
-       ▼                      ▼                     ▼
- Connectors                Policies             Usage
- Events                    Approvals             Risk
- Sync                      Identity              Audit
-       │                      │
-       └──────────────┬───────┘
-                      ▼
-                 Org Runtime
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-        Graph      Memory       Ledger
-```
-
----
-
-## 30. The cloud should manage, not necessarily execute everything
-
-```
-Customer infrastructure
-
-       Memnox Runtime
-             │ telemetry / config
-             ▼
-       Memnox Cloud
-```
-
-The enterprise story: your sensitive organizational data can remain in your
-environment while Memnox Cloud manages policies, configuration and fleet
-operations.
-
----
-
-## 31. Privacy architecture
-
-Every fact should have metadata: `tenant_id`, `source`, `classification`,
-`owner`, `scope`, `created_at`, `expires_at`, `retention_policy`,
-`allowed_principals`, `provenance`, `confidence`.
-
-```json
-{
-  "fact": "Company is considering acquisition X",
-  "classification": "restricted",
-  "scope": ["executive"],
-  "allowed_agents": [],
-  "source": "board_meeting_92"
-}
-```
-
-The agent should not even know that the fact exists unless authorized.
-
----
-
-## 32. Provenance is critical
-
-Every piece of knowledge answers: where did this come from?
-
-```
-Fact
- ├── Slack message
- ├── meeting transcript
- ├── Notion document
- └── human confirmation
-```
-
-```
-Decision #481
-confidence = high
-authority = CFO
-evidence = 4 sources
-```
-
-This prevents Memnox from becoming an untrustworthy AI-generated knowledge base.
-
----
-
-## 33. Contradiction engine
-
-Organizations constantly contradict themselves. Notion says use PostgreSQL, Slack
-says we decided to migrate to MongoDB, GitHub has a MongoDB implementation.
-
-```
-CONFLICT
-
-Old decision:                PostgreSQL
-New evidence:                MongoDB
-Likely superseding decision: Slack message #123
-Status:                      Needs confirmation
-```
-
-A very valuable organizational intelligence feature.
-
-**Ranking the rivals is the part nobody else has.** Detecting a conflict is
-easy and half an answer; an agent told "these two disagree" is no better off
-than one told nothing. The engines that enforce rules cannot rank them —
-XACML, Rego and Cedar all evaluate policies and none of them resolves a
-conflict between two, because a rule file carries no record of who wrote it or
-under what authority. A Memnox fact does, which is exactly enough for a
-deterministic ladder:
-
-1. **Specificity.** A claim drawn for one scope beats one drawn for the whole
-   company. Narrowing is something somebody did on purpose.
-2. **Provenance.** A system of record beats a person typing beats a reading of
-   something said. The same ladder `verifiesItself` already walks.
-3. **Recency.** The later claim, by the date somebody put on it — a stated
-   effective date only. Two claims that merely happen to have been written
-   seconds apart are contemporaneous, and ranking those by their write
-   timestamps would settle by milliseconds exactly the disagreements a person
-   needs to see.
-
-Two refusals hold it together. **A disagreement is never silently resolved
-away**: when the ladder runs out the answer is `unresolved`, which is the
-company saying it has not decided, and an action resting on one is escalated
-rather than allowed. **An exception is not a disagreement**: "EU payments go
-through Adyen" narrows "payments go through Stripe" rather than contradicting
-it, so scopes that cannot both apply are never paired at all.
-
-Nothing is stored. A contradiction exists exactly as long as both facts are in
-force, and the act that ends one is `supersede` — the operation §32 already
-requires. A stored contradiction is a fifth status on a fact, kept in step by
-hand, wrong the moment somebody supersedes either side.
-
----
-
-## 34. Temporal memory
-
-The organization changes.
-
-```
-Decision A   2025 → active
-Decision B   2026 → supersedes A
-```
-
-Do not overwrite history. Store `valid_from`, `valid_until`, `supersedes`,
-`superseded_by`. Then agents can ask "What is our current policy?" or "Why did we
-choose this?" and both work.
-
----
-
-## 35. The action ledger
-
-Every governed action becomes:
-
-```
-Action
- ├── actor
- ├── human principal
- ├── organization
- ├── requested action
- ├── resource
- ├── policy evaluated
- ├── context used
- ├── decision
- ├── approval
- ├── execution
- ├── verification
- └── outcome
-```
-
-Extremely valuable for security, compliance, debugging, incident investigation
-and enterprise trust.
-
----
-
-## 36. What the dashboard becomes
-
-There are two UIs.
-
-**The agent and company dashboard**, for organizations using Memnox directly:
-
-```
-Overview
-
-AI Workforce   12 agents
-Policies       48 active
-Approvals      7 pending
-Decisions      1,842
-Risk           3 high-risk agents
-Activity       12,421 governed actions
-```
-
-**The embedded and API experience**, for AI companies like Viktor:
-
-```
-Viktor UI
-     └── Memnox operates invisibly
-```
-
-Viktor can surface "Governed by Memnox" without requiring customers to leave
-Viktor.
-
----
-
-## 37. The developer experience
-
-```
-npm install @memnox/sdk
-```
-
-```ts
-const memnox = new Memnox({ organization: "acme" });
-
-const context = await memnox.context({ task: "prepare customer proposal" });
-
-const decision = await memnox.authorize({
-  action: "send_email",
-  resource: customer,
-});
-
-await memnox.approval.request({ action: "refund", amount: 4500 });
-
-await memnox.actions.record(result);
-```
-
-That should take minutes to integrate.
-
----
-
-## 38. The open-source moat
-
-The OSS part should not try to be the entire commercial business.
-
-```
-Open source
-     ↓
-Developers
-     ↓
-AI companies
-     ↓
-Agents integrate Memnox
-     ↓
-Organizations adopt it
-     ↓
-Organizations need centralized management
-     ↓
-Memnox Cloud
-```
-
-Because the runtime is open, AI companies can trust that Memnox is not a black
-box sitting between their agents and their customers. That is strategically
-useful.
-
----
-
-## 39. What you should NOT build
-
-- Another AI employee. Viktor, Lindy and others already do this.
-- Another 3,000-connector platform. Let the agent platforms own that.
-- Another generic RAG platform. Too commoditized.
-- Another vector database. Not the moat.
-- Another SIEM. Not the core.
-- Another IAM system. Integrate with existing identity systems.
-- Another workflow automation platform. Do not compete with Zapier or ServiceNow.
-
-Instead: Memnox understands organizational authority and context across them.
-
----
-
-## 40. The strategic boundary
-
-| Layer | Who owns it |
-| --- | --- |
-| AI model | OpenAI, Anthropic, others |
-| AI employee | Viktor, Lindy, custom |
-| Tools | Salesforce, Slack, GitHub, others |
-| Identity provider | Okta, Microsoft, Google |
-| Workflow | ServiceNow, Jira, others |
-| Organization model | **Memnox** |
-| AI authority | **Memnox** |
-| Cross-agent context | **Memnox** |
-| Decision memory | **Memnox** |
-| Agent-to-organization governance | **Memnox** |
-
-That is the territory. It is narrower than it was when this was written, and
-worth stating plainly rather than discovering in a sales call.
-
-Both neighbours have moved in. From the data side, "context layer" is now a
-phrase semantic-layer vendors, knowledge-graph companies, data catalogues and
-the hyperscalers all use — AWS Context maps relationships into a graph and
-serves them to agents at runtime; Databricks is building an ontology for the
-same job. From the identity side, Okta ships an Agent Gateway, Auth0 treats MCP
-servers and autonomous agents as first-class identities, and Cisco bought
-Astrix.
-
-Neither models **authority**. A context vendor knows how data relates. An
-identity vendor knows which credential acted. Neither can say whose mandate an
-action falls under, at what ceiling, with what delegation, and what the company
-decided before — and neither can prove it six months later. The defensible
-sentence is the one no competitor can say:
-
-> Memnox knows which human's authority an action falls under, and can prove it
-> afterwards.
-
-The corollary is about **when** governance gets bought. Over 40% of agentic
-projects are forecast to be cancelled by the end of 2027, and inadequate risk
-controls is named among the reasons. A control plane sold as what supervises a
-fleet is priced against fleets that mostly never reach production. It has to be
-sold as what gets the pilot **into** production — the reason the refund agent is
-allowed to touch real money at all.
-
----
-
-## 41. The real Memnox architecture in one picture
-
-```
-                         ┌───────────────────────┐
-                         │      ORGANIZATION      │
-                         └───────────┬───────────┘
-                                     │
-               ┌─────────────────────┼─────────────────────┐
-               │                     │                     │
-            PEOPLE               AI WORKERS             SYSTEMS
-               │                     │                     │
-               │              ┌──────┼──────┐              │
-               │              │      │      │              │
-               │            Viktor Claude Custom            │
-               │              │      │      │              │
-               └──────────────┼──────┼──────┼──────────────┘
-                              │      │      │
-                              ▼      ▼      ▼
-                       ┌──────────────────────┐
-                       │       MEMNOX         │
-                       │                      │
-                       │ ORGANIZATIONAL       │
-                       │      RUNTIME         │
-                       └──────────┬───────────┘
-                                  │
-          ┌───────────────────────┼────────────────────────┐
-          │                       │                        │
-          ▼                       ▼                        ▼
-   ORGANIZATIONAL             GOVERNANCE              EXECUTION
-       MODEL                    MODEL                    MODEL
-          │                       │                        │
-      Org Graph               Identity                 Actions
-      Knowledge               Roles                    Policies
-      Decisions               Permissions               Risk
-      Relationships           Classification            Approval
-      Ownership               Constraints               Delegation
-      History                 Authority                 Verification
-          │                       │                        │
-          └───────────────────────┼────────────────────────┘
-                                  │
-                                  ▼
-                           ACTION / CONTEXT
-                              GATEWAY
-                                  │
-                     ┌────────────┼────────────┐
-                     │            │            │
-                  MCP/API       SDK        Sidecar
-                     │            │            │
-                     └────────────┼────────────┘
-                                  │
-                                  ▼
-                           COMPANY SYSTEMS
-```
-
----
-
-## 42. And then the Cloud
-
-```
-                         MEMNOX CLOUD
-                              │
-              ┌───────────────┼────────────────┐
-              │               │                │
-        Org Management    Agent Fleet      Governance
-              │               │                │
-        Users / Teams       Agents           Policies
-        Projects            Identity         Approvals
-        Sources             Capabilities     Audit
-              │               │                │
-              └───────────────┼────────────────┘
-                              │
-                        Control Plane
-                              │
-              ┌───────────────┼────────────────┐
-              │               │                │
-          Managed          Analytics        Enterprise
-         Connectors          Risk           Security
-              │               │                │
-              └───────────────┼────────────────┘
-                              │
-                              ▼
-                     CUSTOMER RUNTIMES
-```
-
----
-
-## 43. The ultimate product
-
-If this architecture works, the product is not "connect Slack and GitHub and ask
-questions."
-
-It becomes:
-
-> Every AI working for your company operates with the same understanding of the
-> organization, and within the authority the organization gives it.
-
-An AI agent can ask, and Memnox answers:
-
-- What should I know?
-- Am I allowed to know this?
-- Am I allowed to do this?
-- Who should approve this?
-- Who owns this?
-- Why do we do it this way?
-- What happened the last time?
-- What should happen next? (Memnox can help determine this.)
-
-And if the agent acts:
-
-```
-Intent
-  ↓
-Context
-  ↓
-Authority
-  ↓
-Policy
-  ↓
-Approval
-  ↓
-Execution
-  ↓
-Verification
-  ↓
-Memory
-```
-
-That loop is Memnox.
+## What we would not build
+
+Each is a place where the product would trade something it can prove for something it
+cannot.
+
+- **An estimated loss figure.** Nobody can derive it, and publishing one tells a security
+  reader the rest is marketing.
+- **A risk score that grants.** The moment a number silently widens or narrows a
+  permission it is unauditable. Authority belongs in a named level a person granted.
+- **Irreversible hardening.** Every automatic change prints its undo before it runs.
+- **Storing what it read.** Secret values, tool arguments and results are fingerprinted
+  or summarised, never kept.
+- **A staged attack as the demo.** As a first-run experience it is a fixture, and this
+  product's whole claim is that it uses none.
+- **Honeypots and decoys.** A false-positive problem with no buyer, and it invites an
+  agent to do something it would not otherwise have done.
+- **A model in the enforcement path.** Types and cheap certain checks in the path, models
+  in the ledger.
+- **Agent negotiation and certification.** Delegation with narrowing scope already covers
+  every case anyone can name.
+- **Risk exposure in currency.** The census reports counts, reach and owners, all of
+  which are true and all of which are more alarming.
+- **Value delivered, in our voice.** Report measured counts, take the rate from the
+  customer, label the result as theirs.
+- **Seventy tabs.** The product answers seven questions: who is it, what does it know,
+  what may it do, why, who authorised it, should it proceed, what happened.
+
+## Why this order
+
+| | |
+|---|---|
+| **Local first** | No account until a second person needs one. |
+| **Discovery** | It is the only honest aggregate at minute zero. |
+| **Interception** | A verdict nobody is obliged to ask for is advice. |
+| **Redirect** | A refusal names an alternative, or the agent abandons the task. |
+| **Intent** | Declared, never inferred in the path. |
+| **Give away** | The enforcement primitive is free; the organization is not. |
+| **Ledger** | The record precedes the rule. A policy editor opened before there is traffic is a blank form. |
+| **Ask** | Approvals precede workflows. |
+| **Latency** | The hot path never waits on the control plane, and never on a model. |
+| **Delivery** | A question that does not reach a person is the highest-leverage gap. |
+
+## Four things that never ship
+
+- **Doing the work.** No step writes the code or issues the refund.
+- **Another assistant.** A chat box is the interface, never the product.
+- **A copy of the business.** It understands and points.
+- **Silent automation.** Nothing acts without an accountable identity and a record.

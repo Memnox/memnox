@@ -12,9 +12,9 @@ Identity → Policy → Advisors → Approval → Audit
 
 2. **Policy.** Every matching policy is collected and the most restrictive effect wins. When nothing matches, the configured default effect applies. That default is `allow`, so onboarding can start in monitor-first mode; run with `--default-effect block` for strict mode. See [writing policies](policies.md).
 
-3. **Advisors.** These are deterministic escalators: recorded team decisions (`memnox memory add`), behavioral signals (`--behavior-guard`), low trust scores on risky actions (`--trust-guard`), unreported execution outcomes (`--verification-guard`), and provenance. Any of them can tighten a decision, and none of them can loosen it.
+3. **Advisors.** These are deterministic escalators: recorded team decisions (`memnox memory add`), behavioral signals (`--behavior-guard`), unreported execution outcomes (`--verification-guard`), and provenance. Any of them can tighten a decision, and none of them can loosen it.
 
-4. **Approval.** `require_approval` creates a pending approval bound to the exact action fingerprint, meaning agent plus action plus target plus environment, so a grant never applies to a different one of any of those. A human resolves it through the CLI, API, or SDK, and a Slack-compatible webhook can announce it (`--approval-webhook`).
+4. **Approval.** `escalate` creates a pending approval bound to the exact action fingerprint, meaning agent plus action plus target plus environment, so a grant never applies to a different one of any of those. A human resolves it through the CLI, API, or SDK, and a Slack-compatible webhook can announce it (`--approval-webhook`).
 
 5. **Audit.** Every request appends exactly one event to an append-only, hash-chained log recording who, what, decision, risk, matched policies, advisory signals, and session. Replay a session with `memnox replay <sessionId>`, and generate evidence with `memnox report`.
 
@@ -82,7 +82,7 @@ Beyond `/v1/actions/check`, the runtime exposes the named verbs other systems in
 | `GET /v1/policies` · `POST /v1/policies/validate` · `POST /v1/policies/reload` | inspect and reload the rule set |
 | `POST /v1/memory/search` | search recorded decisions |
 | `GET /v1/approvals/:id` | poll one approval, as the agent that raised it or as an admin |
-| `GET /v1/agents/:id` · `POST /v1/agents/:id/rotate` | one agent's trust score, and issuing a new credential |
+| `GET /v1/agents/:id` · `POST /v1/agents/:id/rotate` | one agent, the level it was granted, and issuing a new credential |
 
 From the SDK, the same surface reads as predicates:
 

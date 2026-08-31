@@ -19,19 +19,6 @@ new BehaviorAdvisor(auditLog, ['eng-lead']);
 The baseline is the audit log, so the signal costs no extra storage and is
 replayable.
 
-## TrustAdvisor — has this agent earned this?
-
-`computeTrustScore` turns an agent's allowed/blocked/approval-requested counts
-into a 0–100 score. A low-trust agent attempting a risky action needs a human,
-even where a high-trust agent would not.
-
-```ts
-new TrustAdvisor(['eng-lead']);
-```
-
-Trust is earned by a clean history and lost by blocks. It never grants
-permission — it only withholds the benefit of the doubt.
-
 ## VerificationAdvisor — did this agent ever say what happened?
 
 An agent that keeps being allowed to act and never reports an outcome leaves an

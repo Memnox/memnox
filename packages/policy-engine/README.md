@@ -27,7 +27,7 @@ engine.evaluate({
 1. **Match** — every policy whose `match` block covers the action, target, and
    environment. Patterns are glob-style (`deploy.*`, `payment/*`).
 2. **Combine** — the strictest matching effect wins, by `EFFECT_PRECEDENCE`:
-   `block` > `require_approval` > `allow`. Rule order never matters, so two teams
+   `withhold` > `escalate` > `allow`. Rule order never matters, so two teams
    editing the same file cannot create an ordering bug.
 3. **Classify** — `risk-classifier.ts` derives a risk level from the verb and the
    environment, independent of whether a policy matched.

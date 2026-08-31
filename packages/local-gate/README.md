@@ -47,7 +47,7 @@ gets the same verdict.
 only component that sees every process. A per-process counter is not a limit.
 
 **Replace the runtime.** It runs before it. Both verdicts apply and the
-strictest wins, so a local `allow` never overrides a runtime `block`.
+strictest wins, so a local `allow` never overrides a runtime `withhold`.
 
 ## Who uses it
 

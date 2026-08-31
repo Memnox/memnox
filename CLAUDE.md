@@ -11,12 +11,31 @@ interface       packages/cli, packages/runtime/src/routes, packages/sdk, sdks/*
 application     ActionGateway, ApprovalService, AgentRegistry, DecisionRegistry
                 orchestration + invariants; owns the pipeline
 
-domain          packages/core, policy-engine, memory, risk, org-graph
+domain          packages/core, policy-engine, discovery, ledger, autonomy, workflow,
+                memory, risk, org-graph
                 pure types, constants, deterministic logic; core + policy-engine have ZERO deps
 
 infrastructure  packages/runtime/src/stores, codecs, notifiers, @memnox/postgres, @memnox/redis
                 adapters behind ports defined in core
 ```
+
+### The phases the packages answer to
+
+`VISION.md` is the build sequence: eleven phases, each answering one question. Cite one
+by number when a change is answering to it (`§01` for the decision object, `§03` for
+observe and learn, `§10` for what never ships).
+
+| Package | Phase | Owns |
+|---|---|---|
+| `@memnox/discovery` | §00 | what can act here, what it reaches, findings, reversible harden steps |
+| `@memnox/core` + `@memnox/policy-engine` | §01 | the decision object, declared scope, the explanation built from the match |
+| `@memnox/mcp-firewall`, `CapabilityBroker` | §02 | seams, the MCP proxy both ways, capabilities and leases |
+| `@memnox/ledger` | §03, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains |
+| `@memnox/organization` | §04 | subjects in three parts, the census, supply chain events, installs |
+| `@memnox/policy-engine` | §05 | policies, proposals, simulation, blast radius |
+| `@memnox/org-graph` | §06, §07 | authority, ownership, state facts |
+| `@memnox/workflow` | §08 | the gate invariant, runs, steps, briefings |
+| `@memnox/autonomy` | §10 | levels, readiness, synthesis, role economics |
 
 ### The application layer is split by responsibility
 
@@ -58,7 +77,7 @@ That is the whole product boundary. The predecessor codebase was an AI project m
 
 ### Gate, not worker
 
-Memnox **gates** an action against policy — a deterministic allow / block / require-approval on a named action, plus who authorizes it when nobody has. It does not perform the action, and it does not judge the work: no opinions on quality, no summaries of someone's change, no approve/request-changes on anyone's pull request.
+Memnox **gates** an action against policy — a deterministic **allow / withhold / escalate** on a named action, plus who authorizes it when nobody has. It does not perform the action, and it does not judge the work: no opinions on quality, no summaries of someone's change, no approve/request-changes on anyone's pull request.
 
 Memnox does not read code. It has no import graph, no diff scanner, and no editor integration. An agent tells the runtime what it intends to do — action, target, environment — and the runtime rules on that request.
 
@@ -67,9 +86,34 @@ Out of scope, permanently: code generation, code review, diff or repository scan
 The only files Memnox writes are its own: policy files and its local stores.
 
 - Dependency direction: interface → application → domain; infrastructure implements domain ports. Never import another package's internals — only its `index.ts`.
-- **The decision path is deterministic**: no LLM, no network, no clock-as-input to a verdict, no randomness. Intelligence lives behind `LlmProvider` and can draft/explain, never decide.
+- **The decision path is deterministic**: no LLM, no network, no clock-as-input to a verdict, no randomness, and a p99 under a millisecond in process. Intelligence lives behind `LlmProvider` and can draft, never decide and never explain.
 - New escalation logic is an `ActionAdvisor`: escalation-only (never loosens), deterministic, and failure means "no escalation" — never a crash.
 - Fail-closed on identity/provenance (unknown token, unreadable state). Where a surface fails open, say so in a comment and name what would break otherwise.
+
+## The eight things a change must not undo
+
+Each is an invariant with a test behind it. Breaking one is not a regression, it is a
+different product.
+
+1. **Three effects.** `allow`, `withhold`, `escalate`. The third keeps a governed system from being a wall. There is no fourth, and `redact` is not coming back — partial answers are a `withheld` count on an answer, not an effect on a decision.
+2. **A refusal names an alternative.** `Decision.alternative` is resolved from the rule that withheld, never invented. An agent told only no abandons the task; one told what to use instead finishes it.
+3. **Intent is declared, never inferred.** A client supplies the `Task` and its `declaredScope`; `compareDeclaredScope` compares and never judges. An undeclared dimension is `undeclared`, not a guess, and no model is consulted on this path — ever.
+4. **Untrusted context cannot become authority.** `ContextBlock.trust` is a type, set by whoever supplied the block. A detector can be wrong; a type cannot be talked around.
+5. **`shadowEffect` is always computed.** Observe and advise downgrade what is *applied*, never what was *decided*. Phase 03 has nothing to report and §05 nothing to simulate otherwise.
+6. **The explanation is built from the match.** `buildExplanation` reads the decision, the request and the scope comparison. An explanation a model wrote afterwards is a plausible story about a decision, which is worse than none.
+7. **Every harden step states its inverse.** `HardenStep.revert` is not optional, and the undo is printed before anything runs.
+8. **A secret value never leaves the process that read it.** Discovery stores a path, a kind and a fingerprint; the ledger stores a `payloadDigest`. A report carrying the shape of somebody's SSH key is the worst bug this product could ship.
+
+## What this codebase will not grow back
+
+These were removed on purpose. Adding one back is a product decision, not a refactor.
+
+- **A trust score.** A number that silently narrows a permission is unauditable. Authority is `autonomyLevel`: a named bundle of rules a person granted, in `@memnox/autonomy`.
+- **A model explaining a decision.** `DecisionExplainer` is gone; `buildExplanation` replaced it.
+- **A model inferring intent.** `IntentClassifier` is gone; a declared `Task` replaced it.
+- **An estimated loss, a currency exposure, or hours saved in our voice.** Measured counts only; a modelled number takes its rate from the customer and is labelled as theirs.
+- **A staged attack, a seeded workspace, or any fixture.** The demo is the reader's own machine. Every screen has to be honest when empty.
+- **Irreversible hardening**, honeypots, agent certification, and any auto-containment a detector took without a person.
 
 ## Rules
 
@@ -88,7 +132,7 @@ The only files Memnox writes are its own: policy files and its local stores.
 | Thing | Convention | Example |
 |---|---|---|
 | Files | kebab-case | `action-gateway.ts`, `decision-registry.ts` |
-| Classes | PascalCase | `PolicyEngine`, `TaintAdvisor` |
+| Classes | PascalCase | `PolicyEngine`, `CapabilityBroker` |
 | Methods | camelCase verb-first | `authorize()`, `register()` |
 | Constants | SCREAMING_SNAKE | `DECISION_EFFECT`, `APPROVAL_TTL_MS` |
 | Route modules | `<domain>.routes.ts` exporting `register<Domain>Routes(app, ctx)` | `memory.routes.ts` |
@@ -102,7 +146,8 @@ fixed by making the dependency an argument, and that is the pattern to follow.
 | Surface | Seam |
 |---|---|
 | CLI commands | `registerXCommand(program, context)`; write via `context.out`, build clients via `context.client(options)` |
-| A command's own ambient dependency | a defaulted third parameter — `ServerLauncher`, `LlmProviderFactory` |
+| A command's own ambient dependency | a defaulted third parameter — `ServerLauncher`, `MachineReaderFactory` |
+| Discovery | every detector is a pure function of a `MachineReader`; `HardenWriter` takes what is written, and refuses any path outside the Memnox root |
 | MCP firewall | `FirewallSession` routes over an injected `FirewallChannel`; `McpFirewall` owns the child process and nothing else |
 | HTTP | `MemnoxClient` accepts a `fetch` transport, so tests exercise real client code |
 

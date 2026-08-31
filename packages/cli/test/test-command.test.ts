@@ -102,7 +102,7 @@ describe('memnox test', () => {
     expect(out.text).toContain('no rule your organization wrote covers this');
   });
 
-  it('counts a held action as stopped, not as a gap', async () => {
+  it('counts an escalated action as stopped, not as a gap', async () => {
     const runtime = answering((body) =>
       request(body).target === 'src/index.ts'
         ? { effect: DECISION_EFFECT.ALLOW }
@@ -111,7 +111,7 @@ describe('memnox test', () => {
 
     const out = await run(['test', '--token', 'mnx_test'], runtime);
 
-    expect(out.text).toContain('PASS  HELD');
+    expect(out.text).toContain('PASS  ESCALATED');
     expect(process.exitCode).toBe(0);
   });
 

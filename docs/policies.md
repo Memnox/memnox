@@ -1,6 +1,6 @@
 # Writing policies
 
-Policies are plain YAML, so they stay reviewable, diffable, and enforced deterministically. All match fields take wildcard patterns (`*` matches anything), and any field you leave out matches everything. When several policies match the same action, the most restrictive effect wins: `block` beats `require_approval`, which beats `allow`.
+Policies are plain YAML, so they stay reviewable, diffable, and enforced deterministically. All match fields take wildcard patterns (`*` matches anything), and any field you leave out matches everything. When several policies match the same action, the most restrictive effect wins: `withhold` beats `escalate`, which beats `allow`.
 
 ```yaml
 version: 1

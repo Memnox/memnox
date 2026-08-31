@@ -72,7 +72,7 @@ Four things happened:
 Every deterministic guard is on:
 
 ```
-Guards: shell indirection, taint, decision memory, behavior, trust, verification
+Guards: shell indirection, taint, decision memory, behavior, verification
 ```
 
 A **guard** is an extra check that can *tighten* a decision your policies already
@@ -85,10 +85,9 @@ guessing. Here is what each one watches for:
 | **taint** | the agent has read untrusted content this session (a stranger's GitHub issue, a fetched page) and is now doing something privileged. The prompt-injection defense |
 | **decision memory** | the action contradicts a decision your team recorded with `memnox memory add` |
 | **behavior** | the pattern looks off — a destructive action this agent has never taken, or a sudden burst |
-| **trust** | a low-scoring agent attempts something risky. Each block costs 2 points of 100; 50 clean actions earn 1 back |
 | **verification** | earlier allowed actions never reported back whether they actually worked |
 
-New terms here — taint, trust score, guard — are defined in
+New terms here — taint, declared scope, guard — are defined in
 [concepts.md](concepts.md).
 
 That is safe precisely because the first run **observes**. A guard that fires is
@@ -241,8 +240,11 @@ Evidence
 
 Only what the record actually carries is ticked; a `·` is Memnox saying it does
 not have that, rather than implying it does. `trace` is deterministic and
-offline. `memnox explain` is the same event in plain language and does call a
-model — that is the difference between them.
+offline. `memnox why <decisionId>` is the same decision in five lines, also read
+back off the record: source, resource, authority, rule, outcome, each citing the
+rule version or the context block it came from. Neither calls a model, because an
+explanation written afterwards is a plausible story about a decision rather than
+the decision.
 
 ---
 
@@ -279,15 +281,15 @@ memnox simulate candidate.yaml
 Cases evaluated : 19    Unchanged : 13    Changed : 6
 
   STRICTER  allow → block             file.write .env.local              [secret-file-protection]
-  STRICTER  allow → require_approval  file.write app/(auth)/login/…      [auth-code-review]
-  STRICTER  allow → require_approval  dependency.add left-pad@1.0.0      [dependency-addition-approval]
+  STRICTER  allow → escalate  file.write app/(auth)/login/…      [auth-code-review]
+  STRICTER  allow → escalate  dependency.add left-pad@1.0.0      [dependency-addition-approval]
 ```
 
 And when a change would loosen something:
 
 ```
 Warning: 1 action(s) become MORE permissive under the candidate set.
-  LOOSER  require_approval → allow  shell.execute chmod -R 777 /etc
+  LOOSER  escalate → allow  shell.execute chmod -R 777 /etc
 ```
 
 That warning is the guardrail. Treat it as a stop sign.
@@ -313,7 +315,7 @@ policies:
 ```
 
 All match fields take wildcards; omitted fields match everything. When several
-policies match, **the most restrictive wins** (`block` > `require_approval` >
+policies match, **the most restrictive wins** (`withhold` > `escalate` >
 `allow`). A `minApprovals: 2` gives you the two-person rule.
 
 > **If you set `project:`**, every request must name that project or the rule is
@@ -455,39 +457,9 @@ Observed
 targets the same rule catches. It is not a code dependency graph — Memnox does
 not read your code, and never claims to.
 
-**`memnox plan <file>`** rules on a whole run before any of it starts. A plan is
-a list of intended actions:
-
-```yaml
-version: 1
-actions:
-  - action: code.modify
-    target: payment/refund.ts
-  - action: database.migrate
-    target: production
-    environment: production
-  - action: shell.execute
-    target: rm -rf ./dist
-```
-
-```
-Memnox plan — 3 action(s)
-
-  ● approval  code.modify payment/refund.ts
-              policy "payment-code-approval" applied
-  ● approval  database.migrate production [production]
-  ✗ block     shell.execute rm -rf ./dist
-              destructive command behind indirection: rm -f -r ./dist
-
-Plan: 0 to allow, 2 needing approval, 1 withheld.
-Nothing was done and nothing was recorded — this is what would happen.
-```
-
-It uses the same exit codes as `memnox check` — `0`, `2`, `3` — so one pipeline
-can branch on either. `memnox plan --from-session <id>` plans a session already
-in your audit trail, which answers *"what would that run do under today's
-rules?"* A misspelled field is an error rather than a silently dropped one,
-because a typo'd `enviroment` would quietly change every verdict below it.
+**`memnox why <decisionId>`** answers *why did that happen*, and the reverse
+question — *what would happen if I tried this* — is `memnox check --dry`, which
+rules on one action without recording anything.
 
 ### The agent asks on its own
 

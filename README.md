@@ -30,7 +30,7 @@ This is the Memnox runtime monorepo. It contains:
 
 ## What it does
 
-AI agents now write files, run shell commands, and call APIs on your behalf. Memnox sits between those agents and your systems, and decides on every action before it runs: **allow, block, or ask a human first.**
+AI agents now write files, run shell commands, and call APIs on your behalf. Memnox sits between those agents and your systems, and decides on every action before it runs: **allow, withhold, or escalate to a person.**
 
 ```
 AI Agent  ──▶  Memnox Runtime  ──▶  Your Systems
@@ -73,12 +73,12 @@ memnox check shell.execute "rm -rf /"
 ```
 Decision : ALLOW
 Risk     : critical
-Reason   : Recursive force-delete is blocked for agents.
+Reason   : Recursive force-delete is withheld from agents.
 Policies : recursive-delete-protection
-Withheld : block (this environment is only being monitored)
+Shadow   : withhold (this environment is only being observed)
 ```
 
-That rule was scaffolded from your repository, nothing was blocked to produce
+That rule was scaffolded from your repository, nothing was withheld to produce
 the answer, and the last line is what enforcing would have done. Then watch it
 against real work:
 
@@ -109,16 +109,16 @@ Nothing below uses demo data or a hosted account. Every number comes from your r
 **`memnox test`** — fire real dangerous actions at your own gate and see which ones it stops. It is read-only by default: nothing is recorded and no action is taken.
 
 ```
-  PASS  BLOCKED   Wipe a directory tree with rm -rf
+  PASS  WITHHELD  Wipe a directory tree with rm -rf
         shell.execute "rm -rf /" — destructive-shell-protection
-  PASS  HELD      Deploy to production unattended
+  PASS  ESCALATED Deploy to production unattended
         deploy.release "api" — production-deploy-approval
   GAP   ALLOWED   Force-push over shared git history
         repository.force_push "main" — no rule your organization wrote covers this
 
 Result
   11 capabilities tested
-  4 blocked, 1 held for approval, 6 allowed
+  4 withheld, 1 escalated to a person, 6 allowed
 
   5 of these your agent can do right now, unattended:
     - Rewrite a credential file
@@ -131,33 +131,17 @@ It exits non-zero when something got through, so it belongs in CI. Add `--record
 
 ```
 Governed by
-  policy  production-database-protection — blocks
+  policy  production-database-protection — withholds
           also governs database.drop, database.truncate
   signal  behavior-guard — requires approval
-          4 blocked attempts in the last 10 minutes — agent is probing policy boundaries
+          4 withheld attempts in the last 10 minutes — agent is probing policy boundaries
 
 Who can authorise it
   team-lead
 
 Observed
-  1 of the last 11 audited actions — 1 blocked, 0 held, 0 allowed
+  1 of the last 11 audited actions — 1 withheld, 0 escalated, 0 allowed
 ```
-
-**`memnox plan run.yaml`** — rule on a whole run before any of it starts. Same exit codes as `memnox check`, so one pipeline can branch on either.
-
-```
-Memnox plan — 5 action(s)
-
-  ● approval  code.modify payment/refund.ts
-              policy "payment-code-approval" applied
-  ✗ block     shell.execute rm -rf ./dist
-              destructive command behind indirection: rm -f -r ./dist
-
-Plan: 0 to allow, 4 needing approval, 1 blocked.
-Nothing was done and nothing was recorded — this is what would happen.
-```
-
-`--from-session <id>` plans a session already on record, which answers *"what would this run do under today's rules?"*
 
 **`memnox drift`** — where what your organization states and what its trail shows have come apart: verdicts a monitored environment let through, decisions agents keep running into, rules nothing has ever matched, decisions past review. Exits non-zero when it finds any.
 
@@ -168,7 +152,7 @@ Nothing was done and nothing was recorded — this is what would happen.
        ↓
   Rules       destructive-shell-protection
        ↓
-  Decision    BLOCK
+  Decision    WITHHOLD
 
 Evidence
   ✓ agent identity    local-editor (f7652c84…)
@@ -177,7 +161,7 @@ Evidence
   · reported outcome  never reported
 ```
 
-`memnox explain` is the same event in plain language, and it does use a model. `trace` never does.
+**`memnox why <decisionId>`** — the same decision in five lines, read back off the record: source, resource, authority, rule, outcome. Every line cites the rule version or the context block it came from. Nothing here is generated, because an explanation a model wrote afterwards is a plausible story about a decision, which is worse than none.
 
 ## Beyond one machine
 
@@ -231,7 +215,7 @@ Rules are plain YAML that you commit and review like any other code:
     actions: ["code.modify"]
     targets: ["payment/*"]
   decision:
-    effect: require_approval
+    effect: escalate
     approvers: ["security-team"]
 ```
 
@@ -313,7 +297,7 @@ A few rules keep the codebase coherent: the decision path stays deterministic, n
 
 **Deterministic core.** No LLM, no network calls, and no randomness in the decision path. Intelligence can draft and explain, and it never enforces.
 
-**Fail closed.** Unknown identity, unreadable state, or ambiguous input produces a block rather than a guess.
+**Fail closed.** Unknown identity, unreadable state, or ambiguous input produces a withhold rather than a guess.
 
 **Everything auditable.** A decision that cannot be proven afterwards did not happen.
 
