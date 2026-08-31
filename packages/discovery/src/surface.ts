@@ -21,6 +21,18 @@ export interface Surface {
   /** The file that proved it. A surface with no evidence is a guess. */
   detectedFrom: string;
   tools?: McpTool[];
+  /**
+   * The launch lines a config declared. A config says what a server is called and
+   * never what it can do, so these exist to be asked over the protocol.
+   */
+  servers?: McpServerLaunch[];
+}
+
+/** Enough to start one MCP server and ask it what it holds. */
+export interface McpServerLaunch {
+  name: string;
+  command: string;
+  args: string[];
 }
 
 /** The protocol's own annotation, when a server bothered to publish one. */

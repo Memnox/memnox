@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { HardenWriter, MachineReader } from '@memnox/discovery';
+import type {
+  HardenWriter,
+  MachineReader,
+  McpLister,
+  McpToolDeclaration,
+} from '@memnox/discovery';
 import { registerDiscoverCommand } from '../src/commands/discover.command';
 import { registerDoctorCommand } from '../src/commands/doctor.command';
 import { registerHardenCommand } from '../src/commands/harden.command';
@@ -48,12 +53,23 @@ const MACHINE = {
   [`${HOME}/.aws/credentials`]: '[default]\naws_access_key_id = AKIAEXAMPLE',
 };
 
+/** Never the real one: the default starts every MCP server this machine declares. */
+class StubLister implements McpLister {
+  constructor(private readonly tools: McpToolDeclaration[] = []) {}
+  async listTools(): Promise<McpToolDeclaration[]> {
+    return this.tools;
+  }
+}
+
+const noTools = (): McpLister => new StubLister();
+
 describe('memnox (discover)', () => {
   it('names the agents and what they can reach right now', async () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
-      (program, context) => registerDiscoverCommand(program, context, () => machine),
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => machine, noTools),
       ['discover'],
     );
 
@@ -63,11 +79,53 @@ describe('memnox (discover)', () => {
     expect(out.text).toContain('memnox doctor');
   });
 
+  /**
+   * The finding existed and could never fire, because nothing ever filled in a tool.
+   * This is the line the opening screen is built on.
+   */
+  it('counts the destructive tools nothing is checking', async () => {
+    const machine = FakeMachine.from(MACHINE);
+    const lister = (): McpLister =>
+      new StubLister([
+        { name: 'get_issue' },
+        { name: 'delete_repo' },
+        { name: 'drop_database' },
+      ]);
+
+    const { out } = await runCommand(
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => machine, lister),
+      ['discover'],
+    );
+
+    expect(out.text).toContain('3 tools');
+    expect(out.text).toContain('2 of them destructive');
+    expect(out.text).toContain('nothing is checking any of them');
+  });
+
+  it('asks nobody when told not to probe', async () => {
+    const machine = FakeMachine.from(MACHINE);
+    let started = 0;
+    const lister = (): McpLister => {
+      started += 1;
+      return new StubLister();
+    };
+
+    await runCommand(
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => machine, lister),
+      ['discover', '--no-probe'],
+    );
+
+    expect(started).toBe(0);
+  });
+
   it('never prints a secret value', async () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
-      (program, context) => registerDiscoverCommand(program, context, () => machine),
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => machine, noTools),
       ['discover', '--json'],
     );
 
@@ -78,7 +136,8 @@ describe('memnox (discover)', () => {
     const machine = FakeMachine.from({});
 
     const { out } = await runCommand(
-      (program, context) => registerDiscoverCommand(program, context, () => machine),
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => machine, noTools),
       ['discover'],
     );
 

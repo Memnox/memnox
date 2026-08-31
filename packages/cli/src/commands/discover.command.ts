@@ -3,10 +3,13 @@ import type { Command } from 'commander';
 import {
   discover,
   NodeMachineReader,
+  NodeMcpLister,
   SENSITIVITY,
   SURFACE_KIND,
+  TOOL_EFFECT,
   type DiscoveryReport,
   type MachineReader,
+  type McpLister,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
 
@@ -25,6 +28,8 @@ export function registerDiscoverCommand(
   program: Command,
   context: CliContext,
   buildReader: MachineReaderFactory = () => new NodeMachineReader(homedir()),
+  buildLister: () => McpLister = () => new NodeMcpLister(),
+  cwd: () => string = () => process.cwd(),
 ): void {
   program
     .command('discover', { isDefault: true })
@@ -32,8 +37,18 @@ export function registerDiscoverCommand(
       'What can act on this machine, and what it can reach. No account, no network.',
     )
     .option('--json', 'emit the report as JSON')
-    .action(async (options: { json?: boolean }) => {
-      const report = await discover(buildReader(), { now: new Date().toISOString() });
+    .option(
+      '--no-probe',
+      'do not start MCP servers to ask what they hold; tools go uncounted',
+    )
+    .action(async (options: { json?: boolean; probe: boolean }) => {
+      const report = await discover(buildReader(), {
+        now: new Date().toISOString(),
+        // The directory they are standing in holds the credentials the repo has.
+        projectDirs: [cwd()],
+        // Starting somebody else's server is the one thing here that runs code.
+        ...(options.probe ? { lister: buildLister() } : {}),
+      });
       if (options.json === true) {
         context.out.line(JSON.stringify(report, null, 2));
         return;
@@ -68,6 +83,28 @@ function render(context: CliContext, report: DiscoveryReport): void {
         servers.map((surface) => surface.agentId.replace('agt_', '')).join(', ') +
         (tools === 0 ? '' : style.dim(`  ${tools} tools`)),
     );
+
+    const named = [
+      ...new Set(
+        servers.flatMap((surface) => (surface.servers ?? []).map((each) => each.name)),
+      ),
+    ];
+    if (named.length > 0) {
+      out.line(style.bold('MCP SERVERS'.padEnd(LABEL_WIDTH)) + named.join(', '));
+    }
+
+    // The line that lands: a count of destructive tools nothing is checking.
+    const destructive = servers
+      .flatMap((surface) => surface.tools ?? [])
+      .filter((tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE);
+    if (destructive.length > 0) {
+      out.line(
+        ''.padEnd(LABEL_WIDTH) +
+          style.warn(
+            `${destructive.length} of them destructive, and nothing is checking any of them`,
+          ),
+      );
+    }
   }
 
   const reachable = report.resources.filter(

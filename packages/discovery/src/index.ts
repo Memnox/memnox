@@ -10,3 +10,4 @@ export * from './harden';
 export * from './discover';
 export * from './detectors/index';
 export * from './node-machine';
+export * from './node-mcp-lister';

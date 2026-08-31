@@ -115,3 +115,12 @@ export type HardenMode = (typeof HARDEN_MODE)[keyof typeof HARDEN_MODE];
 /** A fingerprint, never the value. The reader holds the secret; nothing downstream does. */
 export const FINGERPRINT_ALGORITHM = 'sha256';
 export const FINGERPRINT_LENGTH = 16;
+
+/**
+ * Bounded because this is the one place discovery starts somebody else's process.
+ * A server that will not answer in this long is a gap in the report, not a stall.
+ */
+export const MCP_PROBE_TIMEOUT_MS = 5_000;
+
+/** The revision the probe negotiates; a server that wants another still answers. */
+export const MCP_PROTOCOL_VERSION = '2025-06-18';

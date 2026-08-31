@@ -63,7 +63,14 @@ export class ConfigDetector implements AgentDetector {
       const full = join(home, mcpPath);
       const servers = readMcpServers(await reader.read(full));
       if (servers.length > 0) {
-        surfaces.push({ agentId: agent.id, kind: 'mcp', detectedFrom: full, tools: [] });
+        // The launch lines travel so the tools can be asked for over the protocol.
+        surfaces.push({
+          agentId: agent.id,
+          kind: 'mcp',
+          detectedFrom: full,
+          tools: [],
+          servers: servers.map((server) => ({ ...server, args: [...server.args] })),
+        });
       }
     }
 
