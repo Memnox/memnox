@@ -24,6 +24,7 @@ export default defineConfig({
       '@memnox/sdk': packageSrc('sdk'),
       '@memnox/intelligence': packageSrc('intelligence'),
       '@memnox/mcp-firewall': packageSrc('mcp-firewall'),
+      '@memnox/tool-hook': packageSrc('tool-hook'),
       '@memnox/postgres': packageSrc('postgres'),
     },
   },

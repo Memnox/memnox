@@ -20,6 +20,7 @@
       "@memnox/sdk": ["packages/sdk/src"],
       "@memnox/intelligence": ["packages/intelligence/src"],
       "@memnox/mcp-firewall": ["packages/mcp-firewall/src"],
+      "@memnox/tool-hook": ["packages/tool-hook/src"],
       "@memnox/postgres": ["packages/postgres/src"]
     }
   },

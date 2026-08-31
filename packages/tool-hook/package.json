@@ -1,0 +1,64 @@
+{
+  "name": "@memnox/tool-hook",
+  "version": "0.4.0",
+  "description": "The local seams \u2014 a PreToolUse hook, a shell wrapper, a git credential helper, an egress proxy and a Docker socket gate \u2014 that route what an agent does through Memnox before it happens.",
+  "keywords": [
+    "hooks",
+    "claude-code",
+    "seam",
+    "ai-agents",
+    "security"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/tool-hook#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Memnox/memnox.git",
+    "directory": "packages/tool-hook"
+  },
+  "bugs": {
+    "url": "https://github.com/Memnox/memnox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "bin": {
+    "memnox-tool-hook": "dist/cli.js",
+    "memnox-shell": "dist/shell-cli.js",
+    "memnox-git-credential": "dist/git-credential-cli.js",
+    "memnox-egress": "dist/egress-cli.js",
+    "memnox-docker": "dist/docker-cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": "./dist/cli.js",
+    "./shell": "./dist/shell-cli.js",
+    "./git-credential": "./dist/git-credential-cli.js",
+    "./egress": "./dist/egress-cli.js",
+    "./docker": "./dist/docker-cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@memnox/core": "0.4.0",
+    "@memnox/local-gate": "0.4.0",
+    "@memnox/sdk": "0.4.0"
+  }
+}

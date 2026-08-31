@@ -44,6 +44,7 @@
     "@memnox/core": "0.4.0",
     "@memnox/discovery": "0.4.0",
     "@memnox/intelligence": "0.4.0",
+    "@memnox/ledger": "0.4.0",
     "@memnox/local-gate": "0.4.0",
     "@memnox/memory": "0.4.0",
     "@memnox/org-graph": "0.4.0",
@@ -51,6 +52,7 @@
     "@memnox/postgres": "0.4.0",
     "@memnox/runtime": "0.4.0",
     "@memnox/sdk": "0.4.0",
+    "@memnox/tool-hook": "0.4.0",
     "commander": "^12.1.0",
     "yaml": "^2.4.0"
   }
