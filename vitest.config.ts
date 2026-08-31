@@ -9,6 +9,7 @@ export default defineConfig({
     // Tests run against source so a build step is never required for local development.
     alias: {
       '@memnox/core': packageSrc('core'),
+      '@memnox/discovery': packageSrc('discovery'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
       '@memnox/local-gate': packageSrc('local-gate'),
       '@memnox/org-graph': packageSrc('org-graph'),

@@ -31,21 +31,17 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: RouteContext): voi
       body === undefined ? undefined : body['declaredScope'],
     );
     if (declaredScope === null) {
-      return reply
-        .code(400)
-        .send({
-          error: `"declaredScope" keys must be string arrays: ${SCOPE_KEYS.join(', ')}`,
-        });
+      return reply.code(400).send({
+        error: `"declaredScope" keys must be string arrays: ${SCOPE_KEYS.join(', ')}`,
+      });
     }
     const declaredBy = parseDeclaredBy(
       body === undefined ? undefined : body['declaredBy'],
     );
     if (declaredBy === null) {
-      return reply
-        .code(400)
-        .send({
-          error: `"declaredBy" must be one of: ${Object.values(TASK_DECLARED_BY).join(', ')}`,
-        });
+      return reply.code(400).send({
+        error: `"declaredBy" must be one of: ${Object.values(TASK_DECLARED_BY).join(', ')}`,
+      });
     }
 
     // One open task per session, or an agent picks whichever scope suits the

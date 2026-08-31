@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @memnox/core -w @memnox/policy-engine -w @memnox/org-graph -w @memnox/intelligence -w @memnox/local-gate -w @memnox/sdk -w @memnox/organization -w @memnox/mcp-firewall -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w memnox",
+    "build": "npm run build -w @memnox/core -w @memnox/discovery -w @memnox/policy-engine -w @memnox/org-graph -w @memnox/intelligence -w @memnox/local-gate -w @memnox/sdk -w @memnox/organization -w @memnox/mcp-firewall -w @memnox/memory -w @memnox/postgres -w @memnox/redis -w @memnox/risk -w @memnox/runtime -w memnox",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",

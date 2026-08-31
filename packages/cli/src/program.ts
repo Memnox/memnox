@@ -8,6 +8,9 @@ import { registerCheckCommand } from './commands/check.command';
 import { registerCloudCommand } from './commands/cloud.command';
 import { registerContextCommand } from './commands/context.command';
 import { registerDescribeCommand } from './commands/describe.command';
+import { registerDiscoverCommand } from './commands/discover.command';
+import { registerDoctorCommand } from './commands/doctor.command';
+import { registerHardenCommand } from './commands/harden.command';
 import { registerDriftCommand } from './commands/drift.command';
 import { registerComplianceCommand } from './commands/compliance.command';
 import { registerDraftCommand } from './commands/draft.command';
@@ -39,6 +42,10 @@ export function buildProgram(context: CliContext): Command {
     .description('Memnox — the execution trust layer for AI agents')
     .version(CLI_VERSION);
 
+  // The first four phases need no account: discovery, doctor and harden come first.
+  registerDiscoverCommand(program, context);
+  registerDoctorCommand(program, context);
+  registerHardenCommand(program, context);
   registerSetupCommand(program, context);
   registerQuickstartCommand(program, context);
   registerInitCommand(program, context);

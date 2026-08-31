@@ -1,0 +1,47 @@
+{
+  "name": "@memnox/discovery",
+  "version": "0.3.1",
+  "description": "What can act on this machine, what it can reach, and the reversible steps that close the worst of it.",
+  "keywords": [
+    "ai-agents",
+    "discovery",
+    "mcp",
+    "reachability",
+    "hardening"
+  ],
+  "license": "Apache-2.0",
+  "author": "Memnox",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/discovery#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Memnox/memnox.git",
+    "directory": "packages/discovery"
+  },
+  "bugs": {
+    "url": "https://github.com/Memnox/memnox/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean"
+  }
+}

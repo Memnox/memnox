@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@memnox/core": "0.3.1",
+    "@memnox/discovery": "0.3.1",
     "@memnox/intelligence": "0.3.1",
     "@memnox/local-gate": "0.3.1",
     "@memnox/memory": "0.3.1",
