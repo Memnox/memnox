@@ -10,6 +10,82 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+**`@memnox/tool-hook`, the seam that holds an agent's own tools.** The MCP proxy
+governs what an agent reaches through a server; this governs what it does directly
+— `Read`, `Write`, `Edit`, `Bash`, `WebFetch` — which is most of what a coding
+agent does. Install it with `memnox hooks install`, or let `memnox setup` do it
+(`--no-hooks` to skip). `memnox hooks status` prints what it sees and what it is
+blind to.
+
+The seam never answers `allow` to the host: that would skip a permission prompt the
+person would otherwise have seen. It can withhold, or hand the call to somebody, and
+it cannot widen authority.
+
+**Seams declare themselves.** `POST /v1/seams` registers a seam against the agent its
+token names, and re-registering is a heartbeat rather than a second row. Both seams
+now declare on start, so `coverage` counts what is installed and carries its blind
+spots instead of reporting an ungoverned machine.
+
+**MCP servers are enumerated over the protocol.** `NodeMcpLister` starts each server a
+config declares and asks it what it holds, so `discover` reports every tool and whether
+it reads, writes or destroys. `--no-probe` skips it; what was started is named in the
+report, for the same reason the credential scan names what it opened.
+
+**The broker has a surface.** `POST /v1/capabilities` grants by operation, `POST
+/v1/leases` exchanges one for a short lease, and `POST /v1/leases/:id/redeem` counts a
+use. Grants and leases are now on disk, so a restart cannot hand back authority a kill
+had revoked.
+
+**The flight recorder records both directions.** `POST /v1/frames` takes a `tool_call`,
+`result` or `side_effect` frame from a seam, with a digest and never a payload. The MCP
+proxy and the tool hook both report; the broker writes a `capability` frame with every
+lease. `GET /v1/sessions/:id/lineage` assembles the chain, and `memnox replay` prints
+it — every hop stating whether it was propagated or only inferred.
+
+**An egress proxy and a Docker socket gate, the last two local seams.**
+`memnox-egress` is an HTTP forward proxy: plain requests are ruled on by destination
+*and* payload, and a CONNECT tunnel is ruled on by destination alone — the body inside
+it is named as a blind spot rather than pretended about, so no TLS interception is
+needed and none is done. `memnox-docker` sits in front of the Docker socket and names
+each call (`container.exec`, `image.delete`, `docker.read`), because an agent that can
+reach that socket can reach the whole host.
+
+Both refuse loudly if they cannot bind. The Docker seam checks the socket path against
+the operating system's length cap and confirms the socket is on disk before it
+announces itself: `listen` can report success while binding nothing, and a seam
+claiming coverage it does not have is the one lie worth crashing over.
+
+**Two more local seams.** `memnox-shell -- <command>` gates a command and then runs it
+unchanged; `memnox-git-credential` sits in front of git's real helper and can decline a
+remote, never supply one — it holds no secrets and can hand none out. `memnox hooks
+install` declares all three, so coverage counts the hook, the shell and git.
+
+The git seam is the one place that deliberately opens when the runtime is unreachable:
+it sits in front of every git operation a person performs and can only ever subtract,
+so declining to rule leaves the machine as it was rather than breaking every clone on a
+network blip. What that gives up is stated in the code and in the log line — a frozen
+remote stays reachable until the runtime is back. The hook and shell seams fail closed.
+
+**Egress is checked on destination and payload both.** `inspectEgress` in core is
+deterministic and cheap — credential shapes and marked fields, never a classifier — and
+runs as an `EgressAdvisor` in the runtime and inline in the local seams. An allowed host
+carrying a credential is still a refusal, the refusal names the field and never the
+value, and nothing is ever silently stripped.
+
+**Discovery reads the project, not only the home directory.** `.env`, `.env.local`,
+`.env.production`, `.npmrc` and the checkout itself, each fingerprinted and never kept.
+
+**`memnox why <id> --counterfactual`** names what a withheld action would have reached,
+derived from the attempt that was made and from this machine's own reachability.
+
+### Fixed
+
+**A local refusal now names its alternative.** `LocalGate` resolved the substitute
+from the matched rule and then dropped it, so a refusal with no runtime running was
+a dead end. Both local seams now carry it through to the agent.
+
 ## [0.4.0] - 2026-08-31
 
 Memnox is now built to `VISION.md`, the eleven-phase build sequence. The first

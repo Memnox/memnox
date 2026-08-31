@@ -30,6 +30,8 @@ observe and learn, `§10` for what never ships).
 | `@memnox/discovery` | §00 | what can act here, what it reaches, findings, reversible harden steps |
 | `@memnox/core` + `@memnox/policy-engine` | §01 | the decision object, declared scope, the explanation built from the match |
 | `@memnox/mcp-firewall`, `CapabilityBroker` | §02 | seams, the MCP proxy **both ways**, capabilities and leases |
+| `@memnox/tool-hook` | §02 | the five local seams: the PreToolUse hook, the shell wrapper, the git credential helper, the egress proxy, the Docker socket gate |
+| `SeamService`, `LineageService` | §02, §03 | seams declaring themselves; who caused this, hop by hop |
 | `@memnox/ledger`, `LearnService` | §03, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains, cost, incidents |
 | `@memnox/organization`, `census-sources.ts` | §04 | subjects in three parts, the census, supply chain events, installs, the passport |
 | `@memnox/policy-engine` | §05 | policies, proposals, simulation, blast radius |
