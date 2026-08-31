@@ -3,6 +3,7 @@ export * from './json-rpc';
 export * from './tool-filter';
 export * from './tool-call';
 export * from './result-guard';
+export * from './frame-reporter';
 export * from './call-authorizer';
 export * from './local-gate-loader';
 export * from './firewall-session';

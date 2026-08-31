@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { ENFORCEMENT_MODE, SEAM_KIND } from '@memnox/core';
 import type { LocalGate } from '@memnox/local-gate';
 import { MemnoxClient } from '@memnox/sdk';
 import {
@@ -8,7 +9,9 @@ import {
   UngovernedAuthorizer,
   type CallAuthorizer,
 } from './call-authorizer';
+import { MCP_PROXY_BLIND_SPOTS, MCP_PROXY_COVERS } from './firewall.constants';
 import { FirewallSession, type FirewallChannel } from './firewall-session';
+import { FrameReporter } from './frame-reporter';
 import { LineBuffer } from './json-rpc';
 import { ToolFilter } from './tool-filter';
 
@@ -44,6 +47,7 @@ const defaultSpawn = (command: string, args: string[]): ChildProcess =>
 export class McpFirewall {
   private readonly session: FirewallSession;
   private readonly log: (message: string) => void;
+  private reporter: FrameReporter | null = null;
   private child: ChildProcess | null = null;
 
   constructor(private readonly options: FirewallOptions) {
@@ -51,11 +55,20 @@ export class McpFirewall {
     this.log =
       options.log ?? ((message) => process.stderr.write(`[memnox] ${message}\n`));
 
+    // Built first: it is what gives the session a client to report frames through.
+    const authorizer = this.buildAuthorizer();
+
     this.session = new FirewallSession({
       filter: new ToolFilter(options.allowPattern, options.denyPattern, this.log),
-      authorizer: this.buildAuthorizer(),
+      authorizer,
       channel: this.buildChannel(),
       log: this.log,
+      server: options.serverName,
+      // Every call and result reaches the ledger, with the arguments hashed.
+      record: (call) => {
+        const reporter = this.reporter;
+        if (reporter !== null) reporter.report(call);
+      },
     });
   }
 
@@ -98,6 +111,24 @@ export class McpFirewall {
     });
   }
 
+  /**
+   * Declared on start, so coverage counts a proxy that is actually running. Failing
+   * to declare must never stop the proxy: an unregistered seam still governs, and a
+   * dead proxy governs nothing.
+   */
+  private declareSeam(client: MemnoxClient): void {
+    void client
+      .registerSeam({
+        kind: SEAM_KIND.MCP_PROXY,
+        mode: ENFORCEMENT_MODE.ENFORCE,
+        covers: [...MCP_PROXY_COVERS],
+        blindTo: [...MCP_PROXY_BLIND_SPOTS],
+      })
+      .catch((err: unknown) => {
+        this.log(`could not declare the mcp_proxy seam: ${String(err)}`);
+      });
+  }
+
   private buildAuthorizer(): CallAuthorizer {
     const { runtimeUrl, agentToken, gate } = this.options;
     const local =
@@ -107,15 +138,19 @@ export class McpFirewall {
 
     if (!runtimeUrl || !agentToken) return local ?? new UngovernedAuthorizer();
 
-    const runtime = new RuntimeAuthorizer(
-      new MemnoxClient({ baseUrl: runtimeUrl, token: agentToken }),
-      {
-        serverName: this.options.serverName,
-        sessionId: this.options.sessionId,
-        failOpen: this.options.failOpen,
-        log: this.log,
-      },
-    );
+    const client = new MemnoxClient({ baseUrl: runtimeUrl, token: agentToken });
+    this.declareSeam(client);
+    const sessionId = this.options.sessionId;
+    if (sessionId !== undefined) {
+      this.reporter = new FrameReporter({ client, sessionId, log: this.log });
+    }
+
+    const runtime = new RuntimeAuthorizer(client, {
+      serverName: this.options.serverName,
+      sessionId: this.options.sessionId,
+      failOpen: this.options.failOpen,
+      log: this.log,
+    });
     return local === null ? runtime : new LayeredAuthorizer(local, runtime);
   }
 

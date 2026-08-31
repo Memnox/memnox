@@ -13,7 +13,12 @@ import type {
   ContainmentKind,
   ExecutionOutcomeReport,
   Explanation,
+  Capability,
+  Lease,
   Seam,
+  SeamKind,
+  SeamUnhealthyBehaviour,
+  EnforcementMode,
   RiskAssessment,
 } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
@@ -125,6 +130,52 @@ export interface AuthorityGrantResponse extends AuthorityGrantPayload {
   workspaceId: string;
   grantedBy: string;
   grantedAt: string;
+}
+
+/** The chain behind one session, and the hops that could only be inferred. */
+export interface LineageReport {
+  lineage: { correlationId: string; hops: LineageHop[] };
+  confidence: number;
+  unjoined: string[];
+}
+
+export interface LineageHop {
+  at: string;
+  actorId: string;
+  actorKind: string;
+  system: string;
+  ref?: string;
+  method: string;
+  confidence: number;
+}
+
+/** What a seam saw. A digest travels; the payload it stands for never does. */
+export interface FrameReport {
+  sessionId: string;
+  kind: string;
+  summary: string;
+  decisionId?: string;
+  payloadDigest?: string;
+}
+
+/** Asked for by operation and scope; the secret itself is never named or returned. */
+export interface LeaseRequestBody {
+  capabilityId: string;
+  target: string;
+  scope?: Record<string, string>;
+  environment?: string;
+  sessionId?: string;
+}
+
+/** What a seam declares about itself. Blind spots are not optional: an empty list is a claim. */
+export interface SeamDeclaration {
+  kind: SeamKind;
+  mode?: EnforcementMode;
+  /** Action globs this seam actually sees. */
+  covers: string[];
+  blindTo: string[];
+  installedBy?: string;
+  whenUnhealthy?: SeamUnhealthyBehaviour;
 }
 
 /** The coverage window plus what the seams behind it cannot see. */
@@ -420,6 +471,71 @@ export class MemnoxClient {
       undefined,
       this.options.adminToken,
     );
+  }
+
+  /** Who caused this, hop by hop, with each hop's method and what could not be joined. */
+  async lineage(sessionId: string): Promise<LineageReport> {
+    return this.request<LineageReport>(
+      'GET',
+      `/v1/sessions/${encodeURIComponent(sessionId)}/lineage`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /**
+   * A seam reporting what it saw, so a session is one timeline rather than a verdict
+   * with the tool call missing from either side of it. Payloads never travel.
+   */
+  async reportFrame(frame: FrameReport): Promise<void> {
+    await this.request<unknown>('POST', '/v1/frames', frame, this.options.token);
+  }
+
+  /**
+   * Exchanges a request for a lease scoped to one operation, one resource and a few
+   * minutes. Ask by operation, not by secret: "refund.create", never the payments key.
+   */
+  async requestLease(request: LeaseRequestBody): Promise<Lease> {
+    return this.request<Lease>('POST', '/v1/leases', request, this.options.token);
+  }
+
+  /** Expiry belongs to the issuer, so a dead lease is simply not found. */
+  async redeemLease(leaseId: string): Promise<Lease> {
+    return this.request<Lease>(
+      'POST',
+      `/v1/leases/${encodeURIComponent(leaseId)}/redeem`,
+      undefined,
+      this.options.token,
+    );
+  }
+
+  /** What this agent may ask for — a different question from what it holds. */
+  async capabilitiesFor(agentId: string): Promise<Capability[]> {
+    return this.request<Capability[]>(
+      'GET',
+      `/v1/agents/${encodeURIComponent(agentId)}/capabilities`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** What it holds, revoked ones included: a dead lease is part of the record. */
+  async leasesFor(agentId: string): Promise<Lease[]> {
+    return this.request<Lease[]>(
+      'GET',
+      `/v1/agents/${encodeURIComponent(agentId)}/leases`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /**
+   * Declares this seam to the runtime, so coverage counts what is installed rather
+   * than what somebody remembered to configure. Identity comes from the agent token:
+   * a seam cannot register on behalf of an agent it is not.
+   */
+  async registerSeam(seam: SeamDeclaration): Promise<Seam> {
+    return this.request<Seam>('POST', '/v1/seams', seam, this.options.token);
   }
 
   /** Which seams are installed, in what mode, and what each one cannot see. */

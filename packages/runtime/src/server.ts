@@ -34,6 +34,7 @@ import {
   BehaviorAdvisor,
   TaintAdvisor,
   ShellIndirectionAdvisor,
+  EgressAdvisor,
   TokenBudgetAdvisor,
   VerificationAdvisor,
 } from '@memnox/risk';
@@ -95,17 +96,22 @@ import { InMemoryTaskStore } from './stores/in-memory-task-store';
 import { JsonFileSeamStore } from './stores/json-file-seam-store';
 import { ContainmentService, LocalInstallDirectory } from './containment-service';
 import { CapabilityBroker } from './capability-broker';
-import {
-  InMemoryCapabilityStore,
-  InMemoryLeaseStore,
-} from './stores/in-memory-capability-store';
+import { SeamService } from './seam-service';
+import { LineageService } from './lineage-service';
 import { registerOperateRoutes } from './routes/operate.routes';
+import { registerSeamRoutes } from './routes/seam.routes';
+import { registerCapabilityRoutes } from './routes/capability.routes';
+import { registerFrameRoutes } from './routes/frame.routes';
 import { LearnService } from './learn-service';
 import { DelegationService, InMemoryDelegationStore } from './delegation-service';
 import { JsonFileStateStore } from './stores/json-file-state-store';
 import { EnrolmentSource } from './census-sources';
 import { ReadinessService } from './readiness-service';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
+import {
+  JsonFileCapabilityStore,
+  JsonFileLeaseStore,
+} from './stores/json-file-capability-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
 
@@ -121,6 +127,8 @@ const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
 const SEAMS_FILE = 'seams.json';
 const FRAMES_FILE = 'frames.jsonl';
+const CAPABILITIES_FILE = 'capabilities.json';
+const LEASES_FILE = 'leases.json';
 const STATE_FILE = 'state.json';
 /** One machine, always reachable, because it is this process. */
 const LOCAL_INSTALL_LABEL = 'this machine';
@@ -249,6 +257,7 @@ export async function buildServer(
 
   const taskStore = new InMemoryTaskStore();
   const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
+  const seamService = new SeamService({ store: seamStore, logger: CONSOLE_LOGGER });
   const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
   const stateStore = new JsonFileStateStore(join(config.dataDir, STATE_FILE), codec);
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
@@ -321,18 +330,31 @@ export async function buildServer(
     auditEvents: () => gateway.queryAuditEvents({}),
     semanticSearch,
   });
-  const leaseStore = new InMemoryLeaseStore();
+  // A grant that vanished on restart is a permission nobody can audit.
+  const leaseStore = new JsonFileLeaseStore(join(config.dataDir, LEASES_FILE), codec);
   const broker = new CapabilityBroker({
-    capabilities: new InMemoryCapabilityStore(),
+    capabilities: new JsonFileCapabilityStore(
+      join(config.dataDir, CAPABILITIES_FILE),
+      codec,
+    ),
     leases: leaseStore,
     gateway,
     logger: CONSOLE_LOGGER,
+    frames: frameStore,
   });
   const ctx: RouteContext = {
     gateway,
     config,
     explanations,
     seams: seamStore,
+    seamService,
+    broker,
+    frames: frameStore,
+    lineage: new LineageService({
+      events: (sessionId) => gateway.queryAuditEvents({ sessionId }),
+      frames: frameStore,
+      logger: CONSOLE_LOGGER,
+    }),
     delegations: new DelegationService({
       store: new InMemoryDelegationStore(),
       logger: CONSOLE_LOGGER,
@@ -451,6 +473,9 @@ export async function buildServer(
     registerDashboardRoutes(scope, ctx);
     registerTaskRoutes(scope, ctx);
     registerOperateRoutes(scope, ctx);
+    registerSeamRoutes(scope, ctx);
+    registerCapabilityRoutes(scope, ctx);
+    registerFrameRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);
     registerAgentRoutes(scope, ctx);
@@ -549,6 +574,9 @@ function buildAdvisors(
   if (config.shellGuard) {
     advisors.push(new ShellIndirectionAdvisor(undefined, [...DEFAULT_ADVISOR_APPROVERS]));
   }
+  /* Always on: with no arguments reported it returns nothing, so an existing caller
+     sees no change, and the local seams that do report them get the check for free. */
+  advisors.push(new EgressAdvisor(undefined, [...DEFAULT_ADVISOR_APPROVERS]));
   if (config.sessionTokenBudget) {
     advisors.push(new TokenBudgetAdvisor(auditLog, config.sessionTokenBudget));
   }

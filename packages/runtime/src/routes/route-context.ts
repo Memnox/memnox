@@ -22,6 +22,10 @@ import type { CensusSource } from '@memnox/organization';
 import type { ReadinessService } from '../readiness-service';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
+import type { SeamService } from '../seam-service';
+import type { CapabilityBroker } from '../capability-broker';
+import type { FrameStore } from '@memnox/ledger';
+import type { LineageService } from '../lineage-service';
 import type { MetricsRegistry } from '../metrics';
 
 const BEARER_PREFIX = 'Bearer ';
@@ -76,6 +80,14 @@ export interface RouteContext {
   explanations: ExplanationStore;
   /** Which seams are installed, in what mode, and what each one cannot see. */
   seams: SeamStore;
+  /** Registration and the heartbeat that makes a stopped seam distinguishable. */
+  seamService: SeamService;
+  /** Exchanges a request for a short lease, so nothing long-lived is handed over. */
+  broker: CapabilityBroker;
+  /** The flight recorder. Absent leaves a runtime that keeps verdicts and no timeline. */
+  frames?: FrameStore;
+  /** Who caused this: a person, through a tool, through an agent, to a system. */
+  lineage: LineageService;
   /** Kill, quarantine and panic, each recording what it could not reach. */
   containment: ContainmentService;
   /** Usage against grant, and the least-privilege proposal that falls out of it. */
