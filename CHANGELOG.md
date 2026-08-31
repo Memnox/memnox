@@ -10,7 +10,86 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-31
+
+Memnox is now built to `VISION.md`, the eleven-phase build sequence. The first
+four phases run with no account, no cloud and no network, which is architecture
+rather than a free tier.
+
+### Changed
+
+**Three effects, not four.** `block` is now `withhold`, `require_approval` is now
+`escalate`, and `redact` is gone. A partial answer is a `withheld` count on the
+answer rather than an effect on a decision.
+
+*Migration:* rename the effects in every policy file, and update any caller that
+compares an effect string. The TypeScript, Python, Go, Rust, Java and Swift SDKs
+all moved with it: `ActionBlockedError` is `ActionWithheldError`,
+`ApprovalRequiredError` is `EscalationRequiredError`, `withheldEffect` is
+`shadowEffect`, and `blocked` counters are `withheld`.
+
+**Enforcement modes gained a rung.** `monitor` is now `observe`, and `advise`
+sits between it and `enforce`. *Migration:* rename `monitor` in
+`--enforcement` specs, per-rule `mode:` fields, and stored enforcement maps.
+
+**Authority is a granted level, not a computed score.** `trustScore` and
+`--trust-guard` are gone. *Migration:* nothing replaces the flag; use
+`memnox readiness <agentId>` to see what an agent needs, and grant a level
+deliberately. A number that silently narrowed a permission was unauditable.
+
+**Commands renamed for what they answer.** `context` and `describe` merged into
+`rules`; `report` and `compliance` merged into `evidence`; `trace` became
+`why --evidence`; `insights` became `coverage`; `suggestions` became `queue`.
+
+### Added
+
+- **`@memnox/discovery`** (§00) — what can act on this machine, what it reaches,
+  ranked findings, and reversible harden steps. `memnox`, `memnox doctor`,
+  `memnox harden`. Secrets are fingerprinted, never stored.
+- **Declared tasks** (§01) — a session states what it was asked for and the scope
+  that implies; `match.scope` makes an out-of-scope request a fact a rule matches
+  on. Compared, never inferred.
+- **`Decision.alternative`** (§01) — what a withholding rule permits instead,
+  resolved from the rule and carried into the MCP denial the client reads.
+- **`memnox why`** (§01) — five lines built from the same match the verdict came
+  from and stored beside it, replacing the model-written `memnox explain`.
+- **The MCP proxy checks both directions** (§02) — a tool result is wrapped as an
+  untrusted context block, and instruction-shaped content is recorded and quoted
+  rather than removed.
+- **Capabilities and leases** (§02) — `CapabilityBroker` exchanges a request for a
+  lease scoped to one operation and a few minutes. Every lease is a decision.
+- **`@memnox/ledger`** (§03, §09) — frames with hashed payloads, usage against
+  grant, unused grants, lineage with a method on every hop, counterfactuals,
+  coverage, drift, chain findings, cost ceilings and incidents.
+- **`memnox learn`** (§03) — a window of real work becomes a policy file in the
+  format a person writes, with the sample size in the file itself.
+- **The census** (§04) — every agent from every source, each with the record that
+  proved it exists, and the sources that could not be read.
+- **Delegation and containment** (§06) — chains that only narrow, checked at issue
+  and again at use; `memnox kill`, `quarantine` and `panic`, each naming every
+  machine it did not reach.
+- **State facts** (§07) — the company's current condition as a policy input, with
+  a mandatory expiry, distributed inside the bundle.
+- **`@memnox/workflow`** (§08) — a durable engine, and the invariant that every
+  route to a delegation passes a decision or an approval.
+- **`@memnox/autonomy`** (§10) — named levels a person grants, and readiness as
+  queries against stores that exist.
+- **`memnox agents assign <id> --owner <person>`** — names who answers for an
+  agent, which is the edge every escalation resolves through.
+
 ### Removed
+
+**A model never explains a decision or infers intent.** `DecisionExplainer` and
+`IntentClassifier` are gone, with `memnox explain` and `memnox intent`. An
+explanation written afterwards by a model is a plausible story about a decision;
+intent arrives as a declared task instead.
+
+- `memnox plan` and the action-plan file format.
+- `memnox ui` and the browser policy editor.
+- `memnox quickstart`, which duplicated `memnox setup`.
+- The plan-step scoping mechanism, replaced by declared tasks.
+
+
 
 **Code understanding, in full.** Memnox is the organizational runtime: it holds an
 organization's operating model and rules on the actions agents propose. Reading a
@@ -39,49 +118,12 @@ deprecated.
 
 ### Added
 
-- **Rules without YAML.** `memnox ui` (also `memnox policy ui`) opens the policy file in a
-  local browser editor: a form per rule, the effect as a picker, patterns as chips, live
-  validation through the same `validatePolicyDocument`, a preview of the exact YAML that
-  will be written, packs installable in a click, and the simulate panel replaying real
-  audit history against what you have edited. Saving writes the policy file, so a rule
-  authored in the browser still arrives in a reviewable diff — comments in the file are
-  not carried over, and time windows are kept as written. The server binds `127.0.0.1`
-  only, rejects any request arriving under another hostname, and requires a per-run
-  session token on every API call. It needs no runtime; one is used only to give the
-  simulate panel history to replay.
-- **Ask before you act.** `POST /v1/context` answers *"what governs this action?"* before
-  the action is attempted, instead of the agent discovering the rules by being refused.
-  Returns the declared constraints that apply plus a plain-text rendering an agent can
-  carry in its context. Records nothing and creates no approval. Exposed as
-  `client.context(request)`, `gateway.brief(token, request)`, and
-  `memnox context <action> [target]` (`--json` for the structured briefing).
-- **A shipped security baseline.** `securityRequirementsFor(action, target)` in
-  `@memnox/content-shield` returns the deterministic security requirements for a class
-  of work — auth/authz/session, upload handling, endpoints, SQL, XSS, deserialization,
-  crypto, shell injection, supply chain, data export, migrations, and deploy secrets.
-  A lookup table, not a model: same input, same requirements, same order. Stamped with
-  `SECURITY_BASELINE_VERSION` so a briefing is reproducible. Surfaced in every briefing,
-  listed separately from the constraints an organization declared.
 - **Memnox as an MCP server.** `memnox mcp` speaks MCP over stdio and exposes two tools:
   `memnox_check_rules` (the briefing) and `memnox_status`. `memnox mcp install [client]`
   registers it with Claude Code and Cursor; `memnox mcp uninstall <client>` removes it.
   An existing `memnox` entry is never overwritten.
-- **`Dockerfile.allinone`** — Memnox and Graphify in one image, so a deployment needs no
-  host Python. Builds the code graph from a read-only `/repo` mount on start and serves
-  with `--code-graph` already pointed at it. Runs unprivileged, keeps every write inside
-  `/data`, pins `GRAPHIFY_VERSION`, and ships `docker/THIRD-PARTY-NOTICES.md` as
-  Apache-2.0 section 4 requires. The default image is unchanged and contains no Graphify.
-- **Graphify as an optional code-understanding backend.** `memnox graphify
-  install | status | build | use` installs it (uv, pipx, or pip3), re-extracts the graph
-  through the AST-only `update --no-cluster` path — no LLM, no network, no API key — and
-  converts `graphify-out/graph.json` into the snapshot the runtime already loads.
-  `memnox setup` prefers a Graphify graph when one exists and falls back to the built-in
-  walker otherwise. Only `EXTRACTED` edges are read; `INFERRED` ones are counted and
-  discarded, so nothing model-derived reaches a decision. On a real Next.js monorepo this
-  raised reachability from 222 edges to 767. `graphifyToSnapshot` is in
-  `@memnox/code-graph`, with the upstream schema pinned in a test.
 - `memnox status` — one call for whether the runtime is up, which rules are in force,
-  what is waiting on a human, and how many decisions were withheld by monitor mode.
+  what is waiting on a human, and how many decisions were withheld by observe mode.
   That last number is what says whether `--enforce` is safe yet.
 - `memnox approve <id>` and `memnox deny <id>` as top-level commands; `--by` defaults to
   `$USER`. `memnox approvals` with no subcommand lists pending approvals.
@@ -91,13 +133,13 @@ deprecated.
   `memnox setup` wrote, so neither `--token` nor `--url` is needed for local use.
 - Coloured CLI output for decision effects and risk levels, honouring `NO_COLOR` and
   `FORCE_COLOR`. Piped output is unchanged — colour appears only on a terminal.
-- `memnox check` prints a `Withheld:` line when monitor mode kept a verdict from being
+- `memnox check` prints a `Shadow:` line when observe mode kept a verdict from being
   applied, so an observed block is visible rather than looking like a plain allow.
 - `GET /v1/approvals/:id` — a blocked agent can poll the approval it raised, so the
   require-approval loop closes without an admin token. Readable by that agent or an
   API principal; 403 for any other agent. Exposed as `client.approvalStatus(id)` and
   `memnox approvals status <id>`.
-- `GET /v1/agents/:id` — one agent's identity and trust score, without its token hash.
+- `GET /v1/agents/:id` — one agent's identity and granted level, without its token hash.
 - `HttpTransport` option on `MemnoxClient` — supply your own `fetch` for proxies,
   custom agents, or tests.
 - `FirewallSession` and the `CallAuthorizer` port in `@memnox/mcp-firewall`:
@@ -111,19 +153,13 @@ deprecated.
 ### Changed
 
 - **`memnox setup` now gives a local install every deterministic guard, and registers the
-  MCP server.** `behaviorGuard`, `trustGuard`, `verificationGuard`, and `dependencyGuard`
-  were off by default, and nothing registered Memnox with an MCP client — so the shipped
-  security baseline was installed but nothing ever asked for it, which looks exactly like
-  having no baseline. Setup now launches with all four on, registers the server with every
+  MCP server.** `behaviorGuard` and `verificationGuard` were off by default, and nothing
+  registered Memnox with an MCP client, so a guard could be installed with nothing ever
+  asking for it. Setup now launches with them on, registers the server with every
   detected client, and prints the guard list. Safe because a first run observes: a guard
-  that fires is an audit line, not a blocked editor. `--no-mcp` skips the registration.
+  that fires is an audit line, not a refused editor. `--no-mcp` skips the registration.
   **`memnox serve` is unchanged** — a server deployment keeps its explicit-flag contract
-  and does not silently gain three audit queries per request because a local default moved.
-- `memnox setup` builds the code-graph snapshot and starts the runtime with
-  `--code-graph` pointed at it. Blast radius previously needed two manual steps
-  (`memnox graph build`, then `serve --code-graph`), so in practice it was off. Failure
-  to walk a repository is non-fatal — an ungraphable repository still gets a governed
-  editor. `--no-graph` opts out.
+  and does not silently gain audit queries per request because a local default moved.
 - **A granted approval is now claimable by fingerprint, and is single-use.** The gateway
   used to consult an approval only when the request carried an `approvalId`. Neither the
   editor hook nor the MCP firewall can produce one — both build their request from a tool

@@ -1,6 +1,6 @@
 {
   "name": "@memnox/postgres",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Postgres adapters for the runtime storage ports \u2014 shared state for horizontally scaled deployments.",
   "keywords": [
     "postgres",
@@ -43,8 +43,8 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.3.1",
-    "@memnox/memory": "0.3.1",
+    "@memnox/core": "0.4.0",
+    "@memnox/memory": "0.4.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {

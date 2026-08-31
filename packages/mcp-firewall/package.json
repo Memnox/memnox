@@ -1,6 +1,6 @@
 {
   "name": "@memnox/mcp-firewall",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Transparent MCP proxy \u2014 stdio or remote HTTP \u2014 that routes every tools/call through the Memnox runtime before it reaches the server.",
   "keywords": [
     "mcp",
@@ -49,8 +49,8 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/core": "0.3.1",
-    "@memnox/local-gate": "0.3.1",
-    "@memnox/sdk": "0.3.1"
+    "@memnox/core": "0.4.0",
+    "@memnox/local-gate": "0.4.0",
+    "@memnox/sdk": "0.4.0"
   }
 }
