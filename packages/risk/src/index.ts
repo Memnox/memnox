@@ -6,3 +6,4 @@ export * from './authority-advisor';
 export * from './taint-advisor';
 export * from './token-budget-advisor';
 export * from './shell-indirection-advisor';
+export * from './egress-advisor';
