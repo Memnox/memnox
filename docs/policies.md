@@ -164,7 +164,8 @@ You do not duplicate a rule set across repos. Each one contributes rules about i
 ## Policy lifecycle
 
 ```bash
-memnox ui                              # write rules in a browser instead of YAML
+memnox draft "no production deletes"   # a sentence becomes candidate YAML, for you to review
+memnox learn --out proposed.yaml       # what your agents actually used becomes candidate YAML
 memnox policy packs                    # production-safety, payments, auth-and-secrets, data-privacy, supply-chain
 memnox policy install production-safety
 memnox policy version                  # content hash of the current rule set
@@ -177,27 +178,30 @@ Policies stay file-sourced on purpose, because a rule set that is mutable over H
 
 ## Writing rules without writing YAML
 
-`memnox ui` (or `memnox policy ui`) opens the same rule set in your browser: a form
-per rule, the effect as a picker, patterns as chips, live validation as you type, a
-preview of the exact YAML it will write, and the simulate panel replaying real history
-against what you have edited.
+`memnox draft "nobody should delete production data"` turns a sentence into candidate
+YAML. The output is parsed and validated against the real policy schema, then printed
+for you to review and commit — it is never loaded live, and no model is anywhere near
+the decision that later matches it.
 
 ```bash
-memnox ui                              # 127.0.0.1 only, opens your browser
-memnox ui --file api.policies.yaml --no-open --port 8080
+memnox draft "nobody should delete production data" > candidate.yaml
+memnox validate candidate.yaml
+memnox simulate candidate.yaml          # replay real history through it first
 ```
 
-It is the same file and the same validator, not a second source of truth — **saving
-writes the YAML**, so a rule authored in the browser still lands in the diff a reviewer
-reads. Two things follow from that: comments in the file are not carried over when you
-save, and a rule with time windows keeps them as written rather than offering a
-half-expressive schedule picker.
+`memnox learn` writes the other kind of draft: not what you imagined, but what your
+agents actually did. It reports what each was permitted, what it used, what it never
+touched, and what it kept being refused, then renders a policy file in the same format
+a person writes.
 
-The server binds loopback and refuses anything else: a request arriving under any other
-hostname is rejected, and every API call must carry the session token minted for that
-run and embedded in the page, so no other page on your machine can reach it. Nothing
-leaves the machine, and it needs no runtime — start one only if you want the simulate
-panel to have history to replay.
+```bash
+memnox learn --out memnox.proposed.yaml
+```
+
+The file states the window, the sessions and the coverage it was derived from, in a
+comment at the top where they cannot be dropped in the retelling. Four days of one
+developer's work is not a policy for a team, and a proposal that hid how little it saw
+would be a trap.
 
 ## Next
 

@@ -215,7 +215,7 @@ have stopped it. Run for a day, read them, and you know whether your rules are
 right before they can stop anyone working. `memnox check` prints the same thing
 as a `Withheld:` line, and the API returns it as `withheldEffect`.
 
-For any one line of that trail, `memnox trace <eventId>` walks the whole chain
+For any one line of that trail, `memnox why <eventId> --evidence` walks the whole chain
 behind it — who asked, under whose authority, which rule matched, which signals
 fired, what was decided, and whether anyone ever reported back:
 
@@ -407,7 +407,7 @@ The cheapest governance is the kind an agent gets *before* it commits to
 something.
 
 ```bash
-memnox context file.write 'src/app/(auth)/login/page.tsx'
+memnox rules --brief file.write 'src/app/(auth)/login/page.tsx'
 ```
 
 ```
@@ -432,9 +432,9 @@ Asking records nothing and raises no approval.
 
 ### Asking about more than one action
 
-`memnox context` answers for the agent. Two commands answer for you.
+`memnox rules --brief` answers for the agent. The same command answers for you.
 
-**`memnox describe <action> [target]`** is the same question with the
+**`memnox rules <action> [target]`** is the same question with the
 organization's whole file on it: the verdict right now, what else the matched
 rules reach, who can authorise it, the decisions on record that bear on it, and
 how the same action has gone in the recent trail.
@@ -486,7 +486,7 @@ memnox check deploy.service checkout-api --env production
 
 # evidence
 memnox replay <sessionId>    # one agent session, in order
-memnox report                # compliance markdown/JSON
+memnox evidence              # the record an auditor accepts, markdown or JSON
 memnox audit verify          # "Audit chain intact — 128401 events verified."
 ```
 

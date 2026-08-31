@@ -9,7 +9,7 @@ Two things happen here. Agents ask what the rules are before they act, and every
 A gate refuses an action after an agent has already committed to it. The cheaper move is to answer the question first, meaning *what governs this?*, so the agent carries the rules into its work instead of meeting them as a refusal.
 
 ```bash
-memnox context file.write 'src/app/(auth)/login/page.tsx'
+memnox rules --brief file.write 'src/app/(auth)/login/page.tsx'
 ```
 
 ```

@@ -16,7 +16,7 @@ Identity → Policy → Advisors → Approval → Audit
 
 4. **Approval.** `escalate` creates a pending approval bound to the exact action fingerprint, meaning agent plus action plus target plus environment, so a grant never applies to a different one of any of those. A human resolves it through the CLI, API, or SDK, and a Slack-compatible webhook can announce it (`--approval-webhook`).
 
-5. **Audit.** Every request appends exactly one event to an append-only, hash-chained log recording who, what, decision, risk, matched policies, advisory signals, and session. Replay a session with `memnox replay <sessionId>`, and generate evidence with `memnox report`.
+5. **Audit.** Every request appends exactly one event to an append-only, hash-chained log recording who, what, decision, risk, matched policies, advisory signals, and session. Replay a session with `memnox replay <sessionId>`, read one decision back with `memnox why <id>`, and produce what an auditor accepts with `memnox evidence`.
 
 Risk levels run from `low` to `critical` and are classified by deterministic rules using action verbs and environment, never by a model. Every event also records `policyVersion`, the content hash of the rule set that decided it, so a decision can always be traced back to the exact policies in force.
 

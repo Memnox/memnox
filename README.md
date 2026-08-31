@@ -226,10 +226,13 @@ Rules are plain YAML that you commit and review like any other code:
 | Guide | What it covers |
 |---|---|
 | [Concepts and vocabulary](docs/concepts.md) | New here? The mental model and every term the other guides assume |
+| [What can already act on this machine](docs/discovering-your-machine.md) | Discovery, doctor and harden — no account, no network |
 | [Getting started](docs/getting-started.md) | From nothing to a governed agent, then observing, tuning, and enforcing |
 | [Governing your agents](docs/governing-agents.md) | MCP clients, SDK callers, and agent frameworks. How an agent asks what the rules are |
 | [Writing policies](docs/policies.md) | YAML rules, quorum, time windows, argument matching, and multi-repo projects |
 | [How a decision is made](docs/how-it-works.md) | The five-step pipeline, approvals, provenance, and the platform API |
+| [Learning from behaviour](docs/learning-from-behaviour.md) | A week of real work becomes a policy file you read, edit and commit |
+| [Operating](docs/operating.md) | Coverage, containment, the census, readiness, and what you hand an auditor |
 | [Deployment](docs/deployment.md) | Solo through enterprise, scaling flags, containers, audit verification, and metrics |
 | [Running more than one](docs/deploying-many.md) | A runtime is one tenant; how several are deployed and reached together |
 | [Connecting a control plane](docs/connecting-a-control-plane.md) | Reading across runtimes, mirroring the audit log off the box, setting enforcement without a restart |
