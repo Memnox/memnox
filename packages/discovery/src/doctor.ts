@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Reachability } from './reachability';
 import type { Resource } from './resource';
+import { RESOURCE_KIND, type ResourceKind } from './discovery.constants';
 import type { Surface } from './surface';
 import {
   agentIdsOf,
@@ -84,7 +85,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
       agentIds: agentIdsOf(resource.reachableBy),
       resourceId: resource.id,
       evidence: path,
-      remediation: withholdReadStep(id, path),
+      remediation: withholdReadStep(id, path, resource.kind),
     });
   }
 
@@ -125,9 +126,27 @@ export function runDoctor(input: DoctorInput): DoctorReport {
 
 const POLICY_DIR = 'policies';
 
+/**
+ * A substitute exists for a credential file that conventionally has an example beside
+ * it. Nothing plausible substitutes for a container socket, and inventing one would
+ * send an agent at a path that is not there — worse than a refusal with no alternative.
+ */
+function substituteFor(path: string, kind: ResourceKind): string | null {
+  if (kind === RESOURCE_KIND.SOCKET) return null;
+  if (/(^|\/)\.env(\.[a-z0-9_-]+)?$/.test(path)) return `${path}.example`;
+  if (/(^|\/)\.npmrc$/.test(path)) return null;
+  if (/(^|\/)\.ssh\//.test(path)) return null;
+  return null;
+}
+
 /** Enforcing on a credential read is unambiguous, so this one arrives armed. */
-function withholdReadStep(findingId: string, path: string): HardenStep {
+function withholdReadStep(
+  findingId: string,
+  path: string,
+  kind: ResourceKind,
+): HardenStep {
   const file = `${POLICY_DIR}/withhold-${slug(path)}.yaml`;
+  const substitute = substituteFor(path, kind);
   const contents = [
     'version: 1',
     'policies:',
@@ -138,17 +157,24 @@ function withholdReadStep(findingId: string, path: string): HardenStep {
     '    decision:',
     '      effect: withhold',
     `      reason: "${path} holds a credential this task did not declare a need for."`,
-    '      alternative:',
-    '        action: filesystem.read',
-    `        resource: "${path}.example"`,
-    `        note: "${path}.example is readable."`,
+    ...(substitute === null
+      ? []
+      : [
+          '      alternative:',
+          '        action: filesystem.read',
+          `        resource: "${substitute}"`,
+          `        note: "${substitute} is readable."`,
+        ]),
     '',
   ].join('\n');
   return {
     id: `hs_${findingId}`,
     target: HARDEN_TARGET.POLICY,
     seam: SURFACE_KIND.FILESYSTEM,
-    description: `withhold reads of ${path}, naming a readable substitute`,
+    description:
+      substitute === null
+        ? `withhold reads of ${path}`
+        : `withhold reads of ${path}, naming ${substitute} instead`,
     apply: { path: file, contents, command: `memnox harden --apply hs_${findingId}` },
     revert: { path: file, command: `memnox harden --revert hs_${findingId}` },
     mode: HARDEN_MODE.ENFORCE,

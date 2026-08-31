@@ -13,7 +13,9 @@ import type { CliContext } from '../cli-context';
 /** Injected so a test never reads the developer's real home directory. */
 export type MachineReaderFactory = () => MachineReader;
 
-const PATH_WIDTH = 24;
+const LABEL_WIDTH = 24;
+/** Padding is computed from the longest path, so a long one never eats its own count. */
+const PATH_GUTTER = 2;
 
 /**
  * Runs with no account, no key and no network. Nothing is transmitted, which is the
@@ -51,7 +53,7 @@ function render(context: CliContext, report: DiscoveryReport): void {
   }
 
   out.line(
-    style.bold('AI AGENTS'.padEnd(PATH_WIDTH)) +
+    style.bold('AI AGENTS'.padEnd(LABEL_WIDTH)) +
       report.agents.map((agent) => agent.kind).join(', '),
   );
 
@@ -62,7 +64,7 @@ function render(context: CliContext, report: DiscoveryReport): void {
       0,
     );
     out.line(
-      style.bold('MCP CLIENTS'.padEnd(PATH_WIDTH)) +
+      style.bold('MCP CLIENTS'.padEnd(LABEL_WIDTH)) +
         servers.map((surface) => surface.agentId.replace('agt_', '')).join(', ') +
         (tools === 0 ? '' : style.dim(`  ${tools} tools`)),
     );
@@ -76,12 +78,14 @@ function render(context: CliContext, report: DiscoveryReport): void {
     out.line('');
     out.line(style.bold('REACHABLE FROM AN AGENT RIGHT NOW'));
     out.line('');
-    for (const resource of reachable) {
-      const agents = `${resource.reachableBy.length} agent${resource.reachableBy.length === 1 ? '' : 's'}`;
-      out.line(
-        `  ${style.warn('!')}  ${(resource.path ?? resource.id).padEnd(PATH_WIDTH)}${agents}`,
-      );
-    }
+    const paths = reachable.map((resource) => resource.path ?? resource.id);
+    const width =
+      Math.max(LABEL_WIDTH, ...paths.map((path) => path.length)) + PATH_GUTTER;
+    reachable.forEach((resource, index) => {
+      const count = resource.reachableBy.length;
+      const agents = `${count} agent${count === 1 ? '' : 's'}`;
+      out.line(`  ${style.warn('!')}  ${(paths[index] ?? '').padEnd(width)}${agents}`);
+    });
   }
 
   const surfaces = report.surfaces.filter((surface) => surface.kind !== SURFACE_KIND.MCP);

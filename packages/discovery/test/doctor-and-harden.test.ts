@@ -61,8 +61,23 @@ describe('the doctor', () => {
     );
 
     expect(credential?.remediation?.apply.contents).toContain('effect: withhold');
-    // Redirect beats refuse: the rule it writes names a readable substitute.
-    expect(credential?.remediation?.apply.contents).toContain('alternative');
+  });
+
+  it('names a substitute only where one exists, rather than inventing a path', async () => {
+    // An agent sent at a .example that is not there is worse off than one told no.
+    const machine = FakeMachine.from({ ...MACHINE, '/home/dev/.env': 'SECRET=1' });
+    const discovered = await discover(machine, { now: NOW });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    const env = findings.find((finding) => finding.evidence.endsWith('/.env'));
+    const aws = findings.find((finding) => finding.evidence.endsWith('credentials'));
+
+    expect(env?.remediation?.apply.contents).toContain('.env.example');
+    expect(aws?.remediation?.apply.contents).not.toContain('alternative');
   });
 });
 
