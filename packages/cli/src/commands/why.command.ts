@@ -6,6 +6,9 @@ import type {
   ExplanationLine,
 } from '@memnox/core';
 import { DECISION_EFFECT, ENFORCEMENT_MODE, EXPLANATION_EVIDENCE } from '@memnox/core';
+import { homedir } from 'node:os';
+import { discover, NodeMachineReader, type MachineReader } from '@memnox/discovery';
+import { computeCounterfactual } from '@memnox/ledger';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 
@@ -36,6 +39,10 @@ export function registerWhyCommand(program: Command, context: CliContext): void 
     )
     .option('--evidence', 'the full chain behind it, link by link, and what is missing')
     .option(
+      '--counterfactual',
+      'what the withheld action would have reached, from this machine',
+    )
+    .option(
       '--window <count>',
       `how many recent events to search with --evidence (default: ${DEFAULT_EVIDENCE_WINDOW})`,
       String(DEFAULT_EVIDENCE_WINDOW),
@@ -48,6 +55,7 @@ export function registerWhyCommand(program: Command, context: CliContext): void 
         decisionId: string | undefined,
         options: {
           evidence?: boolean;
+          counterfactual?: boolean;
           window: string;
           json?: boolean;
           url?: string;
@@ -64,8 +72,56 @@ export function registerWhyCommand(program: Command, context: CliContext): void 
           );
         }
         await renderWhy(context, decisionId, options);
+        if (options.counterfactual === true) {
+          await renderCounterfactual(context, decisionId, options);
+        }
       },
     );
+}
+
+/**
+ * Derived from the attempt that was actually made and from nothing else. It runs here
+ * rather than in the runtime because reachability is this machine's own fact, and a
+ * counterfactual that imagined a wider blast radius would be an estimated loss figure
+ * in another costume.
+ */
+async function renderCounterfactual(
+  context: CliContext,
+  decisionId: string,
+  options: { url?: string; adminToken?: string },
+  buildReader: () => MachineReader = () => new NodeMachineReader(homedir()),
+): Promise<void> {
+  const { out, style } = context;
+  const { client } = await context.connect(options);
+  const events = await client.queryAudit({ limit: DEFAULT_EVIDENCE_WINDOW });
+  const decision = events.find((each) => each.id === decisionId);
+  if (decision === undefined) {
+    out.note(`no audited action by that id in the last ${DEFAULT_EVIDENCE_WINDOW}`);
+    return;
+  }
+
+  const report = await discover(buildReader(), { now: new Date().toISOString() });
+  const counterfactual = computeCounterfactual({
+    decisionId,
+    action: decision.action,
+    ...(decision.target === undefined ? {} : { resource: decision.target }),
+    reachable: report.resources.map((resource) => ({
+      id: resource.id,
+      kind: resource.kind,
+      ...(resource.path === undefined ? {} : { path: resource.path }),
+    })),
+  });
+
+  out.line('');
+  out.line(style.bold('WOULD HAVE REACHED'));
+  if (counterfactual.wouldHaveReached.length === 0) {
+    // Honest when empty: nothing on this machine matches what the attempt named.
+    out.line(`  ${style.dim('nothing this machine knows about')}`);
+  }
+  for (const resource of counterfactual.wouldHaveReached) {
+    out.line(`  ${resource.kind}  ${resource.path ?? resource.id}`);
+  }
+  out.line(style.dim(`  basis: ${counterfactual.basis}`));
 }
 
 async function renderWhy(

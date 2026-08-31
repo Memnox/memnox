@@ -7,6 +7,7 @@ import { createDetachedLauncher, daemonPaths, readDaemonPid } from '../runtime-d
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-config';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
+import { HookInstaller } from '../hook-installer';
 import { McpInstaller } from '../mcp-installer';
 import { parseEnforcement } from '../enforcement-args';
 import { policyRegistryPath, registerPolicyFile } from '../policy-registry';
@@ -57,7 +58,9 @@ export function registerSetupCommand(
   launch: ServerLauncher = createDetachedLauncher(homedir()),
   homeDir: string = homedir(),
   probe: ServerProbe = probeRuntime,
-  mcpInstaller = new McpInstaller(homedir()),
+  // Both follow the injected home, or a test writes into the developer's own.
+  mcpInstaller = new McpInstaller(homeDir),
+  hookInstaller = new HookInstaller(homeDir),
 ): void {
   program
     .command('setup')
@@ -70,6 +73,7 @@ export function registerSetupCommand(
       'governance unit this repository belongs to; repos sharing a name share one scope',
     )
     .option('--no-mcp', 'skip registering the Memnox MCP server with your agent')
+    .option('--no-hooks', "skip governing the agent's own file, shell and network tools")
     .option('--no-serve', 'scaffold policies without starting the runtime')
     .option('--enforce', 'block from the first request instead of observing first')
     .option(
@@ -83,6 +87,7 @@ export function registerSetupCommand(
         host: string;
         project?: string;
         mcp: boolean;
+        hooks: boolean;
         serve: boolean;
         detect: boolean;
         enforce?: boolean;
@@ -106,6 +111,7 @@ export function registerSetupCommand(
 
         if (!options.serve) {
           if (options.mcp) await installMcp(mcpInstaller, out);
+          if (options.hooks) await installHooks(hookInstaller, out);
           out.line('');
           out.line(`memnox serve --policies ${options.file}`);
           out.note('');
@@ -139,6 +145,7 @@ export function registerSetupCommand(
         // A joined runtime used to be stuck in the mode it started in.
         const armed = joined && enforcing ? await enforceOnRunning(context, url) : false;
         const mcpAny = options.mcp ? await installMcp(mcpInstaller, out) : false;
+        if (options.hooks) await installHooks(hookInstaller, out);
 
         out.line('');
         if (joined) {
@@ -254,6 +261,30 @@ async function installMcp(
     );
   }
   return installedAny;
+}
+
+/**
+ * The MCP proxy governs what an agent reaches through a server; this governs what it
+ * does directly. Without it the rules about files and shells are written and unenforced.
+ */
+async function installHooks(
+  hookInstaller: HookInstaller,
+  out: CliContext['out'],
+): Promise<boolean> {
+  try {
+    const report = await hookInstaller.install();
+    out.line(
+      report.installed
+        ? "Installed the Memnox tool hook — the agent's own tools now ask first"
+        : 'The Memnox tool hook is already installed',
+    );
+    return report.installed;
+  } catch (err) {
+    // A seam that cannot install is a gap to report, never a failed setup.
+    out.note(`Could not install the tool hook: ${String(err)}`);
+    out.note('→ Install it later with: memnox hooks install');
+    return false;
+  }
 }
 
 /** A token from an earlier runtime reported success, then withheld every action. */

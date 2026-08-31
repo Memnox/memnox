@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { LineageReport } from '@memnox/sdk';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 
@@ -34,5 +35,44 @@ export function registerReplayCommand(program: Command, context: CliContext): vo
           `${event.occurredAt}  ${event.effect.toUpperCase().padEnd(16)} ${event.action}${target}${env} — ${event.reason}${advisories}`,
         );
       }
+
+      await renderLineage(context, client, sessionId);
     });
+}
+
+/**
+ * Who caused this. Every hop states its method: an inferred hop pretending to be a
+ * propagated one is worse than a gap, so the weakest link is what the chain reports.
+ */
+async function renderLineage(
+  context: CliContext,
+  client: { lineage: (id: string) => Promise<LineageReport> },
+  sessionId: string,
+): Promise<void> {
+  const { out, style } = context;
+  let report: LineageReport;
+  try {
+    report = await client.lineage(sessionId);
+  } catch {
+    // A runtime one version behind serves no lineage; that is a gap, not a crash.
+    return;
+  }
+  if (report.lineage.hops.length === 0) return;
+
+  out.line('');
+  out.line(style.bold('LINEAGE'));
+  for (const hop of report.lineage.hops) {
+    const ref = hop.ref === undefined ? '' : ` ${hop.ref}`;
+    out.line(
+      `  ${hop.at}  ${hop.actorKind}:${hop.actorId}  ${hop.system}${ref}  ${style.dim(hop.method)}`,
+    );
+  }
+  out.line(
+    style.dim(
+      `  confidence ${report.confidence} — a chain is only as good as its weakest hop`,
+    ),
+  );
+  for (const gap of report.unjoined) {
+    out.line(style.dim(`  not joined to a verdict: ${gap}`));
+  }
 }

@@ -9,6 +9,7 @@ import { registerCloudCommand } from './commands/cloud.command';
 import { registerDiscoverCommand } from './commands/discover.command';
 import { registerDoctorCommand } from './commands/doctor.command';
 import { registerHardenCommand } from './commands/harden.command';
+import { registerHooksCommand } from './commands/hooks.command';
 import { registerDriftCommand } from './commands/drift.command';
 import { registerDraftCommand } from './commands/draft.command';
 import { registerWhyCommand } from './commands/why.command';
@@ -46,6 +47,7 @@ export function buildProgram(context: CliContext): Command {
   registerDiscoverCommand(program, context);
   registerDoctorCommand(program, context);
   registerHardenCommand(program, context);
+  registerHooksCommand(program, context);
   registerSetupCommand(program, context);
   registerInitCommand(program, context);
   registerServeCommand(program, context);
