@@ -10,6 +10,8 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-01
+
 ### Added
 
 **`@memnox/tool-hook`, the seam that holds an agent's own tools.** The MCP proxy

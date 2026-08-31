@@ -1,6 +1,6 @@
 {
   "name": "@memnox/policy-engine",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Deterministic policy evaluation for AI agent actions. No LLM in the decision path.",
   "keywords": [
     "policy",
@@ -44,6 +44,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.4.0"
+    "@memnox/core": "0.5.0"
   }
 }

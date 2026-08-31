@@ -1,6 +1,6 @@
 {
   "name": "@memnox/autonomy",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Named levels a person grants, and a readiness checklist nobody can tick.",
   "keywords": [
     "ai-agents",
