@@ -11,16 +11,14 @@ import { registerDescribeCommand } from './commands/describe.command';
 import { registerDriftCommand } from './commands/drift.command';
 import { registerComplianceCommand } from './commands/compliance.command';
 import { registerDraftCommand } from './commands/draft.command';
-import { registerExplainCommand } from './commands/explain.command';
+import { registerWhyCommand } from './commands/why.command';
 import { registerInitCommand } from './commands/init.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerKeysCommand } from './commands/keys.command';
 import { registerInsightsCommand } from './commands/insights.command';
-import { registerIntentCommand } from './commands/intent.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerMemoryCommand } from './commands/memory.command';
 import { registerOrgCommand } from './commands/org.command';
-import { registerPlanCommand } from './commands/plan.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerPullCommand } from './commands/pull.command';
 import { registerQuickstartCommand } from './commands/quickstart.command';
@@ -54,7 +52,6 @@ export function buildProgram(context: CliContext): Command {
   registerCheckCommand(program, context);
   registerContextCommand(program, context);
   registerDescribeCommand(program, context);
-  registerPlanCommand(program, context);
   registerTestCommand(program, context);
   registerDriftCommand(program, context);
   registerTraceCommand(program, context);
@@ -68,11 +65,10 @@ export function buildProgram(context: CliContext): Command {
   registerReportCommand(program, context);
   registerInsightsCommand(program, context);
   registerDraftCommand(program, context);
-  registerExplainCommand(program, context);
+  registerWhyCommand(program, context);
   registerPolicyCommand(program, context);
   registerKeysCommand(program, context);
   registerComplianceCommand(program, context);
-  registerIntentCommand(program, context);
 
   return program;
 }

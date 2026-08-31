@@ -1,4 +1,5 @@
-import type { DecisionEffect, RateLimitSpec } from '@memnox/core';
+import type { Alternative, DecisionEffect, RateLimitSpec } from '@memnox/core';
+import type { ScopeMatch } from '@memnox/core';
 import type { TimeWindow } from './time-window';
 
 /** All match fields are lists of wildcard patterns; omitted fields match anything. */
@@ -23,12 +24,17 @@ export interface PolicyMatch {
   aboveAmount?: number;
   /** The policy applies only inside these recurring windows. */
   windows?: TimeWindow[];
+  /**
+   * How the request sat against the task's declared scope. A comparison, never a
+   * judgement: `out_of_scope` is a fact a rule matches on, exactly like an environment.
+   */
+  scope?: ScopeMatch[];
 }
 
-/** Per-rule mode. A observed rule matches and is recorded, but never decides. */
+/** Per-rule mode. An observed rule matches and is recorded, but never decides. */
 export const POLICY_MODE = {
   ENFORCE: 'enforce',
-  MONITOR: 'observe',
+  OBSERVE: 'observe',
 } as const;
 
 export type PolicyMode = (typeof POLICY_MODE)[keyof typeof POLICY_MODE];
@@ -45,9 +51,16 @@ export interface PolicyDecision {
   mode?: PolicyMode;
   /** Counted by the gateway: a ceiling needs state and a clock, which the engine lacks. */
   rateLimit?: RateLimitSpec;
+  /**
+   * What the agent may do instead. Named by the rule that withholds, never invented,
+   * which is what makes redirection reliable enough for an agent to take.
+   */
+  alternative?: Alternative;
 }
 
 export interface Policy {
+  /** Stable across a rename, so an old decision still cites the rule it matched. */
+  id?: string;
   name: string;
   description?: string;
   match: PolicyMatch;

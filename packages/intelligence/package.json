@@ -45,7 +45,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
-    "@memnox/core": "0.3.1",
     "@memnox/org-graph": "0.3.1",
     "@memnox/policy-engine": "0.3.1",
     "yaml": "^2.4.0"

@@ -5,12 +5,10 @@ import type {
   ActionAdvisor,
   AuditLog,
   LockService,
-  PlanStore,
   SessionTaintStore,
 } from '@memnox/core';
 import {
   FixedWindowRateLimiter,
-  InMemoryPlanStore,
   InMemorySessionTaintStore,
   InProcessLockService,
 } from '@memnox/core';
@@ -35,7 +33,6 @@ import {
   AuthorityAdvisor,
   BehaviorAdvisor,
   TaintAdvisor,
-  PlanScopeAdvisor,
   ShellIndirectionAdvisor,
   TokenBudgetAdvisor,
   TrustAdvisor,
@@ -69,7 +66,7 @@ import { registerEnforcementRoutes } from './routes/enforcement.routes';
 import { registerOrganizationAdminRoutes } from './routes/organization-admin.routes';
 import { registerOrganizationRoutes } from './routes/organization.routes';
 import { registerPolicyRoutes } from './routes/policy.routes';
-import { registerPlanRoutes } from './routes/plan.routes';
+import { registerTaskRoutes } from './routes/task.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
 import {
   createRequireRole,
@@ -94,6 +91,8 @@ import {
 import { JsonFileApprovalStore } from './stores/json-file-approval-store';
 import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
+import { InMemoryExplanationStore } from './stores/in-memory-explanation-store';
+import { InMemoryTaskStore } from './stores/in-memory-task-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
 
@@ -230,7 +229,7 @@ export async function buildServer(
 
   const { lockService, sessionTaintStore } = await resolveCoordination(config, services);
 
-  const planStore = new InMemoryPlanStore();
+  const taskStore = new InMemoryTaskStore();
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
@@ -241,7 +240,10 @@ export async function buildServer(
   // One counter serves the HTTP limit and every per-rule rateLimit, so both are
   // shared across pods exactly when Redis is configured and per-instance otherwise.
   const rateLimiter = new FixedWindowRateLimiter(lockService);
+  const explanations = new InMemoryExplanationStore();
   const gateway = new ActionGateway({
+    explanations,
+    tasks: taskStore,
     identityStore,
     auditLog,
     metrics,
@@ -257,7 +259,6 @@ export async function buildServer(
       auditLog,
       decisionStore,
       sessionTaintStore,
-      planStore,
       authorityStore,
     ),
     notifier: config.approvalWebhookUrl
@@ -300,6 +301,7 @@ export async function buildServer(
   const ctx: RouteContext = {
     gateway,
     config,
+    explanations,
     decisionMemory,
     organization: new OrganizationService({
       gateway,
@@ -317,7 +319,7 @@ export async function buildServer(
     // Only offered when a file backs the rule set — there is nothing to re-read otherwise.
     semanticSearch,
     proxyFetch: services.proxyFetch ?? fetch,
-    plans: planStore,
+    tasks: taskStore,
     policyHistory,
     reloadPolicies:
       config.policyFile || config.policyRegistryFile
@@ -377,7 +379,7 @@ export async function buildServer(
     if (prefix !== '')
       scope.get('/healthz', async () => ({ status: 'ok', tenant: prefix.slice(1) }));
     registerDashboardRoutes(scope, ctx);
-    registerPlanRoutes(scope, ctx);
+    registerTaskRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);
     registerAgentRoutes(scope, ctx);
@@ -453,7 +455,6 @@ function buildAdvisors(
   auditLog: AuditLog,
   decisionStore: DecisionStore,
   sessionTaintStore: SessionTaintStore,
-  plans: PlanStore,
   grants: AuthorityStore,
 ): ActionAdvisor[] {
   const advisors: ActionAdvisor[] = [];
@@ -477,7 +478,6 @@ function buildAdvisors(
   if (config.verificationGuard) {
     advisors.push(new VerificationAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));
   }
-  advisors.push(new PlanScopeAdvisor(plans));
   if (config.shellGuard) {
     advisors.push(new ShellIndirectionAdvisor(undefined, [...DEFAULT_ADVISOR_APPROVERS]));
   }

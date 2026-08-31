@@ -10,6 +10,7 @@ import type {
   Decision,
   EnvironmentModes,
   ExecutionOutcomeReport,
+  Explanation,
   RiskAssessment,
 } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
@@ -291,6 +292,16 @@ export class MemnoxClient {
       'POST',
       '/v1/agents',
       { name, kind, capabilities },
+      this.options.adminToken,
+    );
+  }
+
+  /** The stored explanation for one decision. Null when the window has rolled past it. */
+  async why(decisionId: string): Promise<Explanation | null> {
+    return this.request<Explanation | null>(
+      'GET',
+      `/v1/decision/${encodeURIComponent(decisionId)}/why`,
+      undefined,
       this.options.adminToken,
     );
   }

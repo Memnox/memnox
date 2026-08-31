@@ -3,8 +3,9 @@ import type {
   AgentIdentity,
   ApiRole,
   EnvironmentModes,
+  ExplanationStore,
   FixedWindowRateLimiter,
-  PlanStore,
+  TaskStore,
 } from '@memnox/core';
 import type { DecisionSemanticSearch } from '@memnox/memory';
 import type { DecisionMemoryService } from '../decision-memory-service';
@@ -58,12 +59,14 @@ export interface RouteContext {
   persistEnforcement?: (modes: EnvironmentModes) => Promise<void>;
   /** Injected so proxy tests exercise real route code against a fake upstream. */
   proxyFetch: typeof fetch;
-  /** Declared plans, scoping an autonomous run one step at a time. */
-  plans: PlanStore;
+  /** Declared tasks: what a session was asked for, and the scope that implies. */
+  tasks: TaskStore;
   /** Published rule sets, so a bad publish can be undone. */
   policyHistory: PolicyHistory;
   /** Present only when an embedding key is configured; keyword search runs regardless. */
   semanticSearch?: DecisionSemanticSearch;
+  /** The explanation each verdict was built with, so `why` reads rather than retells. */
+  explanations: ExplanationStore;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

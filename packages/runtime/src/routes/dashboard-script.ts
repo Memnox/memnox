@@ -107,7 +107,7 @@ function time(iso) {
 
 function verdict(effect, withheld) {
   var shown = withheld || effect;
-  var label = shown === 'escalate' ? 'APPROVAL' : shown.toUpperCase();
+  var label = shown.toUpperCase();
   var cell = el('span', { class: 'verdict verdict-' + shown, text: label });
   if (!withheld) return cell;
   return el('span', {}, [cell, el('span', { class: 'tag', text: 'withheld' })]);
@@ -266,7 +266,7 @@ function loadPolicies() {
         ]),
         el('td', {}, [el('span', {
           class: 'verdict verdict-' + policy.decision.effect,
-          text: policy.decision.effect === 'escalate' ? 'APPROVAL' : policy.decision.effect.toUpperCase(),
+          text: policy.decision.effect.toUpperCase(),
         })]),
         el('td', { class: 'dim', text: describeMatch(match) }),
         el('td', {}, [

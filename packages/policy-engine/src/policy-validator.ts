@@ -1,4 +1,11 @@
-import { DECISION_EFFECT, type DecisionEffect, type RateLimitSpec } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  SCOPE_MATCH,
+  type Alternative,
+  type DecisionEffect,
+  type RateLimitSpec,
+  type ScopeMatch,
+} from '@memnox/core';
 import { isValidTimeWindow, type TimeWindow } from './time-window';
 import type { Policy, PolicyDocument, PolicyMode } from './policy';
 import { POLICY_DOCUMENT_VERSION, POLICY_MODE } from './policy';
@@ -139,6 +146,7 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         issues,
       ),
       windows: asOptionalWindows(match['windows'], `${path}.match.windows`, issues),
+      scope: asOptionalScope(match['scope'], `${path}.match.scope`, issues),
     },
     decision: {
       effect,
@@ -155,8 +163,67 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         `${path}.decision.rateLimit`,
         issues,
       ),
+      alternative: asOptionalAlternative(
+        decision['alternative'],
+        `${path}.decision.alternative`,
+        issues,
+      ),
     },
   };
+}
+
+const VALID_SCOPE_MATCHES = Object.values(SCOPE_MATCH);
+
+/** A rule matches on how the request sat against the declared scope, never on a guess. */
+function asOptionalScope(
+  input: unknown,
+  path: string,
+  issues: string[],
+): ScopeMatch[] | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (!Array.isArray(input) || input.length === 0) {
+    issues.push(`${path} must be a non-empty array`);
+    return undefined;
+  }
+  const invalid = input.filter(
+    (entry) =>
+      typeof entry !== 'string' || !(VALID_SCOPE_MATCHES as string[]).includes(entry),
+  );
+  if (invalid.length > 0) {
+    issues.push(`${path} entries must be one of: ${VALID_SCOPE_MATCHES.join(', ')}`);
+    return undefined;
+  }
+  return input as ScopeMatch[];
+}
+
+/**
+ * The substitute the rule permits. A refusal that names one gets taken; the note is
+ * required because "use something else" is not an instruction an agent can act on.
+ */
+function asOptionalAlternative(
+  input: unknown,
+  path: string,
+  issues: string[],
+): Alternative | undefined {
+  if (input === undefined || input === null) return undefined;
+  const raw = asRecord(input, path, issues);
+  if (!raw) return undefined;
+  const action = raw['action'];
+  const note = raw['note'];
+  const resource = raw['resource'];
+  if (typeof action !== 'string' || action.length === 0) {
+    issues.push(`${path}.action is required`);
+    return undefined;
+  }
+  if (typeof note !== 'string' || note.length === 0) {
+    issues.push(`${path}.note is required — it is what the agent reads`);
+    return undefined;
+  }
+  if (resource !== undefined && typeof resource !== 'string') {
+    issues.push(`${path}.resource must be a string`);
+    return undefined;
+  }
+  return { action, note, ...(resource === undefined ? {} : { resource }) };
 }
 
 /** Argument patterns are a map of argument name to the wildcards it must match. */

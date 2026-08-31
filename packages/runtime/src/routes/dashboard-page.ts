@@ -11,8 +11,8 @@ const REFRESH_SECONDS = 5;
 
 const EFFECT_LABEL: Record<string, string> = {
   [DECISION_EFFECT.ALLOW]: 'ALLOW',
-  [DECISION_EFFECT.WITHHOLD]: 'BLOCK',
-  [DECISION_EFFECT.ESCALATE]: 'APPROVAL',
+  [DECISION_EFFECT.WITHHOLD]: 'WITHHOLD',
+  [DECISION_EFFECT.ESCALATE]: 'ESCALATE',
 };
 
 const AGENT_KINDS = ['claude-code', 'cursor', 'openai-agent', 'mcp', 'custom'];

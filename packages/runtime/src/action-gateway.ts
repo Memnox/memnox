@@ -23,13 +23,22 @@ import type {
   FixedWindowRateLimiter,
   IdentityStore,
   Logger,
+  Alternative,
+  ExplanationStore,
   MatchedPolicy,
   RiskAssessment,
   RiskLevel,
+  RuleRef,
+  ScopeComparison,
+  ScopeSubject,
+  Task,
+  TaskStore,
 } from '@memnox/core';
 import {
   AGENT_STATUS,
   buildActionBriefing,
+  buildExplanation,
+  compareDeclaredScope,
   APPROVAL_STATUS,
   APPROVAL_TTL_MS,
   CONSENT,
@@ -183,6 +192,10 @@ export interface ActionGatewayDeps {
   maxPendingPerAgent?: number;
   /** Shared with the HTTP limiter; without it `rateLimit` rules are inert. */
   rateLimiter?: FixedWindowRateLimiter;
+  /** Keeps the explanation built from each match, so `why` is a read and not a retelling. */
+  explanations?: ExplanationStore;
+  /** Declared tasks, so an out-of-scope request is a fact a rule can match on. */
+  tasks?: TaskStore;
 }
 
 interface Outcome {
@@ -196,6 +209,12 @@ interface Outcome {
   enforcementMode?: EnforcementMode;
   /** Set when the mode kept a non-allow verdict from being applied. */
   shadowEffect?: DecisionEffect;
+  /** The rule that decided, carried so the explanation can cite its version. */
+  rule?: RuleRef;
+  /** What the agent may do instead, resolved from that rule rather than invented. */
+  alternative?: Alternative;
+  /** How the request compared against the task's declared scope. */
+  scope?: ScopeComparison;
 }
 
 /** identity → policy → advisors → approval → audit; exactly one event per request. */
@@ -410,9 +429,11 @@ export class ActionGateway {
       };
     }
 
+    const scope = await this.compareScope(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       now: new Date(),
+      ...(scope === undefined ? {} : { scope: scope.match }),
     });
     const advisories = await this.collectAdvisories(request, agent);
     const effect = this.combineEffects(evaluation.effect, advisories);
@@ -498,9 +519,11 @@ export class ActionGateway {
       if (resolved) return resolved;
     }
 
+    const scope = await this.compareScope(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       now: new Date(),
+      ...(scope === undefined ? {} : { scope: scope.match }),
     });
     const advisories = await advise();
     const verdict = this.combineEffects(evaluation.effect, advisories);
@@ -576,6 +599,9 @@ export class ActionGateway {
         approvalId: approval.id,
         approvers,
         enforcementMode: mode,
+        rule: evaluation.rule,
+        alternative: evaluation.alternative,
+        scope,
       });
     }
 
@@ -585,6 +611,9 @@ export class ActionGateway {
       matchedPolicies: evaluation.matchedPolicies,
       advisories,
       enforcementMode: mode,
+      rule: evaluation.rule,
+      alternative: evaluation.alternative,
+      scope,
       ...(shadowEffect === undefined ? {} : { shadowEffect }),
     });
   }
@@ -728,10 +757,14 @@ export class ActionGateway {
       advisories,
       approvalId: outcome.approvalId,
       shadowEffect: outcome.shadowEffect,
+      rule: outcome.rule,
+      alternative: outcome.alternative,
       mode,
       evaluatedAt: new Date().toISOString(),
       latencyUs: Number((process.hrtime.bigint() - startedAt) / 1000n),
     };
+
+    await this.saveExplanation(decision, request, agent, outcome.scope);
 
     await this.appendEvent({
       id: decision.eventId,
@@ -791,6 +824,56 @@ export class ActionGateway {
     }
   }
 
+  /**
+   * Scope is compared, not judged. The task is data the client declared; an unreadable
+   * or absent one leaves the comparison undefined rather than assuming the request fits.
+   */
+  private async compareScope(
+    request: ActionRequest,
+  ): Promise<ScopeComparison | undefined> {
+    const tasks = this.deps.tasks;
+    const sessionId = request.sessionId;
+    if (tasks === undefined || sessionId === undefined) return undefined;
+    let task: Task | null;
+    try {
+      task = await tasks.findBySession(sessionId);
+    } catch (err) {
+      this.logger.error(`task lookup failed for session ${sessionId}: ${String(err)}`);
+      return undefined;
+    }
+    if (task === null) return undefined;
+    return compareDeclaredScope(
+      task.declaredScope,
+      subjectOf(request),
+      (patterns, value) => matchesAny([...patterns], value),
+    );
+  }
+
+  /** Built from the match, never regenerated: a failure here must not lose the verdict. */
+  private async saveExplanation(
+    decision: Decision,
+    request: ActionRequest,
+    agent: AgentIdentity | null,
+    scope: ScopeComparison | undefined,
+  ): Promise<void> {
+    const store = this.deps.explanations;
+    if (store === undefined) return;
+    try {
+      await store.save(
+        buildExplanation({
+          decision,
+          request,
+          ...(agent === null ? {} : { agentName: agent.name }),
+          ...(scope === undefined ? {} : { scope }),
+        }),
+      );
+    } catch (err) {
+      this.logger.error(
+        `explanation store failed for ${decision.eventId}: ${String(err)}`,
+      );
+    }
+  }
+
   private async recordStats(agent: AgentIdentity, effect: DecisionEffect): Promise<void> {
     const stats = { ...agent.stats };
     if (effect === DECISION_EFFECT.ALLOW) stats.allowed += 1;
@@ -798,4 +881,13 @@ export class ActionGateway {
     if (effect === DECISION_EFFECT.ESCALATE) stats.approvalsRequested += 1;
     await this.agents.recordDecisionStats(agent, stats);
   }
+}
+
+/** The dimensions a request can be compared on. Nothing is inferred from the payload. */
+function subjectOf(request: ActionRequest): ScopeSubject {
+  return {
+    ...(request.target === undefined ? {} : { path: request.target }),
+    ...(request.projectId === undefined ? {} : { repository: request.projectId }),
+    ...(request.environment === undefined ? {} : { environment: request.environment }),
+  };
 }

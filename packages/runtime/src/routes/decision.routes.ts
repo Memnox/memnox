@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { DECISION_EFFECT, renderActionBriefing } from '@memnox/core';
+import { API_ROLE, DECISION_EFFECT, renderActionBriefing } from '@memnox/core';
 import { readActionRequest } from './action-body';
 import { bearerToken, type RouteContext } from './route-context';
 
@@ -40,6 +40,16 @@ export function registerDecisionRoutes(app: FastifyInstance, ctx: RouteContext):
 
     const briefing = await ctx.gateway.brief(token, action);
     return { briefing, text: renderActionBriefing(briefing) };
+  });
+
+  /** The explanation stored with the verdict. Read back, never rebuilt. */
+  app.get<{ Params: { id: string } }>('/v1/decision/:id/why', async (request, reply) => {
+    if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
+    const explanation = await ctx.explanations.findByDecision(request.params.id);
+    if (explanation === null) {
+      return reply.code(404).send({ error: 'no explanation for that decision' });
+    }
+    return explanation;
   });
 
   /** Read-only "what would happen": nothing is audited and no approval is created. */

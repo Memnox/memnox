@@ -66,7 +66,7 @@ describe('memnox trace', () => {
     expect(out.text).toContain('by local-editor (agt_1) on behalf of moise');
     expect(out.text).toContain('Rules       production-database-protection');
     expect(out.text).toContain('Signals     decision-memory');
-    expect(out.text).toContain('BLOCK');
+    expect(out.text).toContain('WITHHOLD');
     expect(out.text).toContain('Asked       platform-lead');
   });
 

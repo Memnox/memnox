@@ -1,8 +1,11 @@
 import type {
   ActionRequest,
+  Alternative,
   DecisionEffect,
   MatchedPolicy,
   RiskLevel,
+  RuleRef,
+  ScopeMatch,
 } from '@memnox/core';
 import {
   DECISION_EFFECT,
@@ -20,6 +23,11 @@ export interface EvaluationContext {
   agentName: string;
   /** Supplied by the caller so a verdict stays reproducible on replay. */
   now?: Date;
+  /**
+   * How the request sat against the task's declared scope, compared by the caller.
+   * A fact to match on, like an environment: no model is consulted here, ever.
+   */
+  scope?: ScopeMatch;
 }
 
 export interface EvaluationResult {
@@ -29,6 +37,10 @@ export interface EvaluationResult {
   matchedPolicies: MatchedPolicy[];
   /** What the observed rules would have decided, when that is stricter than the effect. */
   shadowEffect?: DecisionEffect;
+  /** The rule that decided, so the explanation can cite a version rather than a name. */
+  rule?: RuleRef;
+  /** Resolved from that rule, never invented. Absent when the rule named none. */
+  alternative?: Alternative;
 }
 
 export interface PolicyEngineOptions {
@@ -89,9 +101,10 @@ export class PolicyEngine {
        miss the rule naming it once to turn a block into an allow. */
     const request = normalizeActionRequest(incoming);
     const riskLevel = classifyRisk(request.action, request.environment);
-    const matchedPolicies = this.candidates(request.action)
-      .filter((policy) => this.matches(policy, request, context))
-      .map(toMatchedPolicy);
+    const applicable = this.candidates(request.action).filter((policy) =>
+      this.matches(policy, request, context),
+    );
+    const matchedPolicies = applicable.map(toMatchedPolicy);
 
     // A observed rule is recorded but never decides, so the verdict comes from
     // the enforcing ones alone — and their absence means no rule decided at all.
@@ -113,13 +126,21 @@ export class PolicyEngine {
         ? candidate
         : mostRestrictive,
     );
+    const decided = applicable.find((policy) => policy.name === winner.name);
     return {
       effect: winner.effect,
       riskLevel,
       reason: winner.reason ?? `policy "${winner.name}" applied`,
       matchedPolicies,
+      ...(decided === undefined ? {} : { rule: this.ruleRef(decided) }),
+      ...(winner.alternative === undefined ? {} : { alternative: winner.alternative }),
       ...withheld(winner.effect, shadowEffect),
     };
+  }
+
+  /** The rule set's content version stands in for a per-rule one until rules are stored. */
+  private ruleRef(policy: Policy): RuleRef {
+    return { id: policy.id ?? policy.name, name: policy.name, version: this.version };
   }
 
   /** One project's rule never decides another's; an unscoped rule is the baseline. */
@@ -148,13 +169,14 @@ export class PolicyEngine {
       matchesAny(policy.match.branches, request.branch) &&
       matchesAllArguments(policy.match.arguments, request.arguments) &&
       matchesAmount(policy.match.aboveAmount, request.amount) &&
+      matchesScope(policy.match.scope, context.scope) &&
       matchesAnyTimeWindow(policy.match.windows, context.now)
     );
   }
 }
 
 function toMatchedPolicy(policy: Policy): MatchedPolicy {
-  const observed = policy.decision.mode === POLICY_MODE.MONITOR;
+  const observed = policy.decision.mode === POLICY_MODE.OBSERVE;
   return {
     name: policy.name,
     effect: policy.decision.effect,
@@ -165,7 +187,24 @@ function toMatchedPolicy(policy: Policy): MatchedPolicy {
     ...(policy.decision.rateLimit === undefined
       ? {}
       : { rateLimit: policy.decision.rateLimit }),
+    ...(policy.decision.alternative === undefined
+      ? {}
+      : { alternative: policy.decision.alternative }),
   };
+}
+
+/**
+ * A rule that names no scope matches every request, and a request whose caller
+ * declared no task never matches a scope-bearing rule: an undeclared scope is
+ * undeclared, not a guess that the request was fine.
+ */
+function matchesScope(
+  required: readonly ScopeMatch[] | undefined,
+  actual: ScopeMatch | undefined,
+): boolean {
+  if (required === undefined || required.length === 0) return true;
+  if (actual === undefined) return false;
+  return required.includes(actual);
 }
 
 function strictestMonitored(matched: MatchedPolicy[]): DecisionEffect | undefined {

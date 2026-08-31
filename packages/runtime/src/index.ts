@@ -25,4 +25,5 @@ export * from './agent-jwt';
 export * from './client-cert';
 export * from './stores/in-memory-identity-store';
 export * from './stores/in-memory-audit-log';
+export * from './stores/in-memory-explanation-store';
 export * from './policy-history';

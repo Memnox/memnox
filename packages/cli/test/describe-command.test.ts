@@ -85,7 +85,7 @@ describe('memnox describe', () => {
       governed(),
     );
 
-    expect(out.text).toContain('BLOCK');
+    expect(out.text).toContain('WITHHOLD');
     expect(out.text).toContain('risk critical');
     expect(out.text).toContain('agent trust 74/100');
   });
@@ -197,7 +197,7 @@ describe('memnox describe', () => {
     );
 
     expect(out.notes.join('\n')).toContain('Could not read decision memory');
-    expect(out.text).toContain('BLOCK');
+    expect(out.text).toContain('WITHHOLD');
   });
 
   it('never asks for a decision — every route it uses is read-only', async () => {

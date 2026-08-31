@@ -13,11 +13,11 @@ const HASH_PREVIEW = 12;
 
 const VERDICT_LABEL: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.ALLOW]: 'ALLOW',
-  [DECISION_EFFECT.WITHHOLD]: 'BLOCK',
-  [DECISION_EFFECT.ESCALATE]: 'REQUIRE APPROVAL',
+  [DECISION_EFFECT.WITHHOLD]: 'WITHHOLD',
+  [DECISION_EFFECT.ESCALATE]: 'ESCALATE',
 };
 
-/** Deterministic and offline, unlike `explain` — this is the record, not a reading of it. */
+/** Deterministic and offline: this is the record, not a reading of it. */
 export function registerTraceCommand(program: Command, context: CliContext): void {
   program
     .command('trace [eventId]')
