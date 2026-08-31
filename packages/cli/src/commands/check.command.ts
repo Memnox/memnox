@@ -101,7 +101,7 @@ export function registerCheckCommand(
         if (decision.approvalId) out.line(`${label('Approval')}: ${decision.approvalId}`);
         if (decision.shadowEffect !== undefined) {
           out.line(
-            `${label('Withheld')}: ${decision.shadowEffect} (this environment is only being observed)`,
+            `${label('Shadow')}: enforce would have said ${decision.shadowEffect} (this environment is only being observed)`,
           );
         }
 

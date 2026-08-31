@@ -637,6 +637,16 @@ export class MemnoxClient {
     );
   }
 
+  /** Name who answers for an agent. Required before it counts as managed. */
+  async setAgentOwner(agentId: string, owner: string): Promise<AgentSummary> {
+    return this.request<AgentSummary>(
+      'POST',
+      `/v1/agents/${encodeURIComponent(agentId)}/owner`,
+      { owner },
+      this.options.adminToken,
+    );
+  }
+
   async addDecision(payload: DecisionRecordPayload): Promise<DecisionRecordResponse> {
     return this.request<DecisionRecordResponse>(
       'POST',

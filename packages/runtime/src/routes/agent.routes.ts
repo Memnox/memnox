@@ -87,6 +87,19 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
     return safe;
   });
 
+  app.post('/v1/agents/:id/owner', async (request, reply) => {
+    if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { owner?: unknown };
+    if (typeof body.owner !== 'string' || body.owner.trim().length === 0) {
+      return reply.code(400).send({ error: '"owner" is required' });
+    }
+    const agent = await ctx.gateway.agents.setOwner(id, body.owner.trim());
+    if (!agent) return reply.code(404).send({ error: 'agent not found' });
+    const { tokenHash: _tokenHash, ...safe } = agent;
+    return safe;
+  });
+
   app.post('/v1/agents/:id/rotate', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.ADMIN)) return;
     const { id } = request.params as { id: string };

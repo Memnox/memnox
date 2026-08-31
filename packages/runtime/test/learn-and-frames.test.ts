@@ -181,6 +181,37 @@ describe('learning from a day of work', () => {
     expect(result?.proposal.deny).not.toContain('database.delete');
   });
 
+  it('does not propose denying a pattern covering something the agent used', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const wildcard: Policy[] = [
+      ...POLICIES,
+      {
+        name: 'deploy-anything',
+        match: { actions: ['deploy.*'] },
+        decision: { effect: DECISION_EFFECT.ALLOW },
+      },
+    ];
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(wildcard),
+    });
+    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    await gateway.authorize(token, { action: 'deploy.release', sessionId: SESSION });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => wildcard,
+      seams: async () => [],
+    });
+    const [result] = await learn.learn(7);
+
+    // Denying `deploy.*` beside a rule allowing `deploy.release` is a file that
+    // contradicts itself.
+    expect(result?.proposal.deny).not.toContain('deploy.*');
+  });
+
   it('says nothing when no agent has acted', async () => {
     const learn = new LearnService({
       auditLog: new InMemoryAuditLog(),

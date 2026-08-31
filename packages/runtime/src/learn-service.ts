@@ -11,7 +11,7 @@ import {
   type UnusedGrant,
   type UsageObservation,
 } from '@memnox/ledger';
-import type { Policy } from '@memnox/policy-engine';
+import { matchesAny, type Policy } from '@memnox/policy-engine';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** How much history the proposal is derived from unless the caller says otherwise. */
@@ -81,6 +81,8 @@ export class LearnService {
         granted.map((action) => ({ ...action, agentId })),
         own,
         windowDays,
+        // Grants come from rule patterns, so `deploy.*` counts as used by `deploy.release`.
+        (pattern, action) => matchesAny([pattern], action),
       ).filter((grant) => !attempted.has(grant.action));
       const proposal = proposeLeastPrivilege({
         agentId,

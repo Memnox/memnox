@@ -26,7 +26,7 @@ const LOCAL_GUARDS = {
 
 /** Named so the report and the flag description cannot drift apart. */
 const GUARD_SUMMARY =
-  'shell indirection, taint, decision memory, behavior, trust, verification';
+  'shell indirection, taint, declared scope, decision memory, behavior, verification';
 /** One machine-local identity shared by every local agent on this machine. */
 const LOCAL_AGENT_NAME = 'local-editor';
 /** Asks what a benign action would be judged as, so the trail stays clean. */
@@ -201,15 +201,15 @@ export function registerSetupCommand(
            Every other number here is an aggregate the agent has to earn. */
         if (credentialed) {
           out.note(
-            style.dim('→ Try it now:           memnox check shell.execute "rm -rf /"'),
+            style.dim('→ Try it now:          memnox check shell.execute "rm -rf /"'),
           );
-          out.note(style.dim('→ Test every capability: memnox test'));
+          out.note(style.dim('→ Test everything:     memnox test'));
         }
-        out.note(style.dim('→ See what it decided:  memnox audit'));
+        out.note(style.dim('→ See what it decided: memnox audit'));
         if (!joined && !enforcing) {
-          out.note(style.dim('→ Start withholding:       memnox setup --enforce'));
+          out.note(style.dim('→ Start enforcing:     memnox setup --enforce'));
         }
-        if (!joined) out.note(style.dim('→ Stop it:              memnox stop'));
+        if (!joined) out.note(style.dim('→ Stop it:             memnox stop'));
       },
     );
 }

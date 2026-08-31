@@ -76,10 +76,22 @@ export function findUnusedGrants(
   granted: readonly GrantedAction[],
   usage: readonly CapabilityUsage[],
   observedWindowDays: number,
+  /**
+   * A grant is usually a pattern rather than an action: `deploy.*` is granted, and
+   * `deploy.release` is what happened. Without a matcher, a pattern covering something
+   * the agent used would be proposed for denial alongside a rule allowing it, which
+   * is a policy file that contradicts itself.
+   */
+  matches: (pattern: string, action: string) => boolean = (pattern, action) =>
+    pattern === action,
 ): UnusedGrant[] {
-  const used = new Set(usage.map((each) => `${each.agentId}|${each.action}`));
   return granted
-    .filter((grant) => !used.has(`${grant.agentId}|${grant.action}`))
+    .filter(
+      (grant) =>
+        !usage.some(
+          (each) => each.agentId === grant.agentId && matches(grant.action, each.action),
+        ),
+    )
     .map((grant) => ({
       agentId: grant.agentId,
       action: grant.action,

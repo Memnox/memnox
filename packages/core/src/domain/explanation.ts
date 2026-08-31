@@ -105,10 +105,18 @@ export function buildExplanation(input: ExplanationInput): Explanation {
   }
 
   const alternative = decision.alternative;
+  // Naming the action without the resource is the half that does not help: the agent
+  // needs to know what to read, not merely that reading is still on the table.
+  const instead =
+    alternative === undefined
+      ? ''
+      : alternative.resource === undefined
+        ? `${alternative.action}`
+        : `${alternative.action} ${alternative.resource}`;
   const outcome =
     alternative === undefined
       ? `→ ${decision.effect.toUpperCase()}`
-      : `→ ${decision.effect.toUpperCase()}, and ${alternative.action} is permitted instead`;
+      : `→ ${decision.effect.toUpperCase()}, and ${instead} is permitted instead`;
   lines.push({
     claim: outcome,
     evidence: {

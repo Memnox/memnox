@@ -58,6 +58,19 @@ describe('buildExplanation', () => {
     });
 
     expect(explanation.lines.at(-1)?.claim).toContain(
+      'filesystem.read .env.example is permitted instead',
+    );
+  });
+
+  it('names the action alone when the rule named no resource', () => {
+    const explanation = buildExplanation({
+      decision: decision({
+        alternative: { action: 'filesystem.read', note: 'read something else' },
+      }),
+      request,
+    });
+
+    expect(explanation.lines.at(-1)?.claim).toContain(
       'filesystem.read is permitted instead',
     );
   });

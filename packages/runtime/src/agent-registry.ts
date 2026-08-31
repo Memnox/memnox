@@ -61,6 +61,18 @@ export class AgentRegistry {
     return updated;
   }
 
+  /**
+   * Who answers for this agent. Every later escalation resolves through this edge, and
+   * an agent with no named owner is exactly what the census counts as unmanaged.
+   */
+  async setOwner(agentId: string, owner: string): Promise<AgentIdentity | null> {
+    const agent = await this.store.findById(agentId);
+    if (!agent) return null;
+    const updated = { ...agent, owner };
+    await this.store.save(updated);
+    return updated;
+  }
+
   /** Bearer token first, then a service-account JWT when one is configured. */
   async resolveByToken(token: string): Promise<AgentIdentity | null> {
     const byHash = await this.store.findByTokenHash(hashToken(token));

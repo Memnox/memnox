@@ -76,6 +76,23 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
     });
 
   agents
+    .command('assign <id>')
+    .description('Name the person who answers for an agent')
+    .requiredOption('--owner <person>', 'who answers for it')
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
+    .option('--admin-token <token>', 'admin token if the runtime requires one')
+    .action(
+      async (
+        id: string,
+        options: { owner: string; url?: string; adminToken?: string },
+      ) => {
+        const { client } = await context.connect(options);
+        const agent = await client.setAgentOwner(id, options.owner);
+        context.out.line(`${agent.name} is now answered for by ${options.owner}.`);
+      },
+    );
+
+  agents
     .command('rotate <id>')
     .description('Issue a new token for an agent and retire the old one')
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
