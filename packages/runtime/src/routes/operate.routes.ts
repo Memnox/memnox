@@ -7,6 +7,7 @@ import {
   takeCensus,
   ungovernable,
 } from '@memnox/organization';
+import { AUTONOMY_LEVEL } from '@memnox/autonomy';
 import { DEFAULT_LEARN_WINDOW_DAYS } from '../learn-service';
 import type { RouteContext } from './route-context';
 
@@ -42,6 +43,32 @@ export function registerOperateRoutes(app: FastifyInstance, ctx: RouteContext): 
     }
     return ctx.learn.learn(days);
   });
+
+  app.get<{ Params: { id: string }; Querystring: { level?: string } }>(
+    '/v1/agents/:id/readiness',
+    async (request, reply) => {
+      if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
+      const level = request.query.level;
+      const highest = await ctx.readiness.highestReady(request.params.id);
+      if (level === undefined) {
+        const assessed =
+          highest === null
+            ? await ctx.readiness.assess(request.params.id, AUTONOMY_LEVEL.OBSERVE)
+            : await ctx.readiness.assess(request.params.id, highest);
+        if (assessed === null) return reply.code(404).send({ error: 'no such agent' });
+        return { highestReady: highest, readiness: assessed };
+      }
+      const requested = Number(level);
+      const assessed = await ctx.readiness.assess(
+        request.params.id,
+        requested as Parameters<typeof ctx.readiness.assess>[1],
+      );
+      if (assessed === null) {
+        return reply.code(404).send({ error: 'no such agent, or no such level' });
+      }
+      return { highestReady: highest, readiness: assessed };
+    },
+  );
 
   app.get('/v1/seams', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;

@@ -19,6 +19,7 @@ import type { LearnService } from '../learn-service';
 import type { DelegationService } from '../delegation-service';
 import type { StateFactStore } from '../stores/json-file-state-store';
 import type { CensusSource } from '@memnox/organization';
+import type { ReadinessService } from '../readiness-service';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { MetricsRegistry } from '../metrics';
@@ -85,6 +86,8 @@ export interface RouteContext {
   state: StateFactStore;
   /** Every source a census is taken from; each names the record that proved an agent. */
   censusSources: readonly CensusSource[];
+  /** Readiness as queries over stores that exist, so nobody can tick an item. */
+  readiness: ReadinessService;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

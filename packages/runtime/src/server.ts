@@ -104,6 +104,7 @@ import { LearnService } from './learn-service';
 import { DelegationService, InMemoryDelegationStore } from './delegation-service';
 import { JsonFileStateStore } from './stores/json-file-state-store';
 import { EnrolmentSource } from './census-sources';
+import { ReadinessService } from './readiness-service';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
 import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
@@ -320,9 +321,10 @@ export async function buildServer(
     auditEvents: () => gateway.queryAuditEvents({}),
     semanticSearch,
   });
+  const leaseStore = new InMemoryLeaseStore();
   const broker = new CapabilityBroker({
     capabilities: new InMemoryCapabilityStore(),
-    leases: new InMemoryLeaseStore(),
+    leases: leaseStore,
     gateway,
     logger: CONSOLE_LOGGER,
   });
@@ -337,6 +339,24 @@ export async function buildServer(
     }),
     state: stateStore,
     censusSources: [new EnrolmentSource(identityStore, seamStore)],
+    readiness: new ReadinessService({
+      identities: identityStore,
+      seams: seamStore,
+      delegations: new DelegationService({
+        store: new InMemoryDelegationStore(),
+        logger: CONSOLE_LOGGER,
+      }),
+      learn: new LearnService({
+        auditLog,
+        rules: () => policies,
+        seams: () => seamStore.list(),
+      }),
+      rules: () => policies,
+      hasAudit: async (agentId) =>
+        (await auditLog.query({ agentId, limit: 1 })).length > 0,
+      hasBrokeredCredentials: async (agentId) =>
+        (await leaseStore.listByAgent(agentId)).length > 0,
+    }),
     learn: new LearnService({
       auditLog,
       rules: () => policies,

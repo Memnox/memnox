@@ -45,6 +45,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
+    "@memnox/autonomy": "0.3.1",
     "@memnox/core": "0.3.1",
     "@memnox/intelligence": "0.3.1",
     "@memnox/ledger": "0.3.1",

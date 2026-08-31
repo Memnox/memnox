@@ -141,6 +141,23 @@ export interface CoverageResponse {
   blindTo: string[];
 }
 
+/** Every item resolved against a store, so none of it can be talked into passing. */
+export interface ReadinessResponse {
+  highestReady: number | null;
+  readiness: {
+    subjectId: string;
+    level: number;
+    ready: boolean;
+    items: Array<{
+      key: string;
+      query: string;
+      status: string;
+      blocker?: string;
+      remediation?: string;
+    }>;
+  };
+}
+
 /** The workforce, counted from four sources, with the gap against what they tracked. */
 export interface CensusResponse {
   summary: {
@@ -365,6 +382,17 @@ export class MemnoxClient {
     return this.request<CoverageResponse>(
       'GET',
       '/v1/coverage',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  /** What is stopping this agent from holding more authority, item by item. */
+  async readiness(agentId: string, level?: number): Promise<ReadinessResponse> {
+    const query = level === undefined ? '' : `?level=${level}`;
+    return this.request<ReadinessResponse>(
+      'GET',
+      `/v1/agents/${encodeURIComponent(agentId)}/readiness${query}`,
       undefined,
       this.options.adminToken,
     );
