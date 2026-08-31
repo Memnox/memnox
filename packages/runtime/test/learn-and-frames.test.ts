@@ -147,6 +147,40 @@ describe('learning from a day of work', () => {
     expect(result?.policyFile).toContain('version: 1');
   });
 
+  it('keeps a refused attempt apart from an action never touched at all', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(POLICIES),
+    });
+    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    await gateway.authorize(token, {
+      action: 'database.delete',
+      environment: 'production',
+      sessionId: SESSION,
+    });
+    await gateway.authorize(token, {
+      action: 'database.delete',
+      environment: 'production',
+      sessionId: SESSION,
+    });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => POLICIES,
+      seams: async () => [],
+    });
+    const [result] = await learn.learn(7);
+
+    expect(result?.refused).toEqual([{ action: 'database.delete', count: 2 }]);
+    // Proposing to deny what a rule already denies would be noise, and an action must
+    // never land in both lists.
+    expect(result?.unused.map((grant) => grant.action)).not.toContain('database.delete');
+    expect(result?.proposal.deny).not.toContain('database.delete');
+  });
+
   it('says nothing when no agent has acted', async () => {
     const learn = new LearnService({
       auditLog: new InMemoryAuditLog(),

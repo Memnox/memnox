@@ -57,7 +57,8 @@ function render(
     census.gap === null || tracked === undefined
       ? ''
       : style.dim(`  you were tracking ${tracked}`);
-  out.line(`  ${style.bold(String(summary.total))} agents${gap}`);
+  const noun = summary.total === 1 ? 'agent' : 'agents';
+  out.line(`  ${style.bold(String(summary.total))} ${noun}${gap}`);
 
   if (summary.total === 0) {
     out.line('');
@@ -90,6 +91,12 @@ function render(
 
   out.line('');
   out.line(style.dim('  Every count links to the record that produced it — use --json.'));
+  // An agent that declared no capabilities is unbounded, which is the alarming answer.
+  out.line(
+    style.dim(
+      '  An agent with no declared capabilities is counted as reaching everything.',
+    ),
+  );
 }
 
 function warn(context: CliContext, count: number, label: string): void {

@@ -18,11 +18,22 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const DEFAULT_LEARN_WINDOW_DAYS = 7;
 const AUDIT_WINDOW = 10_000;
 
+export interface RefusedAction {
+  action: string;
+  count: number;
+}
+
 export interface LearnResult {
   agentId: string;
   agentName: string;
   usage: CapabilityUsage[];
   unused: UnusedGrant[];
+  /**
+   * Attempted and refused, which is not the same as never touched. An agent repeatedly
+   * refused something is misconfigured or missing an alternative, and proposing to deny
+   * what a rule already denies would be noise.
+   */
+  refused: RefusedAction[];
   proposal: LeastPrivilegeProposal;
   /** The file a person reads, edits, applies and commits. */
   policyFile: string;
@@ -61,11 +72,16 @@ export class LearnService {
     const results: LearnResult[] = [];
     for (const [agentId, agentName] of namesOf(decisions)) {
       const own = usage.filter((each) => each.agentId === agentId);
+      const refused = refusedBy(decisions, agentId);
+      const attempted = new Set(refused.map((each) => each.action));
+      /* What was tried and refused is not what was never touched, and a rule already
+         refusing it needs no second rule proposing to. Filtered before the proposal is
+         built, or the same action lands in both lists. */
       const unused = findUnusedGrants(
         granted.map((action) => ({ ...action, agentId })),
         own,
         windowDays,
-      );
+      ).filter((grant) => !attempted.has(grant.action));
       const proposal = proposeLeastPrivilege({
         agentId,
         usage: own,
@@ -80,6 +96,7 @@ export class LearnService {
         agentName,
         usage: own,
         unused,
+        refused,
         proposal,
         policyFile: renderProposal(proposal),
       });
@@ -126,6 +143,19 @@ function observe(event: ActionEvent): UsageObservation {
     at: event.occurredAt,
     effect: event.effect,
   };
+}
+
+/** Counted per action, so "refused once" reads differently from "refused thirty times". */
+function refusedBy(events: readonly ActionEvent[], agentId: string): RefusedAction[] {
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    if (event.agentId !== agentId) continue;
+    if (event.effect === DECISION_EFFECT.ALLOW) continue;
+    counts.set(event.action, (counts.get(event.action) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([action, count]) => ({ action, count }))
+    .sort((a, b) => b.count - a.count);
 }
 
 function namesOf(events: readonly ActionEvent[]): Map<string, string> {

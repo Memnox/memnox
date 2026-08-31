@@ -182,6 +182,8 @@ export interface LearnResponse {
   agentName: string;
   usage: Array<{ action: string; count: number; distinctResources: number }>;
   unused: Array<{ action: string; grantedVia: string; observedWindowDays: number }>;
+  /** Absent from a runtime older than this field; treat it as an unknown, not a zero. */
+  refused?: Array<{ action: string; count: number }>;
   proposal: {
     allow: string[];
     requireApproval: string[];

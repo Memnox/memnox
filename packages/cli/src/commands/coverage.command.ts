@@ -48,6 +48,21 @@ export function registerCoverageCommand(program: Command, context: CliContext): 
         `  ${'machines'.padEnd(LABEL_WIDTH)}${window.installsEnforcing}/${window.installsTotal} enforcing`,
       );
       out.line('');
+
+      /* Zero seams is not a rounding error: a verdict nobody is obliged to ask for is
+         advice, so rules that exist but are never consulted govern nothing. */
+      if (window.seamsTotal === 0) {
+        out.line(
+          style.warn(
+            '  Nothing is intercepting, so nothing has to ask. Rules alone govern nothing.',
+          ),
+        );
+        out.line(
+          style.dim('  Install one with memnox harden --apply, or memnox mcp install.'),
+        );
+        out.line('');
+      }
+
       // Weighted by risk on purpose: a read loop would otherwise report near-total
       // coverage while every irreversible action in the company is ungoverned.
       out.line(

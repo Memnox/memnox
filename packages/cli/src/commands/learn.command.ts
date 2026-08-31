@@ -99,7 +99,23 @@ function render(context: CliContext, agent: LearnResponse): void {
   out.line('');
   list(context, 'used', proposal.allow);
   list(context, 'used, still ask', proposal.requireApproval);
-  list(context, 'never used', proposal.deny);
+  list(context, 'never touched', proposal.deny);
+
+  // A runtime one version behind sends no `refused`; that is a gap, not a crash.
+  const refused = agent.refused ?? [];
+  if (refused.length > 0) {
+    // A refusal is as informative as an approval: it says a rule is wrong, or that
+    // nothing named an alternative the agent could take instead.
+    out.line(`  ${style.bold('tried and refused')}`);
+    for (const entry of refused) {
+      out.line(`    ${entry.action}  ${style.dim(`${entry.count}\u00d7`)}`);
+    }
+    out.line(
+      style.dim(
+        '    Repeatedly refused means a rule is wrong, or no alternative was named.',
+      ),
+    );
+  }
   out.line('');
 }
 
