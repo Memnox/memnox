@@ -36,6 +36,9 @@ function defaultSeams(): HardenSeams {
   };
 }
 
+/** An id nobody applied is a typo, and exiting zero on one hides it. */
+const EXIT_NO_SUCH_STEP = 1;
+
 /**
  * Propose, apply, revert. Every step prints its undo before it runs, and a single
  * command puts the machine back: one over-eager default breaking a build at midnight
@@ -45,28 +48,46 @@ export function registerHardenCommand(
   program: Command,
   context: CliContext,
   buildSeams: HardenSeamsFactory = defaultSeams,
+  cwd: () => string = () => process.cwd(),
 ): void {
   program
     .command('harden')
     .description('Close what the doctor found, reversibly — proposed by default')
     .option('--apply', 'write the proposed steps')
-    .option('--revert', 'undo every step this machine applied')
-    .action(async (options: { apply?: boolean; revert?: boolean }) => {
+    .option(
+      '--revert [id]',
+      'undo one applied step, or every one this machine applied when no id is given',
+    )
+    .action(async (options: { apply?: boolean; revert?: boolean | string }) => {
       const { out, style } = context;
       const seams = buildSeams();
       const now = new Date().toISOString();
 
-      if (options.revert === true) {
+      if (options.revert !== undefined && options.revert !== false) {
         const applied = await readState(seams);
         if (applied.length === 0) {
           out.line('Nothing to revert: no harden step has been applied on this machine.');
           return;
         }
-        const results = await revertHardening(seams.writer, applied, now);
-        await writeState(
-          seams,
-          results.map((result) => result.step),
+
+        // An id that reverted everything took away a rule the reader meant to keep,
+        // and said nothing about it. Name one and only that one goes.
+        const named = typeof options.revert === 'string' ? options.revert : null;
+        const chosen = named === null ? applied : applied.filter((s) => s.id === named);
+        if (named !== null && chosen.length === 0) {
+          out.line(`No applied step with id ${named}.`);
+          out.note('');
+          for (const step of applied) out.note(`  ${step.id}  ${step.description}`);
+          process.exitCode = EXIT_NO_SUCH_STEP;
+          return;
+        }
+
+        const results = await revertHardening(seams.writer, chosen, now);
+        // Everything not chosen stays applied, or a named revert quietly widens.
+        const untouched = applied.filter(
+          (step) => !chosen.some((each) => each.id === step.id),
         );
+        await writeState(seams, [...untouched, ...results.map((result) => result.step)]);
         for (const result of results) {
           out.line(
             `  ${result.changed ? style.ok('reverted') : style.dim('skipped ')}  ${result.step.description}`,
@@ -75,7 +96,8 @@ export function registerHardenCommand(
         return;
       }
 
-      const discovered = await discover(seams.reader, { now });
+      // Same ground as doctor, or harden writes no rule for the credential it ranked.
+      const discovered = await discover(seams.reader, { now, projectDirs: [cwd()] });
       const { findings } = runDoctor({
         resources: discovered.resources,
         reachability: discovered.reachability,

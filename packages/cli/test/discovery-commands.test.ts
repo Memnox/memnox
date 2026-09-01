@@ -11,6 +11,8 @@ import { registerHardenCommand } from '../src/commands/harden.command';
 import { runCommand } from './cli-harness';
 
 const HOME = '/home/dev';
+/** A directory the reader is standing in, which holds the credentials a repo has. */
+const PROJECT = '/srv/checkout';
 
 /** No fixtures anywhere else: this stands in for the reader's own machine in tests. */
 class FakeMachine implements MachineReader, HardenWriter {
@@ -120,6 +122,33 @@ describe('memnox (discover)', () => {
     expect(started).toBe(0);
   });
 
+  /**
+   * discover showed the project's .env and doctor could not rank it, so harden wrote
+   * no rule for it — the reader was told about a credential and offered no fix.
+   */
+  it('doctor and harden cover the same ground discover does', async () => {
+    const withProject = FakeMachine.from({
+      ...MACHINE,
+      [`${PROJECT}/.env`]: 'STRIPE_KEY=sk_live_x',
+    });
+    const here = (): string => PROJECT;
+
+    const seen = await runCommand(
+      (program, context) =>
+        registerDiscoverCommand(program, context, () => withProject, noTools, here),
+      ['discover', '--json'],
+    );
+    const ranked = await runCommand(
+      (program, context) =>
+        registerDoctorCommand(program, context, () => withProject, here),
+      ['doctor', '--json'],
+    );
+
+    expect(seen.out.text).toContain(`${PROJECT}/.env`);
+    // The finding discover surfaced has to be one doctor can name.
+    expect(ranked.out.text).toContain(`${PROJECT}/.env`);
+  });
+
   it('never prints a secret value', async () => {
     const machine = FakeMachine.from(MACHINE);
 
@@ -213,6 +242,58 @@ describe('memnox harden', () => {
     const reverted = await run(['harden', '--revert']);
     expect(reverted.out.text).toContain('reverted');
     expect(machine.paths.filter((path) => path.startsWith('policies/'))).toEqual([]);
+  });
+
+  /**
+   * The printed undo named one step and reverted every one, so a reader undoing the
+   * docker rule silently lost the credentials rule too.
+   */
+  it('reverting one named step leaves the others applied', async () => {
+    // Two reachable credentials, so there are two steps and one can be left alone.
+    const machine = FakeMachine.from({
+      ...MACHINE,
+      [`${HOME}/.ssh/id_ed25519`]: 'PRIVATE KEY',
+    });
+    const run = (args: string[]) =>
+      runCommand(
+        (program, context) => registerHardenCommand(program, context, seams(machine)),
+        args,
+      );
+
+    await run(['harden', '--apply']);
+    const written = machine.paths.filter((path) => path.startsWith('policies/'));
+    expect(written.length).toBeGreaterThan(1);
+
+    const state = JSON.parse((await machine.read('harden-state.json')) ?? '[]') as {
+      id: string;
+    }[];
+    const reverted = await run(['harden', '--revert', String(state[0]?.id)]);
+
+    expect(reverted.out.text).toContain('reverted');
+    // Only the named one goes; the rest of the machine stays hardened.
+    const left = machine.paths.filter((path) => path.startsWith('policies/'));
+    expect(left.length).toBe(written.length - 1);
+  });
+
+  it('names the applied steps when the id matches none, rather than reverting all', async () => {
+    const machine = FakeMachine.from({
+      ...MACHINE,
+      [`${HOME}/.ssh/id_ed25519`]: 'PRIVATE KEY',
+    });
+    const run = (args: string[]) =>
+      runCommand(
+        (program, context) => registerHardenCommand(program, context, seams(machine)),
+        args,
+      );
+
+    await run(['harden', '--apply']);
+    const before = machine.paths.filter((path) => path.startsWith('policies/')).length;
+    const { out } = await run(['harden', '--revert', 'hs_nope']);
+
+    expect(out.text).toContain('No applied step with id hs_nope');
+    expect(machine.paths.filter((path) => path.startsWith('policies/')).length).toBe(
+      before,
+    );
   });
 
   it('says so plainly when there is nothing applied to revert', async () => {

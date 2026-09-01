@@ -20,6 +20,7 @@ export function registerDoctorCommand(
   program: Command,
   context: CliContext,
   buildReader: MachineReaderFactory = () => new NodeMachineReader(homedir()),
+  cwd: () => string = () => process.cwd(),
 ): void {
   program
     .command('doctor')
@@ -29,7 +30,12 @@ export function registerDoctorCommand(
     .option('--json', 'emit the findings as JSON')
     .action(async (options: { json?: boolean }) => {
       const reader: MachineReader = buildReader();
-      const discovered = await discover(reader, { now: new Date().toISOString() });
+      // The same ground `memnox` covers: a finding it showed and doctor cannot
+      // rank is a credential the reader was told about and never offered a fix for.
+      const discovered = await discover(reader, {
+        now: new Date().toISOString(),
+        projectDirs: [cwd()],
+      });
       const report = runDoctor({
         resources: discovered.resources,
         reachability: discovered.reachability,
