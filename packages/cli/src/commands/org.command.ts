@@ -5,6 +5,7 @@ import {
   SlackSource,
   type MessageSource,
 } from '@memnox/intelligence';
+import { DECISION_EFFECT } from '@memnox/core';
 import { STATED_KIND, type Stated } from '@memnox/org-graph';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
@@ -15,6 +16,29 @@ import {
 } from '../llm-provider-option';
 
 const KIND_CHOICES = Object.values(STATED_KIND).join('|');
+
+/** The two effects a ceiling can carry. `allow` is not one: it would be no ceiling. */
+const DELEGATION_OVER_LIMIT = [
+  DECISION_EFFECT.ESCALATE,
+  DECISION_EFFECT.WITHHOLD,
+] as const;
+
+type OverLimit = (typeof DELEGATION_OVER_LIMIT)[number];
+
+/**
+ * An unrecognised value used to fall through to escalate, so `--over-limit block` —
+ * which the help itself used to advertise — silently recorded a softer grant than the
+ * person wrote. Widening authority is the one thing a typo must not be allowed to do.
+ */
+function parseOverLimit(value: string): OverLimit {
+  const match = DELEGATION_OVER_LIMIT.find((effect) => effect === value);
+  if (match === undefined) {
+    throw new Error(
+      `--over-limit must be one of: ${DELEGATION_OVER_LIMIT.join(', ')} (got "${value}")`,
+    );
+  }
+  return match;
+}
 
 /** Builds the source a run reads from. A defaulted parameter, so a test swaps it. */
 export type MessageSourceFactory = (source: string, token: string) => MessageSource;
@@ -243,7 +267,12 @@ export function registerOrgCommand(
     .requiredOption('--actions <patterns>', 'comma-separated action patterns')
     .option('--agents <names>', 'comma-separated agent names; default is every agent')
     .option('--limit <amount>', 'the largest amount an agent may act on alone', Number)
-    .option('--over-limit <effect>', 'require_approval|block', 'escalate')
+    .option(
+      '--over-limit <effect>',
+      `${DELEGATION_OVER_LIMIT.join('|')} — what happens past the ceiling`,
+      parseOverLimit,
+      DECISION_EFFECT.ESCALATE,
+    )
     .option('--approvers <who>', 'comma-separated approvers past the ceiling')
     .option('--expires <iso-date>', 'when the delegation stops applying')
     .option('--by <who>', 'who granted it')
@@ -256,7 +285,7 @@ export function registerOrgCommand(
         actions: string;
         agents?: string;
         limit?: number;
-        overLimit: string;
+        overLimit: OverLimit;
         approvers?: string;
         expires?: string;
         by?: string;
@@ -273,9 +302,7 @@ export function registerOrgCommand(
               ? {}
               : { agents: splitList(options.agents) }),
             ...(options.limit === undefined ? {} : { limit: options.limit }),
-            ...(options.overLimit === 'withhold'
-              ? { overLimit: 'withhold' as const }
-              : {}),
+            overLimit: options.overLimit,
             ...(options.approvers === undefined
               ? {}
               : { approvers: splitList(options.approvers) }),

@@ -193,6 +193,83 @@ describe('memnox org state and delegate', () => {
     expect(said(out)).toContain('up to 5000');
   });
 
+  /* An unrecognised value used to fall through to escalate, so following the help text
+     recorded a softer grant than the person wrote. Widening authority is the one thing
+     a typo must not be allowed to do quietly. */
+  it('carries the ceiling effect the person actually named', async () => {
+    const runtime = new FakeRuntime().on('POST', AUTHORITY_PATH, {
+      id: 'grant-1',
+      principal: 'alice@acme.com',
+      actions: ['expense.approve'],
+      limit: 5000,
+    });
+
+    await run(
+      [
+        'org',
+        'delegate',
+        '--principal',
+        'alice@acme.com',
+        '--actions',
+        'expense.approve',
+        '--limit',
+        '5000',
+        '--over-limit',
+        'withhold',
+      ],
+      runtime,
+    );
+
+    expect((runtime.requests[0]?.body as { overLimit: string }).overLimit).toBe(
+      'withhold',
+    );
+  });
+
+  it('defaults the ceiling effect to escalate, and says so on the wire', async () => {
+    const runtime = new FakeRuntime().on('POST', AUTHORITY_PATH, {
+      id: 'grant-1',
+      principal: 'alice@acme.com',
+      actions: ['expense.approve'],
+    });
+
+    await run(
+      [
+        'org',
+        'delegate',
+        '--principal',
+        'alice@acme.com',
+        '--actions',
+        'expense.approve',
+      ],
+      runtime,
+    );
+
+    expect((runtime.requests[0]?.body as { overLimit: string }).overLimit).toBe(
+      'escalate',
+    );
+  });
+
+  it('refuses a ceiling effect from the vocabulary that was removed', async () => {
+    const runtime = new FakeRuntime().on('POST', AUTHORITY_PATH, {});
+
+    await expect(
+      run(
+        [
+          'org',
+          'delegate',
+          '--principal',
+          'alice@acme.com',
+          '--actions',
+          'expense.approve',
+          '--over-limit',
+          'block',
+        ],
+        runtime,
+      ),
+    ).rejects.toThrow(/--over-limit must be one of/);
+    expect(runtime.requests).toHaveLength(0);
+  });
+
   it('confirms a candidate', async () => {
     const runtime = new FakeRuntime().on('POST', `${STATEMENTS_PATH}/stated-1/verify`, {
       id: 'stated-1',
