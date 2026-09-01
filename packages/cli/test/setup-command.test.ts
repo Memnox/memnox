@@ -108,10 +108,10 @@ describe('memnox setup', () => {
 
     await run(['--file', join(workspace, 'policies.yaml')]);
 
-    // It verifies the token, and registers nothing when it is still good.
-    expect(runtime.requests.map((request) => request.path)).toEqual([
-      '/v1/evaluate-risk',
-    ]);
+    // It verifies the token and mints no second identity when it is still good.
+    const paths = runtime.requests.map((request) => request.path);
+    expect(paths).toContain('/v1/evaluate-risk');
+    expect(paths).not.toContain('/v1/agents');
     expect((await readAgentConfig(home)).token).toBe('mnx_existing');
     expect(out.notes.join('\n')).toContain('Using the agent token already at');
   });

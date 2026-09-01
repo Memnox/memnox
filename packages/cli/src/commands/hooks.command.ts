@@ -17,6 +17,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { HookInstaller, HOOK_MATCHER, HOOK_TIMEOUT_SECONDS } from '../hook-installer';
+import { LOCAL_SEAMS } from '../local-seams';
 
 /**
  * The seam that holds an agent's own tools. The MCP proxy governs what an agent
@@ -97,35 +98,9 @@ async function declareSeam(
 ): Promise<void> {
   try {
     const { client } = await context.connect(options);
-    // All three local seams, each with what it cannot see. An undeclared seam is
+    // Every local seam, each with what it cannot see. An undeclared seam is
     // coverage nobody counted; a seam with no blind spots is a claim nobody believes.
-    for (const seam of [
-      {
-        kind: SEAM_KIND.HOOK,
-        covers: [...HOOK_COVERS],
-        blindTo: [...HOOK_BLIND_SPOTS],
-      },
-      {
-        kind: SEAM_KIND.SHELL,
-        covers: [SHELL_ACTION],
-        blindTo: [...SHELL_BLIND_SPOTS],
-      },
-      {
-        kind: SEAM_KIND.GIT,
-        covers: [GIT_CREDENTIAL_ACTION],
-        blindTo: [...GIT_BLIND_SPOTS],
-      },
-      {
-        kind: SEAM_KIND.EGRESS,
-        covers: [EGRESS_REQUEST_ACTION, EGRESS_CONNECT_ACTION],
-        blindTo: [...EGRESS_BLIND_SPOTS],
-      },
-      {
-        kind: SEAM_KIND.DOCKER,
-        covers: [...DOCKER_ACTIONS],
-        blindTo: [...DOCKER_BLIND_SPOTS],
-      },
-    ]) {
+    for (const seam of LOCAL_SEAMS) {
       await client.registerSeam({ ...seam, mode: ENFORCEMENT_MODE.ENFORCE });
     }
     context.out.note('');

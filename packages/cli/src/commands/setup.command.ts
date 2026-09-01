@@ -8,6 +8,7 @@ import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-con
 import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
 import { HookInstaller } from '../hook-installer';
+import { LOCAL_SEAMS } from '../local-seams';
 import { McpInstaller } from '../mcp-installer';
 import { parseEnforcement } from '../enforcement-args';
 import { policyRegistryPath, registerPolicyFile } from '../policy-registry';
@@ -145,7 +146,11 @@ export function registerSetupCommand(
         // A joined runtime used to be stuck in the mode it started in.
         const armed = joined && enforcing ? await enforceOnRunning(context, url) : false;
         const mcpAny = options.mcp ? await installMcp(mcpInstaller, out) : false;
-        if (options.hooks) await installHooks(hookInstaller, out);
+        if (options.hooks) {
+          await installHooks(hookInstaller, out, () =>
+            credentialed ? declareLocalSeams(context, url, out) : Promise.resolve(),
+          );
+        }
 
         out.line('');
         if (joined) {
@@ -270,6 +275,7 @@ async function installMcp(
 async function installHooks(
   hookInstaller: HookInstaller,
   out: CliContext['out'],
+  declare?: () => Promise<void>,
 ): Promise<boolean> {
   try {
     const report = await hookInstaller.install();
@@ -278,12 +284,37 @@ async function installHooks(
         ? "Installed the Memnox tool hook — the agent's own tools now ask first"
         : 'The Memnox tool hook is already installed',
     );
+    // Installed and undeclared reads as an ungoverned machine: coverage counted
+    // 0 seams on a machine that had one, which is the number a person acts on.
+    if (declare !== undefined) await declare();
     return report.installed;
   } catch (err) {
     // A seam that cannot install is a gap to report, never a failed setup.
     out.note(`Could not install the tool hook: ${String(err)}`);
     out.note('→ Install it later with: memnox hooks install');
     return false;
+  }
+}
+
+/**
+ * Every local seam, each with what it cannot see. A seam nobody declared governs
+ * just as much and is counted as nothing, which is the worse of the two failures.
+ */
+async function declareLocalSeams(
+  context: CliContext,
+  url: string,
+  out: CliContext['out'],
+): Promise<void> {
+  try {
+    // The token was just written to disk, and connect() reads it from there.
+    const { client } = await context.connect({ url });
+    for (const seam of LOCAL_SEAMS) {
+      await client.registerSeam({ ...seam, mode: ENFORCEMENT_MODE.OBSERVE });
+    }
+  } catch (err) {
+    // A seam that cannot be declared still governs; the gap is reported, not fatal.
+    out.note(`Could not declare the local seams: ${String(err)}`);
+    out.note('→ Declare them later with: memnox hooks install');
   }
 }
 
