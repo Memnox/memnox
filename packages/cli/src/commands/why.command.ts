@@ -35,7 +35,7 @@ export function registerWhyCommand(program: Command, context: CliContext): void 
   program
     .command('why [decisionId]')
     .description(
-      'Why one decision came out the way it did, in five lines from the record',
+      'Why one decision came out the way it did, a line per link, from the record',
     )
     .option('--evidence', 'the full chain behind it, link by link, and what is missing')
     .option(
