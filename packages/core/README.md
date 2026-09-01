@@ -12,7 +12,7 @@ its own and can be reasoned about on its own terms.
 | Area | Contents |
 |---|---|
 | Constants | `DECISION_EFFECT`, `RISK_LEVEL`, `AGENT_KIND`, `AGENT_STATUS`, `APPROVAL_STATUS`, `ROLE`, `SOURCE_AUTHORITY`, `TAINT_*` |
-| Domain | `ActionRequest`, `ActionEvent`, `Decision`, `AgentIdentity`, `Approval`, `Advisory`, `RiskAssessment`, `ComplianceReport` |
+| Domain | `ActionRequest`, `ActionEvent`, `Decision`, `AgentIdentity`, `Approval`, `Advisory`, `RiskAssessment` |
 | Pure logic | `evaluateConsent`, `compareDeclaredScope`, `buildExplanation`, `chainAuditEvent`, `AuditChainVerifier`, `canonicalJson`, `authorityOf`, `roleSatisfies` |
 | Ports | `IdentityStore`, `ApprovalStore`, `AuditLog`, `DecisionStore`, `LockService`, `RateLimiter`, `Logger`, `TextCodec` |
 

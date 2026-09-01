@@ -365,22 +365,11 @@ describe('security a local install gets by default', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('turns on every deterministic guard', async () => {
-    await run([]);
-
-    // Safe because the first run observes: a guard that fires is an audit line,
-    // not a withheld agent.
-    expect(launched[0]).toMatchObject({
-      behaviorGuard: true,
-      verificationGuard: true,
-    });
-  });
-
   it('reports what is guarding, so nobody has to guess', async () => {
     await run([]);
 
     expect(out.text).toContain('Guards:');
-    expect(out.text).toContain('verification');
+    expect(out.text).toContain('declared scope');
   });
 
   it('registers the MCP server, so the agent can ask before it acts', async () => {

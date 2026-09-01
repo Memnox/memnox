@@ -12,34 +12,8 @@ import {
   InMemorySessionTaintStore,
   InProcessLockService,
 } from '@memnox/core';
-import {
-  assertRedisReachable,
-  connectRedis,
-  RedisLockService,
-  RedisSessionTaintStore,
-  type RedisLike,
-} from '@memnox/redis';
-import {
-  DecisionMemoryAdvisor,
-  DecisionSemanticSearch,
-  InMemoryVectorIndex,
-  JsonFileDecisionStore,
-  type DecisionStore,
-} from '@memnox/memory';
-import { OpenAiEmbeddingProvider } from '@memnox/intelligence';
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
-import type { AuthorityStore } from '@memnox/org-graph';
-import {
-  AuthorityAdvisor,
-  BehaviorAdvisor,
-  TaintAdvisor,
-  ShellIndirectionAdvisor,
-  EgressAdvisor,
-  TokenBudgetAdvisor,
-  VerificationAdvisor,
-} from '@memnox/risk';
 import { ActionGateway } from './action-gateway';
-import { DecisionMemoryService } from './decision-memory-service';
 import { scheduleAuditRetention } from './audit-retention';
 import { peerCertificate, resolveAgentFromClientCert } from './client-cert';
 import { resolveLocalMode } from './auth';
@@ -59,12 +33,9 @@ import { registerAgentRoutes } from './routes/agent.routes';
 import { registerDashboardRoutes } from './routes/dashboard.routes';
 import { registerApprovalRoutes } from './routes/approval.routes';
 import { registerAuditRoutes } from './routes/audit.routes';
-import { registerMemoryRoutes } from './routes/memory.routes';
 import { registerMetricsRoutes } from './routes/metrics.routes';
 import { registerDecisionRoutes } from './routes/decision.routes';
 import { registerEnforcementRoutes } from './routes/enforcement.routes';
-import { registerOrganizationAdminRoutes } from './routes/organization-admin.routes';
-import { registerOrganizationRoutes } from './routes/organization.routes';
 import { registerPolicyRoutes } from './routes/policy.routes';
 import { registerTaskRoutes } from './routes/task.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
@@ -73,21 +44,7 @@ import {
   createRequireWorkspace,
   type RouteContext,
 } from './routes/route-context';
-import { OrganizationService } from './organization-service';
-import { JsonFileStatedStore } from './stores/json-file-stated-store';
-import { JsonFileAuthorityStore } from './stores/json-file-authority-store';
 import { buildCodec } from './keyring-loader';
-import {
-  connectPostgres,
-  postgresOptionsFromEnv,
-  ensureRuntimeSchema,
-  PostgresApprovalStore,
-  PostgresAuditLog,
-  PostgresDecisionStore,
-  PostgresIdentityStore,
-  createPostgresVectorIndex,
-  type SqlClient,
-} from '@memnox/postgres';
 import { JsonFileApprovalStore } from './stores/json-file-approval-store';
 import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
@@ -104,9 +61,6 @@ import { registerCapabilityRoutes } from './routes/capability.routes';
 import { registerFrameRoutes } from './routes/frame.routes';
 import { LearnService } from './learn-service';
 import { DelegationService, InMemoryDelegationStore } from './delegation-service';
-import { JsonFileStateStore } from './stores/json-file-state-store';
-import { EnrolmentSource } from './census-sources';
-import { ReadinessService } from './readiness-service';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
 import {
   JsonFileCapabilityStore,
@@ -139,7 +93,6 @@ export interface MemnoxServer {
   app: FastifyInstance;
   gateway: ActionGateway;
   config: RuntimeConfig;
-  decisionStore: DecisionStore;
   /** Redis-backed when --redis-url is set, in-process otherwise. */
   lockService: LockService;
   metrics: MetricsRegistry;
@@ -147,14 +100,8 @@ export interface MemnoxServer {
 
 /** Composition root: builds stores, advisors, and gateway, then hands out one context. */
 export interface ServerServices {
-  /** Injected SQL client (tests use pg-mem); default = connect via config.databaseUrl. */
-  sql?: SqlClient;
-  /** Injected Redis client (tests use a stub); default = connect via config.redisUrl. */
-  redis?: RedisLike;
   /** Injected so proxy tests exercise real route code against a fake upstream. */
   proxyFetch?: typeof fetch;
-  /** The default spends 5s proving an unreachable Redis really is unreachable. */
-  redisProbe?: { attempts: number; delayMs: number };
 }
 
 /** Said at boot so such a rule cannot look enforced here when nothing local enforces it. */
@@ -221,52 +168,27 @@ export async function buildServer(
 
   const metrics = new MetricsRegistry();
   const codec = await buildCodec(config, metrics, CONSOLE_LOGGER);
-  // Postgres for scaled deployments; files are the zero-infrastructure default.
-  const sql: SqlClient | null =
-    services.sql ??
-    (config.databaseUrl
-      ? connectPostgres(
-          config.databaseUrl,
-          postgresOptionsFromEnv(process.env, 'MEMNOX_DB_'),
-        )
-      : null);
-  if (sql) await ensureRuntimeSchema(sql);
-  const auditLog = sql
-    ? new PostgresAuditLog(sql, codec)
-    : new JsonlAuditLog(join(config.dataDir, AUDIT_FILE), codec);
-  const decisionStore = sql
-    ? new PostgresDecisionStore(sql, codec)
-    : new JsonFileDecisionStore(join(config.dataDir, DECISIONS_FILE), codec);
-
-  const identityStore = sql
-    ? new PostgresIdentityStore(sql, codec)
-    : new JsonFileIdentityStore(join(config.dataDir, AGENTS_FILE), codec);
-
-  /* File-backed on every deployment for now: what the organization states is
-     small, reviewed by hand, and argued about in a diff. It moves behind a SQL
-     adapter when a tenant outgrows that, not before. */
-  const statedStore = new JsonFileStatedStore(join(config.dataDir, STATED_FILE), codec);
-  const authorityStore = new JsonFileAuthorityStore(
-    join(config.dataDir, AUTHORITY_FILE),
+  // Files are the only backing: the local half runs with no infrastructure at all.
+  const auditLog = new JsonlAuditLog(join(config.dataDir, AUDIT_FILE), codec);
+  const identityStore = new JsonFileIdentityStore(
+    join(config.dataDir, AGENTS_FILE),
     codec,
   );
 
-  const semanticSearch = await buildSemanticSearch(config, sql);
-
-  const { lockService, sessionTaintStore } = await resolveCoordination(config, services);
+  const { lockService, sessionTaintStore } = await resolveCoordination();
 
   const taskStore = new InMemoryTaskStore();
   const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
   const seamService = new SeamService({ store: seamStore, logger: CONSOLE_LOGGER });
   const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
-  const stateStore = new JsonFileStateStore(join(config.dataDir, STATE_FILE), codec);
   const policyHistory = new FilePolicyHistory(config.dataDir, codec);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
     config.enforcement ?? (await readStoredEnforcement(config.dataDir));
-  const approvalStore = sql
-    ? new PostgresApprovalStore(sql, codec)
-    : new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE), codec);
+  const approvalStore = new JsonFileApprovalStore(
+    join(config.dataDir, APPROVALS_FILE),
+    codec,
+  );
   // One counter serves the HTTP limit and every per-rule rateLimit, so both are
   // shared across pods exactly when Redis is configured and per-instance otherwise.
   const rateLimiter = new FixedWindowRateLimiter(lockService);
@@ -275,7 +197,6 @@ export async function buildServer(
     explanations,
     tasks: taskStore,
     frames: frameStore,
-    state: stateStore,
     identityStore,
     auditLog,
     metrics,
@@ -286,13 +207,6 @@ export async function buildServer(
     ...(config.maxPendingApprovals === undefined
       ? {}
       : { maxPendingPerAgent: config.maxPendingApprovals }),
-    advisors: buildAdvisors(
-      config,
-      auditLog,
-      decisionStore,
-      sessionTaintStore,
-      authorityStore,
-    ),
     notifier: config.approvalWebhookUrl
       ? new WebhookApprovalNotifier(config.approvalWebhookUrl)
       : undefined,
@@ -312,8 +226,6 @@ export async function buildServer(
         })
       : Fastify({ logger: false })
   ) as FastifyInstance;
-  // Only end connections this server opened — injected clients belong to the caller.
-  if (sql && !services.sql) app.addHook('onClose', async () => sql.end());
   const stopRetention = scheduleAuditRetention(
     auditLog,
     approvalStore,
@@ -325,11 +237,6 @@ export async function buildServer(
   registerSecurityHeaders(app);
   app.get('/healthz', async () => ({ status: 'ok' }));
 
-  const decisionMemory = new DecisionMemoryService({
-    store: decisionStore,
-    auditEvents: () => gateway.queryAuditEvents({}),
-    semanticSearch,
-  });
   // A grant that vanished on restart is a permission nobody can audit.
   const leaseStore = new JsonFileLeaseStore(join(config.dataDir, LEASES_FILE), codec);
   const broker = new CapabilityBroker({
@@ -359,26 +266,6 @@ export async function buildServer(
       store: new InMemoryDelegationStore(),
       logger: CONSOLE_LOGGER,
     }),
-    state: stateStore,
-    censusSources: [new EnrolmentSource(identityStore, seamStore)],
-    readiness: new ReadinessService({
-      identities: identityStore,
-      seams: seamStore,
-      delegations: new DelegationService({
-        store: new InMemoryDelegationStore(),
-        logger: CONSOLE_LOGGER,
-      }),
-      learn: new LearnService({
-        auditLog,
-        rules: () => policies,
-        seams: () => seamStore.list(),
-      }),
-      rules: () => policies,
-      hasAudit: async (agentId) =>
-        (await auditLog.query({ agentId, limit: 1 })).length > 0,
-      hasBrokeredCredentials: async (agentId) =>
-        (await leaseStore.listByAgent(agentId)).length > 0,
-    }),
     learn: new LearnService({
       auditLog,
       rules: () => policies,
@@ -398,13 +285,6 @@ export async function buildServer(
         return 1;
       },
     }),
-    decisionMemory,
-    organization: new OrganizationService({
-      gateway,
-      statements: statedStore,
-      grants: authorityStore,
-      decisions: decisionMemory,
-    }),
     metrics,
     requireRole: createRequireRole(config),
     requireWorkspace: createRequireWorkspace(config),
@@ -413,7 +293,6 @@ export async function buildServer(
       ? (request) => resolveAgentFromClientCert(peerCertificate(request), identityStore)
       : undefined,
     // Only offered when a file backs the rule set — there is nothing to re-read otherwise.
-    semanticSearch,
     proxyFetch: services.proxyFetch ?? fetch,
     tasks: taskStore,
     policyHistory,
@@ -485,18 +364,15 @@ export async function buildServer(
     registerAgentRoutes(scope, ctx);
     registerAuditRoutes(scope, ctx);
     registerApprovalRoutes(scope, ctx);
-    registerMemoryRoutes(scope, ctx);
     registerMetricsRoutes(scope, ctx);
     registerDecisionRoutes(scope, ctx);
     registerPolicyRoutes(scope, ctx);
     registerEnforcementRoutes(scope, ctx);
-    registerOrganizationRoutes(scope, ctx);
-    registerOrganizationAdminRoutes(scope, ctx);
   };
 
   await app.register(mount, prefix === '' ? {} : { prefix });
 
-  return { app, gateway, config, decisionStore, lockService, metrics };
+  return { app, gateway, config, lockService, metrics };
 }
 
 interface Coordination {
@@ -504,25 +380,11 @@ interface Coordination {
   sessionTaintStore: SessionTaintStore;
 }
 
-/** A configured Redis must work: falling back multiplies every limit by pod count. */
-async function resolveCoordination(
-  config: RuntimeConfig,
-  services: ServerServices,
-): Promise<Coordination> {
-  if (!services.redis && !config.redisUrl) {
-    return {
-      lockService: new InProcessLockService(),
-      sessionTaintStore: new InMemorySessionTaintStore(),
-    };
-  }
-  const client = services.redis ?? connectRedis(config.redisUrl ?? '');
-  const locks = new RedisLockService(client, CONSOLE_LOGGER);
-  const probe = services.redisProbe;
-  if (probe === undefined) await assertRedisReachable(locks);
-  else await assertRedisReachable(locks, probe.attempts, probe.delayMs);
+/** One process, so both are in memory: nothing here is shared across machines. */
+async function resolveCoordination(): Promise<Coordination> {
   return {
-    lockService: locks,
-    sessionTaintStore: new RedisSessionTaintStore(client, locks, CONSOLE_LOGGER),
+    lockService: new InProcessLockService(),
+    sessionTaintStore: new InMemorySessionTaintStore(),
   };
 }
 
@@ -548,66 +410,4 @@ async function loadTlsOptions(config: RuntimeConfig): Promise<TlsFileOptions | n
     readFile(config.tlsCaFile),
   ]);
   return { cert, key, ca };
-}
-
-function buildAdvisors(
-  config: RuntimeConfig,
-  auditLog: AuditLog,
-  decisionStore: DecisionStore,
-  sessionTaintStore: SessionTaintStore,
-  grants: AuthorityStore,
-): ActionAdvisor[] {
-  const advisors: ActionAdvisor[] = [];
-  /* Always on, and free when nothing is delegated: with no grant recorded for a
-     principal the advisor returns nothing, so switching it on cannot stop work
-     that was running the day before. */
-  advisors.push(new AuthorityAdvisor(grants));
-  // Escalates only when callers report taint — always safe to keep on.
-  advisors.push(new TaintAdvisor(sessionTaintStore, CONSOLE_LOGGER));
-  if (config.memoryEnabled) {
-    advisors.push(
-      new DecisionMemoryAdvisor(decisionStore, [...DEFAULT_ADVISOR_APPROVERS]),
-    );
-  }
-  if (config.behaviorGuard) {
-    advisors.push(new BehaviorAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));
-  }
-  if (config.verificationGuard) {
-    advisors.push(new VerificationAdvisor(auditLog, [...DEFAULT_ADVISOR_APPROVERS]));
-  }
-  if (config.shellGuard) {
-    advisors.push(new ShellIndirectionAdvisor(undefined, [...DEFAULT_ADVISOR_APPROVERS]));
-  }
-  /* Always on: with no arguments reported it returns nothing, so an existing caller
-     sees no change, and the local seams that do report them get the check for free. */
-  advisors.push(new EgressAdvisor(undefined, [...DEFAULT_ADVISOR_APPROVERS]));
-  if (config.sessionTokenBudget) {
-    advisors.push(new TokenBudgetAdvisor(auditLog, config.sessionTokenBudget));
-  }
-  return advisors;
-}
-
-/** Present only with a BYOK embedding key; keyword search always works without one. */
-async function buildSemanticSearch(
-  config: RuntimeConfig,
-  sql: SqlClient | null,
-): Promise<DecisionSemanticSearch | undefined> {
-  const apiKey = config.embeddingApiKey;
-  if (!apiKey) return undefined;
-  const provider = new OpenAiEmbeddingProvider({
-    apiKey,
-    ...(config.embeddingModel ? { model: config.embeddingModel } : {}),
-  });
-  return new DecisionSemanticSearch({
-    index: sql
-      ? await createPostgresVectorIndex(sql, {
-          ...(config.embeddingDimensions === undefined
-            ? {}
-            : { dimensions: config.embeddingDimensions }),
-          logger: CONSOLE_LOGGER,
-        })
-      : new InMemoryVectorIndex(),
-    embed: (texts) => provider.embed(texts),
-    logger: CONSOLE_LOGGER,
-  });
 }

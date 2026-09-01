@@ -11,22 +11,13 @@ export default defineConfig({
       '@memnox/core': packageSrc('core'),
       '@memnox/discovery': packageSrc('discovery'),
       '@memnox/ledger': packageSrc('ledger'),
-      '@memnox/autonomy': packageSrc('autonomy'),
-      '@memnox/workflow': packageSrc('workflow'),
       '@memnox/policy-engine': packageSrc('policy-engine'),
       '@memnox/local-gate': packageSrc('local-gate'),
-      '@memnox/org-graph': packageSrc('org-graph'),
-      '@memnox/organization': packageSrc('organization'),
-      '@memnox/redis': packageSrc('redis'),
-      '@memnox/memory': packageSrc('memory'),
-      '@memnox/risk': packageSrc('risk'),
       '@memnox/runtime': packageSrc('runtime'),
       '@memnox/sdk': packageSrc('sdk'),
-      '@memnox/intelligence': packageSrc('intelligence'),
       '@memnox/mcp-firewall': packageSrc('mcp-firewall'),
-      '@memnox/tool-hook': packageSrc('tool-hook'),
-      '@memnox/postgres': packageSrc('postgres'),
-    },
+      '@memnox/tool-hook': packageSrc('tool-hook')
+    }
   },
   test: {
     include: ['packages/*/test/**/*.test.ts'],
@@ -36,7 +27,7 @@ export default defineConfig({
       // Barrel files, constant tables, and binary entry points — process wiring
       // that runs on import. Logic must live one level in, where it is reachable.
       exclude: ['**/index.ts', '**/*.constants.ts', '**/cli.ts'],
-      reporter: ['text-summary', 'lcov'],
-    },
-  },
+      reporter: ['text-summary', 'lcov']
+    }
+  }
 });

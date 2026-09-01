@@ -178,8 +178,6 @@ export function serveArgs(overrides: Partial<RuntimeConfig>): string[] {
   if (overrides.policyRegistryFile !== undefined) {
     args.push('--policy-registry', overrides.policyRegistryFile);
   }
-  if (overrides.behaviorGuard === true) args.push('--behavior-guard');
-  if (overrides.verificationGuard === true) args.push('--verification-guard');
   // Absent means enforce, which is `serve`'s own default.
   const mode = overrides.enforcement?.default;
   if (mode !== undefined) args.push('--enforcement', mode);

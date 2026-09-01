@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AuditQuery } from '@memnox/core';
 import { API_ROLE } from '@memnox/core';
 import { DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT } from '../config';
-import { buildComplianceReport, renderAuditCsv } from '../reporting';
+import { renderAuditCsv } from '../audit-csv';
 import type { RouteContext } from './route-context';
 
 interface AuditQueryString {
@@ -15,7 +15,7 @@ interface AuditQueryString {
   to?: string;
 }
 
-/** The proof surface: timeline queries, CSV evidence, compliance reports. */
+/** The proof surface: timeline queries and CSV export of this machine's own ledger. */
 export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): void {
   app.get('/v1/audit', async (request, reply) => {
     if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
@@ -58,12 +58,5 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): vo
     const { from, to } = request.query as AuditQueryString;
     const events = await ctx.gateway.queryAuditEvents({ from, to });
     return reply.type('text/csv').send(renderAuditCsv(events));
-  });
-
-  app.get('/v1/reports/compliance', async (request, reply) => {
-    if (!ctx.requireRole(request, reply, API_ROLE.VIEWER)) return;
-    const { from, to } = request.query as AuditQueryString;
-    const events = await ctx.gateway.queryAuditEvents({ from, to });
-    return buildComplianceReport(events, { from, to });
   });
 }

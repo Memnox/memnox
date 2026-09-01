@@ -15,8 +15,6 @@ const CLIENT_COMMANDS: { name: string; argv: string[] }[] = [
   { name: 'agents list', argv: ['agents', 'list'] },
   { name: 'coverage', argv: ['coverage'] },
   { name: 'audit', argv: ['audit'] },
-  { name: 'evidence', argv: ['evidence'] },
-  { name: 'memory list', argv: ['memory', 'list'] },
 ];
 
 /** The address the command actually dialled, or a failure naming the command. */

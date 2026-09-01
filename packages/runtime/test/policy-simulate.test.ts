@@ -56,7 +56,6 @@ describe('policy simulation against real history', () => {
       policyFile,
       adminToken: ADMIN,
       enforcement: { default: 'enforce' },
-      shellGuard: false,
     });
     const registration = await server.app.inject({
       method: 'POST',

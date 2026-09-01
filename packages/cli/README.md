@@ -9,10 +9,8 @@ npx memnox status    # is it on, what is in force, what would it have stopped
 ```
 
 `setup` is the local install: policies, an agent token, the MCP server, and a
-runtime with every deterministic guard on — shell indirection, taint, decision
-memory, behavior, trust, and verification. The first run observes rather than
-blocks. `--no-mcp`, `--no-serve` and `--no-detect` opt out of the individual
-steps.
+running runtime. The first run observes rather than blocks. `--no-mcp`,
+`--no-serve` and `--no-detect` opt out of the individual steps.
 
 Most commands need no connection flags: the agent token and runtime URL come from
 `MEMNOX_AGENT_TOKEN`/`MEMNOX_URL` or the config `memnox setup` wrote to
@@ -22,33 +20,41 @@ Most commands need no connection flags: the agent token and runtime URL come fro
 
 | Command | What it does |
 |---|---|
-| `init` | write a starter policy file |
-| `ui` (`policy ui`) | edit the policy file in a local browser UI instead of YAML |
-| `serve` | start the runtime gateway |
-| `validate [file]` | check a policy file and list what it enforces |
+| `discover` | what can act on this machine, and what it can reach. No account, no network. |
+| `doctor` | what on this machine is risky, why, and the one change that closes each |
+| `harden` | close what the doctor found, reversibly — proposed by default |
+| `hooks` | govern an agent's own file, shell and network tools |
+| `setup` | policies, an agent identity, and a running runtime — in one command |
+| `init` | create a starter policy file in the current directory |
+| `serve` | start the Memnox runtime gateway |
+| `stop` | stop the background runtime that "memnox setup" started |
 | `status` | is the runtime up, which rules are in force, what is waiting |
-| `context <action> [target]` | what governs an action — ask before doing it |
-| `mcp` / `mcp install` | run Memnox as an MCP server; register it with a client |
-| `check [action] [target]` | ask for a decision on one action |
-| `describe <action> [target]` | everything the organization attaches to one action, and what else its rules reach |
-| `plan [file]` | rule on a whole run before it starts (`--from-session` plans one already on record) |
-| `test` | fire the dangerous-capability suite at your own gate and report what got through |
-| `drift` | where the stated rules and the actual history disagree |
-| `trace [eventId]` | the evidence behind one recorded decision, link by link |
-| `approve <id>` / `deny <id>` | resolve a pending approval (`--by` defaults to `$USER`) |
-| `simulate [file]` | replay real history through candidate rules |
-| `reload` | re-read policy files without restarting the runtime |
-| `audit` / `audit verify` | recent decisions; verify the hash chain |
-| `replay <sessionId>` | every decision in one agent session, in order |
-| `agents` | register, list, suspend, activate, rotate |
-| `approvals` | list pending (bare), status, resolve, break-glass override, flow health |
-| `memory` | record team decisions as machine-checkable constraints |
-| `policy` | version, simulate, packs, install, ui |
-| `explain` | plain-language explanation of a decision (BYOK LLM) |
-| `draft` | draft policy YAML from a sentence (BYOK LLM) |
-| `intent` | expand a goal into the actions it would take |
-| `insights` | patterns across the audit history |
-| `report` | compliance evidence export |
+| `login` | sign this machine in to your organization control plane |
+| `logout` | forget the control plane credential on this machine |
+| `whoami` | which runtime and which organization this machine is talking to |
+| `queue` | everything waiting on a person, in one place |
+| `timeline` | what agents and sources did across the workspace, newest first |
+| `pull` | fetch your organization's rules and apply them to this machine |
+| `validate [file]` | validate a YAML policy file |
+| `check [action] [target]` | ask the runtime for a decision on one action (exit 2 = needs approval, 3 = withheld) |
+| `test` | fire real dangerous actions at your own gate and report what it stops (exit 1 = something got through) |
+| `audit` | show the most recent action decisions |
+| `agents` | manage agent identities |
+| `approvals` | review pending approvals |
+| `approve <id>` | grant a pending approval |
+| `deny <id>` | deny a pending approval |
+| `mcp` | run Memnox as an MCP server so agents can ask before they act |
+| `replay <sessionId>` | replay every decision in one agent session, in order |
+| `why [decisionId]` | why one decision came out the way it did, a line per link, from the record |
+| `rules <action> [target]` | what governs this action, and what else those rules reach |
+| `coverage` | how much of what your agents actually do is governed, and what is not |
+| `learn` | what your agents actually used, what they never needed, and the rules that follow |
+| `kill <agentId>` | stop one agent everywhere: suspend its credential, revoke its leases, close its seams |
+| `quarantine <agentId>` | hold one agent read-only, so it stays debuggable rather than dead |
+| `panic` | raise every environment to enforce and stop issuing capabilities |
+| `policy` | inspect, version, simulate, and compose policy sets |
+| `simulate [file]` | replay real history through candidate rules before shipping them |
+| `reload` | re-read the policy files without restarting the runtime |
 
 Run `memnox <command> --help` for flags.
 
@@ -74,15 +80,14 @@ what that one command touches:
 | Command | Collaborator |
 |---|---|
 | `serve` | `ServerLauncher` — defaults to `startServer` |
-| `explain`, `draft`, `intent` | `LlmProviderFactory` — defaults to BYOK providers |
 | `test` | a session-id factory, so a recorded run is reproducible in a test |
 
 `console.*` appears in exactly two places: `ConsoleOutput` and `index.ts`.
 Everywhere else writes through `context.out`.
 
 `out.line()` is the payload a caller may pipe; `out.note()` is commentary that
-must stay out of that pipe (it goes to stderr). `memnox memory digest` and
-`memnox draft` depend on that split.
+must stay out of that pipe (it goes to stderr). `memnox learn` and
+`memnox audit` depend on that split.
 
 ## Testing a command
 

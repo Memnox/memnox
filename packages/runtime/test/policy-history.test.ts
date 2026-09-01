@@ -52,7 +52,6 @@ describe('policy history and rollback', () => {
       policyFile,
       adminToken: ADMIN,
       enforcement: { default: 'enforce' },
-      shellGuard: false,
     });
     const registration = await server.app.inject({
       method: 'POST',

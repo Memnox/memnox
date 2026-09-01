@@ -25,8 +25,6 @@ const VALID_DEFAULT_EFFECTS: readonly string[] = [
 /** Container deployments configure secrets via environment; flags win when both are set. */
 const ENV_ADMIN_TOKEN = 'MEMNOX_ADMIN_TOKEN';
 const ENV_BASE_PATH = 'MEMNOX_BASE_PATH';
-const ENV_DATABASE_URL = 'MEMNOX_DATABASE_URL';
-const ENV_REDIS_URL = 'MEMNOX_REDIS_URL';
 const ENV_DATA_KEY = 'MEMNOX_DATA_KEY';
 const ENV_DATA_KEY_FILE = 'MEMNOX_DATA_KEY_FILE';
 const ENV_KEYRING_FILE = 'MEMNOX_KEYRING_FILE';
@@ -34,7 +32,6 @@ const ENV_ENCRYPTION_MODE = 'MEMNOX_ENCRYPTION_MODE';
 const ENV_TLS_CERT = 'MEMNOX_TLS_CERT';
 const ENV_TLS_KEY = 'MEMNOX_TLS_KEY';
 const ENV_TLS_CA = 'MEMNOX_TLS_CA';
-const ENV_EMBEDDING_KEY = 'MEMNOX_EMBEDDING_KEY';
 
 const envOr = (value: string | undefined, name: string): string | undefined =>
   value ?? (process.env[name] || undefined);
@@ -101,19 +98,12 @@ export function registerServeCommand(
       '--allow-local-admin',
       'serve admin routes unauthenticated when no token is set (loopback binds do this already)',
     )
-    .option('--behavior-guard', 'enable the deterministic behavioral advisor')
-    .option(
-      '--verification-guard',
-      'require approval for destructive actions while an agent leaves outcomes unreported',
-    )
     .option(
       '--tls-cert <path>',
       'TLS server certificate (enables mTLS with --tls-key/--tls-ca)',
     )
     .option('--tls-key <path>', 'TLS server private key')
     .option('--tls-ca <path>', 'CA bundle used to verify client certificates')
-    .option('--no-shell-guard', 'disable reading past shell indirection')
-    .option('--token-budget <tokens>', 'cap cumulative llm.spend tokens per session')
     .option('--slack-signing-secret <secret>', 'enable Slack interactive approvals')
     .option(
       '--data-key <key>',
@@ -137,33 +127,12 @@ export function registerServeCommand(
     )
     .option('--agent-jwt-issuer <issuer>', 'required issuer for agent JWTs')
     .option(
-      '--database-url <url>',
-      'Postgres connection string (default: local file stores)',
-    )
-    .option(
-      '--redis-url <url>',
-      'Redis connection string — shares rate limits and locks across pods',
-    )
-    .option(
       '--rate-limit <rpm>',
       'per-agent requests/minute on the check endpoint (0 disables)',
     )
     .option(
       '--audit-retention-days <days>',
       'prune audit events older than this many days (0 disables)',
-    )
-    .option('--no-memory', 'disable decision-memory enforcement')
-    .option(
-      '--embedding-key <key>',
-      'BYOK embedding key — enables hybrid keyword + semantic decision search',
-    )
-    .option(
-      '--embedding-model <model>',
-      'embedding model (default: text-embedding-3-small)',
-    )
-    .option(
-      '--embedding-dimensions <n>',
-      'embedding width; must match the model (default: 1536)',
     )
     .option(
       '--approval-webhook <url>',
@@ -192,17 +161,10 @@ export function registerServeCommand(
         basePath?: string;
         adminToken?: string;
         allowLocalAdmin?: boolean;
-        behaviorGuard?: boolean;
-        verificationGuard?: boolean;
         tlsCert?: string;
         tlsKey?: string;
         tlsCa?: string;
-        memory: boolean;
-        shellGuard: boolean;
         embeddingKey?: string;
-        embeddingModel?: string;
-        embeddingDimensions?: string;
-        tokenBudget?: string;
         approvalWebhook?: string;
         slackSigningSecret?: string;
         dataKey?: string;
@@ -212,8 +174,6 @@ export function registerServeCommand(
         agentJwtSecret?: string;
         agentJwtIssuer?: string;
         rateLimit?: string;
-        databaseUrl?: string;
-        redisUrl?: string;
         auditRetentionDays?: string;
         defaultEffect: string;
         enforcement?: string;
@@ -235,21 +195,9 @@ export function registerServeCommand(
           basePath: envOr(options.basePath, ENV_BASE_PATH),
           adminToken: envOr(options.adminToken, ENV_ADMIN_TOKEN),
           allowLocalAdmin: options.allowLocalAdmin ?? false,
-          behaviorGuard: options.behaviorGuard ?? false,
-          verificationGuard: options.verificationGuard ?? false,
           tlsCertFile: envOr(options.tlsCert, ENV_TLS_CERT),
           tlsKeyFile: envOr(options.tlsKey, ENV_TLS_KEY),
           tlsCaFile: envOr(options.tlsCa, ENV_TLS_CA),
-          memoryEnabled: options.memory,
-          shellGuard: options.shellGuard,
-          embeddingApiKey: envOr(options.embeddingKey, ENV_EMBEDDING_KEY),
-          embeddingModel: options.embeddingModel,
-          embeddingDimensions: options.embeddingDimensions
-            ? Number(options.embeddingDimensions)
-            : undefined,
-          sessionTokenBudget: options.tokenBudget
-            ? Number(options.tokenBudget)
-            : undefined,
           approvalWebhookUrl: options.approvalWebhook,
           slackSigningSecret: options.slackSigningSecret,
           dataEncryptionKey: envOr(options.dataKey, ENV_DATA_KEY),
@@ -260,8 +208,6 @@ export function registerServeCommand(
           ),
           agentJwtSecret: options.agentJwtSecret,
           agentJwtIssuer: options.agentJwtIssuer,
-          databaseUrl: envOr(options.databaseUrl, ENV_DATABASE_URL),
-          redisUrl: envOr(options.redisUrl, ENV_REDIS_URL),
           checkRateLimitPerMinute: options.rateLimit
             ? Number(options.rateLimit)
             : undefined,
@@ -306,21 +252,8 @@ export function registerServeCommand(
             : 'Management auth: bearer token required',
         );
         context.out.line(encryptionBanner(server.config));
-        if (server.config.behaviorGuard) context.out.line('Behavior guard: enabled');
-        if (server.config.verificationGuard) {
-          context.out.line('Verification guard: enabled');
-        }
-        context.out.line(
-          server.config.embeddingApiKey
-            ? 'Decision search: hybrid (keyword + embeddings)'
-            : 'Decision search: keyword only (set --embedding-key for semantic search)',
-        );
         if (tlsEnabled) context.out.line('mTLS: client-certificate agent auth enabled');
-        context.out.line(
-          server.config.redisUrl
-            ? 'Rate limits: shared via Redis'
-            : 'Rate limits: per-process (set --redis-url to share them across pods)',
-        );
+        context.out.line('Rate limits: per-process — one machine, one runtime');
         if (server.config.auditRetentionDays > 0) {
           context.out.line(`Audit retention: ${server.config.auditRetentionDays} days`);
         }

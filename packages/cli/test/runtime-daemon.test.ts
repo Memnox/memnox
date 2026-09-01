@@ -21,7 +21,6 @@ describe('serveArgs', () => {
         port: 7466,
         host: '127.0.0.1',
         policyFile: 'memnox.policies.yaml',
-        behaviorGuard: true,
         enforcement: { default: ENFORCEMENT_MODE.OBSERVE },
       }),
     ).toEqual([
@@ -32,14 +31,13 @@ describe('serveArgs', () => {
       '127.0.0.1',
       '--policies',
       'memnox.policies.yaml',
-      '--behavior-guard',
       '--enforcement',
       'observe',
     ]);
   });
 
-  it('omits a guard that is off rather than passing a negative flag', () => {
-    expect(serveArgs({ behaviorGuard: false })).toEqual(['serve']);
+  it('passes nothing when there is nothing to pass', () => {
+    expect(serveArgs({})).toEqual(['serve']);
   });
 });
 

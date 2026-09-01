@@ -40,16 +40,11 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/autonomy": "0.5.2",
     "@memnox/core": "0.5.2",
     "@memnox/discovery": "0.5.2",
-    "@memnox/intelligence": "0.5.2",
     "@memnox/ledger": "0.5.2",
     "@memnox/local-gate": "0.5.2",
-    "@memnox/memory": "0.5.2",
-    "@memnox/org-graph": "0.5.2",
     "@memnox/policy-engine": "0.5.2",
-    "@memnox/postgres": "0.5.2",
     "@memnox/runtime": "0.5.2",
     "@memnox/sdk": "0.5.2",
     "@memnox/tool-hook": "0.5.2",

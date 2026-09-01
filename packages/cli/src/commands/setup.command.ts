@@ -21,14 +21,12 @@ const FIRST_RUN_ENFORCEMENT = 'observe';
 
 /** Safe because the first run observes: a firing guard is an audit line, not a block. */
 const LOCAL_GUARDS = {
-  behaviorGuard: true,
   trustGuard: true,
-  verificationGuard: true,
 } as const;
 
 /** Named so the report and the flag description cannot drift apart. */
-const GUARD_SUMMARY =
-  'shell indirection, taint, declared scope, decision memory, behavior, verification';
+/** Only what actually escalates. An advisor that no longer ships is not a guard. */
+const GUARD_SUMMARY = 'declared scope';
 /** One machine-local identity shared by every local agent on this machine. */
 const LOCAL_AGENT_NAME = 'local-editor';
 /** Asks what a benign action would be judged as, so the trail stays clean. */

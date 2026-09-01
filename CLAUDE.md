@@ -5,40 +5,36 @@ Read before writing code. Every rule exists because of a real mistake in the pre
 ## Architecture (DDD layers)
 
 ```
-interface       packages/cli, packages/runtime/src/routes, packages/sdk, sdks/*
+interface       packages/cli, packages/runtime/src/routes, packages/sdk
                 transports; validate shapes, map outcomes to codes, nothing else
 
-application     ActionGateway, ApprovalService, AgentRegistry, DecisionRegistry
+application     ActionGateway, ApprovalService, AgentRegistry
                 orchestration + invariants; owns the pipeline
 
-domain          packages/core, policy-engine, discovery, ledger, autonomy, workflow,
-                memory, risk, org-graph
+domain          packages/core, policy-engine, discovery, ledger
                 pure types, constants, deterministic logic; core + policy-engine have ZERO deps
 
-infrastructure  packages/runtime/src/stores, codecs, notifiers, @memnox/postgres, @memnox/redis
+infrastructure  packages/runtime/src/stores, codecs, notifiers
                 adapters behind ports defined in core
 ```
 
 ### The phases the packages answer to
 
-`VISION.md` is the build sequence: eleven phases, each answering one question. Cite one
-by number when a change is answering to it (`§01` for the decision object, `§03` for
-observe and learn, `§10` for what never ships).
+`VISION.md` is the build sequence: ten phases, each answering one question. Cite one by
+number when a change is answering to it (`§01` for discovery, `§03` for observation,
+`§05` for protection, `§09` for policy candidates).
 
 | Package | Phase | Owns |
 |---|---|---|
-| `@memnox/discovery` | §00 | what can act here, what it reaches, findings, reversible harden steps |
-| `@memnox/core` + `@memnox/policy-engine` | §01 | the decision object, declared scope, the explanation built from the match |
-| `@memnox/mcp-firewall`, `CapabilityBroker` | §02 | seams, the MCP proxy **both ways**, capabilities and leases |
-| `@memnox/tool-hook` | §02 | the five local seams: the PreToolUse hook, the shell wrapper, the git credential helper, the egress proxy, the Docker socket gate |
-| `SeamService`, `LineageService` | §02, §03 | seams declaring themselves; who caused this, hop by hop |
-| `@memnox/ledger`, `LearnService` | §03, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains, cost, incidents |
-| `@memnox/organization`, `census-sources.ts` | §04 | subjects in three parts, the census, supply chain events, installs, the passport |
-| `@memnox/policy-engine` | §05 | policies, proposals, simulation, blast radius |
-| `DelegationService`, `ContainmentService` | §06 | chains that only narrow; kill, quarantine, panic |
-| `@memnox/org-graph` | §07 | authority, ownership, state facts read as a policy input |
-| `@memnox/workflow` | §08 | the gate invariant, the durable engine, runs, steps, briefings |
-| `@memnox/autonomy`, `ReadinessService` | §10 | levels, readiness as queries, synthesis, role economics |
+| `@memnox/discovery` | §01 | what can act here, what it reaches, findings, reversible harden steps |
+| `@memnox/core` | §02 | the normalized model: the decision object, evidence, declared scope, the explanation built from the match |
+| `@memnox/mcp-firewall`, `CapabilityBroker` | §03 | seams, the MCP proxy **both ways**, capabilities and leases |
+| `@memnox/tool-hook` | §03 | the five local seams: the PreToolUse hook, the shell wrapper, the git credential helper, the egress proxy, the Docker socket gate |
+| `SeamService`, `LineageService` | §03 | seams declaring themselves; who caused this, hop by hop |
+| `buildExplanation`, `why`, `rules`, `replay` | §04 | the deterministic answer, built from the match and never from a model |
+| `@memnox/policy-engine` | §05 | policies, the three effects, proposals, simulation, blast radius, the compile into each agent's native control |
+| `@memnox/ledger`, `LearnService` | §03, §06 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains, cost, incidents |
+| `ContainmentService`, `DelegationService` | §06 | kill, quarantine, panic and what each did not reach; chains that only narrow |
 
 ### The application layer is split by responsibility
 
@@ -48,13 +44,12 @@ observe and learn, `§10` for what never ships).
 |---|---|
 | `AgentRegistry` | identity: registration, credentials, rotation, token resolution, stats |
 | `ApprovalService` | the approval lifecycle: raising, consent, quorum resolution, break-glass |
-| `DecisionMemoryService` | the decision corpus: registration invariants, retrieval, digest, health |
 | `ActionGateway` | identity → policy → advisors → approval → audit, composing the others |
 
 A route module holds **no** logic — no store access, no filtering, no tallying,
 no constructing a registry. It validates shapes and maps outcomes to status
-codes. `memory.routes.ts` drifted from that and was pulled back; if a route grows
-past shape-checking, the logic belongs in an application service.
+codes. If a route grows past shape-checking, the logic belongs in an application
+service.
 
 Whether consent *exists* is `ApprovalService`'s call and rests on `evaluateConsent` — a pure
 domain function in core. What to *do* with consent is the gateway's. Keep that seam: an
@@ -115,7 +110,7 @@ different product.
 
 These were removed on purpose. Adding one back is a product decision, not a refactor.
 
-- **A trust score.** A number that silently narrows a permission is unauditable. Authority is `autonomyLevel`: a named bundle of rules a person granted, in `@memnox/autonomy`.
+- **A trust score.** A number that silently narrows a permission is unauditable. Authority is `autonomyLevel`: a named bundle of rules a person granted.
 - **A model explaining a decision.** `DecisionExplainer` is gone; `buildExplanation` replaced it.
 - **A model inferring intent.** `IntentClassifier` is gone; a declared `Task` replaced it.
 - **An estimated loss, a currency exposure, or hours saved in our voice.** Measured counts only; a modelled number takes its rate from the customer and is labelled as theirs.
@@ -164,7 +159,7 @@ command: `context` + `describe` became `rules`, and `report` + `compliance` beca
 | Classes | PascalCase | `PolicyEngine`, `CapabilityBroker` |
 | Methods | camelCase verb-first | `authorize()`, `register()` |
 | Constants | SCREAMING_SNAKE | `DECISION_EFFECT`, `APPROVAL_TTL_MS` |
-| Route modules | `<domain>.routes.ts` exporting `register<Domain>Routes(app, ctx)` | `memory.routes.ts` |
+| Route modules | `<domain>.routes.ts` exporting `register<Domain>Routes(app, ctx)` | `audit.routes.ts` |
 
 ## Ambient IO is a design smell
 
@@ -189,4 +184,4 @@ dependency belongs in the constructor instead.
 
 ## Verify before committing
 
-`npm run format && npm run typecheck && npm test && npm run deadcode` — CI enforces all four plus the build, a publish dry run, and the Python, Go, Rust, Java, and Swift SDK suites.
+`npm run format && npm run typecheck && npm test && npm run deadcode` — CI enforces all four plus the build and a publish dry run.

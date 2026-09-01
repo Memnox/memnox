@@ -53,12 +53,10 @@ npx memnox serve --policies memnox.policies.yaml
 
 ## Storage
 
-Every store is a port defined in `@memnox/core`, with two implementations:
+Every store is a port defined in `@memnox/core`, with one implementation:
 
-- **Local files** (default) — JSON and JSONL under `--data-dir`. Zero
-  infrastructure; the runtime starts with nothing installed.
-- **Postgres + Redis** — `--database-url` and `--redis-url` for multi-instance
-  deployments that share state. See `@memnox/postgres` and `@memnox/redis`.
+- **Local files** — JSON and JSONL under `--data-dir`. Zero infrastructure; the
+  runtime starts with nothing installed, and nothing it writes leaves the machine.
 
 `--data-key` encrypts the local stores at rest with AES-256-GCM. Deterministic-IV
 encryption is deliberately unavailable: pairing it with content search leaked
@@ -74,7 +72,8 @@ enforced in review:
 3. **Failure means no escalation.** An advisor that throws is logged and skipped.
    It must never crash the gateway and never block everything.
 
-Shipped advisors live in `@memnox/memory` and `@memnox/risk`.
+No advisor ships with the local runtime; the port is here for the ones a
+deployment writes itself.
 
 ## Audit
 

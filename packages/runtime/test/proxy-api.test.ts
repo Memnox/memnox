@@ -297,27 +297,6 @@ describe('proxy spend caps', () => {
   const usageBody = (tokens: number): string =>
     JSON.stringify({ usage: { prompt_tokens: tokens, completion_tokens: 0 } });
 
-  it('stops a session once its token budget is spent', async () => {
-    await start({ sessionTokenBudget: 100, body: usageBody(80) });
-
-    expect((await infer('s1')).statusCode).toBe(200);
-    // 80 spent of 100 — still under.
-    expect((await infer('s1')).statusCode).toBe(200);
-    // 160 spent — the next call is refused before reaching the provider.
-    const third = await infer('s1');
-
-    expect(third.statusCode).toBe(403);
-    expect(sent).toBe(2);
-  });
-
-  it('scopes the budget to one session', async () => {
-    await start({ sessionTokenBudget: 100, body: usageBody(200) });
-    await infer('s1');
-    expect((await infer('s1')).statusCode).toBe(403);
-
-    expect((await infer('s2')).statusCode).toBe(200);
-  });
-
   it('does not cap when no budget is configured', async () => {
     await start({ body: usageBody(10_000) });
 

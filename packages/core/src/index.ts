@@ -33,7 +33,6 @@ export * from './domain/approval';
 export * from './domain/approval-consent';
 export * from './domain/approval-flow';
 export * from './domain/advisory';
-export * from './domain/compliance-report';
 export * from './domain/taint';
 export * from './domain/egress-inspector';
 export * from './ports/stores';

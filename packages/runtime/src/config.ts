@@ -47,19 +47,8 @@ export interface RuntimeConfig {
   adminToken?: string;
   /** Serve management routes unauthenticated when no keys are set. */
   allowLocalAdmin: boolean;
-  /** Enables the deterministic behavioral advisor (novel actions, bursts, probing). */
-  behaviorGuard: boolean;
-  /** Requires human approval for high/critical actions from low-trust agents. */
-  /** Sends an agent's destructive actions to a human while its outcomes go unreported. */
-  verificationGuard: boolean;
-  /** Enables decision memory: team decisions constrain actions. */
-  memoryEnabled: boolean;
-  /** Reads past shell indirection so a wrapped destructive command still matches. */
-  shellGuard: boolean;
   /** Open holds one agent may accumulate before further ones are refused. */
   maxPendingApprovals?: number;
-  /** Caps cumulative llm.spend tokens per session; unset = no cap. */
-  sessionTokenBudget?: number;
   /** Slack-compatible incoming-webhook URL notified on new pending approvals. */
   approvalWebhookUrl?: string;
   /** Enables the Slack interactive-approval endpoint when set. */
@@ -105,10 +94,6 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   defaultEffect: DECISION_EFFECT.ALLOW,
   apiKeys: [],
   allowLocalAdmin: false,
-  behaviorGuard: false,
-  verificationGuard: false,
-  memoryEnabled: true,
-  shellGuard: true,
   checkRateLimitPerMinute: DEFAULT_CHECK_RATE_LIMIT_PER_MINUTE,
   askRateLimitPerMinute: DEFAULT_ASK_RATE_LIMIT_PER_MINUTE,
   auditRetentionDays: DEFAULT_AUDIT_RETENTION_DAYS,

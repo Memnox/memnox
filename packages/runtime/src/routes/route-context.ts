@@ -8,18 +8,12 @@ import type {
   SeamStore,
   TaskStore,
 } from '@memnox/core';
-import type { DecisionSemanticSearch } from '@memnox/memory';
-import type { DecisionMemoryService } from '../decision-memory-service';
-import type { OrganizationService } from '../organization-service';
 import type { Policy } from '@memnox/policy-engine';
 import type { PolicyHistory } from '../policy-history';
 import type { ActionGateway } from '../action-gateway';
 import type { ContainmentService } from '../containment-service';
 import type { LearnService } from '../learn-service';
 import type { DelegationService } from '../delegation-service';
-import type { StateFactStore } from '../stores/json-file-state-store';
-import type { CensusSource } from '@memnox/organization';
-import type { ReadinessService } from '../readiness-service';
 import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { SeamService } from '../seam-service';
@@ -48,9 +42,6 @@ export type RequireWorkspace = (
 export interface RouteContext {
   gateway: ActionGateway;
   config: RuntimeConfig;
-  decisionMemory: DecisionMemoryService;
-  /** The organization: context, authority, and the six answers over one gate verdict. */
-  organization: OrganizationService;
   requireRole: RequireRole;
   /** Guards a workspace-scoped admin route; replies 403 and returns false when denied. */
   requireWorkspace: RequireWorkspace;
@@ -74,8 +65,6 @@ export interface RouteContext {
   tasks: TaskStore;
   /** Published rule sets, so a bad publish can be undone. */
   policyHistory: PolicyHistory;
-  /** Present only when an embedding key is configured; keyword search runs regardless. */
-  semanticSearch?: DecisionSemanticSearch;
   /** The explanation each verdict was built with, so `why` reads rather than retells. */
   explanations: ExplanationStore;
   /** Which seams are installed, in what mode, and what each one cannot see. */
@@ -94,12 +83,6 @@ export interface RouteContext {
   learn: LearnService;
   /** Who may act for whom, through a chain that can only narrow. */
   delegations: DelegationService;
-  /** The company's current condition, read as a policy input. */
-  state: StateFactStore;
-  /** Every source a census is taken from; each names the record that proved an agent. */
-  censusSources: readonly CensusSource[];
-  /** Readiness as queries over stores that exist, so nobody can tick an item. */
-  readiness: ReadinessService;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

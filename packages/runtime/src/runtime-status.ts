@@ -56,7 +56,7 @@ export async function readRuntimeStatus(
     pendingApprovals: pending.length,
     recentDecisions: recent.length,
     withheld: withheld.length,
-    guards: enabledGuards(config),
+    guards: enabledGuards(),
     recent: recent.slice(0, RECENT_SHOWN).map((event) => ({
       occurredAt: event.occurredAt,
       effect: event.effect,
@@ -70,13 +70,7 @@ export async function readRuntimeStatus(
 }
 
 /** Same names and order the CLI prints, so one list cannot drift from the other. */
-function enabledGuards(config: RuntimeConfig): string[] {
-  const guards: string[] = [];
-  if (config.shellGuard) guards.push('shell indirection');
-  // Escalates only when callers report taint, so it is always registered.
-  guards.push('taint');
-  if (config.memoryEnabled) guards.push('decision memory');
-  if (config.behaviorGuard) guards.push('behavior');
-  if (config.verificationGuard) guards.push('verification');
-  return guards;
+function enabledGuards(): string[] {
+  // Nothing escalates beyond the rules themselves: no advisor ships with the runtime.
+  return [];
 }

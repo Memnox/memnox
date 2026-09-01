@@ -7,7 +7,6 @@ import {
   EXECUTION_STATUS,
   RISK_LEVEL,
   type ActionEvent,
-  type ComplianceReport,
   type Decision,
 } from '@memnox/core';
 import { buildServer, type MemnoxServer } from '../src/server';
@@ -210,39 +209,6 @@ describe('POST /v1/actions/outcome', () => {
     const event = (await auditEvents()).find((item) => item.id === decision.eventId);
     // Empty rule set still has a stable version, so every event is traceable.
     expect(event?.policyVersion).toMatch(/^[0-9a-f]{12}$/);
-  });
-
-  it('joins outcomes to decisions in the compliance report, through the store', async () => {
-    const reported = await authorize();
-    await authorize();
-    await server.app.inject({
-      method: 'POST',
-      url: '/v1/actions/outcome',
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        decisionEventId: reported.eventId,
-        action: 'code.modify',
-        target: 'src/a.ts',
-        status: EXECUTION_STATUS.SUCCEEDED,
-        rolledBack: false,
-      },
-    });
-
-    const response = await server.app.inject({
-      method: 'GET',
-      url: '/v1/reports/compliance',
-    });
-    const { verification } = response.json() as ComplianceReport;
-
-    // Proves the new fields survive the audit store round-trip, not just the gateway.
-    expect(verification.allowed).toBe(2);
-    expect(verification.reported).toBe(1);
-    expect(verification.succeeded).toBe(1);
-    // The unreported one was authorized moments ago, so it is still in flight —
-    // nothing is owed yet, and it must not appear on the chase list.
-    expect(verification.inFlight).toBe(1);
-    expect(verification.unreported).toBe(0);
-    expect(verification.unreportedActions).toEqual([]);
   });
 
   it('rejects an unauthenticated report', async () => {
