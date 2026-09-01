@@ -10,6 +10,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 
 DRY_RUN=0
 for arg in "$@"; do
@@ -63,11 +65,19 @@ ORDER="$(node -e "
   console.log(order.join('\n'));
 ")"
 
-# Says what it will do before it does it, because a publish cannot be taken back.
+# Asked all at once: one at a time is a nineteen-round trip stare before the first
+# question, and a person who waited that long reads the prompt as output, not a prompt.
+printf '\nChecking the registry'
+for pkg in $ORDER; do
+  ( npm view "$pkg@$VERSION" version >/dev/null 2>&1 && echo "$pkg" > "$WORK/$(echo "$pkg" | tr / _).out" ) &
+done
+wait
+printf ' done.\n'
+
 printf '\nRelease %s from this machine, without provenance.\n\n' "$VERSION"
 todo=0
 for pkg in $ORDER; do
-  if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+  if [[ -f "$WORK/$(echo "$pkg" | tr / _).out" ]]; then
     printf '  skip     %s@%s is already published\n' "$pkg" "$VERSION"
   else
     printf '  publish  %s@%s\n' "$pkg" "$VERSION"
@@ -86,8 +96,29 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
-printf 'Type the version to confirm: '
-read -r confirmed
+# The answer is an argument when one is given, so this is drivable by a test. It
+# buys nothing else: npm still asks for the OTP on a terminal, so a run without one
+# gets past this line and no further.
+confirmed="${MEMNOX_PUBLISH_CONFIRM:-}"
+
+if [[ -z "$confirmed" ]]; then
+  # No terminal means npm cannot ask for the OTP. Saying so here beats discovering
+  # it at the first package, after a confirmation the reader has already given.
+  if [[ ! -t 0 ]]; then
+    printf '\nNo terminal on stdin, so npm could not ask for your OTP.\n' >&2
+    printf 'Run this directly rather than through a pipe or a wrapper.\n' >&2
+    exit 1
+  fi
+
+  # An empty line is a stray return, not an answer, so it is asked again rather than
+  # treated as a refusal after the reader has waited through the whole plan.
+  for _ in 1 2; do
+    printf 'Type %s to publish, or anything else to stop: ' "$VERSION"
+    read -r confirmed
+    [[ -n "$confirmed" ]] && break
+  done
+fi
+
 if [[ "$confirmed" != "$VERSION" ]]; then
   printf 'Not confirmed, nothing published.\n' >&2
   exit 1
