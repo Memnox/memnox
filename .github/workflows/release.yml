@@ -24,9 +24,18 @@ jobs:
           ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or newer. Below that the CLI never
+      # looks for an OIDC token, falls back to NODE_AUTH_TOKEN, and an account
+      # with 2FA on writes rejects that as EOTP — which reads as a bad token
+      # rather than as an npm too old to use the auth we configured.
+      - name: npm must be new enough to speak OIDC
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - run: npm ci
 
