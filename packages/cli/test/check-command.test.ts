@@ -238,3 +238,41 @@ describe('memnox check', () => {
     });
   });
 });
+
+describe('memnox check names the alternative', () => {
+  it('prints what the agent may do instead, so a refusal is not a dead end', async () => {
+    const runtime = new FakeRuntime().on(
+      'POST',
+      CHECK_PATH,
+      decision({
+        reason: 'This task declared no credential need.',
+        matchedPolicies: [{ name: 'secrets-not-required' }],
+        alternative: {
+          action: 'filesystem.read',
+          resource: '.env.example',
+          note: '.env.example is readable.',
+        },
+      }),
+    );
+
+    const { out } = await runCli(
+      ['check', '--token', 'mnx_test', 'filesystem.read', '/srv/app/.env'],
+      runtime,
+    );
+
+    expect(out.text).toContain(
+      'Instead  : filesystem.read .env.example — .env.example is readable.',
+    );
+  });
+
+  it('says nothing about an alternative when the rule named none', async () => {
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    const { out } = await runCli(
+      ['check', '--token', 'mnx_test', 'database.delete', 'users'],
+      runtime,
+    );
+
+    expect(out.text).not.toContain('Instead');
+  });
+});

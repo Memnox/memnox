@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, type Alternative } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { resolveProjectId } from '../project-identity';
@@ -98,6 +98,10 @@ export function registerCheckCommand(
             `${label('Policies')}: ${decision.matchedPolicies.map((p) => p.name).join(', ')}`,
           );
         }
+        // A refusal with no alternative is a dead end: the agent abandons the task.
+        if (decision.alternative !== undefined) {
+          out.line(`${label('Instead')}: ${describeAlternative(decision.alternative)}`);
+        }
         if (decision.approvalId) out.line(`${label('Approval')}: ${decision.approvalId}`);
         if (decision.shadowEffect !== undefined) {
           out.line(
@@ -110,6 +114,11 @@ export function registerCheckCommand(
         process.exitCode = exitCodeFor(decision.effect);
       },
     );
+}
+
+function describeAlternative(alternative: Alternative): string {
+  const resource = alternative.resource === undefined ? '' : ` ${alternative.resource}`;
+  return `${alternative.action}${resource} — ${alternative.note}`;
 }
 
 /** Zero only when the action may proceed. A observed environment allows, so it is 0. */
