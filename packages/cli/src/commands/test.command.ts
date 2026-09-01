@@ -193,9 +193,7 @@ function reportGaps(context: CliContext, gaps: readonly CaseResult[]): void {
 function reportNextStep(context: CliContext, sessionId: string | undefined): void {
   const { out, style } = context;
   out.note('');
-  out.note(
-    style.dim('→ See what governs one:  memnox describe shell.execute "rm -rf /"'),
-  );
+  out.note(style.dim('→ See what governs one:  memnox rules shell.execute "rm -rf /"'));
   if (sessionId !== undefined) {
     out.note(style.dim(`→ Replay the run:        memnox replay ${sessionId}`));
     return;

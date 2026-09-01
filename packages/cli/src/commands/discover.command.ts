@@ -33,6 +33,10 @@ export function registerDiscoverCommand(
 ): void {
   program
     .command('discover', { isDefault: true })
+    /* Bare `memnox` runs this, but `memnox audti` must not: with a default command
+       commander hands an unknown word here as an argument, and a typo would silently
+       scan the machine and exit 0 instead of saying the command does not exist. */
+    .allowExcessArguments(false)
     .description(
       'What can act on this machine, and what it can reach. No account, no network.',
     )
