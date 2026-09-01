@@ -81,6 +81,37 @@ describe('memnox (discover)', () => {
     expect(out.text).toContain('memnox doctor');
   });
 
+  /* Bare `memnox` runs discovery, so commander hands an unrecognised word here as an
+     argument. Blaming `discover` named a command the person never typed. */
+  it('names the word the person typed, not the default command it landed on', async () => {
+    const machine = FakeMachine.from(MACHINE);
+
+    await expect(
+      runCommand(
+        (program, context) =>
+          registerDiscoverCommand(program, context, () => machine, noTools),
+        ['audti'],
+      ),
+    ).rejects.toThrow(/unknown command "audti"/);
+  });
+
+  it('points at the nearest real command when the word is a near miss', async () => {
+    const machine = FakeMachine.from(MACHINE);
+
+    await expect(
+      runCommand(
+        (program, context) => {
+          program
+            .command('audit')
+            .description('the real one')
+            .action(() => undefined);
+          registerDiscoverCommand(program, context, () => machine, noTools);
+        },
+        ['audti'],
+      ),
+    ).rejects.toThrow(/did you mean "audit"/);
+  });
+
   /**
    * The finding existed and could never fire, because nothing ever filled in a tool.
    * This is the line the opening screen is built on.

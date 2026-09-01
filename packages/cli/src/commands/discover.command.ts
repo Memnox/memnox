@@ -17,6 +17,41 @@ import { readLocalCounts, type LocalCounts } from '../local-counts';
 /** Injected so a test never reads the developer's real home directory. */
 export type MachineReaderFactory = () => MachineReader;
 
+/** How far apart two words may be before a suggestion is noise rather than help. */
+const MAX_SUGGESTION_DISTANCE = 3;
+
+/** Names the word the user actually typed, and the nearest command if there is one. */
+function unknownCommand(program: Command, word: string): string {
+  const names = program.commands.map((command) => command.name());
+  const nearest = names
+    .map((name) => ({ name, distance: distance(word, name) }))
+    .filter((each) => each.distance <= MAX_SUGGESTION_DISTANCE)
+    .sort((a, b) => a.distance - b.distance)[0];
+  return (
+    `unknown command "${word}"` +
+    (nearest === undefined ? '' : ` — did you mean "${nearest.name}"?`) +
+    '\nRun "memnox --help" for the full list.'
+  );
+}
+
+/** Levenshtein, iterative: a typo is one or two edits away from what was meant. */
+function distance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_unused, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = (previous[j - 1] as number) + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(
+        (previous[j] as number) + 1,
+        (current[j - 1] as number) + 1,
+        substitution,
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length] as number;
+}
+
 const LABEL_WIDTH = 24;
 /** Padding is computed from the longest path, so a long one never eats its own count. */
 const PATH_GUTTER = 2;
@@ -35,32 +70,39 @@ export function registerDiscoverCommand(
 ): void {
   program
     .command('discover', { isDefault: true })
-    /* Bare `memnox` runs this, but `memnox audti` must not: with a default command
-       commander hands an unknown word here as an argument, and a typo would silently
-       scan the machine and exit 0 instead of saying the command does not exist. */
-    .allowExcessArguments(false)
     .description(
       'What can act on this machine, and what it can reach. No account, no network.',
     )
+    /* Bare `memnox` runs this, but `memnox audti` must not: with a default command
+       commander hands an unknown word here as an argument. Refusing it as an excess
+       argument blamed `discover` for a word the user never typed, so it is caught
+       here instead and named for what it is. Hidden from the usage line. */
+    .usage('[options]')
+    .argument('[unrecognized...]')
     .option('--json', 'emit the report as JSON')
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
     )
-    .action(async (options: { json?: boolean; probe: boolean }) => {
-      const report = await discover(buildReader(), {
-        now: new Date().toISOString(),
-        // The directory they are standing in holds the credentials the repo has.
-        projectDirs: [cwd()],
-        // Starting somebody else's server is the one thing here that runs code.
-        ...(options.probe ? { lister: buildLister() } : {}),
-      });
-      if (options.json === true) {
-        context.out.line(JSON.stringify(report, null, 2));
-        return;
-      }
-      render(context, report, await counts());
-    });
+    .action(
+      async (unrecognized: string[], options: { json?: boolean; probe: boolean }) => {
+        if (unrecognized.length > 0) {
+          throw new Error(unknownCommand(program, unrecognized[0] as string));
+        }
+        const report = await discover(buildReader(), {
+          now: new Date().toISOString(),
+          // The directory they are standing in holds the credentials the repo has.
+          projectDirs: [cwd()],
+          // Starting somebody else's server is the one thing here that runs code.
+          ...(options.probe ? { lister: buildLister() } : {}),
+        });
+        if (options.json === true) {
+          context.out.line(JSON.stringify(report, null, 2));
+          return;
+        }
+        render(context, report, await counts());
+      },
+    );
 }
 
 function render(context: CliContext, report: DiscoveryReport, counts: LocalCounts): void {
