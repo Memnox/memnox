@@ -18,10 +18,12 @@ const SURFACE_REACHES: Record<string, readonly string[]> = {
   git: ['repo'],
   docker: ['socket'],
   cloud: ['cloud'],
-  network: ['cloud'],
-  mcp: ['file', 'secret', 'repo', 'db', 'cloud'],
-  browser: [],
-  shell: ['file', 'secret', 'repo', 'db', 'cloud', 'socket'],
+  // A shell or an HTTP tool already reaches everything on the network, and the map
+  // that left that out understated every coding agent on the machine.
+  network: ['cloud', 'network'],
+  mcp: ['file', 'secret', 'repo', 'db', 'cloud', 'network'],
+  browser: ['network'],
+  shell: ['file', 'secret', 'repo', 'db', 'cloud', 'socket', 'network'],
 };
 
 /**

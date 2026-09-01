@@ -39,6 +39,8 @@ export const RESOURCE_KIND = {
   DB: 'db',
   CLOUD: 'cloud',
   SOCKET: 'socket',
+  /** Not a file: what an agent with a shell or an HTTP tool can already reach. */
+  NETWORK: 'network',
 } as const;
 
 export type ResourceKind = (typeof RESOURCE_KIND)[keyof typeof RESOURCE_KIND];
@@ -124,3 +126,42 @@ export const MCP_PROBE_TIMEOUT_MS = 5_000;
 
 /** The revision the probe negotiates; a server that wants another still answers. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
+
+/**
+ * Command-line tools an agent with a shell can invoke. Detected by looking where they
+ * install, because a name on a list nobody checked is a claim rather than a finding.
+ */
+export const KNOWN_TOOLS: readonly { name: string; paths: readonly string[] }[] = [
+  { name: 'git', paths: ['/usr/bin/git', '/usr/local/bin/git', '/opt/homebrew/bin/git'] },
+  {
+    name: 'docker',
+    paths: ['/usr/local/bin/docker', '/opt/homebrew/bin/docker', '/usr/bin/docker'],
+  },
+  {
+    name: 'kubectl',
+    paths: ['/usr/local/bin/kubectl', '/opt/homebrew/bin/kubectl', '/usr/bin/kubectl'],
+  },
+  { name: 'aws', paths: ['/usr/local/bin/aws', '/opt/homebrew/bin/aws'] },
+  { name: 'gcloud', paths: ['/usr/local/bin/gcloud', '/opt/homebrew/bin/gcloud'] },
+  {
+    name: 'terraform',
+    paths: ['/usr/local/bin/terraform', '/opt/homebrew/bin/terraform'],
+  },
+  { name: 'psql', paths: ['/usr/local/bin/psql', '/opt/homebrew/bin/psql'] },
+];
+
+/**
+ * Connection strings worth naming. The scheme and whether it looks like production is
+ * all that is kept: the URL itself holds a credential and never leaves the process.
+ */
+export const DATABASE_SCHEMES: readonly string[] = [
+  'postgres',
+  'postgresql',
+  'mysql',
+  'mongodb',
+  'redis',
+  'mssql',
+];
+
+/** Hosts that read as production, so the row can say which one it is. */
+export const PRODUCTION_HINTS: readonly string[] = ['prod', 'production', 'live'];

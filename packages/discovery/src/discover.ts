@@ -13,6 +13,12 @@ import {
 import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
 import { toMcpTool, type Surface } from './surface';
 import {
+  databasesIn,
+  detectTools,
+  networkReach,
+  type DiscoveredTool,
+} from './reach-detail';
+import {
   attributeResources,
   computeReachability,
   type Reachability,
@@ -53,6 +59,8 @@ export interface DiscoveryReport {
   read: string[];
   /** Servers this run started to ask what they hold, named for the same reason. */
   probed: string[];
+  /** Command-line tools an agent with a shell can invoke, each with what proved it. */
+  tools: DiscoveredTool[];
 }
 
 export interface DiscoveryOptions {
@@ -95,6 +103,11 @@ export async function discover(
 
   const probed = await enumerateTools(surfaces, options.lister);
   const { resources, read } = await scanResources(reader, options.projectDirs ?? []);
+
+  // Derived from the surfaces already found, never asserted on its own.
+  const network = networkReach(surfaces);
+  if (network !== null) resources.push(network);
+
   const refs: AgentRef[] = agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
 
@@ -105,6 +118,7 @@ export async function discover(
     reachability,
     read,
     probed,
+    tools: await detectTools(reader),
   };
 }
 
@@ -164,6 +178,8 @@ async function scanResources(
       sensitivity: classifySensitivity(path),
       reachableBy: [],
     });
+    // A connection string names a database; the scheme is kept and the URL is not.
+    resources.push(...databasesIn(contents, path));
   };
 
   for (const relative of CREDENTIAL_PATHS) await record(join(home, relative));

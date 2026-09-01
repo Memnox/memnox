@@ -12,6 +12,7 @@ import {
   type McpLister,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
+import { readLocalCounts, type LocalCounts } from '../local-counts';
 
 /** Injected so a test never reads the developer's real home directory. */
 export type MachineReaderFactory = () => MachineReader;
@@ -30,6 +31,7 @@ export function registerDiscoverCommand(
   buildReader: MachineReaderFactory = () => new NodeMachineReader(homedir()),
   buildLister: () => McpLister = () => new NodeMcpLister(),
   cwd: () => string = () => process.cwd(),
+  counts: () => Promise<LocalCounts> = () => readLocalCounts(homedir()),
 ): void {
   program
     .command('discover', { isDefault: true })
@@ -57,11 +59,11 @@ export function registerDiscoverCommand(
         context.out.line(JSON.stringify(report, null, 2));
         return;
       }
-      render(context, report);
+      render(context, report, await counts());
     });
 }
 
-function render(context: CliContext, report: DiscoveryReport): void {
+function render(context: CliContext, report: DiscoveryReport, counts: LocalCounts): void {
   const { out, style } = context;
 
   if (report.agents.length === 0) {
@@ -111,6 +113,15 @@ function render(context: CliContext, report: DiscoveryReport): void {
     }
   }
 
+  // Everything an agent with a shell reaches through one of these, whether or not
+  // Memnox can see the call.
+  if (report.tools.length > 0) {
+    out.line(
+      style.bold('TOOLS'.padEnd(LABEL_WIDTH)) +
+        report.tools.map((tool) => tool.name).join(', '),
+    );
+  }
+
   const reachable = report.resources.filter(
     (resource) =>
       resource.sensitivity !== SENSITIVITY.ORDINARY && resource.reachableBy.length > 0,
@@ -126,12 +137,20 @@ function render(context: CliContext, report: DiscoveryReport): void {
       const count = resource.reachableBy.length;
       const agents = `${count} agent${count === 1 ? '' : 's'}`;
       out.line(`  ${style.warn('!')}  ${(paths[index] ?? '').padEnd(width)}${agents}`);
+      // A database or the network is not a file, so what named it is said plainly.
+      if (resource.declaredIn !== undefined) {
+        out.line(`     ${style.dim(resource.declaredIn)}`);
+      }
     });
   }
 
   const surfaces = report.surfaces.filter((surface) => surface.kind !== SURFACE_KIND.MCP);
   out.line('');
   out.line(`${surfaces.length} execution surfaces.`);
+  // Both are zero on a machine nobody has governed, which is the honest opening.
+  out.line(
+    `${counts.policies} ${counts.policies === 1 ? 'policy' : 'policies'}.  ${counts.records} record${counts.records === 1 ? '' : 's'}.`,
+  );
   out.line('');
   out.line(`  ${style.dim('memnox doctor')}   what is risky and why`);
   out.line(`  ${style.dim('memnox harden')}   fix it, reversibly`);

@@ -13,6 +13,11 @@ export interface Resource {
   id: string;
   kind: ResourceKind;
   path?: string;
+  /**
+   * Where it was named, for a resource that is not itself a file: the env file a
+   * connection string was read from, or what makes the reach unrestricted.
+   */
+  declaredIn?: string;
   /** A hash. NEVER the value: what is stored is a path, a kind and this. */
   fingerprint?: string;
   sensitivity: Sensitivity;

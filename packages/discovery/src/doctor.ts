@@ -140,6 +140,19 @@ function substituteFor(path: string, kind: ResourceKind): string | null {
 }
 
 /** Enforcing on a credential read is unambiguous, so this one arrives armed. */
+/**
+ * The same file has more than one true name: on macOS `/tmp/x` and `/private/tmp/x`
+ * are the same bytes. A rule naming one spelling is one the other walks past, so both
+ * are written. Derived from the path itself, never guessed.
+ */
+export function spellingsOf(path: string): string[] {
+  const spellings = new Set<string>([path]);
+  if (path.startsWith('/private/')) spellings.add(path.slice('/private'.length));
+  else if (path.startsWith('/tmp/') || path.startsWith('/var/'))
+    spellings.add(`/private${path}`);
+  return [...spellings];
+}
+
 function withholdReadStep(
   findingId: string,
   path: string,
@@ -153,7 +166,9 @@ function withholdReadStep(
     `  - name: withhold-${slug(path)}`,
     '    match:',
     '      actions: ["filesystem.read"]',
-    `      targets: ["${path}"]`,
+    `      targets: [${spellingsOf(path)
+      .map((each) => `"${each}"`)
+      .join(', ')}]`,
     '    decision:',
     '      effect: withhold',
     `      reason: "${path} holds a credential this task did not declare a need for."`,
