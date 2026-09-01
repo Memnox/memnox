@@ -282,11 +282,24 @@ export function registerServeCommand(
         context.out.line(
           `Memnox runtime listening on ${tlsEnabled ? 'https' : 'http'}://${server.config.host}:${server.config.port}`,
         );
-        context.out.line(
-          server.config.policyFile
-            ? `Policies: ${server.config.policyFile}`
-            : 'No policy file loaded — every action gets the default effect. Run "memnox init".',
-        );
+        // Every source, not just the first: --policies repeats, and a registry adds more.
+        const policySources = [
+          ...(server.config.policyFile === undefined ? [] : [server.config.policyFile]),
+          ...(server.config.policyFiles ?? []),
+          ...(server.config.policyRegistryFile === undefined
+            ? []
+            : [`${server.config.policyRegistryFile} (registry)`]),
+        ];
+        if (policySources.length === 0) {
+          context.out.line(
+            'No policy file loaded — every action gets the default effect. Run "memnox init".',
+          );
+        } else {
+          context.out.line(`Policies: ${policySources[0]}`);
+          for (const source of policySources.slice(1)) {
+            context.out.line(`${''.padEnd('Policies: '.length)}${source}`);
+          }
+        }
         context.out.line(
           server.config.allowLocalAdmin
             ? 'Management auth: OPEN — no token required on admin routes'

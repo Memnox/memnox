@@ -69,6 +69,28 @@ describe('memnox serve — startup banner', () => {
     expect(out.text).not.toContain('No policy file loaded');
   });
 
+  /* --policies repeats and a registry adds more, so naming only the first left the
+     operator reading a banner that disagreed with what was actually in force. */
+  it('names every source it loaded, not only the first', async () => {
+    const { launch } = launcher();
+
+    const { out } = await runServe(
+      [
+        '--policies',
+        'a.yaml',
+        '--policies',
+        'b.yaml',
+        '--policy-registry',
+        '/home/dev/.memnox/policies.json',
+      ],
+      launch,
+    );
+
+    expect(out.text).toContain('a.yaml');
+    expect(out.text).toContain('b.yaml');
+    expect(out.text).toContain('/home/dev/.memnox/policies.json (registry)');
+  });
+
   it('says search is keyword-only until an embedding key is configured', async () => {
     const { launch } = launcher();
 

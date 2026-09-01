@@ -27,6 +27,9 @@ const MAX_LISTED_CHANGES = 20;
 const describeCase = (item: SimulationCase): string =>
   [item.action, item.target, item.environment].filter(Boolean).join(' ');
 
+const count = (n: number, one: string, many: string): string =>
+  `${n} ${n === 1 ? one : many}`;
+
 function reportComparison(
   out: CliOutput,
   changes: ReturnType<typeof comparePolicySets>,
@@ -38,8 +41,8 @@ function reportComparison(
   out.line(`Changed         : ${changes.changes.length}`);
   out.line(
     `Candidate totals: allow ${changes.candidateTotals[DECISION_EFFECT.ALLOW]}, ` +
-      `approval ${changes.candidateTotals[DECISION_EFFECT.ESCALATE]}, ` +
-      `block ${changes.candidateTotals[DECISION_EFFECT.WITHHOLD]}`,
+      `escalate ${changes.candidateTotals[DECISION_EFFECT.ESCALATE]}, ` +
+      `withhold ${changes.candidateTotals[DECISION_EFFECT.WITHHOLD]}`,
   );
 
   if (changes.changes.length === 0) {
@@ -124,9 +127,21 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     // The rules in force are what you are comparing against; asking for them
     // every time was a flag that only ever had one useful value.
     const baseline = options.against ?? DEFAULT_POLICY_FILE;
-    const baselinePolicies = existsSync(baseline)
-      ? await loadPoliciesFromFile(baseline)
-      : [];
+    /* An absent baseline compares against no rules at all, so every rule in the
+       candidate reads as a change this run would introduce. Silently, that turned a
+       "no drift" answer into nine invented ones, so the report says what it compared. */
+    const hasBaseline = existsSync(baseline);
+    const baselinePolicies = hasBaseline ? await loadPoliciesFromFile(baseline) : [];
+    if (!hasBaseline) {
+      context.out.note(
+        `No baseline at ${baseline} — comparing against no rules at all, so every ` +
+          'candidate rule below shows as a change.',
+      );
+      context.out.note(
+        `Point at the rules in force with --against <path> to compare properly.`,
+      );
+      context.out.note('');
+    }
 
     reportComparison(
       context.out,
@@ -189,7 +204,9 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     .description('List the policy packs available to install')
     .action(() => {
       for (const pack of POLICY_PACKS) {
-        context.out.line(`${pack.name}  (${pack.policies.length} policies)`);
+        context.out.line(
+          `${pack.name}  (${count(pack.policies.length, 'policy', 'policies')})`,
+        );
         context.out.line(`  ${pack.description}`);
       }
       context.out.line('\nInstall one with: memnox policy install <pack>');
@@ -227,7 +244,7 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
       }
       await writePolicyFile(options.file, merged.policies);
       context.out.line(
-        `\nAdded ${merged.added.length} policies to ${options.file} (version ${versionPolicySet(merged.policies).version})`,
+        `\nAdded ${count(merged.added.length, 'policy', 'policies')} to ${options.file} (version ${versionPolicySet(merged.policies).version})`,
       );
     });
   // Top-level as well: "I would rather not write YAML" is the reason someone

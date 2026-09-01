@@ -150,6 +150,45 @@ describe('memnox policy simulate', () => {
     expect(out.text).toContain('No action would be decided differently.');
   });
 
+  /* With no baseline file the comparison runs against no rules at all, so every rule
+     in the candidate reads as a change this run would introduce. Silently, that turned
+     "nothing changed" into a page of changes nobody made. */
+  it('says so when it is comparing against no baseline at all', async () => {
+    await writeFile(
+      policyFile,
+      policyYaml('strict', DECISION_EFFECT.WITHHOLD, 'database.delete'),
+      'utf8',
+    );
+    const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [
+      auditEvent('database.delete'),
+    ]);
+
+    const { out } = await runCli(
+      [
+        'policy',
+        'simulate',
+        '--file',
+        policyFile,
+        '--against',
+        join(workspace, 'gone.yaml'),
+      ],
+      runtime,
+    );
+
+    const said = out.notes.join('\n');
+    expect(said).toContain('comparing against no rules at all');
+    expect(said).toContain('--against');
+  });
+
+  it('uses the three effects, not the vocabulary that was removed', async () => {
+    const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [auditEvent('file.read')]);
+
+    const { out } = await runCli(['policy', 'simulate', '--file', policyFile], runtime);
+
+    expect(out.text).toContain('allow 1, escalate 0, withhold 0');
+    expect(out.text).not.toContain('block');
+  });
+
   it('stops early when there is no history to simulate against', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, []);
 
@@ -164,7 +203,8 @@ describe('memnox policy packs', () => {
     const { out } = await runCli(['policy', 'packs']);
 
     for (const pack of POLICY_PACKS) {
-      expect(out.text).toContain(`${pack.name}  (${pack.policies.length} policies)`);
+      const noun = pack.policies.length === 1 ? 'policy' : 'policies';
+      expect(out.text).toContain(`${pack.name}  (${pack.policies.length} ${noun})`);
     }
     expect(out.text).toContain('memnox policy install');
   });
