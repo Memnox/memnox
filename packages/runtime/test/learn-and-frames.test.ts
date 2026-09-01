@@ -221,4 +221,29 @@ describe('learning from a day of work', () => {
 
     expect(await learn.learn(7)).toEqual([]);
   });
+
+  /* A rejected credential is recorded as "unknown" so the attempt stays in the trail,
+     but this report reads "you granted this agent X and it used Y%" — and nobody
+     granted an unresolvable token anything. Counting it invents an agent. */
+  it('leaves the rejected-credential pseudo-identity out of the report', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(POLICIES),
+    });
+    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
+    await gateway.authorize('mnx_nobody_knows_this', { action: 'repository.read' });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => POLICIES,
+      seams: async () => [],
+    });
+    const results = await learn.learn(7);
+
+    expect(results.map((each) => each.agentName)).toEqual(['claude-code']);
+  });
 });

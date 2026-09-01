@@ -1,5 +1,5 @@
 import type { ActionEvent, AuditLog, Seam } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, UNKNOWN_AGENT_ID } from '@memnox/core';
 import {
   findUnusedGrants,
   proposeLeastPrivilege,
@@ -160,9 +160,17 @@ function refusedBy(events: readonly ActionEvent[], agentId: string): RefusedActi
     .sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Every agent that acted, minus the pseudo-identity a rejected credential records. This
+ * report reads "you granted this agent X and it used Y%", and nobody granted a token the
+ * runtime could not resolve anything at all — counting it invents an agent.
+ */
 function namesOf(events: readonly ActionEvent[]): Map<string, string> {
   const names = new Map<string, string>();
-  for (const event of events) names.set(event.agentId, event.agentName);
+  for (const event of events) {
+    if (event.agentId === UNKNOWN_AGENT_ID) continue;
+    names.set(event.agentId, event.agentName);
+  }
   return names;
 }
 
