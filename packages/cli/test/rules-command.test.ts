@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { DECISION_EFFECT, RISK_LEVEL } from '@memnox/core';
+import { DECISION_EFFECT, DECISION_REASON, RISK_LEVEL } from '@memnox/core';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { registerRulesCommand } from '../src/commands/rules.command';
@@ -209,5 +209,46 @@ describe('memnox rules', () => {
       program.parseAsync(['rules', 'database.delete'], { from: 'user' }),
     ).rejects.toThrow(/memnox setup/);
     expect(runtime.requests).toHaveLength(0);
+  });
+});
+
+describe('memnox rules refuses rather than answering "nothing"', () => {
+  /* The runtime fails closed before it reads a rule, so every field comes back empty
+     for a reason that has nothing to do with the rules. Reporting that as "no rule
+     covers this action" is the one answer this command must never give. */
+  const unresolved = (reason: string): FakeRuntime =>
+    governed().on(
+      'POST',
+      RISK_PATH,
+      assessment({ reason, matchedPolicies: [], advisories: [] }),
+    );
+
+  it('refuses outright when the runtime does not know the token', async () => {
+    await expect(
+      run(
+        ['rules', 'database.delete', '--token', 'mnx_stale'],
+        unresolved(DECISION_REASON.UNKNOWN_AGENT),
+      ),
+    ).rejects.toThrow(/never read the rules/);
+  });
+
+  it('says the rules went unread when the agent is held, not that none exist', async () => {
+    const out = await run(
+      ['rules', 'database.delete', '--token', 'mnx_test'],
+      unresolved(DECISION_REASON.AGENT_QUARANTINED),
+    );
+
+    expect(out.text).toContain('not consulted');
+    expect(out.text).toContain(DECISION_REASON.AGENT_QUARANTINED);
+    expect(out.text).not.toContain('no rule your organization wrote covers this action');
+  });
+
+  it('still reports "nothing" when the rules were read and matched none', async () => {
+    const out = await run(
+      ['rules', 'database.delete', '--token', 'mnx_test'],
+      unresolved(DECISION_REASON.NO_POLICY_MATCHED),
+    );
+
+    expect(out.text).toContain('no rule your organization wrote covers this action');
   });
 });

@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import type { ActionEvent, DecisionEffect, RiskAssessment } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, DECISION_REASON } from '@memnox/core';
 import type { DecisionRecordResponse } from '@memnox/sdk';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
@@ -23,6 +23,14 @@ const EFFECT_VERB: Record<DecisionEffect, string> = {
   [DECISION_EFFECT.WITHHOLD]: 'withholds',
   [DECISION_EFFECT.ESCALATE]: 'requires approval',
 };
+
+/** Reasons that settle a request before the policy engine is ever asked. */
+const UNREAD_RULES: readonly string[] = [
+  DECISION_REASON.UNKNOWN_AGENT,
+  DECISION_REASON.AGENT_SUSPENDED,
+  DECISION_REASON.AGENT_QUARANTINED,
+  DECISION_REASON.CAPABILITY,
+];
 
 /** Where the command is being run; injected so tests never depend on the real cwd. */
 type WorkingDirectory = () => string;
@@ -91,6 +99,16 @@ export function registerRulesCommand(
 
         // Read-only throughout: nothing here decides, records, or raises an approval.
         const assessment = await client.evaluateRisk(request);
+        /* An identity the runtime cannot resolve fails closed before the rules are read,
+           so every field below is empty for a reason that has nothing to do with the
+           rules. Reporting that as "nothing governs this" is the one wrong answer this
+           command can give, so it refuses instead. */
+        if (assessment.reason === DECISION_REASON.UNKNOWN_AGENT) {
+          throw new Error(
+            `${DECISION_REASON.UNKNOWN_AGENT} — the runtime does not know this token, so it never read the rules.\n` +
+              'Register one with "memnox agents register", then pass --token, or run "memnox setup".',
+          );
+        }
         const ruleSet = await readable(context, 'the rule set', () => client.policies());
         const decisions = await readable(context, 'decision memory', () =>
           client.searchDecisions([action, target].filter(Boolean).join(' ')),
@@ -156,6 +174,16 @@ function reportGovernance(
   const { out, style } = context;
   out.line(style.bold('Governed by'));
   if (assessment.matchedPolicies.length === 0 && assessment.advisories.length === 0) {
+    // The rules go unread when identity or capability settled it first: an empty
+    // list then means "not consulted", which is not the same as "nothing covers it".
+    if (UNREAD_RULES.includes(assessment.reason)) {
+      out.line(`  ${style.warn('not consulted')} — ${assessment.reason}.`);
+      out.line(
+        style.dim('  The rules were never read, so this says nothing about them.'),
+      );
+      out.line('');
+      return;
+    }
     out.line(
       `  ${style.warn('nothing')} — no rule your organization wrote covers this action.`,
     );
