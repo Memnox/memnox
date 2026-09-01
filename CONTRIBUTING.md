@@ -18,22 +18,16 @@ Node 20+ is required.
 
 ```
 packages/
-  core/           # domain types, constants, store + advisor ports — zero dependencies
-  policy-engine/  # deterministic evaluation + risk classification
-  memory/         # team decisions as machine-checkable constraints
-  org-graph/      # verified organizational statements, ownership, delegated authority
-  organization/   # the open client protocol for asking an organization
-  risk/           # behavioral, trust, authority, and verification advisors
-  runtime/        # gateway pipeline, HTTP server with RBAC, local stores, reporting
-  postgres/       # Postgres adapters for the storage ports
-  redis/          # Redis adapters for locks and session taint
+  discovery/      # §01 what can act here, what it reaches, and the reversible fix
+  core/           # §02 the normalized model: decision, evidence, store + advisor ports
+  tool-hook/      # §03 the local seams, starting with the PreToolUse hook
+  mcp-firewall/   # §03 transparent MCP proxy, gated both directions
+  ledger/         # §03 frames, usage, lineage, and the least-privilege proposal
+  policy-engine/  # §05 deterministic evaluation + risk classification
+  local-gate/     # §05 in-process gate — a call's arguments never leave the machine
+  runtime/        # gateway pipeline, HTTP server with RBAC, local file stores
   sdk/            # TypeScript client
-  mcp-firewall/   # transparent MCP proxy
-  local-gate/     # in-process gate — a call's arguments never leave the machine
-  intelligence/   # optional BYOK LLM layer — drafts and explains, never decides
   cli/            # memnox command, including the MCP server
-sdks/
-  python/, go/, rust/, java/, swift/   # thin dependency-free clients
 examples/
   policies/       # ready-to-use policy files
   governed-agent/ # a minimal agent running behind the gate
@@ -48,7 +42,7 @@ see [docs/getting-started.md](docs/getting-started.md) and
 
 Dependency direction is strict (see [ARCHITECTURE.md](ARCHITECTURE.md) for the full graph): `core` depends on nothing; `policy-engine` only on `core`; everything else composes those. Never import from another package's internals — only from its `index.ts`.
 
-**Extending the gateway:** new escalation logic is an `ActionAdvisor` (see `@memnox/memory` and `@memnox/risk` for examples). Advisors may only tighten a decision, must be deterministic, and their failure must mean "no escalation" — never a crash, never an allow-nothing.
+**Extending the gateway:** new escalation logic is an `ActionAdvisor`. Advisors may only tighten a decision, must be deterministic, and their failure must mean "no escalation" — never a crash, never an allow-nothing.
 
 ## Ground rules
 

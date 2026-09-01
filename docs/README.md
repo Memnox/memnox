@@ -17,13 +17,14 @@ Start here, then go where you need.
 | Connect a runtime to a control plane | [connecting-a-control-plane.md](connecting-a-control-plane.md) |
 | Fix something that is not working | [troubleshooting.md](troubleshooting.md) |
 | Understand what Memnox is and why | [the root README](../README.md) |
+| See what is built, and what is still ahead of it | [VISION.md](../VISION.md) |
 | Understand how it works inside | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 | Change the code | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Report a bypass or a tampering finding | [SECURITY.md](../SECURITY.md) |
 
 Every package also has its own README covering what it does and what to touch
-when extending it — [`core`](../packages/core), [`policy-engine`](../packages/policy-engine),
-[`runtime`](../packages/runtime), [`org-graph`](../packages/org-graph),
+when extending it — [`discovery`](../packages/discovery), [`core`](../packages/core),
+[`policy-engine`](../packages/policy-engine), [`runtime`](../packages/runtime),
 [`cli`](../packages/cli), and the rest.
 
 ## The one-paragraph version

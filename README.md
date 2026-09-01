@@ -24,9 +24,8 @@ Memnox gives your AI agents a deterministic policy gate, human approvals, tamper
 This is the Memnox runtime monorepo. It contains:
 
 - [`memnox`](packages/cli): the CLI — set up, observe, tune, enforce, and approve from your shell
-- [`@memnox/sdk`](packages/sdk): TypeScript SDK, plus [Python, Go, Rust, Java, and Swift](#client-sdks) clients
+- [`@memnox/sdk`](packages/sdk): the TypeScript SDK
 - [`@memnox/runtime`](packages/runtime): the decision gateway and HTTP API you run locally or for a team
-- [`@memnox/organization`](packages/organization): the open client for asking an organization whether an action should happen, and who authorizes it
 - [`@memnox/mcp-firewall`](packages/mcp-firewall): a transparent MCP proxy, so every `tools/call` is gated
 - **Adapters** for MCP clients, OpenAI Agents, LangChain, and [more](docs/governing-agents.md)
 
@@ -166,7 +165,7 @@ Result
 
 It exits non-zero when something got through, so it belongs in CI. Add `--record` to put the run in the audit trail as a replayable session.
 
-**`memnox describe <action> [target]`** — everything your organization attaches to one action, and how far the rules that catch it reach.
+**`memnox rules <action> [target]`** — what governs one action, and how far the rules that catch it reach.
 
 ```
 Governed by
@@ -182,9 +181,7 @@ Observed
   1 of the last 11 audited actions — 1 withheld, 0 escalated, 0 allowed
 ```
 
-**`memnox drift`** — where what your organization states and what its trail shows have come apart: verdicts a monitored environment let through, decisions agents keep running into, rules nothing has ever matched, decisions past review. Exits non-zero when it finds any.
-
-**`memnox trace <eventId>`** — the evidence behind one recorded decision, link by link, with no model involved. Only what the record actually carries is ticked.
+**`memnox why <eventId> --evidence`** — the evidence behind one recorded decision, link by link, with no model involved. Only what the record actually carries is ticked.
 
 ```
   Requested   shell.execute rm -rf /
@@ -242,25 +239,9 @@ There is a second question it cannot answer, because the answer is not in your r
 
 The two compose in one direction only: the runtime's refusal is final and the organization never widens it. The organization may only tighten an allow into an escalation — the case no policy file can express.
 
-```ts
-import { MemnoxOrganization, mayProceed } from '@memnox/organization';
+That half is not built yet. `VISION.md` §08 to §10 is where it arrives, and the runtime ships nothing that pretends to answer it in the meantime.
 
-const org = new MemnoxOrganization({ token: process.env.MEMNOX_GRANT!, workspace: 'acme' });
-
-const answer = await org.evaluate({
-  action: 'payment.refund',
-  principal: 'sarah@acme.test',
-  amount: 4500,
-});
-
-// answer.decision is allow · deny · ask · escalate · delegate · clarify,
-// alongside the context this agent may use and the constraints it must respect.
-if (mayProceed(answer)) await issueRefund();
-```
-
-That package is Apache-2.0 and deliberately thin: the protocol and nothing else, no tools, no execution, no copy of the organization. It never fails open — a call that cannot reach Memnox throws rather than returning a permissive default.
-
-**→ [Connecting a runtime to a control plane](docs/connecting-a-control-plane.md)** · **→ [Running more than one runtime](docs/deploying-many.md)** · **→ [`@memnox/organization`](packages/organization)**
+**→ [Connecting a runtime to a control plane](docs/connecting-a-control-plane.md)** · **→ [Running more than one runtime](docs/deploying-many.md)**
 
 ## Use it from code
 
@@ -319,32 +300,12 @@ This is a monorepo. Each package is one layer, and the two at the top have zero 
 | [`@memnox/core`](packages/core) | Domain types, decision constants, and store ports. Zero dependencies. |
 | [`@memnox/policy-engine`](packages/policy-engine) | Deterministic policy evaluation and risk classification. Zero dependencies. |
 | [`@memnox/discovery`](packages/discovery) | What can act on this machine, what it reaches, and reversible harden steps. Zero dependencies. |
-| [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, local stores, and compliance reports |
+| [`@memnox/tool-hook`](packages/tool-hook) | The local seams, starting with the PreToolUse hook |
+| [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, and the local file stores |
 | [`@memnox/ledger`](packages/ledger) | The local record: usage against grant, unused grants, lineage, coverage, drift, cost |
-| [`@memnox/workflow`](packages/workflow) | Durable runs, and the invariant that every route to a delegation passes a gate |
-| [`@memnox/autonomy`](packages/autonomy) | Named levels a person grants, and readiness as queries nobody can tick |
-| [`@memnox/memory`](packages/memory) | Team decisions turned into machine-checkable constraints |
-| [`@memnox/risk`](packages/risk) | Deterministic behavioral signals such as novel destructive actions and bursts |
-| [`@memnox/org-graph`](packages/org-graph) | Verified organizational statements, ownership, and delegated authority |
-| [`@memnox/organization`](packages/organization) | The open client protocol for asking an organization |
 | [`@memnox/mcp-firewall`](packages/mcp-firewall) | Transparent MCP proxy, so every `tools/call` goes through the runtime |
 | [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments never leave the machine |
-| [`@memnox/intelligence`](packages/intelligence) | Optional BYOK layer that drafts policy YAML. It never decides, explains, or infers intent. |
-| [`@memnox/postgres`](packages/postgres) · [`@memnox/redis`](packages/redis) | Adapters for shared storage and locks |
 | [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI |
-
-### Client SDKs
-
-Ask the runtime for a decision from whatever your service is written in. Every client is dependency-free, covers the same surface, and runs its own suite in CI.
-
-| Language | Package | Source |
-|---|---|---|
-| TypeScript | `@memnox/sdk` | [packages/sdk](packages/sdk) |
-| Python | `memnox` | [sdks/python](sdks/python) |
-| Go | `github.com/memnox/memnox-go` | [sdks/go](sdks/go) |
-| Rust | `memnox` | [sdks/rust](sdks/rust) |
-| Java | `ai.memnox:memnox` | [sdks/java](sdks/java) |
-| Swift | `Memnox` | [sdks/swift](sdks/swift) |
 
 ## Contributing
 
@@ -358,7 +319,6 @@ npm run build      # every package, through tsup
 
 ```
 packages/          one package per layer
-sdks/              client SDKs for python, go, rust, java, swift
 docs/              guides
 examples/          ready-to-use policy files and a governed agent
 ```

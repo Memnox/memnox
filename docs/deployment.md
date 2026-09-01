@@ -2,40 +2,47 @@
 
 The same binary serves one developer and a whole organization. The difference is configuration rather than a different product.
 
-| | Solo | Team | Enterprise |
-|---|---|---|---|
-| **Setup** | `npx memnox init && npx memnox serve` | `--database-url` and `--redis-url` | above, plus `memnox-cloud` |
-| **Account required** | none | none | SSO through your IdP |
-| **Storage** | JSON/JSONL files | shared Postgres | Postgres with a retention policy |
-| **Approvals** | CLI | Slack buttons, RBAC API keys | Slack and OIDC identities |
-| **Audit** | hash-chained JSONL | shared and verifiable | plus CSV/compliance export and retention |
-| **Multi-org** | not applicable | not applicable | `orgId` on every record |
+| | Solo | Team |
+|---|---|---|
+| **Setup** | `npx memnox init && npx memnox serve` | one runtime per team, plus `memnox-cloud` |
+| **Account required** | none | SSO through your IdP, at the control plane |
+| **Storage** | JSON/JSONL files | JSON/JSONL files |
+| **Approvals** | CLI | Slack buttons, RBAC API keys |
+| **Audit** | hash-chained JSONL | the same chain, mirrored off the box |
+| **Multi-org** | not applicable | `orgId` on every record |
 
 Solo genuinely means zero infrastructure: no account, no API key, and no network call. A developer can govern their agents in two commands and never talk to a server that is not on their laptop. Everything above that is additive, so nothing about the solo path changes when a team adopts it.
 
-## Running it at scale
+## One process, one machine
 
-The zero-infrastructure defaults, meaning file stores, per-process rate limits, and a keep-everything audit, are built for one process. Four flags turn the same binary into a horizontally scaled deployment:
+A runtime is one process holding one audit chain, and there is no configuration
+that changes that. File stores, per-process rate limits and an in-memory session
+taint store are not defaults to be swapped out later; they are the only
+implementations, and `VISION.md` §01 to §07 is deliberately built to need
+nothing else.
 
 ```bash
 memnox serve \
-  --database-url postgres://…      # or MEMNOX_DATABASE_URL, for shared identity, approvals, audit
-  --redis-url redis://…            # or MEMNOX_REDIS_URL, for one rate-limit budget across all pods
-  --audit-retention-days 365 \     # hourly pruning sweep, batched, lock-guarded (0 keeps everything)
+  --audit-retention-days 365 \    # hourly pruning sweep (0 keeps everything)
   --rate-limit 600
 ```
 
-**Rate limiting.** Without `--redis-url` each pod counts on its own, so N pods means N times the configured limit. With it, the fixed-window counter lives in Redis and every pod shares one budget. If the URL is set but Redis is unreachable, startup fails rather than silently degrading.
+**Rate limiting.** The fixed-window counter is per-process. One process is the
+whole deployment, so the configured limit is the real limit.
 
-**Session taint.** `--redis-url` also moves the session taint store into Redis, using a lock-guarded read-merge-write with a 7-day TTL, so a session that saw untrusted content stays tainted on every pod. Without it the store is per-process. It is never reconstructed from the audit log.
+**Session taint.** The session taint store is in memory and never reconstructed
+from the audit log. A restart forgets which sessions saw untrusted content.
 
-**Audit retention.** `--audit-retention-days` prunes older events on an hourly sweep. The Postgres delete is batched so it never holds a long table lock, and one distributed lock keeps a single pod sweeping at a time. Native table partitioning is not implemented; see [ARCHITECTURE.md](../ARCHITECTURE.md).
+**Audit retention.** `--audit-retention-days` prunes older events on an hourly
+sweep against the local JSONL log.
 
-**Bounded reads.** Advisors ask for a fixed recent window instead of an agent's whole history, and the bound is pushed into SQL (`ORDER BY occurred_at DESC LIMIT n`) rather than applied afterwards.
+**Multi-tenancy.** Agents, decisions, approvals and audit events carry an
+optional `orgId`. Register with `{"orgId": "acme"}` and every event that agent
+produces is stamped and filterable through `GET /v1/audit?org=acme`. Leaving it
+unset keeps the single-tenant behavior.
 
-**Multi-tenancy.** Agents, decisions, approvals, and audit events carry an optional `orgId`, stored as a nullable indexed `org_id` column. Register with `{"orgId": "acme"}` and every event that agent produces is stamped and filterable through `GET /v1/audit?org=acme`. Leaving it unset keeps the existing single-tenant behavior.
-
-Running more than one runtime has its own guide: [deploying many](deploying-many.md).
+Running more than one runtime, which is how more than one team is served, has its
+own guide: [deploying many](deploying-many.md).
 
 ## Containers
 
@@ -45,14 +52,13 @@ Four build artifacts, one per deployment shape. All of them run unprivileged, ke
 |---|---|
 | [`Dockerfile`](../Dockerfile) | The runtime alone. This is what `docker-compose.yml` builds. |
 | [`Dockerfile.airgap`](../Dockerfile.airgap) | The runtime with `--enforcement default=enforce` and nothing in the decision path that reaches the network. |
-| [`docker-compose.yml`](../docker-compose.yml) | One runtime, a data volume, and a read-only keyring mount. Postgres ships commented out, so uncomment it when you scale past one instance. |
+| [`docker-compose.yml`](../docker-compose.yml) | One runtime, a data volume, and a read-only keyring mount. Files are the only backing store. |
 | [`docker-compose.airgap.yml`](../docker-compose.airgap.yml) | The same, on an `internal: true` network with no route out, so the air-gap claim is verified by the topology instead of asserted. |
 
 Copy [`.env.example`](../.env.example) first, because both compose files refuse to start until the admin token and the keyring path are set, since the container binds `0.0.0.0`:
 
 ```bash
 cp .env.example .env
-memnox keys generate --keyring-file memnox-keyring.json
 docker compose up
 ```
 
@@ -68,11 +74,11 @@ memnox audit verify
 # …or: Audit chain BROKEN at event #91 (0f3a…): content-mismatch
 ```
 
-`GET /v1/audit/verify` returns the same result as JSON. This is tamper *evidence* rather than tamper proofing, because it detects edits to a log you already control and does not stop an operator with database access from rewriting the whole chain.
+`GET /v1/audit/verify` returns the same result as JSON. This is tamper *evidence* rather than tamper proofing, because it detects edits to a log you already control and does not stop an operator with write access to the data directory from rewriting the whole chain.
 
 ## Metrics
 
-`GET /v1/metrics` serves Prometheus text with the counters this pod already tracks: actions by effect and risk level, approvals pending and resolved, rate-limit rejections, and audit append failures. Counters are per-process, so summing across pods is the scrape layer's job.
+`GET /v1/metrics` serves Prometheus text with the counters the runtime already tracks: actions by effect and risk level, approvals pending and resolved, rate-limit rejections, and audit append failures. Counters are per-process, and one process is the whole runtime.
 
 ## Next
 

@@ -35,7 +35,7 @@ Every line is a **constraint** this organization declared, and the label says wh
 | Label | Source | Example |
 |---|---|---|
 | **your policy** | a rule in your policy files, quoted verbatim | *"Auth changes need a second pair of eyes."* |
-| **signal** | a deterministic advisor — recorded decisions, taint, behavior, verification | *"Conflicts with a decision the team recorded."* |
+| **signal** | a deterministic advisor, if a deployment has written one | *"Conflicts with a rule your organization wrote."* |
 
 Neither is generated. There is no model and no inference in a briefing: the same input always produces the same constraints, in the same order and the same words, so a briefing can be cached, diffed, and reproduced later.
 

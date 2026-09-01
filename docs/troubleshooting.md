@@ -269,9 +269,8 @@ memnox audit verify
 ```
 
 This is tamper **evidence**, not tamper proofing: it detects edits to a log you
-control, and does not stop someone with write access from recomputing a
-consistent chain. On Postgres, two pods appending in the same instant can fork
-the chain — verification reports the fork rather than hiding it.
+control, and does not stop someone with write access to the data directory from
+recomputing a consistent chain.
 
 ---
 

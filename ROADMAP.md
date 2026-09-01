@@ -15,8 +15,6 @@ Each item names the seam where it plugs in, so contributors can start without sp
 ## Storage & scale (highest priority)
 
 - [x] **Persistent approvals** — pending approvals die with the process. Implement `JsonFileApprovalStore` against the existing `ApprovalStore` port (`packages/core/src/ports/stores.ts`), mirroring `json-file-identity-store.ts`.
-- [x] **Postgres adapters** — `@memnox/postgres` implements all four storage ports (query columns + codec-encoded record blobs); enable with `serve --database-url` or `MEMNOX_DATABASE_URL`. Multi-instance/HA deployments share one database; file stores remain the zero-infrastructure default.
-- [x] **Distributed locks/cooldowns** — `LockService` port in core (+ `InProcessLockService` default) and `@memnox/redis` adapter ported from the legacy `RedisLockService` with its fail-closed/fail-open asymmetry and Lua atomic increment intact.
 - [x] **Approval TTLs** (7-day lapse; expired pending ≠ consent) — approvals never expire; add `expiresAt` + sweep in `packages/runtime/src/action-gateway.ts`.
 - [x] **Encryption-at-rest option** (`--data-key`, AES-256-GCM random-IV via TextCodec port) for the JSON/JSONL stores (do NOT pair deterministic-IV encryption with content search — see ARCHITECTURE.md).
 
@@ -29,7 +27,6 @@ Each item names the seam where it plugs in, so contributors can start without sp
 ## Interception adapters (one thin repo each on publish — see Publication layout)
 
 - [x] **Framework wrappers** — `governTool` / `governTools` (`@memnox/sdk`) wrap any function-calling registry, covering OpenAI Agents SDK, Codex, LangGraph, and CrewAI without a package each.
-- [ ] **Java SDK** — port `sdks/go/memnox.go` (the simplest reference client).
 
 ## Governance features
 
@@ -54,7 +51,6 @@ Planned Memnox equivalent:
 |---|---|---|
 | `memnox-runtime` (flagship) | this monorepo | as-is |
 | `memnox-mcp-firewall` | standalone firewall binary | extract `packages/mcp-firewall` |
-| `memnox-sdk-python` / `-go` / `-java` | SDK repos | extract `sdks/*` |
 | `governed-agent-template` | starter showing a fully governed agent | new |
 
 Keep the packages developed here in the monorepo; the split repos are publish-time mirrors (subtree or copy) so the community finds them where they search.

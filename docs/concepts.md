@@ -118,9 +118,9 @@ Memnox shows up on both sides, which is the confusing part:
 | **observe / advise / enforce** | The ramp, softest first. Observe records the real verdict without applying it; advise tells the caller and lets it through; enforce applies it. Observing first is strongly recommended. |
 | **shadow effect** | What enforce *would* have said, computed and stored even when the mode did not apply it. It is why observing produces anything worth reading, and why a candidate rule can be simulated against real history. |
 | **gate, not worker** | Memnox answers "is this allowed, and who authorizes it?" It never does the work itself: it does not generate, edit, or commit anything, and it does not read your code. |
-| **guard / advisor** | An optional deterministic check that can *tighten* a decision — never loosen it. If one fails, the result is "no escalation", never a crash. |
+| **guard / advisor** | An optional deterministic check that can *tighten* a decision — never loosen it. If one fails, the result is "no escalation", never a crash. None ships with the runtime; the port is there for the ones a deployment writes. |
 | **session** | One continuous run of an agent. Ties related actions together so you can `memnox replay` them in order — and it is what taint sticks to. |
-| **taint** | A marker meaning "this session has seen content from a source you do not control" — a GitHub issue from a stranger, a fetched web page. Privileged actions from a tainted session need a human. This is the prompt-injection defense: the concern is the assistant being *told* to do something by content it read. |
+| **taint** | A marker meaning "this session has seen content from a source you do not control" — a GitHub issue from a stranger, a fetched web page. Recorded on the session and available as a rule input; nothing escalates on it on its own. The concern it names is the assistant being *told* to do something by content it read. |
 | **provenance** | Where the agent's context came from, which is what taint is computed from. |
 | **audit chain** | The log of decisions, where each entry includes a hash of the previous one. Altering an old entry breaks every hash after it, so `memnox audit verify` can prove nothing was edited. |
 | **fingerprint** | The identity of one exact action — agent + action + target + environment. Approvals are bound to it, so a grant cannot be reused for a different file. |
@@ -132,9 +132,7 @@ Memnox shows up on both sides, which is the confusing part:
 | **seam** | The place Memnox actually stands to see an action — an MCP proxy, a tool hook, a shell wrapper, a git credential helper. Every seam declares what it **cannot** see, because a governed agent with an unwatched side channel is worse than an ungoverned one. |
 | **alternative** | What a withholding rule permits instead. Small field, most of the real work: it is the difference between an agent abandoning a task and finishing it under constraint. |
 | **declared scope** | What a session said it was asked to touch. Compared, never judged — see above. |
-| **state fact** | The company's current condition read as a policy input: a freeze, an open incident, a change window. Every one carries a mandatory expiry, because a freeze that outlives its incident is worse than no freeze — the next one gets ignored. |
 | **containment** | Kill, quarantine or panic. Each records which machines it reached and **which it did not**: a killed agent on a sleeping laptop is not killed yet. |
-| **autonomy level** | A named bundle of rules a person granted an agent: observe, suggest, act reversibly, act within bounds, act autonomously, hold delegated authority. Down is automatic on an incident; up needs a person and a met readiness checklist. A score would narrow permissions silently, which is unauditable. |
 | **policy pack** | A prebuilt bundle of rules for a common concern — `production-safety`, `payments`. `memnox policy packs` lists them. |
 | **project scope** | If a policy file sets `project:`, requests must name that project or the rules do not apply. A common cause of "my rule never matches". |
 | **control plane** | An optional shared server several runtimes report to. Not needed for solo use. |
@@ -148,7 +146,6 @@ Memnox shows up on both sides, which is the confusing part:
 | **TTL** | Time To Live — how long something stays valid before expiring |
 | **RBAC** | Role-Based Access Control — API keys carry a role that decides which routes they may call |
 | **mTLS** | Mutual TLS — both sides present certificates, so the client is authenticated too. An optional alternative to token identity. |
-| **BYOK** | Bring Your Own Key — the optional intelligence layer uses *your* LLM API key. It drafts, and that is all: it never decides, never explains a decision, and never infers intent. |
 | **CN** | Common Name — the identity field in a TLS certificate |
 
 ## Where to go next
@@ -157,6 +154,6 @@ Memnox shows up on both sides, which is the confusing part:
 - [Getting started](getting-started.md) — install, observe, tune, enforce
 - [Writing policies](policies.md) — the YAML in detail
 - [Learning from behaviour](learning-from-behaviour.md) — a week of work becomes rules
-- [Operating](operating.md) — coverage, containment, census, readiness, evidence
+- [Operating](operating.md) — coverage and containment
 - [How a decision is made](how-it-works.md) — the five-step pipeline
 - [Troubleshooting](troubleshooting.md) — when something does not work

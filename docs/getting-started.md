@@ -72,7 +72,7 @@ Four things happened:
 Every deterministic guard is on:
 
 ```
-Guards: shell indirection, taint, decision memory, behavior, verification
+Guards: declared scope
 ```
 
 A **guard** is an extra check that can *tighten* a decision your policies already
@@ -83,7 +83,6 @@ guessing. Here is what each one watches for:
 |---|---|
 | **shell indirection** | a destructive command is wrapped to avoid matching — `bash -c`, `eval`, a script that hides the real command |
 | **taint** | the agent has read untrusted content this session (a stranger's GitHub issue, a fetched page) and is now doing something privileged. The prompt-injection defense |
-| **decision memory** | the action contradicts a decision your team recorded with `memnox memory add` |
 | **behavior** | the pattern looks off — a destructive action this agent has never taken, or a sudden burst |
 | **verification** | earlier allowed actions never reported back whether they actually worked |
 
@@ -369,67 +368,6 @@ the approval id. Two things to know:
 `memnox approvals override` — break-glass requires a reason and is permanently
 audited as critical.
 
-### Once a week, not once a day
-
-Rules go stale quietly. `memnox drift` reads what your organization states
-against what its own trail shows, and reports only where the two have come
-apart:
-
-```bash
-memnox drift
-```
-
-```
-Stated but not enforced
-  23 action(s) your rules decided to stop were allowed anyway — the environment
-  is being observed, not enforced.
-  Environments: production
-
-Stated and repeatedly contradicted
-  DEC-003  Customer data is never deleted in production — 9 hit(s)
-
-Stated and never exercised
-  1 of 4 rules matched nothing in this window — they may be guarding actions
-  your agents never name.
-    payment-code-approval
-```
-
-It exits non-zero when it finds anything, so it works as a weekly CI job. Each
-finding is a question, not a verdict: a never-exercised rule may be guarding
-something that has simply not happened yet, and a repeatedly contradicted
-decision may be one the team has moved past without retiring.
-
----
-
-## 6. Ask before acting
-
-The cheapest governance is the kind an agent gets *before* it commits to
-something.
-
-```bash
-memnox rules --brief file.write 'src/app/(auth)/login/page.tsx'
-```
-
-```
-Memnox constraints for "file.write src/app/(auth)/login/page.tsx"
-This action would need human approval before it proceeds (risk: medium).
-Next: ask security-team to approve before this proceeds.
-
-Rules that apply — these decide whether this proceeds:
-  - auth-code-review — your policy, requires approval
-      Auth and session code changes need a second pair of eyes.
-      approvers: security-team
-
-None of this is a judgement on the work itself — the rules above are your
-organization’s, quoted as declared.
-```
-
-Every line of that is a **constraint** your organization declared — a policy you
-wrote, or a signal a deterministic advisor raised — quoted verbatim. Nothing is
-generated, and when no rule matches it says so rather than implying approval.
-
-Asking records nothing and raises no approval.
-
 ### Asking about more than one action
 
 `memnox rules --brief` answers for the agent. The same command answers for you.
@@ -486,7 +424,6 @@ memnox check deploy.service checkout-api --env production
 
 # evidence
 memnox replay <sessionId>    # one agent session, in order
-memnox evidence              # the record an auditor accepts, markdown or JSON
 memnox audit verify          # "Audit chain intact — 128401 events verified."
 ```
 
@@ -498,12 +435,11 @@ import { MemnoxClient, governTools } from '@memnox/sdk';
 const tools = governTools(memnox, { readFile, writeFile, runShell }, { sessionId: runId });
 ```
 
-**Team scale** is four flags on the same binary — nothing about the solo path
-changes:
+**Team scale** is one runtime per team rather than a bigger one, since a runtime
+is one audit chain. Nothing about the solo path changes:
 
 ```bash
-memnox serve --database-url postgres://… --redis-url redis://… \
-             --audit-retention-days 365 --rate-limit 600
+memnox serve --audit-retention-days 365 --rate-limit 600
 ```
 
 ---

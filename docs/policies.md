@@ -164,7 +164,6 @@ You do not duplicate a rule set across repos. Each one contributes rules about i
 ## Policy lifecycle
 
 ```bash
-memnox draft "no production deletes"   # a sentence becomes candidate YAML, for you to review
 memnox learn --out proposed.yaml       # what your agents actually used becomes candidate YAML
 memnox policy packs                    # production-safety, payments, auth-and-secrets, data-privacy, supply-chain
 memnox policy install production-safety
@@ -177,31 +176,6 @@ memnox policy simulate -f candidate.yaml --from-audit   # what would change, aga
 Policies stay file-sourced on purpose, because a rule set that is mutable over HTTP is one nobody can review in a diff. `reload` re-reads the file, and authoring belongs to your repository.
 
 ## Writing rules without writing YAML
-
-`memnox draft "nobody should delete production data"` turns a sentence into candidate
-YAML. The output is parsed and validated against the real policy schema, then printed
-for you to review and commit — it is never loaded live, and no model is anywhere near
-the decision that later matches it.
-
-```bash
-memnox draft "nobody should delete production data" > candidate.yaml
-memnox validate candidate.yaml
-memnox simulate candidate.yaml          # replay real history through it first
-```
-
-`memnox learn` writes the other kind of draft: not what you imagined, but what your
-agents actually did. It reports what each was permitted, what it used, what it never
-touched, and what it kept being refused, then renders a policy file in the same format
-a person writes.
-
-```bash
-memnox learn --out memnox.proposed.yaml
-```
-
-The file states the window, the sessions and the coverage it was derived from, in a
-comment at the top where they cannot be dropped in the retelling. Four days of one
-developer's work is not a policy for a team, and a proposal that hid how little it saw
-would be a trap.
 
 ## Next
 

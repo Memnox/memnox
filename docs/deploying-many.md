@@ -52,8 +52,6 @@ registry, approvals, decisions and `enforcement.json`. Two runtimes pointed at
 one directory will interleave their audit chains and break verification for
 both.
 
-The same applies to `--database-url`: one schema per runtime.
-
 ## How the control plane addresses them
 
 memnox-cloud stores a `runtimeUrl` per workspace and appends nothing at call
