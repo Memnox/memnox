@@ -30,6 +30,14 @@ export interface RiskScore {
   bySeverity: Record<FindingSeverity, number>;
 }
 
+/** Withholding by path closes a file. It closes nothing for a database or a network. */
+const CLOSABLE_BY_PATH: readonly string[] = [
+  RESOURCE_KIND.FILE,
+  RESOURCE_KIND.SECRET,
+  RESOURCE_KIND.REPO,
+  RESOURCE_KIND.SOCKET,
+];
+
 const SEVERITY_WEIGHT: Record<FindingSeverity, number> = {
   [FINDING_SEVERITY.LOW]: 1,
   [FINDING_SEVERITY.MEDIUM]: 3,
@@ -78,14 +86,20 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     if (resource.reachableBy.length === 0) continue;
     const path = resource.path ?? resource.id;
     const id = newId();
+    /* A file can be withheld by path. A database an env file names, or the network
+       itself, cannot: a `filesystem.read` rule against "postgres production URL"
+       matches nothing, and offering it would be a fix that closes no finding. */
+    const closable = CLOSABLE_BY_PATH.includes(resource.kind);
     findings.push({
       id,
       severity: severityOfResource(resource),
-      title: `${path} is readable by ${resource.reachableBy.length} agent(s)`,
+      title: closable
+        ? `${path} is readable by ${resource.reachableBy.length} agent(s)`
+        : `${path} is reachable by ${resource.reachableBy.length} agent(s), and a person decides what to do about it`,
       agentIds: agentIdsOf(resource.reachableBy),
       resourceId: resource.id,
-      evidence: path,
-      remediation: withholdReadStep(id, path, resource.kind),
+      evidence: resource.declaredIn ?? path,
+      ...(closable ? { remediation: withholdReadStep(id, path, resource.kind) } : {}),
     });
   }
 
@@ -114,7 +128,8 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     findings.push({
       id,
       severity: FINDING_SEVERITY.MEDIUM,
-      title: `a shell surface makes everything the user can reach reachable from this agent`,
+      // Named, or two agents with a shell read as the same finding printed twice.
+      title: `a shell surface makes everything the user can reach reachable from ${entry.agentId.replace('agt_', '')}`,
       agentIds: [entry.agentId],
       evidence: SURFACE_KIND.SHELL,
     });

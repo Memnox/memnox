@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { databasesIn, detectTools, networkReach } from '../src/reach-detail';
-import { spellingsOf } from '../src/doctor';
+import { runDoctor, spellingsOf } from '../src/doctor';
 import { RESOURCE_KIND, SENSITIVITY } from '../src/discovery.constants';
 import type { MachineReader } from '../src/ports';
 import type { Surface } from '../src/surface';
@@ -131,5 +131,69 @@ describe('spellingsOf', () => {
     expect(spellingsOf('/home/dev/.aws/credentials')).toEqual([
       '/home/dev/.aws/credentials',
     ]);
+  });
+});
+
+describe('runDoctor, on what cannot be closed by path', () => {
+  const reach = (id: string) => ({
+    agentId: id,
+    resources: [],
+    viaShell: true,
+    surfaces: ['shell' as const],
+  });
+
+  /** A `filesystem.read` rule against "postgres production URL" matches nothing. */
+  it('offers no path fix for a database, and says a person decides', () => {
+    const report = runDoctor({
+      resources: [
+        {
+          id: 'res_db',
+          kind: RESOURCE_KIND.DB,
+          path: 'postgres production URL',
+          declaredIn: '/srv/.env',
+          sensitivity: SENSITIVITY.CRITICAL,
+          reachableBy: [{ id: 'agt_1', kind: 'claude-code' }],
+        },
+      ],
+      reachability: [],
+      surfaces: [],
+    });
+
+    expect(report.findings[0]?.remediation).toBeUndefined();
+    expect(report.findings[0]?.title).toContain('a person decides');
+    // The evidence is what named it, not the label.
+    expect(report.findings[0]?.evidence).toBe('/srv/.env');
+  });
+
+  it('still closes a file by path', () => {
+    const report = runDoctor({
+      resources: [
+        {
+          id: 'res_f',
+          kind: RESOURCE_KIND.SECRET,
+          path: '/home/dev/.aws/credentials',
+          sensitivity: SENSITIVITY.CRITICAL,
+          reachableBy: [{ id: 'agt_1', kind: 'claude-code' }],
+        },
+      ],
+      reachability: [],
+      surfaces: [],
+    });
+    expect(report.findings[0]?.remediation).toBeDefined();
+  });
+
+  /** Two agents with a shell read as the same finding printed twice otherwise. */
+  it('names the agent in a shell finding', () => {
+    const report = runDoctor({
+      resources: [],
+      reachability: [reach('agt_claude-code'), reach('agt_cursor')],
+      surfaces: [],
+    });
+    // Ranked, so order is not the point: each has to name its own agent.
+    const titles = report.findings.map((f) => f.title);
+    expect(titles).toHaveLength(2);
+    expect(titles.some((t) => t.includes('claude-code'))).toBe(true);
+    expect(titles.some((t) => t.includes('cursor'))).toBe(true);
+    expect(new Set(titles).size).toBe(2);
   });
 });
