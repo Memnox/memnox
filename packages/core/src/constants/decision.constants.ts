@@ -18,6 +18,7 @@ export const DECISION_REASON = {
   NO_POLICY_MATCHED: 'no policy matched — default effect applied',
   UNKNOWN_AGENT: 'unknown agent credentials — fail closed',
   AGENT_SUSPENDED: 'agent is suspended',
+  AGENT_QUARANTINED: 'agent is quarantined — reads pass, this does not',
   APPROVAL_GRANTED: 'human approval granted',
   APPROVAL_PENDING: 'human approval required and pending',
   CAPABILITY: "capability: action is outside this agent's declared capabilities",

@@ -16,6 +16,8 @@ export interface ContainmentEffects {
   seamsClosed: number;
   stepsCancelled: number;
   environmentsRaised: number;
+  /** The subject's own credential: 0 or 1. Zero on a kill means it is not contained. */
+  credentialsHeld: number;
 }
 
 export interface InstallRef {
@@ -46,6 +48,7 @@ export const EMPTY_CONTAINMENT_EFFECTS: ContainmentEffects = {
   seamsClosed: 0,
   stepsCancelled: 0,
   environmentsRaised: 0,
+  credentialsHeld: 0,
 };
 
 /** Complete only when nothing was left unreached; the console shows the gap until it closes. */

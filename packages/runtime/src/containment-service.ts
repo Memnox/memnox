@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AgentStatus,
   ContainmentAction,
   ContainmentEffects,
   ContainmentKind,
@@ -9,6 +10,7 @@ import type {
   SeamStore,
 } from '@memnox/core';
 import {
+  AGENT_STATUS,
   CONTAINMENT_KIND,
   EMPTY_CONTAINMENT_EFFECTS,
   ENFORCEMENT_MODE,
@@ -55,10 +57,20 @@ export interface ContainmentRequest {
 export type ContainmentOutcome =
   { contained: true; action: ContainmentAction } | { contained: false; reason: string };
 
+/**
+ * The agent's own credential. Revoking leases and closing seams leaves every path that
+ * asks the runtime directly still open, so a kill that does not reach here is a kill
+ * the next request walks straight past.
+ */
+export interface SubjectHold {
+  hold(agentId: string, status: AgentStatus): Promise<boolean>;
+}
+
 export interface ContainmentDeps {
   seams: SeamStore;
   broker: CapabilityBroker;
   installs: InstallDirectory;
+  subjects: SubjectHold;
   logger: Logger;
   /** Raising every environment to enforce is what panic actually does. */
   raiseEnvironments: (modes: EnvironmentModes) => Promise<number>;
@@ -87,6 +99,9 @@ export class ContainmentService {
     if (request.subjectId !== undefined) {
       effects.leasesRevoked = await this.deps.broker.revokeAllFor(request.subjectId);
       effects.seamsClosed = await this.closeSeams(request.kind, request.subjectId);
+      effects.credentialsHeld = (await this.holdSubject(request.kind, request.subjectId))
+        ? 1
+        : 0;
     }
     if (request.kind === CONTAINMENT_KIND.PANIC) {
       effects.environmentsRaised = await this.deps.raiseEnvironments({
@@ -124,6 +139,22 @@ export class ContainmentService {
     }
 
     return { contained: true, action: { ...action, effects, unreached } };
+  }
+
+  /** Kill refuses the credential outright; quarantine holds it read-only. */
+  private async holdSubject(kind: ContainmentKind, subjectId: string): Promise<boolean> {
+    const status =
+      kind === CONTAINMENT_KIND.QUARANTINE
+        ? AGENT_STATUS.QUARANTINED
+        : AGENT_STATUS.SUSPENDED;
+    try {
+      return await this.deps.subjects.hold(subjectId, status);
+    } catch (err) {
+      /* Reported as not held rather than thrown: the seams and leases above are already
+         closed, and a containment that stops here must still say what it did reach. */
+      this.deps.logger.error(`containment could not hold ${subjectId}: ${String(err)}`);
+      return false;
+    }
   }
 
   /** Quarantine is read-only: seams stay installed and stop issuing, rather than closing. */

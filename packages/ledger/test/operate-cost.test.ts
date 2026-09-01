@@ -96,6 +96,7 @@ describe('an incident', () => {
       seamsClosed: 1,
       stepsCancelled: 0,
       environmentsRaised: 0,
+      credentialsHeld: 1,
     },
     unreached: [{ id: 'i2', hostLabel: 'laptop-asleep' }],
   };

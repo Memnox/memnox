@@ -73,7 +73,9 @@ import {
   EXECUTION_OUTCOME_ACTION,
   EXECUTION_STATUS,
   isApprovalExpired,
+  isReadOnlyAction,
   RISK_LEVEL,
+  UNKNOWN_AGENT_ID,
   SILENT_LOGGER,
   TAINT_NO_OVERRIDE_ACTIONS,
   UNVERIFIED_EXECUTION_STATUSES,
@@ -122,7 +124,6 @@ function weakens(before: EnvironmentModes, after: EnvironmentModes): boolean {
   );
 }
 
-const UNKNOWN_AGENT_ID = 'unknown';
 const RATE_LIMIT_RULE_PREFIX = 'rule';
 const LOCAL_SIGNAL_SOURCE = 'local';
 
@@ -526,6 +527,19 @@ export class ActionGateway {
   }
 
   /** What the decision would be, without making it — nothing is recorded. */
+  /**
+   * Containment applied to the identity itself, ahead of every rule. Suspension refuses
+   * outright; quarantine holds read-only so the agent stays debuggable rather than dead.
+   * Null when the agent is not held. Never relaxed by mode, capability or an approval.
+   */
+  private holdOn(agent: AgentIdentity, action: string): string | null {
+    if (agent.status === AGENT_STATUS.SUSPENDED) return DECISION_REASON.AGENT_SUSPENDED;
+    if (agent.status === AGENT_STATUS.QUARANTINED && !isReadOnlyAction(action)) {
+      return DECISION_REASON.AGENT_QUARANTINED;
+    }
+    return null;
+  }
+
   async assess(agentToken: string, request: ActionRequest): Promise<RiskAssessment> {
     const agent = await this.resolveAgent(agentToken);
     if (!agent) {
@@ -539,6 +553,18 @@ export class ActionGateway {
     }
 
     const riskLevel = classifyRisk(request.action, request.environment);
+    // A held agent is held here too, or "what governs this" answers as if it were not.
+    const held = this.holdOn(agent, request.action);
+    if (held !== null) {
+      return {
+        effect: DECISION_EFFECT.WITHHOLD,
+        riskLevel,
+        reason: held,
+        matchedPolicies: [],
+        advisories: [],
+        ...levelOf(agent),
+      };
+    }
     const capabilities = agent.capabilities;
     if (
       capabilities !== undefined &&
@@ -600,10 +626,11 @@ export class ActionGateway {
         reason: DECISION_REASON.UNKNOWN_AGENT,
       });
     }
-    if (agent.status === AGENT_STATUS.SUSPENDED) {
+    const held = this.holdOn(agent, request.action);
+    if (held !== null) {
       return this.finalize(startedAt, agent, request, {
         effect: DECISION_EFFECT.WITHHOLD,
-        reason: DECISION_REASON.AGENT_SUSPENDED,
+        reason: held,
       });
     }
     // Capabilities bound the agent before policy — even a granted approval cannot widen them.

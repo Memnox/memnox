@@ -1,5 +1,20 @@
 import type { AgentKind, AgentStatus } from '../constants/agent.constants';
-import type { RiskLevel } from '../constants/risk.constants';
+import { READ_ONLY_VERBS, type RiskLevel } from '../constants/risk.constants';
+
+/** Actions split on both "." and "_", the same convention the risk classifier reads. */
+const ACTION_SEGMENT_SEPARATOR = /[._]/;
+
+/**
+ * Deterministic and verb-based: quarantine has to decide read from write without a model
+ * and without a rule set, because the point of it is to hold an agent whose rules may be
+ * exactly what is in question. An action naming no read verb is not a read.
+ */
+export function isReadOnlyAction(action: string): boolean {
+  return action
+    .toLowerCase()
+    .split(ACTION_SEGMENT_SEPARATOR)
+    .some((segment) => READ_ONLY_VERBS.includes(segment));
+}
 
 export interface AgentActionStats {
   allowed: number;

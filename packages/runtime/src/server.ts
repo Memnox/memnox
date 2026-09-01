@@ -388,6 +388,10 @@ export async function buildServer(
       seams: seamStore,
       broker,
       installs: new LocalInstallDirectory(LOCAL_INSTALL_LABEL),
+      subjects: {
+        hold: async (agentId, status) =>
+          (await gateway.agents.setStatus(agentId, status)) !== null,
+      },
       logger: CONSOLE_LOGGER,
       raiseEnvironments: async (modes) => {
         await gateway.useEnforcement(modes);

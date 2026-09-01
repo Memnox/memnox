@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   AGENT_KIND,
+  AGENT_STATUS,
   CONTAINMENT_KIND,
+  DECISION_EFFECT,
+  DECISION_REASON,
   ENFORCEMENT_MODE,
   SEAM_KIND,
   newSeam,
@@ -65,12 +68,14 @@ describe('containment', () => {
   let leases: InMemoryLeaseStore;
   let raised: EnvironmentModes[];
   let agentId: string;
+  let agentToken: string;
+  let gateway: ActionGateway;
 
   beforeEach(async () => {
     seams = new MemorySeamStore();
     leases = new InMemoryLeaseStore();
     raised = [];
-    const gateway = new ActionGateway({
+    gateway = new ActionGateway({
       identityStore: new InMemoryIdentityStore(),
       auditLog: new InMemoryAuditLog(),
       approvalStore: new InMemoryApprovalStore(),
@@ -78,6 +83,7 @@ describe('containment', () => {
     });
     const registered = await gateway.registerAgent('bot', AGENT_KIND.CUSTOM);
     agentId = registered.agent.id;
+    agentToken = registered.token;
 
     const capabilities = new InMemoryCapabilityStore();
     const capability: Capability = {
@@ -116,6 +122,9 @@ describe('containment', () => {
       seams,
       broker,
       installs: new PartialFleet(),
+      subjects: {
+        hold: async (id, status) => (await gateway.agents.setStatus(id, status)) !== null,
+      },
       logger: CONSOLE_LOGGER,
       raiseEnvironments: async (modes) => {
         raised.push(modes);
@@ -202,5 +211,63 @@ describe('containment', () => {
     });
 
     expect(outcome).toEqual({ contained: false, reason: CONTAINMENT_REFUSAL.NO_REASON });
+  });
+
+  /* Revoking leases and closing seams leaves every path that asks the runtime directly
+     wide open, so a containment that stops there is one the next request walks past. */
+  it('suspends the credential on a kill, so the next request is withheld', async () => {
+    const outcome = await containment.contain({
+      kind: CONTAINMENT_KIND.KILL,
+      subjectId: agentId,
+      reason: 'it reached production',
+      authorId: 'moise',
+    });
+
+    expect(outcome.contained).toBe(true);
+    if (!outcome.contained) return;
+    expect(outcome.action.effects.credentialsHeld).toBe(1);
+
+    const decision = await gateway.authorize(agentToken, { action: 'refund.create' });
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(decision.reason).toBe(DECISION_REASON.AGENT_SUSPENDED);
+  });
+
+  it('holds a quarantined agent read-only: reads pass, writes do not', async () => {
+    const outcome = await containment.contain({
+      kind: CONTAINMENT_KIND.QUARANTINE,
+      subjectId: agentId,
+      reason: 'behaving oddly',
+      authorId: 'moise',
+    });
+
+    expect(outcome.contained).toBe(true);
+    if (!outcome.contained) return;
+    expect(outcome.action.effects.credentialsHeld).toBe(1);
+
+    const read = await gateway.authorize(agentToken, { action: 'filesystem.read' });
+    expect(read.effect).toBe(DECISION_EFFECT.ALLOW);
+
+    const write = await gateway.authorize(agentToken, { action: 'refund.create' });
+    expect(write.effect).toBe(DECISION_EFFECT.WITHHOLD);
+    expect(write.reason).toBe(DECISION_REASON.AGENT_QUARANTINED);
+  });
+
+  it('reports the credential unheld rather than reporting a kill it did not make', async () => {
+    const outcome = await containment.contain({
+      kind: CONTAINMENT_KIND.KILL,
+      subjectId: 'agt_nobody',
+      reason: 'wrong id',
+      authorId: 'moise',
+    });
+
+    expect(outcome.contained).toBe(true);
+    if (!outcome.contained) return;
+    expect(outcome.action.effects.credentialsHeld).toBe(0);
+  });
+
+  it('leaves an agent nobody contained alone', async () => {
+    const decision = await gateway.authorize(agentToken, { action: 'refund.create' });
+    expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
+    expect(AGENT_STATUS.ACTIVE).toBe('active');
   });
 });
