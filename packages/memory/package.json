@@ -1,6 +1,6 @@
 {
   "name": "@memnox/memory",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Organizational decision memory \u2014 recorded team decisions become deterministic constraints on AI actions.",
   "keywords": [
     "audit",
@@ -44,7 +44,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.5.0",
-    "@memnox/policy-engine": "0.5.0"
+    "@memnox/core": "0.5.1",
+    "@memnox/policy-engine": "0.5.1"
   }
 }

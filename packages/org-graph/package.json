@@ -1,6 +1,6 @@
 {
   "name": "@memnox/org-graph",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Memnox organization domain: verified statements, delegated authority, ownership, and the six answers an organization can give.",
   "keywords": [
     "ai-agents",
@@ -45,7 +45,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.5.0",
-    "@memnox/policy-engine": "0.5.0"
+    "@memnox/core": "0.5.1",
+    "@memnox/policy-engine": "0.5.1"
   }
 }

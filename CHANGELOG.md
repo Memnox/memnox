@@ -10,6 +10,33 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-01
+
+### Fixed
+
+Found by walking the published 0.5.0 as a new user would.
+
+**`doctor` and `harden` read the project `discover` already showed.** `memnox` named
+the repository's own `.env` as reachable and then neither ranked it nor wrote a rule
+for it, so the reader was told about a credential and offered no fix.
+
+**`harden --revert <id>` takes only the step it names.** The printed undo carried an id
+that was silently ignored, so reverting the Docker rule also removed the credentials
+rule without saying so.
+
+**A mistyped command says so.** `memnox audti` ran a full discovery, spawned the MCP
+servers it found, and exited 0. Any unrecognised word fell through to the default
+command; it now errors and exits non-zero, while bare `memnox` still discovers.
+
+**`setup` declares the seams it installs.** It installed the tool hook and told the
+runtime nothing, so `coverage` reported `0/0 seams` on a machine that had one. The list
+lives in one place now, so `setup` and `hooks install` cannot drift apart.
+
+**`memnox test` pointed at `describe`**, a command that was merged into `rules`.
+
+**A refusal reads as a sentence.** `GET /v1/agents/levels/readiness failed:
+{"error":"no such agent"}` is what an SDK caller wants and not what a person does.
+
 ## [0.5.0] - 2026-09-01
 
 ### Added

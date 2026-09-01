@@ -8,8 +8,8 @@
      [![CI](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml)
      [![npm](https://img.shields.io/npm/v/memnox?label=memnox)](https://www.npmjs.com/package/memnox) -->
 
-[![memnox](https://img.shields.io/badge/memnox-v0.5.0-orange)](packages/cli)
-[![@memnox/sdk](https://img.shields.io/badge/%40memnox%2Fsdk-v0.5.0-orange)](packages/sdk)
+[![memnox](https://img.shields.io/badge/memnox-v0.5.1-orange)](packages/cli)
+[![@memnox/sdk](https://img.shields.io/badge/%40memnox%2Fsdk-v0.5.1-orange)](packages/sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
 

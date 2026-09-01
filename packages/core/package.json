@@ -1,6 +1,6 @@
 {
   "name": "@memnox/core",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Memnox core domain: action events, agent identity, decisions, and store ports.",
   "keywords": [
     "ai-agents",
