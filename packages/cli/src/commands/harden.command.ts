@@ -64,7 +64,12 @@ export function registerHardenCommand(
       const now = new Date().toISOString();
 
       if (options.revert !== undefined && options.revert !== false) {
-        const applied = await readState(seams);
+        const recorded = await readState(seams);
+        // The state keeps what was reverted, so a listing off it offered steps that
+        // were already gone as though they could go again.
+        const applied = recorded.filter(
+          (step) => step.appliedAt !== undefined && step.revertedAt === undefined,
+        );
         if (applied.length === 0) {
           out.line('Nothing to revert: no harden step has been applied on this machine.');
           return;
@@ -84,7 +89,7 @@ export function registerHardenCommand(
 
         const results = await revertHardening(seams.writer, chosen, now);
         // Everything not chosen stays applied, or a named revert quietly widens.
-        const untouched = applied.filter(
+        const untouched = recorded.filter(
           (step) => !chosen.some((each) => each.id === step.id),
         );
         await writeState(seams, [...untouched, ...results.map((result) => result.step)]);
@@ -117,8 +122,10 @@ export function registerHardenCommand(
       out.line('');
       plan.steps.forEach((step, index) => {
         out.line(`  ${index + 1}. ${step.description}`);
-        // The undo is printed before anything runs, never after.
-        out.line(`     ${style.dim(`undo: ${step.revert.command}`)}`);
+        /* The undo is printed before anything runs, never after. No id while
+           proposing: nothing is applied yet, so an id here names a step that does
+           not exist and reverts nothing when a reader copies it. */
+        out.line(`     ${style.dim('undo: memnox harden --revert')}`);
       });
       out.line('');
 
@@ -133,13 +140,20 @@ export function registerHardenCommand(
       const applied = results
         .filter((result) => result.changed)
         .map((result) => result.step);
-      await writeState(seams, applied);
+      // Appended, never replaced: writing only this batch lost the record of an
+      // earlier one, and a revert cannot undo a step it has no note of.
+      const already = await readState(seams);
+      await writeState(seams, [...already, ...applied]);
       for (const result of results) {
         if (result.error !== undefined) {
           out.note(`could not apply ${result.step.id}: ${result.error}`);
           continue;
         }
         out.line(`  ${style.ok('applied')}  ${result.step.description}`);
+        // Real once applied, and the only id a revert can take.
+        out.line(
+          `            ${style.dim(`undo just this: memnox harden --revert ${result.step.id}`)}`,
+        );
       }
       out.line('');
       out.line(`Put it all back with ${style.bold('memnox harden --revert')}.`);
