@@ -1,6 +1,6 @@
 {
   "name": "@memnox/intelligence",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Optional BYOK LLM layer: draft policies from natural language and explain decisions. Never makes enforcement decisions.",
   "keywords": [
     "llm",
@@ -45,8 +45,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
-    "@memnox/org-graph": "0.5.1",
-    "@memnox/policy-engine": "0.5.1",
+    "@memnox/org-graph": "0.5.2",
+    "@memnox/policy-engine": "0.5.2",
     "yaml": "^2.4.0"
   }
 }

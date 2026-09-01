@@ -1,6 +1,6 @@
 {
   "name": "@memnox/sdk",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "TypeScript client for the Memnox runtime \u2014 check every AI action before it executes.",
   "keywords": [
     "ai-agents",
@@ -45,7 +45,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.5.1",
-    "@memnox/policy-engine": "0.5.1"
+    "@memnox/core": "0.5.2",
+    "@memnox/policy-engine": "0.5.2"
   }
 }

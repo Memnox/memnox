@@ -10,6 +10,37 @@ listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-01
+
+The build sequence's opening screen and its two-minute demo, made to work as written.
+
+### Fixed
+
+**`harden` registers the rules it writes.** It wrote policy files into the Memnox home
+and registered none of them, so every step reported `applied` while the runtime went on
+answering "no policy matched" for the very file it had just protected. The demo the
+whole document is built on could not work.
+
+**A rule names every spelling of its file.** `/tmp/x/.env` and `/private/tmp/x/.env` are
+the same bytes behind a symlinked root, and a rule naming one let the other walk past.
+
+**A reporting failure no longer breaks a refusal.** Reporting a verdict threw
+synchronously when it could not be sent, which turned a withhold into a crash.
+
+### Added
+
+**The opening screen says what it promised.** Command-line tools an agent can invoke,
+found where they install rather than asserted from a list. The database a connection
+string names, keeping the scheme and whether the host reads as production and never the
+URL. The network, derived from the surfaces already found. And the two counters that
+make a first run honest: no policies, no records.
+
+**A seam's own refusal reaches the ledger.** The local gate refuses in-process so the
+payload never travels, which left the ledger with no note of the strongest thing the
+product does and `why` with nothing to explain. The verdict is now reported after the
+refusal — action, target, effect, rule, reason, and nothing else — and audit events
+carry `decidedBy`, so a reader can tell a verdict the runtime made from one it was told.
+
 ## [0.5.1] - 2026-09-01
 
 ### Fixed

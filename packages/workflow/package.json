@@ -1,6 +1,6 @@
 {
   "name": "@memnox/workflow",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Work that keeps moving, with a gate on every route that hands something out.",
   "keywords": [
     "ai-agents",
@@ -45,6 +45,6 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@memnox/core": "0.5.1"
+    "@memnox/core": "0.5.2"
   }
 }
