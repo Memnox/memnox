@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,6 +64,7 @@ describe('starting the runtime in the background', () => {
       },
       // Not up on the first look — the launcher has to keep waiting.
       ready: async () => ++probes > 1,
+      alive: () => true,
       entry: '/cli/index.js',
       execPath: '/usr/bin/node',
       sleep: async () => undefined,
@@ -79,11 +81,69 @@ describe('starting the runtime in the background', () => {
     expect(await readFile(daemonPaths(homeDir).pidFile, 'utf8')).toBe('4821');
   });
 
+  /* A runtime that refused its own policy file has already exited and already written
+     why. Waiting out the budget and pointing at a file made the commonest first-run
+     failure read as a timeout with no cause. */
+  it('stops as soon as the child is gone, and quotes what it said', async () => {
+    await mkdir(join(homeDir, '.memnox'), { recursive: true });
+    // An em dash before the cut: `from` is a byte offset, so a naive string slice
+    // would land mid-character and behead the first line this run wrote.
+    await writeFile(daemonPaths(homeDir).logFile, 'a failure — from last week\n', 'utf8');
+    let probes = 0;
+    let clock = 0;
+    const launch = createDetachedLauncher(homeDir, {
+      // Stands in for the child: it writes its own reason, then is gone.
+      spawn: () => {
+        appendFileSync(
+          daemonPaths(homeDir).logFile,
+          'Invalid policy document at /repo/memnox.policies.yaml:\n' +
+            '  - policies[0].decision.effect must be one of: allow, withhold, escalate\n',
+        );
+        return 4821;
+      },
+      ready: async () => {
+        probes += 1;
+        return false;
+      },
+      alive: () => false,
+      entry: '/cli/index.js',
+      execPath: '/usr/bin/node',
+      now: () => (clock += 10),
+      sleep: async () => undefined,
+    });
+
+    await expect(launch({ port: 7466, host: '127.0.0.1' })).rejects.toThrow(
+      /exited[\s\S]*\n {2}Invalid policy document at \/repo\/memnox\.policies\.yaml/,
+    );
+    // One look, not sixty-six: the budget is not spent on a process that is gone.
+    expect(probes).toBe(1);
+  });
+
+  it('quotes this run only, never the failure from last week', async () => {
+    await mkdir(join(homeDir, '.memnox'), { recursive: true });
+    await writeFile(daemonPaths(homeDir).logFile, 'a failure from last week\n', 'utf8');
+    let clock = 0;
+    const launch = createDetachedLauncher(homeDir, {
+      spawn: () => 4821,
+      ready: async () => false,
+      alive: () => false,
+      entry: '/cli/index.js',
+      execPath: '/usr/bin/node',
+      now: () => (clock += 10),
+      sleep: async () => undefined,
+    });
+
+    await expect(launch({ port: 7466, host: '127.0.0.1' })).rejects.toThrow(
+      /^(?![\s\S]*last week)[\s\S]*exited/,
+    );
+  });
+
   it('fails with the log path when the runtime never answers', async () => {
     let clock = 0;
     const launch = createDetachedLauncher(homeDir, {
       spawn: () => 4821,
       ready: async () => false,
+      alive: () => true,
       entry: '/cli/index.js',
       execPath: '/usr/bin/node',
       // Spend the whole budget in one step rather than waiting in real time.

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  loadPoliciesFromFile,
   loadPolicyFiles,
   readPolicyDocumentFile,
   readPolicyRegistry,
@@ -89,6 +90,20 @@ describe('policy sources', () => {
     await expect(
       loadPolicyFiles([broken], { optional: new Set([broken]) }),
     ).rejects.toThrow();
+  });
+
+  /* One runtime loads every repository's rules on this machine, so refusing with
+     "Invalid policy document" and no path left an operator grepping their disk for
+     which of them it meant. */
+  it('names the file it refused, not just that a file was invalid', async () => {
+    const broken = join(dir, 'stale-vocabulary.yaml');
+    await writeFile(
+      broken,
+      'version: 1\npolicies: [{ name: x, match: {}, decision: { effect: block } }]\n',
+      'utf8',
+    );
+
+    await expect(loadPoliciesFromFile(broken)).rejects.toThrow(broken);
   });
 
   it('treats a missing registry as no extra sources, not an error', async () => {

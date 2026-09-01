@@ -14,9 +14,15 @@ const VALID_EFFECTS: readonly string[] = Object.values(DECISION_EFFECT);
 const VALID_MODES: readonly string[] = Object.values(POLICY_MODE);
 
 export class PolicyValidationError extends Error {
-  constructor(public readonly issues: string[]) {
+  /* One runtime loads every repository's rules, so "Invalid policy document" without a
+     path leaves an operator grepping their disk for which of them it means. */
+  constructor(
+    public readonly issues: string[],
+    public readonly filePath?: string,
+  ) {
     super(
-      `Invalid policy document:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`,
+      `Invalid policy document${filePath === undefined ? '' : ` at ${filePath}`}:\n` +
+        issues.map((issue) => `  - ${issue}`).join('\n'),
     );
     this.name = 'PolicyValidationError';
   }

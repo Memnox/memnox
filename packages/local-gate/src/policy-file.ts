@@ -1,7 +1,11 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { parse, stringify } from 'yaml';
 import type { Policy, PolicyDocument } from '@memnox/policy-engine';
-import { POLICY_DOCUMENT_VERSION, validatePolicyDocument } from '@memnox/policy-engine';
+import {
+  POLICY_DOCUMENT_VERSION,
+  PolicyValidationError,
+  validatePolicyDocument,
+} from '@memnox/policy-engine';
 
 /** Reads and validates a YAML policy file. Throws PolicyValidationError with every issue. */
 export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> {
@@ -18,11 +22,23 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
     }
     throw err;
   }
-  const document = validatePolicyDocument(parse(raw));
+  const document = named(filePath, () => validatePolicyDocument(parse(raw)));
   if (document.project === undefined) return document.policies;
   // Rules inherit their file's project so the engine can keep one repo's rules
   // from deciding another project's actions.
   return document.policies.map((policy) => ({ ...policy, project: document.project }));
+}
+
+/** Re-raises a validation failure carrying the file it came from. */
+function named<T>(filePath: string, read: () => T): T {
+  try {
+    return read();
+  } catch (err) {
+    if (err instanceof PolicyValidationError) {
+      throw new PolicyValidationError(err.issues, filePath);
+    }
+    throw err;
+  }
 }
 
 /** A path whose absence is tolerable, and how to say so when it is skipped. */
@@ -58,7 +74,11 @@ export async function loadPolicyFiles(
   return policies;
 }
 
-/** Null when the file is gone; a malformed one still throws — that is a real fault. */
+/**
+ * Null when the file is gone; a malformed one still throws — that is a real fault, and
+ * skipping it would start the runtime with a repository's rules silently not in force,
+ * which is worse than not starting. It throws naming the file, so the fix is findable.
+ */
 async function loadOptionalPolicyFile(filePath: string): Promise<Policy[] | null> {
   try {
     return await loadPoliciesFromFile(filePath);
