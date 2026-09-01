@@ -206,10 +206,15 @@ describe('memnox doctor', () => {
 });
 
 describe('memnox harden', () => {
+  const registered: string[] = [];
   const seams = (machine: FakeMachine) => () => ({
     reader: machine,
     writer: machine,
     statePath: 'harden-state.json',
+    registerPolicy: async (path: string) => {
+      registered.push(path);
+    },
+    absolute: (path: string) => `/home/dev/.memnox/${path}`,
   });
 
   it('proposes without changing anything, and prints the undo first', async () => {
@@ -294,6 +299,41 @@ describe('memnox harden', () => {
     expect(machine.paths.filter((path) => path.startsWith('policies/')).length).toBe(
       before,
     );
+  });
+
+  /**
+   * harden wrote its rules into the Memnox home and registered none of them, so every
+   * step reported `applied` while the runtime went on answering "no policy matched"
+   * for the very file it had just protected.
+   */
+  it('registers what it writes, or the rule is one nobody loads', async () => {
+    const machine = FakeMachine.from(MACHINE);
+    registered.length = 0;
+
+    await runCommand(
+      (program, context) => registerHardenCommand(program, context, seams(machine)),
+      ['harden', '--apply'],
+    );
+
+    const written = machine.paths.filter((path) => path.startsWith('policies/'));
+    expect(written.length).toBeGreaterThan(0);
+    // Every policy file it wrote is one the runtime will read.
+    expect(registered).toHaveLength(written.length);
+    for (const path of written) {
+      expect(registered).toContain(`/home/dev/.memnox/${path}`);
+    }
+  });
+
+  it('registers nothing when it only proposes', async () => {
+    const machine = FakeMachine.from(MACHINE);
+    registered.length = 0;
+
+    await runCommand(
+      (program, context) => registerHardenCommand(program, context, seams(machine)),
+      ['harden'],
+    );
+
+    expect(registered).toEqual([]);
   });
 
   it('says so plainly when there is nothing applied to revert', async () => {

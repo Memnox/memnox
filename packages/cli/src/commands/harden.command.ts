@@ -4,6 +4,7 @@ import type { Command } from 'commander';
 import {
   applyHardening,
   discover,
+  HARDEN_TARGET,
   NodeHardenWriter,
   NodeMachineReader,
   planHardening,
@@ -13,6 +14,7 @@ import {
   type HardenWriter,
   type MachineReader,
 } from '@memnox/discovery';
+import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
 
 /** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
@@ -23,17 +25,40 @@ interface HardenSeams {
   writer: HardenWriter;
   /** Where applied steps are recorded, so a later revert knows what to undo. */
   statePath: string;
+  /** A written rule the runtime never reads is not a rule; this is what makes it one. */
+  registerPolicy: (absolutePath: string) => Promise<void>;
+  /** The writer roots its paths, and the registry needs the path from anywhere. */
+  absolute: (path: string) => string;
 }
 
 type HardenSeamsFactory = () => HardenSeams;
 
 function defaultSeams(): HardenSeams {
-  const root = join(homedir(), MEMNOX_HOME);
+  const home = homedir();
+  const root = join(home, MEMNOX_HOME);
   return {
-    reader: new NodeMachineReader(homedir()),
+    reader: new NodeMachineReader(home),
     writer: new NodeHardenWriter(root),
     statePath: 'harden-state.json',
+    registerPolicy: async (path) => {
+      await registerPolicyFile(home, path);
+    },
+    absolute: (path) => join(root, path),
   };
+}
+
+/**
+ * Every policy file a step wrote, added to the set the runtime reads. Absolute, because
+ * the registry is resolved from the runtime's own directory and not from this one.
+ */
+async function registerApplied(
+  seams: HardenSeams,
+  applied: readonly HardenStep[],
+): Promise<void> {
+  for (const step of applied) {
+    if (step.target !== HARDEN_TARGET.POLICY) continue;
+    await seams.registerPolicy(seams.absolute(step.apply.path));
+  }
 }
 
 /** An id nobody applied is a typo, and exiting zero on one hides it. */
@@ -144,6 +169,11 @@ export function registerHardenCommand(
       // earlier one, and a revert cannot undo a step it has no note of.
       const already = await readState(seams);
       await writeState(seams, [...already, ...applied]);
+
+      /* A rule nobody loads is not a rule. harden wrote its files into the Memnox
+         home and registered none of them, so every step reported `applied` and the
+         runtime went on answering "no policy matched" for the file it had protected. */
+      await registerApplied(seams, applied);
       for (const result of results) {
         if (result.error !== undefined) {
           out.note(`could not apply ${result.step.id}: ${result.error}`);
