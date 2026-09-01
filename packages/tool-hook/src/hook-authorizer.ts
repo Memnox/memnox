@@ -15,6 +15,8 @@ export interface HookVerdict {
   reason: string;
   /** What the agent may use instead, carried into the denial the model reads. */
   alternative?: Alternative;
+  /** The rule that matched, so a reported verdict cites rather than asserts. */
+  rule?: string;
   /** Present when a person has to answer; printed so the terminal can resolve it. */
   approvalId?: string;
   /** The verdict this came from, so a hooked call joins its decision in the ledger. */
@@ -33,6 +35,8 @@ export interface HookAuthorizerDeps {
   client?: MemnoxClient;
   /** Allow the tool when the runtime is unreachable. Default false — fail closed. */
   failOpen?: boolean;
+  /** Which seam is reporting, so coverage and drift can tell them apart. */
+  seam?: string;
   log: (message: string) => void;
 }
 
@@ -51,7 +55,12 @@ export class HookAuthorizer {
     if (leaking !== null) return leaking;
 
     const local = this.locally(request);
-    if (local !== null && local.effect === DECISION_EFFECT.WITHHOLD) return local;
+    if (local !== null && local.effect === DECISION_EFFECT.WITHHOLD) {
+      // Reported after the refusal, never before it: the payload stays on this
+      // machine, and the ledger still gets a record `why` can read back.
+      this.reportLocalVerdict(request, local);
+      return local;
+    }
 
     const client = this.deps.client;
     if (client === undefined) {
@@ -97,11 +106,41 @@ export class HookAuthorizer {
     if (gate === undefined) return null;
 
     const verdict = gate.evaluate(request);
+    const rule = verdict.matchedPolicies[0];
     return {
       effect: verdict.effect,
       reason: verdict.reason,
+      ...(rule === undefined ? {} : { rule: rule.name }),
       ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
     };
+  }
+
+  /**
+   * A refusal this seam made alone. Without it the ledger has no note of the strongest
+   * thing the product does, and `memnox why` has nothing to explain.
+   */
+  private reportLocalVerdict(request: ActionRequest, verdict: HookVerdict): void {
+    const client = this.deps.client;
+    if (client === undefined) return;
+    // Wrapped, not just caught: a throw here is synchronous and would turn a refusal
+    // into a crash. The record is worth having, never at the cost of the verdict.
+    try {
+      void client
+        .reportDecision({
+          action: request.action,
+          ...(request.target === undefined ? {} : { target: request.target }),
+          effect: verdict.effect,
+          reason: verdict.reason,
+          ...(verdict.rule === undefined ? {} : { rule: verdict.rule }),
+          ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+          seam: this.deps.seam ?? 'hook',
+        })
+        .catch((err: unknown) => {
+          this.deps.log(`verdict not recorded: ${String(err)}`);
+        });
+    } catch (err) {
+      this.deps.log(`verdict not recorded: ${String(err)}`);
+    }
   }
 
   /**

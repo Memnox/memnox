@@ -82,6 +82,12 @@ export interface ActionEvent {
   taskId?: string;
   riskLevel: RiskLevel;
   matchedPolicies: string[];
+  /**
+   * The seam that ruled, when the verdict was not this runtime's own. A local gate
+   * refuses in-process so the payload never travels; the record still has to say who
+   * decided, or a reader cannot tell a reported verdict from a made one.
+   */
+  decidedBy?: string;
   /** Content version of the rule set that decided this — see versionPolicySet. */
   policyVersion?: string;
   /** Names of advisors that escalated or flagged this action. */

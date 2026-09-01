@@ -186,6 +186,20 @@ function nonOverridableBlock(advisories: Advisory[]): Advisory | undefined {
   );
 }
 
+/** What a seam can say about a verdict it reached. Never the payload behind it. */
+export interface SeamVerdictReport {
+  action: string;
+  target?: string;
+  effect: DecisionEffect;
+  reason: string;
+  /** The rule that matched, so the explanation cites rather than asserts. */
+  rule?: string;
+  alternative?: Alternative;
+  sessionId?: string;
+  /** Which seam ruled, so coverage and drift can tell them apart. */
+  seam: string;
+}
+
 export interface ActionGatewayDeps {
   identityStore: IdentityStore;
   auditLog: AuditLog;
@@ -411,6 +425,70 @@ export class ActionGateway {
         `side-effect frame failed for ${report.decisionEventId}: ${String(err)}`,
       );
     }
+  }
+
+  /**
+   * A verdict a seam reached on its own. The local gate refuses in-process so the
+   * arguments never travel, which leaves the ledger with no record of the refusal and
+   * `why` with nothing to explain. This is that record, reported after the fact: the
+   * action, what it was against, the rule that matched and the reason it gave. The
+   * payload that produced it stays on the machine that read it.
+   */
+  async recordSeamVerdict(
+    agentToken: string,
+    report: SeamVerdictReport,
+  ): Promise<Decision | null> {
+    const agent = await this.resolveAgent(agentToken);
+    if (agent === null) return null;
+
+    const eventId = randomUUID();
+    const at = new Date().toISOString();
+    const matched: MatchedPolicy[] =
+      report.rule === undefined
+        ? []
+        : [{ name: report.rule, effect: report.effect, reason: report.reason }];
+
+    await this.appendEvent({
+      id: eventId,
+      occurredAt: at,
+      agentId: agent.id,
+      agentName: agent.name,
+      action: report.action,
+      ...(report.target === undefined ? {} : { target: report.target }),
+      ...(report.sessionId === undefined ? {} : { sessionId: report.sessionId }),
+      effect: report.effect,
+      riskLevel: RISK_LEVEL.LOW,
+      matchedPolicies: matched.map((policy) => policy.name),
+      advisories: [],
+      reason: report.reason,
+      orgId: agent.orgId,
+      // Named, so a reader can tell a verdict this runtime made from one it was told.
+      decidedBy: report.seam,
+    });
+
+    const decision: Decision = {
+      eventId,
+      effect: report.effect,
+      riskLevel: RISK_LEVEL.LOW,
+      reason: report.reason,
+      matchedPolicies: matched,
+      advisories: [],
+      ...(report.alternative === undefined ? {} : { alternative: report.alternative }),
+      mode: ENFORCEMENT_MODE.ENFORCE,
+      evaluatedAt: at,
+      latencyUs: 0,
+    };
+    // Built from the match the seam reported, never invented here.
+    await this.saveExplanation(
+      decision,
+      {
+        action: report.action,
+        ...(report.target === undefined ? {} : { target: report.target }),
+      },
+      agent,
+      undefined,
+    );
+    return decision;
   }
 
   /** Bookkeeping, not a decision: withholding the record would freeze the ledger. */

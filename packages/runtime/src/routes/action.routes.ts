@@ -8,6 +8,7 @@ import {
 } from '../action-gateway';
 import { METRIC } from '../metrics';
 import { readActionRequest } from './action-body';
+import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
 import { hashToken } from '../token';
 import { bearerToken, type RouteContext } from './route-context';
 
@@ -42,6 +43,51 @@ export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): v
     return token
       ? ctx.gateway.authorize(token, action)
       : ctx.gateway.authorizeAgent(certAgent, action);
+  });
+
+  /**
+   * A verdict a seam reached on its own, reported after the fact. The payload that
+   * produced it stays on the machine; what travels is the action, the rule and the
+   * reason, so `why` has something to read back.
+   */
+  app.post('/v1/actions/decided', async (request, reply) => {
+    const token = bearerToken(request);
+    if (!token) return reply.code(401).send({ error: 'unauthorized' });
+
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const action = body['action'];
+    const reason = body['reason'];
+    const effect = body['effect'];
+    const seam = body['seam'];
+
+    if (typeof action !== 'string' || action.length === 0) {
+      return reply.code(400).send({ error: '"action" is required' });
+    }
+    if (typeof reason !== 'string' || reason.length === 0) {
+      return reply.code(400).send({ error: '"reason" is required' });
+    }
+    if (typeof seam !== 'string' || seam.length === 0) {
+      return reply.code(400).send({ error: '"seam" is required' });
+    }
+    if (
+      effect !== DECISION_EFFECT.WITHHOLD &&
+      effect !== DECISION_EFFECT.ESCALATE &&
+      effect !== DECISION_EFFECT.ALLOW
+    ) {
+      return reply.code(400).send({ error: '"effect" must be a decision effect' });
+    }
+
+    const decision = await ctx.gateway.recordSeamVerdict(token, {
+      action,
+      reason,
+      seam,
+      effect: effect as DecisionEffect,
+      ...(typeof body['target'] === 'string' ? { target: body['target'] } : {}),
+      ...(typeof body['rule'] === 'string' ? { rule: body['rule'] } : {}),
+      ...(typeof body['sessionId'] === 'string' ? { sessionId: body['sessionId'] } : {}),
+    });
+    if (decision === null) return reply.code(401).send({ error: 'unauthorized' });
+    return reply.code(201).send(decision);
   });
 
   /** Closes the loop: what the agent did after being allowed to act. */

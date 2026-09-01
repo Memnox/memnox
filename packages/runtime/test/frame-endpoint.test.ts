@@ -242,3 +242,84 @@ describe('lineage', () => {
     expect(lineage.confidence).toBe(0);
   });
 });
+
+describe('a verdict a seam reached on its own', () => {
+  let dataDir: string;
+  let server: MemnoxServer;
+  let token: string;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'memnox-seamverdict-'));
+    server = await buildServer({ dataDir });
+    token = (
+      (
+        await server.app.inject({
+          method: 'POST',
+          url: '/v1/agents',
+          payload: { name: 'claude-code', kind: 'claude-code' },
+        })
+      ).json() as { token: string }
+    ).token;
+  });
+
+  afterEach(async () => {
+    await server.app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  const report = (over: Record<string, unknown> = {}) =>
+    server.app.inject({
+      method: 'POST',
+      url: '/v1/actions/decided',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        action: 'filesystem.read',
+        target: '/srv/app/.env',
+        effect: 'withhold',
+        reason: 'no credential need was declared',
+        rule: 'secrets-not-required',
+        seam: 'hook',
+        ...over,
+      },
+    });
+
+  /** Without this the ledger has no note of the strongest thing the product does. */
+  it('lands in the audit trail, named as the seam’s and not the runtime’s', async () => {
+    expect((await report()).statusCode).toBe(201);
+
+    const events = (
+      await server.app.inject({ method: 'GET', url: '/v1/audit' })
+    ).json() as { action: string; effect: string; decidedBy?: string }[];
+    const found = events.find((e) => e.action === 'filesystem.read');
+    expect(found?.effect).toBe('withhold');
+    expect(found?.decidedBy).toBe('hook');
+  });
+
+  it('leaves an explanation why can read back', async () => {
+    const decision = (await report()).json() as { eventId: string };
+    const why = await server.app.inject({
+      method: 'GET',
+      url: `/v1/decision/${decision.eventId}/why`,
+    });
+
+    expect(why.statusCode).toBe(200);
+    expect(JSON.stringify(why.json())).toContain('filesystem.read');
+  });
+
+  it('refuses an unknown token rather than recording an unattributable verdict', async () => {
+    const response = await server.app.inject({
+      method: 'POST',
+      url: '/v1/actions/decided',
+      headers: { authorization: 'Bearer mnx_nope' },
+      payload: { action: 'a', effect: 'withhold', reason: 'r', seam: 'hook' },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('refuses a report that names no seam, action, reason or effect', async () => {
+    expect((await report({ seam: '' })).statusCode).toBe(400);
+    expect((await report({ action: '' })).statusCode).toBe(400);
+    expect((await report({ reason: '' })).statusCode).toBe(400);
+    expect((await report({ effect: 'redact' })).statusCode).toBe(400);
+  });
+});

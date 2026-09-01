@@ -2,7 +2,7 @@ import { DECISION_EFFECT, type ActionRequest, type Decision } from '@memnox/core
 import { LocalGate } from '@memnox/local-gate';
 import type { MemnoxClient } from '@memnox/sdk';
 import { describe, expect, it } from 'vitest';
-import { HookAuthorizer } from '../src/hook-authorizer';
+import { HookAuthorizer, HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
 
 const read: ActionRequest = {
   action: 'filesystem.read',
@@ -30,6 +30,10 @@ const gate = (): LocalGate => new LocalGate([withholdEnv], { agentName: 'claude-
 /** Records what was asked, so the arguments never leaving the machine is testable. */
 class RecordingClient {
   readonly seen: ActionRequest[] = [];
+  readonly reported: unknown[] = [];
+  async reportDecision(report: unknown): Promise<void> {
+    this.reported.push(report);
+  }
   constructor(private readonly decision: Partial<Decision>) {}
   async check(request: ActionRequest): Promise<Decision> {
     this.seen.push(request);
@@ -168,5 +172,52 @@ describe('egress, before anything leaves this machine', () => {
       arguments: { body: 'hello' },
     });
     expect(verdict.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
+describe('a local refusal still reaches the ledger', () => {
+  /** Reported after the refusal, never before: the payload stays on this machine. */
+  it('reports the verdict, carrying the rule and never the arguments', async () => {
+    const reported: Record<string, unknown>[] = [];
+    const client = {
+      check: async () => {
+        throw new Error('never reached');
+      },
+      reportDecision: async (r: Record<string, unknown>) => {
+        reported.push(r);
+      },
+    };
+
+    const verdict = await new RealAuthorizer({
+      gate: gate(),
+      client: client as never,
+      log: () => {},
+    }).authorize({
+      action: 'filesystem.read',
+      target: '/srv/app/.env',
+      arguments: { file_path: '/srv/app/.env', body: 'SECRET=x' },
+      sessionId: 'ses_1',
+    });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.WITHHOLD);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toMatchObject({
+      action: 'filesystem.read',
+      target: '/srv/app/.env',
+      effect: DECISION_EFFECT.WITHHOLD,
+      rule: 'secrets-not-required',
+      seam: 'hook',
+    });
+    // The payload that produced it never travels.
+    expect(JSON.stringify(reported[0])).not.toContain('SECRET=x');
+  });
+
+  it('reports nothing when there is no runtime to report to', async () => {
+    const verdict = await new RealAuthorizer({ gate: gate(), log: () => {} }).authorize({
+      action: 'filesystem.read',
+      target: '/srv/app/.env',
+    });
+    expect(verdict.effect).toBe(DECISION_EFFECT.WITHHOLD);
   });
 });

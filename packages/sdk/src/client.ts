@@ -132,6 +132,17 @@ export interface AuthorityGrantResponse extends AuthorityGrantPayload {
   grantedAt: string;
 }
 
+/** What a seam can say about a verdict it made. Never the payload behind it. */
+export interface SeamVerdict {
+  action: string;
+  target?: string;
+  effect: string;
+  reason: string;
+  rule?: string;
+  sessionId?: string;
+  seam: string;
+}
+
 /** The chain behind one session, and the hops that could only be inferred. */
 export interface LineageReport {
   lineage: { correlationId: string; hops: LineageHop[] };
@@ -470,6 +481,19 @@ export class MemnoxClient {
       `/v1/learn${query}`,
       undefined,
       this.options.adminToken,
+    );
+  }
+
+  /**
+   * A verdict this seam reached on its own, so the ledger holds it and `why` can read
+   * it back. Fire this after refusing, never before: the payload stays where it was.
+   */
+  async reportDecision(report: SeamVerdict): Promise<Decision> {
+    return this.request<Decision>(
+      'POST',
+      '/v1/actions/decided',
+      report,
+      this.options.token,
     );
   }
 
