@@ -15,7 +15,6 @@ export * from './domain/action-identity';
 export * from './domain/shell-normalizer';
 export * from './domain/enforcement';
 export * from './domain/canonical-json';
-export * from './domain/control-mapping';
 export * from './domain/execution-outcome';
 export * from './domain/audit-chain';
 export * from './domain/agent-identity';
