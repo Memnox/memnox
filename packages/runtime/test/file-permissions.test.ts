@@ -1,16 +1,13 @@
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SILENT_LOGGER, type Logger } from '@memnox/core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildServer, type MemnoxServer } from '../src/server';
-import { resolveKeyring } from '../src/keyring-loader';
 
 const ADMIN = ['perm', 'admin', 'token'].join('-');
-const OWNER_ONLY = 0o600;
 const SHARED_READ_BITS = 0o077;
 
-/** Encryption is off by default, so these files hold token hashes in the clear. */
+/** Nothing is encrypted at rest, so owner-only file modes are the whole protection. */
 describe('what the runtime leaves on disk', () => {
   let dataDir: string;
   let server: MemnoxServer;
@@ -55,47 +52,5 @@ describe('what the runtime leaves on disk', () => {
 
     const info = await stat(join(dataDir, 'audit.jsonl'));
     expect(info.mode & SHARED_READ_BITS).toBe(0);
-  });
-});
-
-describe('reading a keyring off disk', () => {
-  let dir: string;
-
-  beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'memnox-keyring-'));
-  });
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  async function writeKeyring(mode: number): Promise<string> {
-    const path = join(dir, 'keyring.json');
-    const keyring = {
-      activeKeyId: 'k1',
-      keys: [{ id: 'k1', secret: ['unit', 'secret'].join('-'), salt: 'unit-salt' }],
-    };
-    await writeFile(path, JSON.stringify(keyring), { encoding: 'utf8', mode });
-    return path;
-  }
-
-  it('says so when other accounts can read the key', async () => {
-    const path = await writeKeyring(0o644);
-    const logger: Logger = { ...SILENT_LOGGER, warn: vi.fn<Logger['warn']>() };
-
-    const keyring = await resolveKeyring({ keyringFile: path }, logger);
-
-    expect(keyring).not.toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('chmod 600'));
-  });
-
-  /** A warning on every start is a warning nobody reads. */
-  it('stays quiet when the key is owner-only', async () => {
-    const path = await writeKeyring(OWNER_ONLY);
-    const logger: Logger = { ...SILENT_LOGGER, warn: vi.fn<Logger['warn']>() };
-
-    await resolveKeyring({ keyringFile: path }, logger);
-
-    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

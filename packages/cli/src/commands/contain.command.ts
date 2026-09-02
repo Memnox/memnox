@@ -105,7 +105,6 @@ async function contain(
 
   out.line(style.bold(`${input.kind.toUpperCase()}  ${action.id}`));
   out.line('');
-  out.line(`  leases revoked      ${action.effects.leasesRevoked}`);
   out.line(`  seams closed        ${action.effects.seamsClosed}`);
   if (input.subjectId !== undefined) {
     out.line(

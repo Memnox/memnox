@@ -1,7 +1,7 @@
 export const CONTAINMENT_KIND = {
-  /** Revoke leases, close seams, cancel pending steps, quarantine credentials. */
+  /** Close every seam, cancel pending steps, hold the agent's own credential. */
   KILL: 'kill',
-  /** Read-only with no capability issuance: debuggable rather than dead. */
+  /** Read-only rather than refused: debuggable rather than dead. */
   QUARANTINE: 'quarantine',
   /** Organization-wide. Needs a reason, an author and a restore path. */
   PANIC: 'panic',
@@ -12,7 +12,6 @@ export type ContainmentKind = (typeof CONTAINMENT_KIND)[keyof typeof CONTAINMENT
 
 export interface ContainmentEffects {
   installsReached: number;
-  leasesRevoked: number;
   seamsClosed: number;
   stepsCancelled: number;
   environmentsRaised: number;
@@ -44,7 +43,6 @@ export interface ContainmentAction {
 
 export const EMPTY_CONTAINMENT_EFFECTS: ContainmentEffects = {
   installsReached: 0,
-  leasesRevoked: 0,
   seamsClosed: 0,
   stepsCancelled: 0,
   environmentsRaised: 0,

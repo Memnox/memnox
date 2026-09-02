@@ -43,8 +43,6 @@ export interface AgentIdentity {
   autonomyLevel?: number;
   /** Last credential rotation, when one has happened. */
   rotatedAt?: string;
-  /** Owning org/workspace; unset = single-tenant deployment. */
-  orgId?: string;
 }
 
 export const EMPTY_AGENT_STATS: AgentActionStats = {

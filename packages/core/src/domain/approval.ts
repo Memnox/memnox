@@ -36,8 +36,6 @@ export interface Approval {
   consumedAt?: string;
   /** Set when an admin break-glass override approved this without the named approvers. */
   override?: boolean;
-  /** Owning org/workspace; unset = single-tenant deployment. */
-  orgId?: string;
 }
 
 export interface ApprovalGrant {

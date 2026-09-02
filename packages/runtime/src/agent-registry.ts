@@ -21,7 +21,6 @@ export class AgentRegistry {
     name: string,
     kind: AgentKind,
     capabilities?: string[],
-    orgId?: string,
   ): Promise<AgentRegistration> {
     const token = generateAgentToken();
     const agent: AgentIdentity = {
@@ -33,7 +32,6 @@ export class AgentRegistry {
       createdAt: new Date().toISOString(),
       stats: { ...EMPTY_AGENT_STATS },
       ...(capabilities && capabilities.length > 0 ? { capabilities } : {}),
-      ...(orgId ? { orgId } : {}),
     };
     await this.store.save(agent);
     return { agent, token };

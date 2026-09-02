@@ -13,11 +13,9 @@ import type { PolicyHistory } from '../policy-history';
 import type { ActionGateway } from '../action-gateway';
 import type { ContainmentService } from '../containment-service';
 import type { LearnService } from '../learn-service';
-import type { DelegationService } from '../delegation-service';
-import { isAuthorizedFor, isScopedToWorkspace } from '../auth';
+import { isAuthorizedFor } from '../auth';
 import type { RuntimeConfig } from '../config';
 import type { SeamService } from '../seam-service';
-import type { CapabilityBroker } from '../capability-broker';
 import type { FrameStore } from '@memnox/ledger';
 import type { LineageService } from '../lineage-service';
 import type { MetricsRegistry } from '../metrics';
@@ -31,24 +29,13 @@ export type RequireRole = (
   role: ApiRole,
 ) => boolean;
 
-/** Separate from `RequireRole`: one says what, the other says to whom. */
-export type RequireWorkspace = (
-  request: FastifyRequest,
-  reply: FastifyReply,
-  workspace: string,
-) => boolean;
-
 /** Everything a route module needs — one parameter per register function. */
 export interface RouteContext {
   gateway: ActionGateway;
   config: RuntimeConfig;
   requireRole: RequireRole;
-  /** Guards a workspace-scoped admin route; replies 403 and returns false when denied. */
-  requireWorkspace: RequireWorkspace;
   rateLimiter: FixedWindowRateLimiter;
   metrics: MetricsRegistry;
-  /** Set only when mTLS is on — resolves a verified client cert to an agent. */
-  resolveCertAgent?: (request: FastifyRequest) => Promise<AgentIdentity | null>;
   /** Re-reads the policy file; absent when the runtime started without one. */
   reloadPolicies?: () => Promise<Policy[]>;
   /** A caller that has just written a rule file needs to know whether it was read. */
@@ -71,8 +58,6 @@ export interface RouteContext {
   seams: SeamStore;
   /** Registration and the heartbeat that makes a stopped seam distinguishable. */
   seamService: SeamService;
-  /** Exchanges a request for a short lease, so nothing long-lived is handed over. */
-  broker: CapabilityBroker;
   /** The flight recorder. Absent leaves a runtime that keeps verdicts and no timeline. */
   frames?: FrameStore;
   /** Who caused this: a person, through a tool, through an agent, to a system. */
@@ -81,24 +66,12 @@ export interface RouteContext {
   containment: ContainmentService;
   /** Usage against grant, and the least-privilege proposal that falls out of it. */
   learn: LearnService;
-  /** Who may act for whom, through a chain that can only narrow. */
-  delegations: DelegationService;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {
   return (request, reply, role) => {
     if (isAuthorizedFor(bearerToken(request), config, role)) return true;
     void reply.code(401).send({ error: 'unauthorized' });
-    return false;
-  };
-}
-
-export function createRequireWorkspace(config: RuntimeConfig): RequireWorkspace {
-  return (request, reply, workspace) => {
-    if (isScopedToWorkspace(bearerToken(request), config, workspace)) return true;
-    void reply
-      .code(403)
-      .send({ error: 'this credential does not manage that workspace' });
     return false;
   };
 }

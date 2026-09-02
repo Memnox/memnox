@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { AgentIdentity, IdentityStore, TextCodec } from '@memnox/core';
-import { PLAIN_TEXT_CODEC } from '@memnox/core';
+import type { AgentIdentity, IdentityStore } from '@memnox/core';
 import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
 /** Local agent registry persisted as a single JSON file — inspectable and diffable. */
@@ -9,10 +8,7 @@ export class JsonFileIdentityStore implements IdentityStore {
   private agents = new Map<string, AgentIdentity>();
   private loaded = false;
 
-  constructor(
-    private readonly filePath: string,
-    private readonly codec: TextCodec = PLAIN_TEXT_CODEC,
-  ) {}
+  constructor(private readonly filePath: string) {}
 
   async save(agent: AgentIdentity): Promise<void> {
     await this.ensureLoaded();
@@ -42,7 +38,7 @@ export class JsonFileIdentityStore implements IdentityStore {
     if (this.loaded) return;
     this.loaded = true;
     try {
-      const raw = this.codec.decode(await readFile(this.filePath, 'utf8'));
+      const raw = await readFile(this.filePath, 'utf8');
       const parsed = JSON.parse(raw) as AgentIdentity[];
       this.agents = new Map(parsed.map((agent) => [agent.id, agent]));
     } catch {
@@ -54,7 +50,7 @@ export class JsonFileIdentityStore implements IdentityStore {
   private async persist(): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     const serialized = JSON.stringify([...this.agents.values()], null, 2);
-    await writeFile(this.filePath, this.codec.encode(serialized), {
+    await writeFile(this.filePath, serialized, {
       encoding: 'utf8',
       mode: SECRET_FILE_MODE,
     });

@@ -157,7 +157,6 @@ export class ApprovalService {
       status: APPROVAL_STATUS.PENDING,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + APPROVAL_TTL_MS).toISOString(),
-      ...(agent.orgId ? { orgId: agent.orgId } : {}),
     };
     await this.deps.approvalStore.save(approval);
     this.metrics.increment(METRIC.APPROVALS_TOTAL, {
@@ -336,7 +335,6 @@ export class ApprovalService {
       matchedPolicies: [],
       advisories: [],
       reason,
-      orgId: approval.orgId,
     });
   }
 

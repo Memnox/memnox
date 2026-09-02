@@ -273,9 +273,8 @@ export class ActionGateway {
     name: string,
     kind: AgentKind,
     capabilities?: string[],
-    orgId?: string,
   ): Promise<AgentRegistration> {
-    return this.agents.register(name, kind, capabilities, orgId);
+    return this.agents.register(name, kind, capabilities);
   }
 
   /** Rotation is audited here because the audit log belongs to the gateway. */
@@ -295,7 +294,6 @@ export class ActionGateway {
       matchedPolicies: [],
       advisories: [],
       reason: `credential rotated for agent "${rotated.agent.name}"`,
-      orgId: rotated.agent.orgId,
     });
     return rotated;
   }
@@ -379,7 +377,6 @@ export class ActionGateway {
       reason: defied
         ? `${describeOutcome(report)} — but this action was ${decided.effect}, not allowed`
         : describeOutcome(report),
-      orgId: agent.orgId,
       decisionEventId: report.decisionEventId,
       executionStatus: report.status,
       rolledBack: report.rolledBack,
@@ -456,7 +453,6 @@ export class ActionGateway {
       matchedPolicies: matched.map((policy) => policy.name),
       advisories: [],
       reason: report.reason,
-      orgId: agent.orgId,
       // Named, so a reader can tell a verdict this runtime made from one it was told.
       decidedBy: report.seam,
     });
@@ -510,7 +506,6 @@ export class ActionGateway {
       matchedPolicies: [],
       advisories: [],
       reason: `metered ${tokens} token(s)`,
-      orgId: agent.orgId,
     });
     return true;
   }
@@ -950,7 +945,6 @@ export class ActionGateway {
       ...(outcome.approvers === undefined || outcome.approvers.length === 0
         ? {}
         : { approvers: outcome.approvers }),
-      orgId: agent === null ? undefined : agent.orgId,
     });
 
     this.metrics.increment(METRIC.ACTIONS_TOTAL, {

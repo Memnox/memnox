@@ -17,18 +17,14 @@ const RATE_KEY_HASH_LENGTH = 16;
 /** Key by token hash so raw credentials never become counter keys. */
 const rateKey = (token: string): string =>
   `check:${hashToken(token).slice(0, RATE_KEY_HASH_LENGTH)}`;
-const certRateKey = (agentId: string): string => `check:cert:${agentId}`;
 
 /** The hot path: agents ask for a decision before acting. */
 export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): void {
   app.post('/v1/actions/check', async (request, reply) => {
     const token = bearerToken(request);
-    // Bearer token wins; a verified client cert is the mTLS fallback identity.
-    const certAgent =
-      !token && ctx.resolveCertAgent ? await ctx.resolveCertAgent(request) : null;
-    if (!token && !certAgent) return reply.code(401).send({ error: 'unauthorized' });
+    if (!token) return reply.code(401).send({ error: 'unauthorized' });
     const allowed = await ctx.rateLimiter.allow(
-      token ? rateKey(token) : certRateKey(certAgent ? certAgent.id : ''),
+      rateKey(token),
       ctx.config.checkRateLimitPerMinute,
       RATE_WINDOW_S,
     );
@@ -40,9 +36,7 @@ export function registerActionRoutes(app: FastifyInstance, ctx: RouteContext): v
     if (action === null) {
       return reply.code(400).send({ error: '"action" is required' });
     }
-    return token
-      ? ctx.gateway.authorize(token, action)
-      : ctx.gateway.authorizeAgent(certAgent, action);
+    return ctx.gateway.authorize(token, action);
   });
 
   /**

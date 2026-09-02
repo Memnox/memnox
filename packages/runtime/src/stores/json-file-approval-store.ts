@@ -1,12 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { Approval, ApprovalStatus, ApprovalStore, TextCodec } from '@memnox/core';
-import {
-  APPROVAL_STATUS,
-  isApprovalPrunable,
-  isUnspentGrant,
-  PLAIN_TEXT_CODEC,
-} from '@memnox/core';
+import type { Approval, ApprovalStatus, ApprovalStore } from '@memnox/core';
+import { APPROVAL_STATUS, isApprovalPrunable, isUnspentGrant } from '@memnox/core';
 import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
 
 /** A pending human decision must not vanish with the process. */
@@ -14,10 +9,7 @@ export class JsonFileApprovalStore implements ApprovalStore {
   private approvals = new Map<string, Approval>();
   private loaded = false;
 
-  constructor(
-    private readonly filePath: string,
-    private readonly codec: TextCodec = PLAIN_TEXT_CODEC,
-  ) {}
+  constructor(private readonly filePath: string) {}
 
   async save(approval: Approval): Promise<void> {
     await this.ensureLoaded();
@@ -71,9 +63,7 @@ export class JsonFileApprovalStore implements ApprovalStore {
     if (this.loaded) return;
     this.loaded = true;
     try {
-      const parsed = JSON.parse(
-        this.codec.decode(await readFile(this.filePath, 'utf8')),
-      ) as Approval[];
+      const parsed = JSON.parse(await readFile(this.filePath, 'utf8')) as Approval[];
       this.approvals = new Map(parsed.map((approval) => [approval.id, approval]));
     } catch {
       // First run — file does not exist yet.
@@ -85,7 +75,7 @@ export class JsonFileApprovalStore implements ApprovalStore {
     await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
     await writeFile(
       this.filePath,
-      this.codec.encode(JSON.stringify([...this.approvals.values()], null, 2)),
+      JSON.stringify([...this.approvals.values()], null, 2),
       { encoding: 'utf8', mode: SECRET_FILE_MODE },
     );
   }

@@ -93,18 +93,6 @@ describe('memnox serve — startup banner', () => {
     expect(out.text).toContain('Rate limits: per-process');
   });
 
-  it('reports https and mTLS when all three TLS files are given', async () => {
-    const { launch } = launcher();
-
-    const { out } = await runServe(
-      ['--tls-cert', 'c.pem', '--tls-key', 'k.pem', '--tls-ca', 'ca.pem'],
-      launch,
-    );
-
-    expect(out.text).toContain('listening on https://');
-    expect(out.text).toContain('mTLS: client-certificate agent auth enabled');
-  });
-
   it('reports audit retention only when pruning is enabled', async () => {
     const { launch } = launcher();
 

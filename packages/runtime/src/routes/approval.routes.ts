@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { API_ROLE, APPROVAL_STATUS } from '@memnox/core';
 import { OVERRIDE_OUTCOME, RESOLVE_OUTCOME } from '../approval-service';
 import { isAuthorizedFor, resolveApiPrincipal } from '../auth';
-import { parseSlackInteraction, verifySlackSignature } from '../slack-interactions';
 import { bearerToken, type RouteContext } from './route-context';
 
 interface ResolveApprovalBody {
@@ -98,58 +97,5 @@ export function registerApprovalRoutes(app: FastifyInstance, ctx: RouteContext):
       });
     }
     return result.approval;
-  });
-
-  if (ctx.config.slackSigningSecret) {
-    registerSlackInteractions(app, ctx, ctx.config.slackSigningSecret);
-  }
-}
-
-/** Approve/Deny buttons in Slack resolve approvals through this signed endpoint. */
-function registerSlackInteractions(
-  app: FastifyInstance,
-  ctx: RouteContext,
-  signingSecret: string,
-): void {
-  // Slack posts interactions as form-encoded; signatures are over the raw bytes.
-  app.addContentTypeParser(
-    'application/x-www-form-urlencoded',
-    { parseAs: 'string' },
-    (_request, body, done) => done(null, body),
-  );
-
-  app.post('/v1/integrations/slack/interactions', async (request, reply) => {
-    const rawBody = typeof request.body === 'string' ? request.body : '';
-    const timestamp = String(request.headers['x-slack-request-timestamp'] ?? '');
-    const signature = String(request.headers['x-slack-signature'] ?? '');
-    if (!verifySlackSignature(signingSecret, timestamp, rawBody, signature)) {
-      return reply.code(401).send({ error: 'invalid Slack signature' });
-    }
-    const interaction = parseSlackInteraction(rawBody);
-    if (!interaction) return reply.code(400).send({ error: 'unsupported interaction' });
-
-    const result = await ctx.gateway.approvals.resolve(
-      interaction.approvalId,
-      interaction.approved,
-      interaction.resolvedBy,
-    );
-    const approval = result.approval;
-    if (!approval) {
-      return { text: 'Approval not found — it may have been resolved already.' };
-    }
-    if (result.outcome === RESOLVE_OUTCOME.EXPIRED) {
-      return {
-        text: 'This approval lapsed before anyone acted on it. The agent has to ask again.',
-      };
-    }
-    if (result.outcome === RESOLVE_OUTCOME.PENDING) {
-      const remaining = approval.minApprovals - approval.grants.length;
-      return {
-        text: `Recorded ${interaction.resolvedBy}'s approval. ${remaining} more needed before the agent can proceed.`,
-      };
-    }
-    return {
-      text: `Approval ${approval.status} by ${interaction.resolvedBy}. The agent can retry the action now.`,
-    };
   });
 }

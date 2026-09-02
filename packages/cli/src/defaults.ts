@@ -43,4 +43,3 @@ policies:
       effect: withhold
       reason: Destructive shell commands are withheld for AI agents.
 `;
-export const DEFAULT_CLOUD_URL = 'https://cloud.memnox.dev';

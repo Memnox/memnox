@@ -95,8 +95,6 @@ export interface ActionEvent {
   /** Who was asked, recorded because today's rules answer a different question. */
   approvers?: string[];
   reason: string;
-  /** Owning org/workspace; unset = single-tenant deployment. */
-  orgId?: string;
   /** Only on execution.outcome events; carried verbatim so a decision joins its effect. */
   decisionEventId?: string;
   executionStatus?: ExecutionStatus;
@@ -115,7 +113,6 @@ export interface AuditQuery {
   agentId?: string;
   /** One event by id — how a reported outcome is matched to the decision it claims. */
   eventId?: string;
-  orgId?: string;
   projectId?: string;
   from?: string;
   to?: string;

@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { PLAIN_TEXT_CODEC, type TextCodec } from '@memnox/core';
 import type { Policy } from '@memnox/policy-engine';
 import { versionPolicySet } from '@memnox/policy-engine';
 import { isFileMissing } from './file-errors';
@@ -35,12 +34,7 @@ export interface PolicyHistory {
 
 /** Newest first: a rollback almost always targets something recent. */
 export class FilePolicyHistory implements PolicyHistory {
-  // Rule bodies name protected paths and targets, so this file is as sensitive
-  // as the stores beside it and gets the same codec.
-  constructor(
-    private readonly dataDir: string,
-    private readonly codec: TextCodec = PLAIN_TEXT_CODEC,
-  ) {}
+  constructor(private readonly dataDir: string) {}
 
   async record(
     policies: readonly Policy[],
@@ -73,7 +67,7 @@ export class FilePolicyHistory implements PolicyHistory {
       if (isFileMissing(error)) return [];
       throw error;
     }
-    return JSON.parse(this.codec.decode(stored)) as PolicyVersionRecord[];
+    return JSON.parse(stored) as PolicyVersionRecord[];
   }
 
   async findByVersion(version: string): Promise<PolicyVersionRecord | null> {
@@ -87,10 +81,6 @@ export class FilePolicyHistory implements PolicyHistory {
 
   private async write(entries: PolicyVersionRecord[]): Promise<void> {
     await mkdir(dirname(this.path()), { recursive: true });
-    await writeFile(
-      this.path(),
-      this.codec.encode(JSON.stringify(entries, null, 2)),
-      'utf8',
-    );
+    await writeFile(this.path(), JSON.stringify(entries, null, 2), 'utf8');
   }
 }

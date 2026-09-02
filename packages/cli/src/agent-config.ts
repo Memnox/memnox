@@ -1,13 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { CloudConfig } from './cloud-connection';
 
 /** A GUI-launched client inherits no shell environment, so the token lives on disk. */
 export interface AgentConfig {
   token?: string;
   url?: string;
-  /** Set by `memnox login`; absent until a developer joins a control plane. */
-  cloud?: CloudConfig;
 }
 
 const CONFIG_DIR = '.memnox';

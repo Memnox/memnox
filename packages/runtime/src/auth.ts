@@ -48,21 +48,6 @@ export function resolveApiRole(
   return match === undefined ? null : match.role;
 }
 
-/** `admin` says what a key may do, never to whom — this is the missing half. */
-export function isScopedToWorkspace(
-  token: string | null,
-  config: RuntimeConfig,
-  workspace: string,
-): boolean {
-  if (!hasManagementKeys(config)) return true;
-  // A keyed runtime with no credential presented is scoped to nothing.
-  if (token === null) return false;
-  if (config.adminToken && credentialEquals(token, config.adminToken)) return true;
-  const match = config.apiKeys.find((key) => credentialEquals(token, key.token));
-  if (match === undefined) return false;
-  return match.workspace === undefined || match.workspace === workspace;
-}
-
 export function isAuthorizedFor(
   token: string | null,
   config: RuntimeConfig,

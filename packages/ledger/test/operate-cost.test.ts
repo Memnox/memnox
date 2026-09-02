@@ -92,7 +92,6 @@ describe('an incident', () => {
     at: '2026-08-31T09:00:00.000Z',
     effects: {
       installsReached: 1,
-      leasesRevoked: 2,
       seamsClosed: 1,
       stepsCancelled: 0,
       environmentsRaised: 0,

@@ -9,7 +9,6 @@ interface AuditQueryString {
   limit?: string;
   session?: string;
   agent?: string;
-  org?: string;
   project?: string;
   from?: string;
   to?: string;
@@ -28,7 +27,6 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): vo
     const filter: AuditQuery = {
       sessionId: query.session,
       agentId: query.agent,
-      orgId: query.org,
       projectId: query.project,
       from: query.from,
       to: query.to,
@@ -38,7 +36,6 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: RouteContext): vo
     if (
       filter.sessionId ||
       filter.agentId ||
-      filter.orgId ||
       filter.projectId ||
       filter.from ||
       filter.to

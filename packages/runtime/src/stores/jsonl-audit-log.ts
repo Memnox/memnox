@@ -6,13 +6,11 @@ import type {
   AuditChainVerification,
   AuditLog,
   AuditQuery,
-  TextCodec,
 } from '@memnox/core';
 import {
   AuditChainVerifier,
   chainAuditEvent,
   GENESIS_HASH,
-  PLAIN_TEXT_CODEC,
   verifyAuditChain,
 } from '@memnox/core';
 import { SECRET_DIR_MODE, SECRET_FILE_MODE } from './file-mode';
@@ -27,10 +25,7 @@ const REWRITE_SUFFIX = '.rewrite';
 
 /** Append-only audit trail as JSON Lines — every decision is provable after the fact. */
 export class JsonlAuditLog implements AuditLog {
-  constructor(
-    private readonly filePath: string,
-    private readonly codec: TextCodec = PLAIN_TEXT_CODEC,
-  ) {}
+  constructor(private readonly filePath: string) {}
 
   async append(event: ActionEvent): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: SECRET_DIR_MODE });
@@ -130,11 +125,11 @@ export class JsonlAuditLog implements AuditLog {
   }
 
   private encode(event: ActionEvent): string {
-    return this.codec.encode(JSON.stringify(event));
+    return JSON.stringify(event);
   }
 
   private decode(line: string): ActionEvent {
-    return JSON.parse(this.codec.decode(line)) as ActionEvent;
+    return JSON.parse(line) as ActionEvent;
   }
 }
 
@@ -142,7 +137,6 @@ export function matchesAuditQuery(event: ActionEvent, filter: AuditQuery): boole
   if (filter.eventId && event.id !== filter.eventId) return false;
   if (filter.sessionId && event.sessionId !== filter.sessionId) return false;
   if (filter.agentId && event.agentId !== filter.agentId) return false;
-  if (filter.orgId && event.orgId !== filter.orgId) return false;
   if (filter.projectId && event.projectId !== filter.projectId) return false;
   if (filter.from && event.occurredAt < filter.from) return false;
   if (filter.to && event.occurredAt > filter.to) return false;

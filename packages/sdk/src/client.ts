@@ -12,8 +12,6 @@ import type {
   ContainmentKind,
   ExecutionOutcomeReport,
   Explanation,
-  Capability,
-  Lease,
   Seam,
   SeamKind,
   SeamUnhealthyBehaviour,
@@ -166,15 +164,6 @@ export interface FrameReport {
   summary: string;
   decisionId?: string;
   payloadDigest?: string;
-}
-
-/** Asked for by operation and scope; the secret itself is never named or returned. */
-export interface LeaseRequestBody {
-  capabilityId: string;
-  target: string;
-  scope?: Record<string, string>;
-  environment?: string;
-  sessionId?: string;
 }
 
 /** What a seam declares about itself. Blind spots are not optional: an empty list is a claim. */
@@ -486,44 +475,6 @@ export class MemnoxClient {
   }
 
   /**
-   * Exchanges a request for a lease scoped to one operation, one resource and a few
-   * minutes. Ask by operation, not by secret: "refund.create", never the payments key.
-   */
-  async requestLease(request: LeaseRequestBody): Promise<Lease> {
-    return this.request<Lease>('POST', '/v1/leases', request, this.options.token);
-  }
-
-  /** Expiry belongs to the issuer, so a dead lease is simply not found. */
-  async redeemLease(leaseId: string): Promise<Lease> {
-    return this.request<Lease>(
-      'POST',
-      `/v1/leases/${encodeURIComponent(leaseId)}/redeem`,
-      undefined,
-      this.options.token,
-    );
-  }
-
-  /** What this agent may ask for — a different question from what it holds. */
-  async capabilitiesFor(agentId: string): Promise<Capability[]> {
-    return this.request<Capability[]>(
-      'GET',
-      `/v1/agents/${encodeURIComponent(agentId)}/capabilities`,
-      undefined,
-      this.options.adminToken,
-    );
-  }
-
-  /** What it holds, revoked ones included: a dead lease is part of the record. */
-  async leasesFor(agentId: string): Promise<Lease[]> {
-    return this.request<Lease[]>(
-      'GET',
-      `/v1/agents/${encodeURIComponent(agentId)}/leases`,
-      undefined,
-      this.options.adminToken,
-    );
-  }
-
-  /**
    * Declares this seam to the runtime, so coverage counts what is installed rather
    * than what somebody remembered to configure. Identity comes from the agent token:
    * a seam cannot register on behalf of an agent it is not.
@@ -571,7 +522,6 @@ export class MemnoxClient {
     const query = new URLSearchParams();
     if (filter.sessionId) query.set('session', filter.sessionId);
     if (filter.agentId) query.set('agent', filter.agentId);
-    if (filter.orgId) query.set('org', filter.orgId);
     if (filter.projectId) query.set('project', filter.projectId);
     if (filter.from) query.set('from', filter.from);
     if (filter.to) query.set('to', filter.to);

@@ -10,7 +10,6 @@ interface RegisterAgentBody {
   name?: string;
   kind?: string;
   capabilities?: unknown;
-  orgId?: string;
 }
 
 function isCapabilityList(value: unknown): value is string[] {
@@ -45,7 +44,6 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
       body.name,
       kind,
       body.capabilities,
-      typeof body.orgId === 'string' && body.orgId.length > 0 ? body.orgId : undefined,
     );
     // The stored hash never leaves the runtime; this output gets pasted into logs.
     const { tokenHash: _tokenHash, ...agent } = registration.agent;

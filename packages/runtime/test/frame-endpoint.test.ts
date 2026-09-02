@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Capability, Lease } from '@memnox/core';
 import { FRAME_KIND, type Frame } from '@memnox/ledger';
 import { buildServer, type MemnoxServer } from '../src/server';
 
@@ -142,30 +141,6 @@ describe('the flight recorder', () => {
 
     const frames = await timeline('ses_1');
     expect(frames.map((frame) => frame.kind)).toContain(FRAME_KIND.SIDE_EFFECT);
-  });
-
-  it('writes a capability frame when a lease is issued', async () => {
-    const capability = (
-      await server.app.inject({
-        method: 'POST',
-        url: '/v1/capabilities',
-        payload: { agentId, operation: 'refund.create', scope: {}, ttlSeconds: 300 },
-      })
-    ).json() as Capability;
-
-    const issued = await server.app.inject({
-      method: 'POST',
-      url: '/v1/leases',
-      headers: { authorization: `Bearer ${token}` },
-      payload: { capabilityId: capability.id, target: 'cus_1', sessionId: 'ses_1' },
-    });
-    expect(issued.statusCode).toBe(201);
-
-    const frames = await timeline('ses_1');
-    const capabilityFrame = frames.find((frame) => frame.kind === FRAME_KIND.CAPABILITY);
-    // The ledger holds why an agent held a credential and for how long.
-    expect(capabilityFrame?.summary).toContain('refund.create');
-    expect(capabilityFrame?.decisionId).toBe((issued.json() as Lease).decisionId);
   });
 });
 

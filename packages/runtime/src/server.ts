@@ -15,7 +15,6 @@ import {
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
 import { ActionGateway } from './action-gateway';
 import { scheduleAuditRetention } from './audit-retention';
-import { peerCertificate, resolveAgentFromClientCert } from './client-cert';
 import { resolveLocalMode } from './auth';
 import { DEFAULT_ADVISOR_APPROVERS, resolveConfig, type RuntimeConfig } from './config';
 import { CONSOLE_LOGGER } from './console-logger';
@@ -30,7 +29,6 @@ import {
 } from '@memnox/local-gate';
 import { registerActionRoutes } from './routes/action.routes';
 import { registerAgentRoutes } from './routes/agent.routes';
-import { registerDashboardRoutes } from './routes/dashboard.routes';
 import { registerApprovalRoutes } from './routes/approval.routes';
 import { registerAuditRoutes } from './routes/audit.routes';
 import { registerMetricsRoutes } from './routes/metrics.routes';
@@ -39,12 +37,7 @@ import { registerEnforcementRoutes } from './routes/enforcement.routes';
 import { registerPolicyRoutes } from './routes/policy.routes';
 import { registerTaskRoutes } from './routes/task.routes';
 import { registerProxyRoutes } from './routes/proxy.routes';
-import {
-  createRequireRole,
-  createRequireWorkspace,
-  type RouteContext,
-} from './routes/route-context';
-import { buildCodec } from './keyring-loader';
+import { createRequireRole, type RouteContext } from './routes/route-context';
 import { JsonFileApprovalStore } from './stores/json-file-approval-store';
 import { JsonFileIdentityStore } from './stores/json-file-identity-store';
 import { JsonlAuditLog } from './stores/jsonl-audit-log';
@@ -52,21 +45,13 @@ import { InMemoryExplanationStore } from './stores/in-memory-explanation-store';
 import { InMemoryTaskStore } from './stores/in-memory-task-store';
 import { JsonFileSeamStore } from './stores/json-file-seam-store';
 import { ContainmentService, LocalInstallDirectory } from './containment-service';
-import { CapabilityBroker } from './capability-broker';
 import { SeamService } from './seam-service';
 import { LineageService } from './lineage-service';
 import { registerOperateRoutes } from './routes/operate.routes';
 import { registerSeamRoutes } from './routes/seam.routes';
-import { registerCapabilityRoutes } from './routes/capability.routes';
 import { registerFrameRoutes } from './routes/frame.routes';
 import { LearnService } from './learn-service';
-import { DelegationService, InMemoryDelegationStore } from './delegation-service';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
-import {
-  JsonFileCapabilityStore,
-  JsonFileLeaseStore,
-} from './stores/json-file-capability-store';
-import { WebhookApprovalNotifier } from './webhook-approval-notifier';
 import { registerSecurityHeaders } from './security-headers';
 
 /** "orbit" and "/orbit/" are one prefix; Fastify wants exactly one leading slash. */
@@ -81,8 +66,6 @@ const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
 const SEAMS_FILE = 'seams.json';
 const FRAMES_FILE = 'frames.jsonl';
-const CAPABILITIES_FILE = 'capabilities.json';
-const LEASES_FILE = 'leases.json';
 const STATE_FILE = 'state.json';
 /** One machine, always reachable, because it is this process. */
 const LOCAL_INSTALL_LABEL = 'this machine';
@@ -167,28 +150,21 @@ export async function buildServer(
   reportArgumentRules(policies);
 
   const metrics = new MetricsRegistry();
-  const codec = await buildCodec(config, metrics, CONSOLE_LOGGER);
   // Files are the only backing: the local half runs with no infrastructure at all.
-  const auditLog = new JsonlAuditLog(join(config.dataDir, AUDIT_FILE), codec);
-  const identityStore = new JsonFileIdentityStore(
-    join(config.dataDir, AGENTS_FILE),
-    codec,
-  );
+  const auditLog = new JsonlAuditLog(join(config.dataDir, AUDIT_FILE));
+  const identityStore = new JsonFileIdentityStore(join(config.dataDir, AGENTS_FILE));
 
   const { lockService, sessionTaintStore } = await resolveCoordination();
 
   const taskStore = new InMemoryTaskStore();
-  const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE), codec);
+  const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE));
   const seamService = new SeamService({ store: seamStore, logger: CONSOLE_LOGGER });
   const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
-  const policyHistory = new FilePolicyHistory(config.dataDir, codec);
+  const policyHistory = new FilePolicyHistory(config.dataDir);
   // The flag wins a cold start; a stored map only fills in when none was given.
   const startingEnforcement =
     config.enforcement ?? (await readStoredEnforcement(config.dataDir));
-  const approvalStore = new JsonFileApprovalStore(
-    join(config.dataDir, APPROVALS_FILE),
-    codec,
-  );
+  const approvalStore = new JsonFileApprovalStore(join(config.dataDir, APPROVALS_FILE));
   // One counter serves the HTTP limit and every per-rule rateLimit, so both are
   // shared across pods exactly when Redis is configured and per-instance otherwise.
   const rateLimiter = new FixedWindowRateLimiter(lockService);
@@ -207,25 +183,13 @@ export async function buildServer(
     ...(config.maxPendingApprovals === undefined
       ? {}
       : { maxPendingPerAgent: config.maxPendingApprovals }),
-    notifier: config.approvalWebhookUrl
-      ? new WebhookApprovalNotifier(config.approvalWebhookUrl)
-      : undefined,
     logger: CONSOLE_LOGGER,
     agentJwt: config.agentJwtSecret
       ? { secret: config.agentJwtSecret, issuer: config.agentJwtIssuer }
       : undefined,
   });
 
-  const tls = await loadTlsOptions(config);
-  // requestCert without rejectUnauthorized: token-only clients still connect.
-  const app = (
-    tls
-      ? Fastify({
-          logger: false,
-          https: { ...tls, requestCert: true, rejectUnauthorized: false },
-        })
-      : Fastify({ logger: false })
-  ) as FastifyInstance;
+  const app = Fastify({ logger: false }) as FastifyInstance;
   const stopRetention = scheduleAuditRetention(
     auditLog,
     approvalStore,
@@ -237,33 +201,16 @@ export async function buildServer(
   registerSecurityHeaders(app);
   app.get('/healthz', async () => ({ status: 'ok' }));
 
-  // A grant that vanished on restart is a permission nobody can audit.
-  const leaseStore = new JsonFileLeaseStore(join(config.dataDir, LEASES_FILE), codec);
-  const broker = new CapabilityBroker({
-    capabilities: new JsonFileCapabilityStore(
-      join(config.dataDir, CAPABILITIES_FILE),
-      codec,
-    ),
-    leases: leaseStore,
-    gateway,
-    logger: CONSOLE_LOGGER,
-    frames: frameStore,
-  });
   const ctx: RouteContext = {
     gateway,
     config,
     explanations,
     seams: seamStore,
     seamService,
-    broker,
     frames: frameStore,
     lineage: new LineageService({
       events: (sessionId) => gateway.queryAuditEvents({ sessionId }),
       frames: frameStore,
-      logger: CONSOLE_LOGGER,
-    }),
-    delegations: new DelegationService({
-      store: new InMemoryDelegationStore(),
       logger: CONSOLE_LOGGER,
     }),
     learn: new LearnService({
@@ -273,7 +220,6 @@ export async function buildServer(
     }),
     containment: new ContainmentService({
       seams: seamStore,
-      broker,
       installs: new LocalInstallDirectory(LOCAL_INSTALL_LABEL),
       subjects: {
         hold: async (agentId, status) =>
@@ -287,11 +233,7 @@ export async function buildServer(
     }),
     metrics,
     requireRole: createRequireRole(config),
-    requireWorkspace: createRequireWorkspace(config),
     rateLimiter,
-    resolveCertAgent: tls
-      ? (request) => resolveAgentFromClientCert(peerCertificate(request), identityStore)
-      : undefined,
     // Only offered when a file backs the rule set — there is nothing to re-read otherwise.
     proxyFetch: services.proxyFetch ?? fetch,
     tasks: taskStore,
@@ -353,11 +295,9 @@ export async function buildServer(
        which is the honest answer for a deployment serving whoever reaches it. */
     if (prefix !== '')
       scope.get('/healthz', async () => ({ status: 'ok', tenant: prefix.slice(1) }));
-    registerDashboardRoutes(scope, ctx);
     registerTaskRoutes(scope, ctx);
     registerOperateRoutes(scope, ctx);
     registerSeamRoutes(scope, ctx);
-    registerCapabilityRoutes(scope, ctx);
     registerFrameRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);
@@ -394,20 +334,4 @@ export async function startServer(
   const server = await buildServer(overrides);
   await server.app.listen({ port: server.config.port, host: server.config.host });
   return server;
-}
-
-interface TlsFileOptions {
-  cert: Buffer;
-  key: Buffer;
-  ca: Buffer;
-}
-
-async function loadTlsOptions(config: RuntimeConfig): Promise<TlsFileOptions | null> {
-  if (!config.tlsCertFile || !config.tlsKeyFile || !config.tlsCaFile) return null;
-  const [cert, key, ca] = await Promise.all([
-    readFile(config.tlsCertFile),
-    readFile(config.tlsKeyFile),
-    readFile(config.tlsCaFile),
-  ]);
-  return { cert, key, ca };
 }

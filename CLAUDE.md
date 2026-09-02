@@ -20,9 +20,17 @@ infrastructure  packages/runtime/src/stores, codecs, notifiers
 
 ### The phases the packages answer to
 
-`VISION.md` is the build sequence: ten phases, each answering one question. Cite one by
-number when a change is answering to it (`§01` for discovery, `§03` for observation,
-`§05` for protection, `§09` for policy candidates).
+`VISION.md` is the vision, and it is written as **sixty situations** rather than as a
+sequence: what is painfully happening today, why the tools somebody already has do not close
+it, what Memnox does, what they get. The one sentence over all of it is that **Memnox closes
+the gap between what AI agents can do, what they actually do, and what the organization
+intended**, which are this project's three kinds of truth under the words a user would use.
+
+The ten build phases still exist and are still how the packages are cited. **The phase index
+at the end of `VISION.md` maps each `§NN` to the situations it closes**, so a change can name
+either: `§01` for discovery, `§03` for observation, `§05` for protection, `§09` for policy
+candidates, or `#09` and `#33` for the drift situations `@memnox/discovery` answers. Naming
+the situation is better where one fits, because it says who is unblocked by the change.
 
 | Package | Phase | Owns |
 |---|---|---|

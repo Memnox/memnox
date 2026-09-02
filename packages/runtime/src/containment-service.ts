@@ -16,7 +16,6 @@ import {
   ENFORCEMENT_MODE,
   requiresRestorePath,
 } from '@memnox/core';
-import type { CapabilityBroker } from './capability-broker';
 
 export const CONTAINMENT_ACTION = 'governance.containment';
 
@@ -68,7 +67,6 @@ export interface SubjectHold {
 
 export interface ContainmentDeps {
   seams: SeamStore;
-  broker: CapabilityBroker;
   installs: InstallDirectory;
   subjects: SubjectHold;
   logger: Logger;
@@ -78,7 +76,7 @@ export interface ContainmentDeps {
 }
 
 /**
- * Kill revokes leases, closes seams and cancels pending work for one agent. Quarantine
+ * Kill closes every seam and holds the credential for one agent. Quarantine
  * restricts rather than refuses, which keeps an agent debuggable instead of dead. Panic
  * is organization-wide and needs a way back before it is expressible at all.
  */
@@ -97,7 +95,6 @@ export class ContainmentService {
     const effects: ContainmentEffects = { ...EMPTY_CONTAINMENT_EFFECTS };
 
     if (request.subjectId !== undefined) {
-      effects.leasesRevoked = await this.deps.broker.revokeAllFor(request.subjectId);
       effects.seamsClosed = await this.closeSeams(request.kind, request.subjectId);
       effects.credentialsHeld = (await this.holdSubject(request.kind, request.subjectId))
         ? 1

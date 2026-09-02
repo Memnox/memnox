@@ -8,7 +8,6 @@ import {
   ENFORCEMENT_MODE,
   SEAM_KIND,
   newSeam,
-  type Capability,
   type EnvironmentModes,
   type InstallRef,
   type Seam,
@@ -16,7 +15,6 @@ import {
 } from '@memnox/core';
 import { PolicyEngine } from '@memnox/policy-engine';
 import { ActionGateway } from '../src/action-gateway';
-import { CapabilityBroker } from '../src/capability-broker';
 import {
   ContainmentService,
   CONTAINMENT_REFUSAL,
@@ -25,10 +23,6 @@ import {
 import { CONSOLE_LOGGER } from '../src/console-logger';
 import { InMemoryApprovalStore } from '../src/stores/in-memory-approval-store';
 import { InMemoryAuditLog } from '../src/stores/in-memory-audit-log';
-import {
-  InMemoryCapabilityStore,
-  InMemoryLeaseStore,
-} from '../src/stores/in-memory-capability-store';
 import { InMemoryIdentityStore } from '../src/stores/in-memory-identity-store';
 
 class MemorySeamStore implements SeamStore {
@@ -65,7 +59,6 @@ const NOW = new Date('2026-08-31T09:00:00.000Z');
 describe('containment', () => {
   let containment: ContainmentService;
   let seams: MemorySeamStore;
-  let leases: InMemoryLeaseStore;
   let raised: EnvironmentModes[];
   let agentId: string;
   let agentToken: string;
@@ -73,7 +66,6 @@ describe('containment', () => {
 
   beforeEach(async () => {
     seams = new MemorySeamStore();
-    leases = new InMemoryLeaseStore();
     raised = [];
     gateway = new ActionGateway({
       identityStore: new InMemoryIdentityStore(),
@@ -84,28 +76,6 @@ describe('containment', () => {
     const registered = await gateway.registerAgent('bot', AGENT_KIND.CUSTOM);
     agentId = registered.agent.id;
     agentToken = registered.token;
-
-    const capabilities = new InMemoryCapabilityStore();
-    const capability: Capability = {
-      id: 'cap_1',
-      agentId,
-      operation: 'refund.create',
-      scope: {},
-      ttlSeconds: 300,
-    };
-    await capabilities.save(capability);
-    const broker = new CapabilityBroker({
-      capabilities,
-      leases,
-      gateway,
-      logger: CONSOLE_LOGGER,
-      clock: () => NOW,
-    });
-    await broker.issue(registered.token, {
-      capabilityId: 'cap_1',
-      target: 'cus_1',
-      scope: {},
-    });
 
     await seams.save(
       newSeam({
@@ -120,7 +90,6 @@ describe('containment', () => {
 
     containment = new ContainmentService({
       seams,
-      broker,
       installs: new PartialFleet(),
       subjects: {
         hold: async (id, status) => (await gateway.agents.setStatus(id, status)) !== null,
@@ -134,7 +103,7 @@ describe('containment', () => {
     });
   });
 
-  it('kills one agent: leases revoked, seams closed, in one recorded action', async () => {
+  it('kills one agent: every seam closed, in one recorded action', async () => {
     const outcome = await containment.contain({
       kind: CONTAINMENT_KIND.KILL,
       subjectId: agentId,
@@ -144,7 +113,6 @@ describe('containment', () => {
 
     expect(outcome.contained).toBe(true);
     if (!outcome.contained) return;
-    expect(outcome.action.effects.leasesRevoked).toBe(1);
     expect(outcome.action.effects.seamsClosed).toBe(1);
     expect(seams.seams.get('seam_1')?.mode).toBe(ENFORCEMENT_MODE.OFF);
   });
@@ -175,9 +143,6 @@ describe('containment', () => {
 
     expect(outcome.contained).toBe(true);
     expect(seams.seams.get('seam_1')?.mode).toBe(ENFORCEMENT_MODE.ENFORCE);
-    expect(await leases.listByAgent(agentId)).toSatisfy(
-      (held: unknown[]) => held.length > 0,
-    );
   });
 
   it('raises every environment on panic', async () => {

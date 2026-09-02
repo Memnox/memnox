@@ -140,18 +140,6 @@ describe('JsonlAuditLog hash chain', () => {
     ]);
     expect((await log.verifyChain()).valid).toBe(true);
   });
-
-  it('filters by orgId and leaves single-tenant events unclaimed', async () => {
-    await log.append(auditEvent('e1', DAY(1), { orgId: 'acme' }));
-    await log.append(auditEvent('e2', DAY(2), { orgId: 'globex' }));
-    await log.append(auditEvent('e3', DAY(3)));
-
-    expect((await log.query({ orgId: 'acme' })).map((event) => event.id)).toEqual(['e1']);
-    expect((await log.query({ orgId: 'acme', limit: 5 })).map((e) => e.id)).toEqual([
-      'e1',
-    ]);
-    expect(await log.query({})).toHaveLength(3);
-  });
 });
 
 describe('InMemoryAuditLog', () => {
