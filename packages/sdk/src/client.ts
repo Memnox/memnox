@@ -166,6 +166,17 @@ export interface FrameReport {
   payloadDigest?: string;
 }
 
+/** A frame read back: what a seam actually saw, with the moment it saw it. */
+export interface ObservedFrame {
+  id: string;
+  sessionId: string;
+  agentId: string;
+  at: string;
+  kind: string;
+  summary: string;
+  decisionId?: string;
+}
+
 /** What a seam declares about itself. Blind spots are not optional: an empty list is a claim. */
 export interface SeamDeclaration {
   kind: SeamKind;
@@ -473,6 +484,16 @@ export class MemnoxClient {
    * A seam reporting what it saw, so a session is one timeline rather than a verdict
    * with the tool call missing from either side of it. Payloads never travel.
    */
+  /** What the seams observed in one session, in the order it happened. */
+  async sessionFrames(sessionId: string): Promise<ObservedFrame[]> {
+    return this.request<ObservedFrame[]>(
+      'GET',
+      `/v1/sessions/${encodeURIComponent(sessionId)}/frames`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
   async reportFrame(frame: FrameReport): Promise<void> {
     await this.request<unknown>('POST', '/v1/frames', frame, this.options.token);
   }

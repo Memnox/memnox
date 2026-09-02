@@ -5,6 +5,8 @@ import {
   SURFACE_KIND,
   TOOL_EFFECT,
   type DiscoveryReport,
+  type McpTool,
+  type ToolEffect,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
 import { readLocalCounts, type LocalCounts } from '../local-counts';
@@ -72,12 +74,16 @@ export function registerDiscoverCommand(
     .usage('[options]')
     .argument('[unrecognized...]')
     .option('--json', 'emit the report as JSON')
+    .option('--tools', 'list every tool by what it does, server by server')
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
     )
     .action(
-      async (unrecognized: string[], options: { json?: boolean; probe: boolean }) => {
+      async (
+        unrecognized: string[],
+        options: { json?: boolean; tools?: boolean; probe: boolean },
+      ) => {
         if (unrecognized.length > 0) {
           throw new Error(unknownCommand(program, unrecognized[0] as string));
         }
@@ -87,9 +93,86 @@ export function registerDiscoverCommand(
           context.out.line(JSON.stringify(report, null, 2));
           return;
         }
+        if (options.tools === true) {
+          renderTools(context, report);
+          return;
+        }
         render(context, report, await counts());
       },
     );
+}
+
+/** Order matters: what can destroy is read before what can only read. */
+const EFFECT_ORDER: readonly { effect: ToolEffect; label: string; mark: string }[] = [
+  { effect: TOOL_EFFECT.DESTRUCTIVE, label: 'DESTRUCTIVE', mark: '✕' },
+  { effect: TOOL_EFFECT.WRITE, label: 'WRITE', mark: '⚠' },
+  { effect: TOOL_EFFECT.UNKNOWN, label: 'UNKNOWN', mark: '?' },
+  { effect: TOOL_EFFECT.READ, label: 'READ', mark: '✓' },
+];
+
+const EFFECT_COLUMN = 34;
+
+/**
+ * "Thirty one tools" becomes "eight of them change external state", which is the only
+ * version of that sentence anybody can act on. Nobody wants to read thirty
+ * descriptions, and no client anywhere shows which of them change something.
+ */
+function renderTools(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  const servers = new Map<string, McpTool[]>();
+  for (const surface of report.surfaces) {
+    for (const tool of surface.tools ?? []) {
+      servers.set(tool.server, [...(servers.get(tool.server) ?? []), tool]);
+    }
+  }
+
+  if (servers.size === 0) {
+    // Honest when empty: without a probe the servers are named and hold no tools.
+    out.line('No MCP tools found.');
+    out.line(style.dim('Run without --no-probe to ask each server what it holds.'));
+    return;
+  }
+
+  let external = 0;
+  let unknown = 0;
+  let total = 0;
+  for (const [server, tools] of [...servers].sort()) {
+    out.line('');
+    out.line(
+      style.bold(`${server}  «mcp»`.padEnd(EFFECT_COLUMN)) +
+        `${tools.length} tool${tools.length === 1 ? '' : 's'}`,
+    );
+    total += tools.length;
+
+    for (const { effect, label, mark } of EFFECT_ORDER) {
+      const matching = tools.filter((tool) => tool.effect === effect);
+      if (matching.length === 0) continue;
+      // Unknown is not counted as external: an inferred blank is not evidence of harm.
+      if (effect === TOOL_EFFECT.UNKNOWN) unknown += matching.length;
+      else if (effect !== TOOL_EFFECT.READ) external += matching.length;
+      out.line('');
+      out.line(style.bold(label.padEnd(EFFECT_COLUMN)) + String(matching.length));
+      for (const tool of matching.sort((a, b) => a.name.localeCompare(b.name))) {
+        const painted = effect === TOOL_EFFECT.READ ? mark : style.warn(mark);
+        // How it was decided rides along, so a wrong call is arguable rather than final.
+        out.line(
+          `  ${painted}  ${tool.name.padEnd(EFFECT_COLUMN - 5)}${style.dim(tool.inferredFrom)}`,
+        );
+      }
+    }
+  }
+
+  out.line('');
+  out.line(
+    external === 0
+      ? 'Nothing here is known to change external state.'
+      : style.warn(`→ ${external} of ${total} change external state`),
+  );
+  if (unknown > 0) {
+    out.line(
+      style.dim(`  ${unknown} could not be classified, so they are counted as neither`),
+    );
+  }
 }
 
 function render(context: CliContext, report: DiscoveryReport, counts: LocalCounts): void {

@@ -106,7 +106,7 @@ The only files Memnox writes are its own: policy files and its local stores.
 - New escalation logic is an `ActionAdvisor`: escalation-only (never loosens), deterministic, and failure means "no escalation" — never a crash.
 - Fail-closed on identity/provenance (unknown token, unreadable state). Where a surface fails open, say so in a comment and name what would break otherwise.
 
-## The fourteen things a change must not undo
+## The fifteen things a change must not undo
 
 Each is an invariant with a test behind it. Breaking one is not a regression, it is a
 different product.
@@ -124,7 +124,8 @@ different product.
 11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored.
 12. **A change carries a direction.** `EnvironmentChange.direction` says whether authority widened or narrowed, and `summarizeChanges` counts both. A drift report that mixed a new credential with a removed one would be a list nobody can act on.
 13. **An unreadable rule set is never an empty one.** `loadLocalRules` returns what would not load, and `memnox readiness` and `memnox watch` say so. Reporting "no rule covers this" about a machine whose rules simply failed to parse is a lie the reader would act on.
-14. **A snapshot carries no file contents.** `snapshotOf` keeps names, counts and fingerprints. Snapshots live on disk for weeks, so the rule that a secret value never leaves the process that read it binds them hardest.
+14. **An agent is enrolled with three fields.** `AgentIdentity` requires `kind` (the product), `role` (the job) and `principal` (the person). Policy matches on `roles`, so swapping the product leaves every rule about the job standing, and an incident report names a human rather than an API key. The route refuses an enrolment missing either — defaulted is not stated.
+15. **A snapshot carries no file contents.** `snapshotOf` keeps names, counts and fingerprints. Snapshots live on disk for weeks, so the rule that a secret value never leaves the process that read it binds them hardest.
 
 ## What this codebase will not grow back
 
@@ -156,14 +157,14 @@ its internals. A command is a plain word somebody would reach for.
 
 | The question | The command |
 |---|---|
-| what can act here | `memnox` (default), `doctor`, `harden` |
+| what can act here | `memnox` (default), `memnox --tools`, `doctor`, `harden` |
 | what changed, and where did it come from | `watch`, `diff`, `trace` |
 | could it actually do this | `readiness` |
 | should this proceed | `check` |
 | what may it do | `rules`, `policy simulate` |
 | why | `why`, `why --evidence`, `replay` |
 | who authorised it | `approvals`, `approve`, `deny` |
-| who is it | `agents` |
+| who is it | `agents` — enrolled with a product, a job and a person |
 | what happened | `audit`, `learn`, `coverage`, `collisions` |
 | stop it | `kill`, `quarantine`, `panic` |
 
