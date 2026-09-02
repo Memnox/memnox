@@ -53,6 +53,10 @@ the situation is better where one fits, because it says who is unblocked by the 
 | `readinessFor` | §01 | what an agent holds towards an action, off the disk — never what a rule says about it |
 | `concurrentWork`, `overlappingWork` | §03 | two agents in one file; two agents building one thing. Reported, never refereed |
 | `ContainmentService` | §06 | kill, quarantine, panic and what each did not reach |
+| `@memnox/runtime` | §02–§06 | the gateway and every service above it: identity, approvals, seams, lineage, learn, containment |
+| `@memnox/local-gate` | §03 | the same rules evaluated in the process that makes the call, so arguments never travel |
+| `@memnox/sdk` | §03 | `check`, `guard`, `governTools` — the client every seam and adapter is built on |
+| `memnox` (`@memnox/cli`) | all | the command surface named in the table below |
 
 ### The application layer is split by responsibility
 

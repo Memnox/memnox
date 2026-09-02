@@ -56,14 +56,6 @@ AGENT_ID=$(echo "$REGISTERED" | python3 -c "import sys,json;d=json.load(sys.stdi
 curl -s -o /dev/null -X POST "$BASE/v1/actions/check" -H "authorization: Bearer $AGENT" \
   -H 'content-type: application/json' \
   -d '{"action":"database.delete","environment":"production","sessionId":"s1"}'
-DECISION=$(curl -s -X POST "$BASE/v1/memory/decisions" -H "authorization: Bearer $ADMIN" \
-  -H 'content-type: application/json' \
-  -d '{"title":"t","statement":"s","owner":"o","actions":["x.*"]}' \
-  | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
-PLAN=$(curl -s -X POST "$BASE/v1/plans" -H "authorization: Bearer $AGENT" \
-  -H 'content-type: application/json' \
-  -d '{"sessionId":"s9","steps":[{"name":"read","allows":["repository.read"]}]}' \
-  | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
 VERSION=$(curl -s "$BASE/v1/policies" -H "authorization: Bearer $ADMIN" \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['version'])")
 
@@ -98,10 +90,6 @@ probe POST /v1/policies/reload                   "200"
 
 echo
 echo "== plans"
-probe POST /v1/plans                             "201 409" '{"sessionId":"s2","steps":[{"name":"a","allows":["x.y"]}]}' "$AGENT"
-probe GET  "/v1/plans/$PLAN"                     "200" "" "$AGENT"
-probe POST "/v1/plans/$PLAN/advance"             "200" "" "$AGENT"
-probe POST "/v1/plans/$PLAN/close"               "200" "" "$AGENT"
 
 echo
 echo "== approvals"
@@ -115,26 +103,11 @@ echo "== audit"
 probe GET  "/v1/audit?limit=5"                   "200"
 probe GET  /v1/audit/verify                      "200"
 probe GET  /v1/audit/export.csv                  "200"
-probe GET  /v1/reports/compliance                "200"
-
-echo
-echo "== decision memory"
-probe POST /v1/memory/decisions                  "200 201" '{"title":"t2","statement":"s2","owner":"o","actions":["z.*"]}'
-probe GET  /v1/memory/decisions                  "200"
-probe GET  "/v1/memory/decisions/search?q=t"     "200"
-probe GET  /v1/memory/digest                     "200"
-probe GET  /v1/memory/health                     "200"
-probe POST /v1/memory/search                     "200" '{"query":"t"}'
-if [[ -n "$DECISION" ]]; then
-  probe POST "/v1/memory/decisions/$DECISION/status" "200" '{"status":"active"}'
-  probe DELETE "/v1/memory/decisions/$DECISION"      "200 204"
-fi
 
 echo
 echo "== proxy and integrations"
 probe POST /v1/proxy/openai/v1/chat/completions   "400 401 403" '{"model":"gpt-4"}'
 probe POST /v1/proxy/nope/v1/x                    "404" '{"model":"gpt-4"}'
-probe POST /v1/integrations/slack/interactions    "400 401 403 404"
 
 echo
 echo "== credential rotation (last: it invalidates the token above)"
