@@ -47,7 +47,7 @@ export function registerServeCommand(
     // rules from a developer's home directory because a default moved.
     .option(
       '--policy-registry <path>',
-      'also load the rule files registered in this file (see "memnox pull")',
+      'also load the rule files registered in this file (written by "memnox setup")',
     )
     .option('--data-dir <path>', 'local data directory')
     .option('--admin-token <token>', 'require this bearer token on admin routes')
