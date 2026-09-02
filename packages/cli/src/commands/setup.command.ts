@@ -1,4 +1,4 @@
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { AGENT_KIND, DECISION_REASON, ENFORCEMENT_MODE } from '@memnox/core';
@@ -28,6 +28,8 @@ const LOCAL_GUARDS = {
 /** Only what actually escalates. An advisor that no longer ships is not a guard. */
 const GUARD_SUMMARY = 'declared scope';
 /** One machine-local identity shared by every local agent on this machine. */
+/** The job a machine-local agent does; policy about it survives swapping products. */
+const LOCAL_AGENT_ROLE = 'local-developer';
 const LOCAL_AGENT_NAME = 'local-editor';
 /** Asks what a benign action would be judged as, so the trail stays clean. */
 const TOKEN_PROBE_ACTION = 'memnox.identity.verify';
@@ -358,7 +360,14 @@ async function ensureAgentToken(
 
   try {
     const client = context.client({ url });
-    const registration = await client.registerAgent(LOCAL_AGENT_NAME, AGENT_KIND.CUSTOM);
+    /* Stated, not defaulted: setup knows the machine's own user, so the principal is
+       a fact it can read rather than a placeholder it invents. */
+    const registration = await client.registerAgent({
+      name: LOCAL_AGENT_NAME,
+      kind: AGENT_KIND.CUSTOM,
+      role: LOCAL_AGENT_ROLE,
+      principal: userInfo().username,
+    });
     const path = await writeAgentConfig(homeDir, { token: registration.token, url });
     context.out.line(
       `Registered agent "${registration.agent.name}" — token saved to ${path}`,

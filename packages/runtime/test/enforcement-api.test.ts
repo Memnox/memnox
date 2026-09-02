@@ -36,7 +36,12 @@ describe('PUT /v1/enforcement', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     agentToken = (registration.json() as { token: string }).token;
   };
@@ -123,7 +128,12 @@ describe('PUT /v1/enforcement', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     agentToken = (registration.json() as { token: string }).token;
 

@@ -79,7 +79,12 @@ describe('GET /v1/metrics', () => {
     const response = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     return (response.json() as { token: string }).token;
   }

@@ -73,7 +73,12 @@ describe('containment', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine([]),
     });
-    const registered = await gateway.registerAgent('bot', AGENT_KIND.CUSTOM);
+    const registered = await gateway.registerAgent({
+      name: 'bot',
+      kind: AGENT_KIND.CUSTOM,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     agentId = registered.agent.id;
     agentToken = registered.token;
 

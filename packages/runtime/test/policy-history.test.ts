@@ -57,7 +57,7 @@ describe('policy history and rollback', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'a', kind: 'custom' },
+      payload: { name: 'a', kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     agentToken = (registration.json() as { token: string }).token;
   });

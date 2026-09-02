@@ -22,10 +22,22 @@ export interface AgentActionStats {
   approvalsRequested: number;
 }
 
+/**
+ * A record enrolled before role and principal were asked for. Stated rather than
+ * guessed: a policy written about "release-engineer" must not silently match an agent
+ * whose job nobody ever declared.
+ */
+export const UNSTATED_FIELD = 'unstated';
+
 export interface AgentIdentity {
   id: string;
   name: string;
+  /** The product. Swap it tomorrow and every rule about the role still holds. */
   kind: AgentKind;
+  /** The job it does. This is what policy is written about, never the product. */
+  role: string;
+  /** The person it acts for, so an incident report names a human and not an API key. */
+  principal: string;
   status: AgentStatus;
   /** SHA-256 of the agent token — the plain token is shown once at registration. */
   tokenHash: string;
@@ -33,7 +45,7 @@ export interface AgentIdentity {
   stats: AgentActionStats;
   /** Action-name patterns this agent may attempt; unset or empty = unrestricted. */
   capabilities?: string[];
-  /** Who answers for this agent, §20 — optional and reported, never defaulted. */
+  /** Who answers for this agent — optional and reported, never defaulted. */
   owner?: string;
   /** The team it works for, §20. Scopes it in the organizational graph. */
   team?: string;

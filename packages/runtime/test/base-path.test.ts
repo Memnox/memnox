@@ -60,7 +60,12 @@ describe('serving under a base path', () => {
       method: 'POST',
       url: '/orbit/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     expect(registration.statusCode).toBe(201);
     const { token } = registration.json() as { token: string };

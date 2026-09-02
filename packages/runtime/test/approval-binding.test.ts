@@ -33,7 +33,12 @@ describe('what an approval is bound to', () => {
     const registered = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'billing-bot', kind: 'custom' },
+      payload: {
+        name: 'billing-bot',
+        kind: 'custom',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     token = (registered.json() as { token: string }).token;
   });

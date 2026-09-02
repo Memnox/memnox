@@ -57,6 +57,8 @@ export interface ActionEvent {
   occurredAt: string;
   agentId: string;
   agentName: string;
+  /** The job it was enrolled under. An incident report names a role, not a key. */
+  agentRole?: string;
   action: string;
   target?: string;
   environment?: string;

@@ -9,7 +9,14 @@ const VALID_AGENT_STATUSES: readonly string[] = Object.values(AGENT_STATUS);
 interface RegisterAgentBody {
   name?: string;
   kind?: string;
+  role?: string;
+  principal?: string;
   capabilities?: unknown;
+}
+
+/** A non-empty string, because "" is not a job and not a person. */
+function stated(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isCapabilityList(value: unknown): value is string[] {
@@ -31,6 +38,18 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
     if (!body.name || typeof body.name !== 'string') {
       return reply.code(400).send({ error: '"name" is required' });
     }
+    /* Refused rather than defaulted. An agent enrolled with no stated job produces
+       an incident report naming an API key, which is the thing this prevents. */
+    if (!stated(body.role)) {
+      return reply
+        .code(400)
+        .send({ error: '"role" is required — the job policy is written about' });
+    }
+    if (!stated(body.principal)) {
+      return reply
+        .code(400)
+        .send({ error: '"principal" is required — the person this agent acts for' });
+    }
     const kind =
       body.kind && VALID_AGENT_KINDS.includes(body.kind)
         ? (body.kind as AgentKind)
@@ -40,11 +59,13 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: RouteContext): vo
         .code(400)
         .send({ error: '"capabilities" must be an array of non-empty pattern strings' });
     }
-    const registration = await ctx.gateway.registerAgent(
-      body.name,
+    const registration = await ctx.gateway.registerAgent({
+      name: body.name,
       kind,
-      body.capabilities,
-    );
+      role: body.role,
+      principal: body.principal,
+      ...(body.capabilities === undefined ? {} : { capabilities: body.capabilities }),
+    });
     // The stored hash never leaves the runtime; this output gets pasted into logs.
     const { tokenHash: _tokenHash, ...agent } = registration.agent;
     return reply.code(201).send({ agent, token: registration.token });

@@ -34,7 +34,12 @@ describe('lapsed approvals', () => {
       enforcement: { default: 'enforce' },
       maxPendingPerAgent: CEILING,
     });
-    ({ token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE));
+    ({ token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    }));
   });
 
   const ask = (n: number) => gateway.authorize(token, { action: `review.item${n}` });

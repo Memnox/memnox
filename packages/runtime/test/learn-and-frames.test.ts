@@ -55,7 +55,14 @@ describe('the flight recorder', () => {
       frames,
       tasks,
     });
-    token = (await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE)).token;
+    token = (
+      await gateway.registerAgent({
+        name: 'claude-code',
+        kind: AGENT_KIND.CLAUDE_CODE,
+        role: 'test-agent',
+        principal: 'moise',
+      })
+    ).token;
   });
 
   it('keeps every frame of a withheld action, whatever the sampling says', async () => {
@@ -107,7 +114,12 @@ describe('learning from a day of work', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine(POLICIES),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
     await gateway.authorize(token, { action: 'shell.execute', sessionId: SESSION });
 
@@ -133,7 +145,12 @@ describe('learning from a day of work', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine(POLICIES),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
 
     const learn = new LearnService({
@@ -155,7 +172,12 @@ describe('learning from a day of work', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine(POLICIES),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await gateway.authorize(token, {
       action: 'database.delete',
       environment: 'production',
@@ -197,7 +219,12 @@ describe('learning from a day of work', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine(wildcard),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await gateway.authorize(token, { action: 'deploy.release', sessionId: SESSION });
 
     const learn = new LearnService({
@@ -233,7 +260,12 @@ describe('learning from a day of work', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine(POLICIES),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
     await gateway.authorize('mnx_nobody_knows_this', { action: 'repository.read' });
 

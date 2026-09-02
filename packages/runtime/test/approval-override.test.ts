@@ -49,7 +49,12 @@ describe('break-glass approval override', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN_KEY}` },
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     agentToken = (registration.json() as { token: string }).token;
 

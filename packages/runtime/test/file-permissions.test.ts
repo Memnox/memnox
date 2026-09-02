@@ -27,7 +27,12 @@ describe('what the runtime leaves on disk', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'perm-probe', kind: 'claude-code' },
+      payload: {
+        name: 'perm-probe',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     expect(registered.statusCode).toBe(201);
 
@@ -40,7 +45,12 @@ describe('what the runtime leaves on disk', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'audit-probe', kind: 'claude-code' },
+      payload: {
+        name: 'audit-probe',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     const token = (registered.json() as { token: string }).token;
     await server.app.inject({

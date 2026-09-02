@@ -22,7 +22,12 @@ describe('POST /v1/actions/outcome', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     token = (registration.json() as { token: string }).token;
   });

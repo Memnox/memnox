@@ -32,7 +32,7 @@ describe('dressing an action up to miss the rule that names it', () => {
       method: 'POST',
       url: '/v1/agents',
       headers: { authorization: `Bearer ${ADMIN}` },
-      payload: { name: 'evader', kind: 'mcp' },
+      payload: { name: 'evader', kind: 'mcp', role: 'test-agent', principal: 'moise' },
     });
     agentToken = (registered.json() as { token: string }).token;
   });

@@ -45,7 +45,12 @@ describe('enforcement modes', () => {
     });
 
   const agentToken = async (gateway: ActionGateway): Promise<string> => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     return token;
   };
 

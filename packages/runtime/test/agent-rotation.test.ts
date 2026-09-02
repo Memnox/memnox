@@ -17,7 +17,12 @@ describe('agent credential rotation', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     const body = registration.json() as { agent: { id: string }; token: string };
     agentId = body.agent.id;

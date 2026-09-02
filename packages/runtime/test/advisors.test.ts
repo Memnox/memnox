@@ -49,7 +49,12 @@ describe('ActionGateway advisors', () => {
 
   it('lets an advisor escalate an otherwise-allowed action', async () => {
     const gateway = buildGateway([blockingAdvisor]);
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, { action: 'database.migrate' });
 
     expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
@@ -61,7 +66,12 @@ describe('ActionGateway advisors', () => {
 
   it('continues when an advisor fails — failure means no escalation, never a crash', async () => {
     const gateway = buildGateway([failingAdvisor]);
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, { action: 'repository.read' });
     expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
   });
@@ -85,7 +95,12 @@ describe('ActionGateway advisors', () => {
         notified.push(approval);
       },
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const first = await gateway.authorize(token, { action: 'deploy.service' });
     const second = await gateway.authorize(token, { action: 'deploy.service' });

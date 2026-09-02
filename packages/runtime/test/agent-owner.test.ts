@@ -17,7 +17,14 @@ describe('naming who answers for an agent', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine([]),
     });
-    agentId = (await gateway.registerAgent('release-bot', AGENT_KIND.CUSTOM)).agent.id;
+    agentId = (
+      await gateway.registerAgent({
+        name: 'release-bot',
+        kind: AGENT_KIND.CUSTOM,
+        role: 'test-agent',
+        principal: 'moise',
+      })
+    ).agent.id;
   });
 
   it('records the owner, which is the edge every escalation resolves through', async () => {

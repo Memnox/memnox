@@ -307,7 +307,7 @@ export type HttpTransport = (
 ) => Promise<Response>;
 
 interface AgentRegistrationResponse {
-  agent: { id: string; name: string };
+  agent: { id: string; name: string; kind: string; role: string; principal: string };
   token: string;
 }
 
@@ -398,15 +398,18 @@ export class MemnoxClient {
     );
   }
 
-  async registerAgent(
-    name: string,
-    kind: string,
-    capabilities?: string[],
-  ): Promise<AgentRegistrationResponse> {
+  /** Role and principal are required: the runtime refuses an agent without a job. */
+  async registerAgent(enrolment: {
+    name: string;
+    kind: string;
+    role: string;
+    principal: string;
+    capabilities?: string[];
+  }): Promise<AgentRegistrationResponse> {
     return this.request<AgentRegistrationResponse>(
       'POST',
       '/v1/agents',
-      { name, kind, capabilities },
+      enrolment,
       this.options.adminToken,
     );
   }

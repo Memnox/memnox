@@ -10,9 +10,11 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
     .command('register')
     .description('Register a new agent and print its token (shown once)')
     .requiredOption('--name <name>', 'agent name, e.g. claude-code')
+    .requiredOption('--role <role>', 'the job it does, e.g. release-engineer')
+    .requiredOption('--principal <person>', 'the person it acts for')
     .option(
       '--kind <kind>',
-      `agent kind (${Object.values(AGENT_KIND).join('|')})`,
+      `the product (${Object.values(AGENT_KIND).join('|')})`,
       AGENT_KIND.CUSTOM,
     )
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
@@ -21,13 +23,23 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
       async (options: {
         name: string;
         kind: string;
+        role: string;
+        principal: string;
         url?: string;
         adminToken?: string;
       }) => {
         const { client } = await context.connect(options);
-        const registration = await client.registerAgent(options.name, options.kind);
+        const registration = await client.registerAgent({
+          name: options.name,
+          kind: options.kind,
+          role: options.role,
+          principal: options.principal,
+        });
+        const { agent } = registration;
+        context.out.line(`Agent registered: ${agent.name} (${agent.id})`);
+        // The three fields, echoed back: policy is written about the role.
         context.out.line(
-          `Agent registered: ${registration.agent.name} (${registration.agent.id})`,
+          `  ${agent.kind} · ${options.role} · acting for ${options.principal}`,
         );
         context.out.line(`Token (store it now — it is never shown again):`);
         context.out.line(registration.token);

@@ -66,7 +66,12 @@ describe('a session that declared what it was asked for', () => {
   const read = { action: 'filesystem.read', target: '.env', sessionId: SESSION };
 
   it('withholds a read the task did not cover, and names what to use instead', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(token, read);
 
@@ -85,7 +90,12 @@ describe('a session that declared what it was asked for', () => {
       declaredBy: TASK_DECLARED_BY.HUMAN,
       startedAt: '2026-08-31T09:00:00.000Z',
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(token, read);
 
@@ -93,7 +103,12 @@ describe('a session that declared what it was asked for', () => {
   });
 
   it('allows it when no task was declared, because undeclared is not out of scope', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(token, {
       action: 'filesystem.read',
@@ -105,7 +120,12 @@ describe('a session that declared what it was asked for', () => {
   });
 
   it('stores an explanation citing the rule and the scope it compared', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, read);
 
     const explanation = await explanations.findByDecision(decision.eventId);
@@ -122,7 +142,12 @@ describe('a session that declared what it was asked for', () => {
   });
 
   it('stamps the mode and the evaluation latency on every verdict', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(token, read);
 

@@ -21,7 +21,18 @@ describe('memnox agents register', () => {
     });
 
     const { out } = await runCli(
-      ['agents', 'register', '--name', 'claude-code', '--admin-token', 'admin'],
+      [
+        'agents',
+        'register',
+        '--name',
+        'claude-code',
+        '--role',
+        'release-engineer',
+        '--principal',
+        'moise',
+        '--admin-token',
+        'admin',
+      ],
       runtime,
     );
 
@@ -36,7 +47,19 @@ describe('memnox agents register', () => {
       token: 't',
     });
 
-    await runCli(['agents', 'register', '--name', 'my-bot'], runtime);
+    await runCli(
+      [
+        'agents',
+        'register',
+        '--name',
+        'my-bot',
+        '--role',
+        'reviewer',
+        '--principal',
+        'moise',
+      ],
+      runtime,
+    );
 
     expect(runtime.requests[0]?.body).toMatchObject({
       name: 'my-bot',
@@ -51,7 +74,18 @@ describe('memnox agents register', () => {
     });
 
     await runCli(
-      ['agents', 'register', '--name', 'bot', '--admin-token', 'admin_secret'],
+      [
+        'agents',
+        'register',
+        '--name',
+        'bot',
+        '--role',
+        'reviewer',
+        '--principal',
+        'moise',
+        '--admin-token',
+        'admin_secret',
+      ],
       runtime,
     );
 

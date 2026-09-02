@@ -32,7 +32,12 @@ describe('approval ceiling', () => {
       enforcement: { default: 'enforce' },
       maxPendingPerAgent: CEILING,
     });
-    ({ token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE));
+    ({ token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    }));
   });
 
   const ask = (n: number) => gateway.authorize(token, { action: `review.item${n}` });
@@ -83,7 +88,12 @@ describe('approval ceiling', () => {
 
   it('counts per agent, so one noisy agent cannot starve another', async () => {
     for (let n = 0; n < CEILING; n += 1) await ask(n);
-    const other = await gateway.registerAgent('cursor', AGENT_KIND.CURSOR);
+    const other = await gateway.registerAgent({
+      name: 'cursor',
+      kind: AGENT_KIND.CURSOR,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(other.token, { action: 'review.x' });
     expect(decision.effect).toBe(DECISION_EFFECT.ESCALATE);
@@ -97,7 +107,12 @@ describe('approval ceiling', () => {
       policyEngine: new PolicyEngine(POLICIES),
       enforcement: { default: 'enforce' },
     });
-    const agent = await uncapped.registerAgent('a', AGENT_KIND.CLAUDE_CODE);
+    const agent = await uncapped.registerAgent({
+      name: 'a',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     for (let n = 0; n < CEILING + 2; n += 1) {
       const decision = await uncapped.authorize(agent.token, {

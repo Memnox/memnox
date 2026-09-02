@@ -110,6 +110,7 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
         issues,
       ),
       agents: asOptionalStringArray(match['agents'], `${path}.match.agents`, issues),
+      roles: asOptionalStringArray(match['roles'], `${path}.match.roles`, issues),
       principals: asOptionalStringArray(
         match['principals'],
         `${path}.match.principals`,

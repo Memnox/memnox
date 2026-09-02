@@ -50,7 +50,7 @@ describe('an outcome report, against the decision it names', () => {
     const response = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name, kind: 'custom' },
+      payload: { name, kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     return (response.json() as { token: string }).token;
   }

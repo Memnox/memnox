@@ -31,7 +31,7 @@ describe('two-person approval', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'ci', kind: 'custom' },
+      payload: { name: 'ci', kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     token = (registration.json() as { token: string }).token;
   });
@@ -142,7 +142,7 @@ describe('two-person approval', () => {
       const registration = await solo.app.inject({
         method: 'POST',
         url: '/v1/agents',
-        payload: { name: 'ci', kind: 'custom' },
+        payload: { name: 'ci', kind: 'custom', role: 'test-agent', principal: 'moise' },
       });
       const soloToken = (registration.json() as { token: string }).token;
       const check = await solo.app.inject({

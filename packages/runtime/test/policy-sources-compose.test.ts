@@ -92,7 +92,7 @@ describe('writing one rule source', () => {
     const registered = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'bot', kind: 'custom' },
+      payload: { name: 'bot', kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     const token = (registered.json() as { token: string }).token;
 

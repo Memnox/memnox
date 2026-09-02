@@ -4,6 +4,18 @@ import { AGENT_STATUS, EMPTY_AGENT_STATS } from '@memnox/core';
 import { verifyAgentJwt, type AgentJwtConfig } from './agent-jwt';
 import { generateAgentToken, hashToken } from './token';
 
+/** The three fields an agent is enrolled with. All required: see AgentIdentity. */
+export interface Enrolment {
+  name: string;
+  /** The product. */
+  kind: AgentKind;
+  /** The job. Policy is written about this. */
+  role: string;
+  /** The person it acts for. */
+  principal: string;
+  capabilities?: string[];
+}
+
 export interface AgentRegistration {
   agent: AgentIdentity;
   /** Shown once — only the hash is stored. */
@@ -17,16 +29,15 @@ export class AgentRegistry {
     private readonly agentJwt?: AgentJwtConfig,
   ) {}
 
-  async register(
-    name: string,
-    kind: AgentKind,
-    capabilities?: string[],
-  ): Promise<AgentRegistration> {
+  async register(enrolment: Enrolment): Promise<AgentRegistration> {
     const token = generateAgentToken();
+    const { capabilities } = enrolment;
     const agent: AgentIdentity = {
       id: randomUUID(),
-      name,
-      kind,
+      name: enrolment.name,
+      kind: enrolment.kind,
+      role: enrolment.role,
+      principal: enrolment.principal,
       status: AGENT_STATUS.ACTIVE,
       tokenHash: hashToken(token),
       createdAt: new Date().toISOString(),

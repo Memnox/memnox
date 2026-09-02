@@ -39,7 +39,12 @@ describe('project scope over HTTP', () => {
     const registered = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'local-editor', kind: 'claude-code' },
+      payload: {
+        name: 'local-editor',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     token = (registered.json() as { token: string }).token;
   });

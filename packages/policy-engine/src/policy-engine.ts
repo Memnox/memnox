@@ -21,6 +21,8 @@ import { POLICY_MODE, type Policy } from './policy';
 
 export interface EvaluationContext {
   agentName: string;
+  /** The job the acting agent was enrolled under; what `roles` patterns match. */
+  agentRole?: string;
   /** Supplied by the caller so a verdict stays reproducible on replay. */
   now?: Date;
   /**
@@ -176,6 +178,7 @@ export class PolicyEngine {
       matchesAny(policy.match.targets, request.target) &&
       matchesAny(policy.match.environments, request.environment) &&
       matchesAny(policy.match.agents, context.agentName) &&
+      matchesAny(policy.match.roles, context.agentRole) &&
       matchesAny(policy.match.principals, request.principal) &&
       matchesAny(policy.match.models, request.model) &&
       matchesAny(policy.match.providers, request.provider) &&

@@ -8,6 +8,11 @@ export interface PolicyMatch {
   targets?: string[];
   environments?: string[];
   agents?: string[];
+  /**
+   * The job rather than the product. A rule about "release-engineer" keeps holding
+   * when the team swaps Claude Code for Codex, which `agents` cannot do.
+   */
+  roles?: string[];
   /** Distinct from `agents`: a delegation survives the agent being replaced. */
   principals?: string[];
   models?: string[];

@@ -81,7 +81,7 @@ import {
   type Policy,
 } from '@memnox/policy-engine';
 import type { AgentJwtConfig } from './agent-jwt';
-import { AgentRegistry, type AgentRegistration } from './agent-registry';
+import { AgentRegistry, type AgentRegistration, type Enrolment } from './agent-registry';
 import {
   APPROVAL_CAP_REACHED,
   ApprovalService,
@@ -269,12 +269,8 @@ export class ActionGateway {
     });
   }
 
-  registerAgent(
-    name: string,
-    kind: AgentKind,
-    capabilities?: string[],
-  ): Promise<AgentRegistration> {
-    return this.agents.register(name, kind, capabilities);
+  registerAgent(enrolment: Enrolment): Promise<AgentRegistration> {
+    return this.agents.register(enrolment);
   }
 
   /** Rotation is audited here because the audit log belongs to the gateway. */
@@ -366,6 +362,7 @@ export class ActionGateway {
       occurredAt: new Date().toISOString(),
       agentId: agent.id,
       agentName: agent.name,
+      agentRole: agent.role,
       action: EXECUTION_OUTCOME_ACTION,
       target: report.target ?? report.action,
       environment: report.environment,
@@ -445,6 +442,7 @@ export class ActionGateway {
       occurredAt: at,
       agentId: agent.id,
       agentName: agent.name,
+      agentRole: agent.role,
       action: report.action,
       ...(report.target === undefined ? {} : { target: report.target }),
       ...(report.sessionId === undefined ? {} : { sessionId: report.sessionId }),
@@ -497,6 +495,7 @@ export class ActionGateway {
       occurredAt: new Date().toISOString(),
       agentId: agent.id,
       agentName: agent.name,
+      agentRole: agent.role,
       action: LLM_SPEND_ACTION,
       target: String(tokens),
       environment,
@@ -573,6 +572,7 @@ export class ActionGateway {
     const scope = await this.compareScope(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
+      agentRole: agent.role,
       now: new Date(),
       ...(scope === undefined ? {} : { scope: scope.match }),
     });
@@ -664,6 +664,7 @@ export class ActionGateway {
     const scope = await this.compareScope(request);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
+      agentRole: agent.role,
       now: new Date(),
       ...(scope === undefined ? {} : { scope: scope.match }),
     });
@@ -914,6 +915,7 @@ export class ActionGateway {
       occurredAt: new Date().toISOString(),
       agentId: agent === null ? UNKNOWN_AGENT_ID : agent.id,
       agentName: agent === null ? UNKNOWN_AGENT_ID : agent.name,
+      ...(agent === null ? {} : { agentRole: agent.role }),
       action: request.action,
       target: request.target,
       environment: request.environment,

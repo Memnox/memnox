@@ -52,10 +52,12 @@ describe('ActionGateway', () => {
   });
 
   it('allows unmatched actions and updates agent stats', async () => {
-    const { agent, token } = await gateway.registerAgent(
-      'claude-code',
-      AGENT_KIND.CLAUDE_CODE,
-    );
+    const { agent, token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, { action: 'repository.read' });
     expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
 
@@ -64,7 +66,12 @@ describe('ActionGateway', () => {
   });
 
   it('blocks policy violations and records the matched policy', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, {
       action: 'database.delete',
       target: 'users',
@@ -81,9 +88,13 @@ describe('ActionGateway', () => {
   });
 
   it('blocks actions outside a capability-scoped agent before policy evaluation', async () => {
-    const { token } = await gateway.registerAgent('reader', AGENT_KIND.CUSTOM, [
-      'repository.*',
-    ]);
+    const { token } = await gateway.registerAgent({
+      name: 'reader',
+      kind: AGENT_KIND.CUSTOM,
+      role: 'test-agent',
+      principal: 'moise',
+      capabilities: ['repository.*'],
+    });
     const decision = await gateway.authorize(token, { action: 'database.migrate' });
     expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
     expect(decision.reason).toBe(DECISION_REASON.CAPABILITY);
@@ -95,21 +106,35 @@ describe('ActionGateway', () => {
   });
 
   it('allows actions matching a capability pattern', async () => {
-    const { token } = await gateway.registerAgent('reader', AGENT_KIND.CUSTOM, [
-      'repository.*',
-    ]);
+    const { token } = await gateway.registerAgent({
+      name: 'reader',
+      kind: AGENT_KIND.CUSTOM,
+      role: 'test-agent',
+      principal: 'moise',
+      capabilities: ['repository.*'],
+    });
     const decision = await gateway.authorize(token, { action: 'repository.read' });
     expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
   });
 
   it('leaves agents without capabilities unrestricted', async () => {
-    const { token } = await gateway.registerAgent('open', AGENT_KIND.CUSTOM);
+    const { token } = await gateway.registerAgent({
+      name: 'open',
+      kind: AGENT_KIND.CUSTOM,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const decision = await gateway.authorize(token, { action: 'database.migrate' });
     expect(decision.effect).toBe(DECISION_EFFECT.ALLOW);
   });
 
   it('blocks suspended agents regardless of policy', async () => {
-    const { agent, token } = await gateway.registerAgent('rogue', AGENT_KIND.CUSTOM);
+    const { agent, token } = await gateway.registerAgent({
+      name: 'rogue',
+      kind: AGENT_KIND.CUSTOM,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     await identityStore.save({ ...agent, status: AGENT_STATUS.SUSPENDED });
     const decision = await gateway.authorize(token, { action: 'repository.read' });
     expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
@@ -117,7 +142,12 @@ describe('ActionGateway', () => {
   });
 
   it('runs the full approval lifecycle: pending → approved → allowed', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const request = {
       action: 'deploy.service',
       target: 'api',
@@ -151,7 +181,12 @@ describe('ActionGateway', () => {
   });
 
   it('refuses an approval replayed against a different action', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const first = await gateway.authorize(token, {
       action: 'deploy.service',
       target: 'api',
@@ -169,7 +204,12 @@ describe('ActionGateway', () => {
   });
 
   it('blocks after a denied approval', async () => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const request = {
       action: 'deploy.service',
       target: 'api',

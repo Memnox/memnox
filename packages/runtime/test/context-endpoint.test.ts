@@ -36,7 +36,7 @@ describe('POST /v1/context', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'coder', kind: 'custom' },
+      payload: { name: 'coder', kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     token = (registration.json() as { token: string }).token;
   });

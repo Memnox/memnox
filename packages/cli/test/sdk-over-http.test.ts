@@ -48,7 +48,12 @@ describe('the SDK against a running runtime', () => {
   });
 
   it('rotates an agent token', async () => {
-    const registered = await client.registerAgent('claude-code', 'claude-code');
+    const registered = await client.registerAgent({
+      name: 'claude-code',
+      kind: 'claude-code',
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const rotated = await client.rotateAgent(registered.agent.id);
 
     expect(rotated.token).not.toBe(registered.token);
@@ -83,7 +88,12 @@ describe('the SDK against a running runtime', () => {
   });
 
   it('reads a decision back out of the audit trail', async () => {
-    const registered = await client.registerAgent('deployer', 'custom');
+    const registered = await client.registerAgent({
+      name: 'deployer',
+      kind: 'custom',
+      role: 'test-agent',
+      principal: 'moise',
+    });
     const agent = new MemnoxClient({
       baseUrl: 'http://runtime.test',
       token: registered.token,

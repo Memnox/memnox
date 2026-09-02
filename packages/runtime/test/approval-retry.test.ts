@@ -31,7 +31,7 @@ describe('retry after approval', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'editor', kind: 'custom' },
+      payload: { name: 'editor', kind: 'custom', role: 'test-agent', principal: 'moise' },
     });
     token = (registration.json() as { token: string }).token;
   });

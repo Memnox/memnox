@@ -67,7 +67,7 @@ describe('check endpoint rate limiting', () => {
     const response = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name, kind: 'claude-code' },
+      payload: { name, kind: 'claude-code', role: 'test-agent', principal: 'moise' },
     });
     const { token } = response.json() as { token: string };
     return token;

@@ -23,7 +23,12 @@ describe('the flight recorder', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     const body = registration.json() as { agent: { id: string }; token: string };
     token = body.token;
@@ -157,7 +162,12 @@ describe('lineage', () => {
         await server.app.inject({
           method: 'POST',
           url: '/v1/agents',
-          payload: { name: 'claude-code', kind: 'claude-code' },
+          payload: {
+            name: 'claude-code',
+            kind: 'claude-code',
+            role: 'test-agent',
+            principal: 'moise',
+          },
         })
       ).json() as { token: string }
     ).token;
@@ -231,7 +241,12 @@ describe('a verdict a seam reached on its own', () => {
         await server.app.inject({
           method: 'POST',
           url: '/v1/agents',
-          payload: { name: 'claude-code', kind: 'claude-code' },
+          payload: {
+            name: 'claude-code',
+            kind: 'claude-code',
+            role: 'test-agent',
+            principal: 'moise',
+          },
         })
       ).json() as { token: string }
     ).token;

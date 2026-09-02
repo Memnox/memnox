@@ -37,7 +37,12 @@ describe('memnox server', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'claude-code', kind: 'claude-code' },
+      payload: {
+        name: 'claude-code',
+        kind: 'claude-code',
+        role: 'test-agent',
+        principal: 'moise',
+      },
     });
     expect(registration.statusCode).toBe(201);
     const { token } = registration.json() as { token: string };
@@ -82,7 +87,12 @@ describe('memnox server', () => {
     const registration = await server.app.inject({
       method: 'POST',
       url: '/v1/agents',
-      payload: { name: 'reader', capabilities: ['repository.*', 'docs.read'] },
+      payload: {
+        name: 'reader',
+        role: 'test-agent',
+        principal: 'moise',
+        capabilities: ['repository.*', 'docs.read'],
+      },
     });
     expect(registration.statusCode).toBe(201);
 

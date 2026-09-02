@@ -37,7 +37,12 @@ describe('per-rule rate limits', () => {
     });
 
   const tokenFor = async (gateway: ActionGateway): Promise<string> => {
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
     return token;
   };
 
@@ -153,7 +158,12 @@ describe('a observed rule in the audit trail', () => {
         },
       ]),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     const decision = await gateway.authorize(token, DEPLOY);
     const [event] = await auditLog.recent(1);
@@ -174,7 +184,12 @@ describe('what a caller’s own gate reported', () => {
       approvalStore: new InMemoryApprovalStore(),
       policyEngine: new PolicyEngine([]),
     });
-    const { token } = await gateway.registerAgent('claude-code', AGENT_KIND.CLAUDE_CODE);
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
 
     await gateway.authorize(token, {
       action: 'mcp.create_issue',
