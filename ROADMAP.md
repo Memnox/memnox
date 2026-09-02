@@ -4,7 +4,7 @@ Each item names the seam where it plugs in, so contributors can start without sp
 
 ## Understanding the action
 
-- [x] **Verified execution** — `runGuarded()` (`@memnox/sdk`) runs preconditions → action → postconditions → rollback, and `POST /v1/actions/outcome` audits what actually happened, so the log records outcomes and not just permissions. The compliance report's verification coverage names the decisions still awaiting testimony (separating "too recent to be overdue" from unreported), and `serve --verification-guard` escalates an agent's destructive actions while its trail stays unverified.
+- [x] **Verified execution** — `runGuarded()` (`@memnox/sdk`) runs preconditions → action → postconditions → rollback, and `POST /v1/actions/outcome` audits what actually happened, so the log records outcomes and not just permissions.
 
 ## Policy lifecycle
 
@@ -34,7 +34,7 @@ Each item names the seam where it plugs in, so contributors can start without sp
 - [x] **Semantic decision search** — `DecisionSemanticSearch` fuses keyword and embedding results; BYOK embeddings via `--embedding-key`, degrading to keyword when unavailable.
 - [x] **Intent classification** — `memnox intent "<goal>"` expands a stated goal into candidate actions, each rated by the deterministic classifier rather than the model.
 - [x] **Search over decisions** — deterministic keyword search, with hybrid embedding retrieval layered on top behind the same signature.
-- [x] **Compliance export formats** (audit CSV evidence export) — SOC2/ISO evidence packaging beyond the current markdown/JSON report (`packages/runtime/src/reporting.ts`).
+- [ ] **Compliance evidence** — removed with the cloud half. Framework mapping and evidence packaging need sources this repository does not read; the open half exports the audit trail as CSV and stops there.
 
 ## Distribution
 
