@@ -8,7 +8,6 @@ import {
   type MachineReader,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
-import type { MachineReaderFactory } from './discover.command';
 
 const SEVERITY_WIDTH = 10;
 
@@ -19,7 +18,7 @@ const SEVERITY_WIDTH = 10;
 export function registerDoctorCommand(
   program: Command,
   context: CliContext,
-  buildReader: MachineReaderFactory = () => new NodeMachineReader(homedir()),
+  buildReader: () => MachineReader = () => new NodeMachineReader(homedir()),
   cwd: () => string = () => process.cwd(),
 ): void {
   program

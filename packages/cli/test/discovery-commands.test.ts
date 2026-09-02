@@ -1,52 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  HardenWriter,
-  MachineReader,
-  McpLister,
-  McpToolDeclaration,
-} from '@memnox/discovery';
+import type { McpLister } from '@memnox/discovery';
 import { registerDiscoverCommand } from '../src/commands/discover.command';
 import { registerDoctorCommand } from '../src/commands/doctor.command';
 import { registerHardenCommand } from '../src/commands/harden.command';
 import { runCommand } from './cli-harness';
-
-const HOME = '/home/dev';
-/** A directory the reader is standing in, which holds the credentials a repo has. */
-const PROJECT = '/srv/checkout';
-
-/** No fixtures anywhere else: this stands in for the reader's own machine in tests. */
-class FakeMachine implements MachineReader, HardenWriter {
-  constructor(private readonly files: Map<string, string>) {}
-
-  static from(files: Record<string, string>): FakeMachine {
-    return new FakeMachine(new Map(Object.entries(files)));
-  }
-
-  async exists(path: string): Promise<boolean> {
-    return this.files.has(path);
-  }
-  async read(path: string): Promise<string | null> {
-    return this.files.get(path) ?? null;
-  }
-  async list(): Promise<string[]> {
-    return [];
-  }
-  homeDir(): string {
-    return HOME;
-  }
-  userName(): string {
-    return 'dev';
-  }
-  async write(path: string, contents: string): Promise<void> {
-    this.files.set(path, contents);
-  }
-  async remove(path: string): Promise<void> {
-    this.files.delete(path);
-  }
-  get paths(): string[] {
-    return [...this.files.keys()];
-  }
-}
+import {
+  fakeSeams,
+  FakeMachine,
+  HOME,
+  PROJECT,
+  StubLister,
+  noTools,
+} from './machine-harness';
 
 const MACHINE = {
   [`${HOME}/.claude.json`]: JSON.stringify({
@@ -55,23 +20,13 @@ const MACHINE = {
   [`${HOME}/.aws/credentials`]: '[default]\naws_access_key_id = AKIAEXAMPLE',
 };
 
-/** Never the real one: the default starts every MCP server this machine declares. */
-class StubLister implements McpLister {
-  constructor(private readonly tools: McpToolDeclaration[] = []) {}
-  async listTools(): Promise<McpToolDeclaration[]> {
-    return this.tools;
-  }
-}
-
-const noTools = (): McpLister => new StubLister();
-
 describe('memnox (discover)', () => {
   it('names the agents and what they can reach right now', async () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => machine, noTools),
+        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
       ['discover'],
     );
 
@@ -89,7 +44,7 @@ describe('memnox (discover)', () => {
     await expect(
       runCommand(
         (program, context) =>
-          registerDiscoverCommand(program, context, () => machine, noTools),
+          registerDiscoverCommand(program, context, () => fakeSeams(machine)),
         ['audti'],
       ),
     ).rejects.toThrow(/unknown command "audti"/);
@@ -105,7 +60,7 @@ describe('memnox (discover)', () => {
             .command('audit')
             .description('the real one')
             .action(() => undefined);
-          registerDiscoverCommand(program, context, () => machine, noTools);
+          registerDiscoverCommand(program, context, () => fakeSeams(machine));
         },
         ['audti'],
       ),
@@ -127,7 +82,7 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => machine, lister),
+        registerDiscoverCommand(program, context, () => fakeSeams(machine, { lister })),
       ['discover'],
     );
 
@@ -146,7 +101,7 @@ describe('memnox (discover)', () => {
 
     await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => machine, lister),
+        registerDiscoverCommand(program, context, () => fakeSeams(machine, { lister })),
       ['discover', '--no-probe'],
     );
 
@@ -166,7 +121,12 @@ describe('memnox (discover)', () => {
 
     const seen = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => withProject, noTools, here),
+        registerDiscoverCommand(
+          program,
+          context,
+          () => fakeSeams(withProject, { projectDirs: [PROJECT] }),
+          here,
+        ),
       ['discover', '--json'],
     );
     const ranked = await runCommand(
@@ -185,7 +145,7 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => machine, noTools),
+        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
       ['discover', '--json'],
     );
 
@@ -197,7 +157,7 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => machine, noTools),
+        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
       ['discover'],
     );
 

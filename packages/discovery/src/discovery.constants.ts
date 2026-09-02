@@ -165,3 +165,25 @@ export const DATABASE_SCHEMES: readonly string[] = [
 
 /** Hosts that read as production, so the row can say which one it is. */
 export const PRODUCTION_HINTS: readonly string[] = ['prod', 'production', 'live'];
+
+/** Which way a change moved. A list mixing the two is a list nobody can act on. */
+export const CHANGE_DIRECTION = {
+  WIDENS: 'widens',
+  NARROWS: 'narrows',
+} as const;
+
+export type ChangeDirection = (typeof CHANGE_DIRECTION)[keyof typeof CHANGE_DIRECTION];
+
+/** What moved. Named rather than typed as a string so a report can group by it. */
+export const CHANGE_SUBJECT = {
+  AGENT: 'agent',
+  SERVER: 'server',
+  TOOL: 'tool',
+  SURFACE: 'surface',
+  RESOURCE: 'resource',
+} as const;
+
+export type ChangeSubject = (typeof CHANGE_SUBJECT)[keyof typeof CHANGE_SUBJECT];
+
+/** Snapshots kept before the oldest is dropped: enough for "since last week". */
+export const SNAPSHOT_HISTORY_LIMIT = 30;

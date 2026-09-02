@@ -8,3 +8,4 @@ export * from './coverage';
 export * from './drift';
 export * from './cost';
 export * from './incident';
+export * from './collision';

@@ -1,21 +1,14 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
-  discover,
-  NodeMachineReader,
-  NodeMcpLister,
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
   type DiscoveryReport,
-  type MachineReader,
-  type McpLister,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
 import { readLocalCounts, type LocalCounts } from '../local-counts';
-
-/** Injected so a test never reads the developer's real home directory. */
-export type MachineReaderFactory = () => MachineReader;
+import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
 /** How far apart two words may be before a suggestion is noise rather than help. */
 const MAX_SUGGESTION_DISTANCE = 3;
@@ -63,8 +56,7 @@ const PATH_GUTTER = 2;
 export function registerDiscoverCommand(
   program: Command,
   context: CliContext,
-  buildReader: MachineReaderFactory = () => new NodeMachineReader(homedir()),
-  buildLister: () => McpLister = () => new NodeMcpLister(),
+  buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
   cwd: () => string = () => process.cwd(),
   counts: () => Promise<LocalCounts> = () => readLocalCounts(homedir()),
 ): void {
@@ -89,13 +81,8 @@ export function registerDiscoverCommand(
         if (unrecognized.length > 0) {
           throw new Error(unknownCommand(program, unrecognized[0] as string));
         }
-        const report = await discover(buildReader(), {
-          now: new Date().toISOString(),
-          // The directory they are standing in holds the credentials the repo has.
-          projectDirs: [cwd()],
-          // Starting somebody else's server is the one thing here that runs code.
-          ...(options.probe ? { lister: buildLister() } : {}),
-        });
+        // Every scan is kept, which is the only reason `memnox diff` has a baseline.
+        const { report } = await scanMachine(buildSeams(cwd()), { probe: options.probe });
         if (options.json === true) {
           context.out.line(JSON.stringify(report, null, 2));
           return;

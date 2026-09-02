@@ -62,12 +62,20 @@ const WRITE_VERBS = [
   'write',
   'create',
   'update',
+  'modify',
+  'edit',
+  'add',
+  'insert',
   'set',
   'post',
   'send',
   'merge',
   'push',
   'apply',
+  'deploy',
+  'upload',
+  'publish',
+  'rename',
 ];
 const READ_VERBS = [
   'get',
@@ -105,16 +113,8 @@ export function inferToolEffect(declaration: McpToolDeclaration): {
     }
   }
 
-  const name = declaration.name.toLowerCase();
-  if (DESTRUCTIVE_VERBS.some((verb) => name.includes(verb))) {
-    return { effect: TOOL_EFFECT.DESTRUCTIVE, inferredFrom: EFFECT_INFERENCE.NAME };
-  }
-  if (WRITE_VERBS.some((verb) => name.includes(verb))) {
-    return { effect: TOOL_EFFECT.WRITE, inferredFrom: EFFECT_INFERENCE.NAME };
-  }
-  if (READ_VERBS.some((verb) => name.includes(verb))) {
-    return { effect: TOOL_EFFECT.READ, inferredFrom: EFFECT_INFERENCE.NAME };
-  }
+  const named = effectOfName(declaration.name);
+  if (named !== null) return { effect: named, inferredFrom: EFFECT_INFERENCE.NAME };
 
   // A tool taking no arguments cannot name a thing to change, so it reads at worst.
   const schema = declaration.inputSchema;
@@ -124,6 +124,19 @@ export function inferToolEffect(declaration: McpToolDeclaration): {
   }
 
   return { effect: TOOL_EFFECT.UNKNOWN, inferredFrom: EFFECT_INFERENCE.NAME };
+}
+
+/**
+ * The verb in a name, which is all a name carries. Exported because an action on the
+ * wire is named the same way a tool is, and two verb lists would drift apart.
+ */
+export function effectOfName(name: string): ToolEffect | null {
+  const lowered = name.toLowerCase();
+  if (DESTRUCTIVE_VERBS.some((verb) => lowered.includes(verb)))
+    return TOOL_EFFECT.DESTRUCTIVE;
+  if (WRITE_VERBS.some((verb) => lowered.includes(verb))) return TOOL_EFFECT.WRITE;
+  if (READ_VERBS.some((verb) => lowered.includes(verb))) return TOOL_EFFECT.READ;
+  return null;
 }
 
 export function toMcpTool(server: string, declaration: McpToolDeclaration): McpTool {

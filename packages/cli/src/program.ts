@@ -6,6 +6,11 @@ import { registerApprovalsCommand } from './commands/approvals.command';
 import { registerAuditCommand } from './commands/audit.command';
 import { registerCheckCommand } from './commands/check.command';
 import { registerDiscoverCommand } from './commands/discover.command';
+import { registerDiffCommand } from './commands/diff.command';
+import { registerWatchCommand } from './commands/watch.command';
+import { registerTraceCommand } from './commands/trace.command';
+import { registerReadinessCommand } from './commands/readiness.command';
+import { registerCollisionsCommand } from './commands/collisions.command';
 import { registerDoctorCommand } from './commands/doctor.command';
 import { registerHardenCommand } from './commands/harden.command';
 import { registerHooksCommand } from './commands/hooks.command';
@@ -34,6 +39,10 @@ export function buildProgram(context: CliContext): Command {
 
   // The first four phases need no account: discovery, doctor and harden come first.
   registerDiscoverCommand(program, context);
+  registerDiffCommand(program, context);
+  registerWatchCommand(program, context);
+  registerTraceCommand(program, context);
+  registerReadinessCommand(program, context);
   registerDoctorCommand(program, context);
   registerHardenCommand(program, context);
   registerHooksCommand(program, context);
@@ -54,6 +63,7 @@ export function buildProgram(context: CliContext): Command {
   registerRulesCommand(program, context);
   registerCoverageCommand(program, context);
   registerLearnCommand(program, context);
+  registerCollisionsCommand(program, context);
   registerContainCommands(program, context);
   registerPolicyCommand(program, context);
 
