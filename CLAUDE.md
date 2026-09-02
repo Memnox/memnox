@@ -14,9 +14,16 @@ application     ActionGateway, ApprovalService, AgentRegistry
 domain          packages/core, policy-engine, discovery, ledger
                 pure types, constants, deterministic logic; core + policy-engine have ZERO deps
 
-infrastructure  packages/runtime/src/stores, codecs, notifiers
-                adapters behind ports defined in core
+infrastructure  packages/runtime/src/stores, packages/discovery snapshot store
+                adapters behind ports defined in core (or, for discovery, in its own ports)
 ```
+
+**This repository is the open half.** Everything one person needs to govern the agents on
+their own machine, with no account and no network. Anything that only means something across
+more than one person, and that needs somebody else's data to work, is the cloud and does not
+belong here: identity across a fleet, organizational evidence, cost, SSO, SIEM. The
+open/cloud table in `VISION.md` is the boundary, and it is drawn on that principle rather
+than on a feature count.
 
 ### The phases the packages answer to
 
@@ -36,13 +43,16 @@ the situation is better where one fits, because it says who is unblocked by the 
 |---|---|---|
 | `@memnox/discovery` | §01 | what can act here, what it reaches, findings, reversible harden steps |
 | `@memnox/core` | §02 | the normalized model: the decision object, evidence, declared scope, the explanation built from the match |
-| `@memnox/mcp-firewall`, `CapabilityBroker` | §03 | seams, the MCP proxy **both ways**, capabilities and leases |
+| `@memnox/mcp-firewall` | §03 | seams, the MCP proxy **both ways** |
 | `@memnox/tool-hook` | §03 | the five local seams: the PreToolUse hook, the shell wrapper, the git credential helper, the egress proxy, the Docker socket gate |
 | `SeamService`, `LineageService` | §03 | seams declaring themselves; who caused this, hop by hop |
 | `buildExplanation`, `why`, `rules`, `replay` | §04 | the deterministic answer, built from the match and never from a model |
 | `@memnox/policy-engine` | §05 | policies, the three effects, proposals, simulation, blast radius, the compile into each agent's native control |
-| `@memnox/ledger`, `LearnService` | §03, §06 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, chains, cost, incidents |
-| `ContainmentService`, `DelegationService` | §06 | kill, quarantine, panic and what each did not reach; chains that only narrow |
+| `@memnox/ledger`, `LearnService` | §03, §06 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, collisions, cost, incidents |
+| `snapshotOf`, `compareSnapshots`, `traceCapability` | §06 | what an environment held at one moment, what moved since, and where one tool came from |
+| `readinessFor` | §01 | what an agent holds towards an action, off the disk — never what a rule says about it |
+| `concurrentWork`, `overlappingWork` | §03 | two agents in one file; two agents building one thing. Reported, never refereed |
+| `ContainmentService` | §06 | kill, quarantine, panic and what each did not reach |
 
 ### The application layer is split by responsibility
 
@@ -96,7 +106,7 @@ The only files Memnox writes are its own: policy files and its local stores.
 - New escalation logic is an `ActionAdvisor`: escalation-only (never loosens), deterministic, and failure means "no escalation" — never a crash.
 - Fail-closed on identity/provenance (unknown token, unreadable state). Where a surface fails open, say so in a comment and name what would break otherwise.
 
-## The eight things a change must not undo
+## The fourteen things a change must not undo
 
 Each is an invariant with a test behind it. Breaking one is not a regression, it is a
 different product.
@@ -112,7 +122,9 @@ different product.
 9. **The MCP proxy checks both directions.** The call on the way out, the result on the way back. A tool result is wrapped as an untrusted `ContextBlock` whatever it says, instruction-shaped content is recorded and framed rather than removed, and `promotedToIntent` is an invariant rather than a field anything sets.
 10. **Containment names what it did not reach.** `ContainmentAction.unreached` is never empty because it was inconvenient. A kill reporting success while one machine is asleep is the worst possible lie, and the CLI exits non-zero on a partial one.
 11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored.
-12. **Every route to a delegation passes a gate.** `validateWorkflow` walks backward from every delegate node to the trigger; a gated happy path proves nothing about the branch added underneath it later.
+12. **A change carries a direction.** `EnvironmentChange.direction` says whether authority widened or narrowed, and `summarizeChanges` counts both. A drift report that mixed a new credential with a removed one would be a list nobody can act on.
+13. **An unreadable rule set is never an empty one.** `loadLocalRules` returns what would not load, and `memnox readiness` and `memnox watch` say so. Reporting "no rule covers this" about a machine whose rules simply failed to parse is a lie the reader would act on.
+14. **A snapshot carries no file contents.** `snapshotOf` keeps names, counts and fingerprints. Snapshots live on disk for weeks, so the rule that a secret value never leaves the process that read it binds them hardest.
 
 ## What this codebase will not grow back
 
@@ -134,37 +146,43 @@ These were removed on purpose. Adding one back is a product decision, not a refa
 5. **Comments: one line, WHY only.** Never restate the code; never leave commented-out code.
 6. **Every behavior change ships with a test** (`packages/<name>/test`, vitest runs against source via aliases). New gateway paths append exactly one audit event.
 7. **Secrets never appear as literals in test files** — assemble them at runtime (`['AKIA','…'].join('')`).
-8. **Deterministic-IV encryption is banned** on anything searched by content (legacy scar; see ARCHITECTURE.md).
+8. **Nothing is encrypted at rest, and nothing should start being.** Files are owner-only under the data directory. A keyring this runtime could not honestly promise to rotate was removed with the rest of the cloud half; key management across a fleet belongs there.
 9. **No optional chaining (`?.`).** Write the check: `if (x === undefined) return …`. `?.` turns a broken invariant into a silent no-op — `child?.stdin?.write()` dropped an authorized MCP call and hung the client, with no log and no error. When a nested read off untrusted input is genuinely optional, give it a named helper (`fieldPath(payload, 'data', 'content')`) rather than a chain.
 
 ## Command names
 
-The product answers seven questions, so the CLI is named for them rather than for its
-internals. A command is a plain word somebody would reach for: `check`, `rules`, `why`,
-`audit`, `learn`, `coverage`, `census`, `queue`, `evidence`, `kill`, `panic`.
+The product answers a handful of questions, so the CLI is named for them rather than for
+its internals. A command is a plain word somebody would reach for.
 
 | The question | The command |
 |---|---|
 | what can act here | `memnox` (default), `doctor`, `harden` |
+| what changed, and where did it come from | `watch`, `diff`, `trace` |
+| could it actually do this | `readiness` |
 | should this proceed | `check` |
-| what may it do | `rules`, `policy`, `simulate` |
+| what may it do | `rules`, `policy simulate` |
 | why | `why`, `why --evidence`, `replay` |
-| who authorised it | `approvals`, `approve`, `deny`, `queue` |
-| who is it | `agents`, `census`, `readiness` |
-| what happened | `audit`, `learn`, `coverage`, `drift`, `evidence` |
+| who authorised it | `approvals`, `approve`, `deny` |
+| who is it | `agents` |
+| what happened | `audit`, `learn`, `coverage`, `collisions` |
+| stop it | `kill`, `quarantine`, `panic` |
+
+Every one of them works with no account and no network, except the four that read the
+runtime's own record over loopback.
 
 Four names went and are not coming back: `explain` (a model narrating a decision),
 `intent` (a model inferring one), `insights` (reporting about this product rather than
 the organization), and `plan`. Two pairs merged, because one question deserves one
 command: `context` + `describe` became `rules`, and `report` + `compliance` became
-`evidence`. `trace` became `why --evidence`.
+`evidence`. `trace` is capability provenance — where a tool came from — and the evidence
+behind a decision is `why --evidence`.
 
 ## Naming
 
 | Thing | Convention | Example |
 |---|---|---|
 | Files | kebab-case | `action-gateway.ts`, `decision-registry.ts` |
-| Classes | PascalCase | `PolicyEngine`, `CapabilityBroker` |
+| Classes | PascalCase | `PolicyEngine`, `ActionGateway` |
 | Methods | camelCase verb-first | `authorize()`, `register()` |
 | Constants | SCREAMING_SNAKE | `DECISION_EFFECT`, `APPROVAL_TTL_MS` |
 | Route modules | `<domain>.routes.ts` exporting `register<Domain>Routes(app, ctx)` | `audit.routes.ts` |

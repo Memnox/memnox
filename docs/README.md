@@ -6,6 +6,7 @@ Start here, then go where you need.
 |---|---|
 | **Understand the words the rest of these docs use** | [concepts.md](concepts.md) |
 | See what can already act on this machine, with no account | [discovering-your-machine.md](discovering-your-machine.md) |
+| Notice what changed in it, and where a tool came from | [discovering-your-machine.md](discovering-your-machine.md#what-changed) |
 | Get from nothing to a governed agent | [getting-started.md](getting-started.md) |
 | Govern an MCP client, an SDK caller, or an agent framework | [governing-agents.md](governing-agents.md) |
 | Write or tune the rules | [policies.md](policies.md) |
@@ -13,8 +14,6 @@ Start here, then go where you need.
 | Turn a week of real work into rules | [learning-from-behaviour.md](learning-from-behaviour.md) |
 | Know how much is actually governed, and stop an agent | [operating.md](operating.md) |
 | Run it for a team, or in containers | [deployment.md](deployment.md) |
-| Run more than one runtime | [deploying-many.md](deploying-many.md) |
-| Connect a runtime to a control plane | [connecting-a-control-plane.md](connecting-a-control-plane.md) |
 | Fix something that is not working | [troubleshooting.md](troubleshooting.md) |
 | Understand what Memnox is and why | [the root README](../README.md) |
 | See what is built, and what is still ahead of it | [VISION.md](../VISION.md) |

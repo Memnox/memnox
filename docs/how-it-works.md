@@ -8,7 +8,7 @@ Every call takes the same five steps, in the same order, with no LLM and no netw
 Identity → Policy → Advisors → Approval → Audit
 ```
 
-1. **Identity.** The agent authenticates with its token, or optionally with an mTLS client certificate whose subject CN is the agent name (`--tls-cert`, `--tls-key`, `--tls-ca`). Unknown tokens are withheld and audited as critical, because identity fails closed. Suspended agents are withheld. An agent registered with `capabilities` (wildcard action patterns) is withheld for any action outside them, before policy even runs.
+1. **Identity.** The agent authenticates with its token, or with an HS256 service-account JWT. Unknown tokens are withheld and audited as critical, because identity fails closed. Suspended agents are withheld. An agent registered with `capabilities` (wildcard action patterns) is withheld for any action outside them, before policy even runs.
 
 2. **Policy.** Every matching policy is collected and the most restrictive effect wins. When nothing matches, the configured default effect applies. That default is `allow`, so onboarding can start in monitor-first mode; run with `--default-effect block` for strict mode. See [writing policies](policies.md).
 

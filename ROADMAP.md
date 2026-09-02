@@ -16,13 +16,13 @@ Each item names the seam where it plugs in, so contributors can start without sp
 
 - [x] **Persistent approvals** — pending approvals die with the process. Implement `JsonFileApprovalStore` against the existing `ApprovalStore` port (`packages/core/src/ports/stores.ts`), mirroring `json-file-identity-store.ts`.
 - [x] **Approval TTLs** (7-day lapse; expired pending ≠ consent) — approvals never expire; add `expiresAt` + sweep in `packages/runtime/src/action-gateway.ts`.
-- [x] **Encryption-at-rest option** (`--data-key`, AES-256-GCM random-IV via TextCodec port) for the JSON/JSONL stores (do NOT pair deterministic-IV encryption with content search — see ARCHITECTURE.md).
+- [ ] **Encryption at rest** — removed with the cloud half. Files are owner-only; key management across a fleet belongs to the control plane, not here.
 
 ## Identity & auth
 
-- [x] **Agent authentication** — bearer tokens, HS256 service-account JWTs (`--agent-jwt-secret`), and mTLS client certificates (`--tls-cert/--tls-key/--tls-ca`). OAuth device flow is still open.
-- [~] **Agent owners & organizations** — `orgId` ships; `ownerId` is still open (`packages/core/src/domain/agent-identity.ts`). Credential rotation ships as `POST /v1/agents/:id/rotate`.
-- [ ] **Workspace scoping** — container-tag-style hard isolation per workspace (supermemory's model); today the runtime is single-tenant.
+- [x] **Agent authentication** — bearer tokens and HS256 service-account JWTs (`--agent-jwt-secret`). mTLS and OAuth device flow are cloud concerns and are not here.
+- [~] **Agent owners** — `ownerId` is still open (`packages/core/src/domain/agent-identity.ts`). Credential rotation ships as `POST /v1/agents/:id/rotate`. Organizations are a control-plane concern and are not here.
+- [ ] **Workspace scoping** — not here, and deliberately: one runtime is one tenant, and serving more than one team means more than one runtime.
 
 ## Interception adapters (one thin repo each on publish — see Publication layout)
 

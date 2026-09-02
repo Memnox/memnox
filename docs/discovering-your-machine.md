@@ -114,6 +114,123 @@ Where a readable substitute exists, the rule it writes names it, so an agent ref
 has no example beside it — the rule refuses and says nothing more. Sending an agent at a
 path that is not there is worse than telling it no.
 
+## What changed
+
+Every scan is kept. `snapshotOf` reduces the report to names, counts and
+fingerprints — never file contents — and one file per scan lands under
+`~/.memnox/snapshots`, oldest dropped once thirty are held. That is the only
+reason a second run has a baseline, and it is why none of the commands below
+need an account either.
+
+### `memnox diff`
+
+What moved since the last kept scan, in both directions, with the file that
+granted it where a file did.
+
+```
+CHANGES SINCE  2026-09-01T09:04:11.522Z
+
+  + stripe «server»                 14 tools · 5 write · 1 destructive
+      ~/.config/mcp.json
+  + ~/.aws/credentials «resource»   1 → 3 agents
+  - linear «server»                 removed
+
+3 changes widen authority, 1 narrows it
+```
+
+A change carries a **direction**, because a list that mixed a new credential
+with a removed one is a list nobody can act on. `--since <ISO time>` compares
+against the newest scan at or before that moment instead of the last one.
+
+A credential three agents can reach today and one could reach yesterday never
+shows up as a new path, so reach is compared and not just presence.
+
+### `memnox watch`
+
+The same comparison on an interval, keeping each cycle's scan as the next
+baseline — so stopping and restarting the watch never loses a change. A new
+server gets the whole block, because one multiplies what every agent on the
+machine reaches:
+
+```
+⚠ NEW MCP SERVER
+
+  stripe
+
+  14 tools · 5 write · 1 destructive
+
+  No rule covers any of them.
+
+  «added by ~/.config/mcp.json»
+```
+
+That last line is checked against the rules actually registered on this machine,
+not assumed. If the rule set will not parse, it says the coverage is unknown
+rather than reporting zero — a broken rule set is not an empty one.
+
+`--cycles <n>` stops after that many scans; `--interval <seconds>` sets the wait.
+
+### `memnox trace <tool>`
+
+Where one capability came from. Tools arrive through servers, servers arrive
+through a config file, and by the time an agent calls something surprising
+nobody remembers which.
+
+```
+  tool          create_refund
+  server        stripe
+  reached by    agt_claude-code
+
+  granted by    ~/.config/mcp.json
+  first seen    2026-09-01T09:04:11.522Z
+
+  effect        WRITE
+```
+
+The arrival is dated against the **scan history**, never a file's mtime: a
+config edited for an unrelated reason must not make a year-old tool look like it
+arrived this morning. A tool the oldest kept scan already held gets no date at
+all, because "at least this long" is the honest answer.
+
+## Could it actually do this
+
+An agent asked whether it can deploy production will often say yes. It is
+answering about its instructions, not about its credentials, its tooling, or the
+permission waiting at the other end.
+
+```bash
+memnox readiness claude-code deploy.service payments --env production
+```
+
+```
+Can claude-code deploy service?
+
+HAS
+
+  ✓   a shell to run it in
+      ~/.claude.json
+  ✓   a deploy tool on PATH
+      /usr/local/bin/docker
+  ✓   credentials it can reach
+      ~/.aws/credentials
+
+BUT
+
+  ✕   a checkout to deploy from
+  ✕   escalate: Production deployments need a human sign-off.
+
+  → NOT AUTHORIZED
+```
+
+The **HAS** half comes off the disk. The **BUT** half is the machine's own rule
+set, evaluated in process. An action whose namespace has no stated needs says so
+rather than answering out of nothing, and an unreadable rule set is reported
+rather than treated as permission.
+
+**Limit.** It stops at what is on this machine. Whether the provider's IAM would
+also refuse takes a network call and a credential, and that is not something the
+open half does.
+
 ## What this does not do
 
 - **No staged attack.** The demo is your own machine. There is no sample workspace, no

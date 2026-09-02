@@ -84,6 +84,36 @@ can itself be inspected.
 `memnox doctor` ranks that into findings, each naming the one change that closes
 it. `memnox harden` writes those changes, and **prints the undo before it runs**.
 
+## What changed while you were not looking
+
+Agent configuration has become permanent infrastructure. A server is added once,
+for one afternoon's task, and nothing in any of these tools carries a review
+date. Every scan Memnox takes is kept, so the next one has something true to
+compare against — still with no account and nothing transmitted.
+
+```bash
+memnox diff       # what moved since the last scan, and which way
+memnox watch      # keep the inventory current and report what arrives
+memnox trace <tool>   # which server, which file granted it, and when
+```
+
+```
+CHANGES SINCE  2026-09-01T09:04:11.522Z
+
+  + stripe «server»            14 tools · 5 write · 1 destructive
+      ~/.config/mcp.json
+  + ~/.aws/credentials «resource»   1 → 3 agents
+  - linear «server»            removed
+
+3 changes widen authority, 1 narrows it
+```
+
+A change carries a direction, because a list that mixed a new credential with a
+removed one is a list nobody can act on. And **`memnox readiness`** answers the
+question an agent gets wrong about itself — *can it actually deploy?* — from the
+credentials, the tooling and the reach on the machine, plus the rule that still
+refuses.
+
 ## Quickstart
 
 ```bash
@@ -140,7 +170,7 @@ Everything runs on your machine. No account, no API key, and no network call.
 
 **→ [Full walkthrough: observe, tune, enforce, and the daily approval loop](docs/getting-started.md)**
 
-## Six commands that answer with your own environment
+## The commands that answer with your own environment
 
 Nothing below uses demo data or a hosted account. Every number comes from your rules, your agent, and your trail.
 
@@ -213,6 +243,21 @@ Evidence
 
 Least privilege written from behaviour rather than from imagination. The window, the sessions and the coverage ride in a comment at the top of the file it writes, where they cannot be dropped in the retelling — four days of one developer's work is not a policy for a team, and a proposal that hid how little it saw would be a trap.
 
+**`memnox collisions`** — two agents inside the same file, and two agents building the same thing. Both read out of your own ledger, because both agents act through seams that recorded what they touched.
+
+```
+⚠ CONCURRENT WORK
+
+  src/payments.ts
+
+    claude-code     writing   2026-08-31T11:50:00.000Z
+    codex           writing   2026-08-31T11:56:00.000Z
+
+  One file, two agents, no shared awareness.
+```
+
+It reports the collision. It does not open the diff and decide which agent is right — that is code review, a different product with a different buyer, and out of scope permanently.
+
 ## What you actually get, in the order you get it
 
 Each step is worth something on its own. Nothing below needs the step after it.
@@ -226,7 +271,7 @@ Each step is worth something on its own. Nothing below needs the step after it.
 | Hour 1 | `memnox check` · `why` | A refusal your agent can act on, because it names what to use instead, and an explanation that reads the same a year later. |
 | Day 1 | `memnox audit` · `replay` | A hash-chained record of every decision, replayable session by session. |
 | Week 1 | `memnox learn` | The sentence nobody else can produce about your setup: *you granted this agent everything and it used twenty-seven percent of it.* |
-| Week 2 | `memnox coverage` · `drift` | How much of what your agents do is really governed, weighted by risk — and where your stated rules and your actual history came apart. |
+| Week 2 | `memnox coverage` · `collisions` | How much of what your agents do is really governed, weighted by risk — and where two of them are inside the same file, or building the same thing twice. |
 | When it matters | `memnox kill` · `panic` | One command stops an agent everywhere, and tells you every machine it could not reach. |
 
 The order is not a funnel. **The first four rows need no account, no cloud and no network**, which is architecture rather than a free tier: if a capability works on one laptop with no login, putting it behind one would be the mistake people notice first.
@@ -239,9 +284,7 @@ There is a second question it cannot answer, because the answer is not in your r
 
 The two compose in one direction only: the runtime's refusal is final and the organization never widens it. The organization may only tighten an allow into an escalation — the case no policy file can express.
 
-That half is not built yet. `VISION.md` §08 to §10 is where it arrives, and the runtime ships nothing that pretends to answer it in the meantime.
-
-**→ [Connecting a runtime to a control plane](docs/connecting-a-control-plane.md)** · **→ [Running more than one runtime](docs/deploying-many.md)**
+That half lives in a different repository. `VISION.md` §08 to §10 is where it arrives, and this runtime ships nothing that pretends to answer it in the meantime.
 
 ## Use it from code
 
@@ -278,16 +321,14 @@ Rules are plain YAML that you commit and review like any other code:
 | Guide | What it covers |
 |---|---|
 | [Concepts and vocabulary](docs/concepts.md) | New here? The mental model and every term the other guides assume |
-| [What can already act on this machine](docs/discovering-your-machine.md) | Discovery, doctor and harden — no account, no network |
+| [What can already act on this machine](docs/discovering-your-machine.md) | Discovery, doctor, harden, and the drift commands — watch, diff, trace, readiness. No account, no network |
 | [Getting started](docs/getting-started.md) | From nothing to a governed agent, then observing, tuning, and enforcing |
 | [Governing your agents](docs/governing-agents.md) | MCP clients, SDK callers, and agent frameworks. How an agent asks what the rules are |
 | [Writing policies](docs/policies.md) | YAML rules, quorum, time windows, argument matching, and multi-repo projects |
 | [How a decision is made](docs/how-it-works.md) | The five-step pipeline, approvals, provenance, and the platform API |
 | [Learning from behaviour](docs/learning-from-behaviour.md) | A week of real work becomes a policy file you read, edit and commit |
-| [Operating](docs/operating.md) | Coverage, containment, the census, readiness, and what you hand an auditor |
-| [Deployment](docs/deployment.md) | Solo through enterprise, scaling flags, containers, audit verification, and metrics |
-| [Running more than one](docs/deploying-many.md) | A runtime is one tenant; how several are deployed and reached together |
-| [Connecting a control plane](docs/connecting-a-control-plane.md) | Reading across runtimes, mirroring the audit log off the box, setting enforcement without a restart |
+| [Operating](docs/operating.md) | Coverage, containment, and what you hand an auditor |
+| [Deployment](docs/deployment.md) | One process, one machine, containers, audit verification, and metrics |
 | [Troubleshooting](docs/troubleshooting.md) | The failure modes people actually hit |
 | [Architecture](ARCHITECTURE.md) | How each layer maps onto the code, and what the system deliberately does not do |
 

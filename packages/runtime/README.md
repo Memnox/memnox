@@ -58,9 +58,10 @@ Every store is a port defined in `@memnox/core`, with one implementation:
 - **Local files** — JSON and JSONL under `--data-dir`. Zero infrastructure; the
   runtime starts with nothing installed, and nothing it writes leaves the machine.
 
-`--data-key` encrypts the local stores at rest with AES-256-GCM. Deterministic-IV
-encryption is deliberately unavailable: pairing it with content search leaked
-plaintext relationships in the predecessor codebase.
+Nothing is encrypted at rest. Files are written owner-only (`0600`, in `0700`
+directories) and that is the whole of the protection: a keyring this runtime
+could not honestly promise to rotate would be worse than none, and key
+management across a fleet is a cloud concern rather than this one's.
 
 ## Advisors
 

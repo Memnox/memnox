@@ -90,6 +90,43 @@ control with no way back is not a control:
 memnox panic --reason "incident 928" --by you --restore "memnox policy rollback"
 ```
 
+## Two agents, one piece of work
+
+Once more than one agent is at work, the collision is in the ledger before it is in a
+merge conflict, because both agents act through seams that recorded what they touched.
+
+```bash
+memnox collisions
+```
+
+```
+⚠ CONCURRENT WORK
+
+  src/payments.ts
+
+    claude-code     writing   2026-08-31T11:50:00.000Z
+    codex           writing   2026-08-31T11:56:00.000Z
+
+  One file, two agents, no shared awareness.
+
+⚠ DUPLICATE EFFORT
+
+  claude-code     oauth-refresh
+  codex           token-rotation
+
+  same files    src/auth/session.ts
+                src/auth/tokens.ts
+  since         2026-08-28T09:00:00.000Z
+```
+
+Two readers in one file is a normal Tuesday, so a collision needs at least one writer.
+Duplicated effort needs more than one shared file over a longer window, because one is a
+coincidence and a report full of coincidences is a report nobody reads.
+
+**Limit.** It reports the collision. It does not open the diff and decide which agent is
+right — that is code review, a different product with a different buyer, and it is out of
+scope permanently.
+
 ## What is not reported
 
 - **No estimated loss, and no risk exposure in currency.** Both are underivable, and

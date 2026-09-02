@@ -145,7 +145,6 @@ Memnox shows up on both sides, which is the confusing part:
 | **PII** | Personally Identifiable Information — names, emails, card numbers. The `data-privacy` policy pack governs the actions that touch it. |
 | **TTL** | Time To Live — how long something stays valid before expiring |
 | **RBAC** | Role-Based Access Control — API keys carry a role that decides which routes they may call |
-| **mTLS** | Mutual TLS — both sides present certificates, so the client is authenticated too. An optional alternative to token identity. |
 | **CN** | Common Name — the identity field in a TLS certificate |
 
 ## Where to go next
