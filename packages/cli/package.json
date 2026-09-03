@@ -1,6 +1,6 @@
 {
   "name": "memnox",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Memnox CLI \u2014 run the trust runtime, manage policies, inspect the audit trail.",
   "keywords": [
     "ai-agents",
@@ -40,14 +40,14 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/core": "0.5.2",
-    "@memnox/discovery": "0.5.2",
-    "@memnox/ledger": "0.5.2",
-    "@memnox/local-gate": "0.5.2",
-    "@memnox/policy-engine": "0.5.2",
-    "@memnox/runtime": "0.5.2",
-    "@memnox/sdk": "0.5.2",
-    "@memnox/tool-hook": "0.5.2",
+    "@memnox/core": "0.6.0",
+    "@memnox/discovery": "0.6.0",
+    "@memnox/ledger": "0.6.0",
+    "@memnox/local-gate": "0.6.0",
+    "@memnox/policy-engine": "0.6.0",
+    "@memnox/runtime": "0.6.0",
+    "@memnox/sdk": "0.6.0",
+    "@memnox/tool-hook": "0.6.0",
     "commander": "^12.1.0",
     "yaml": "^2.4.0"
   }
