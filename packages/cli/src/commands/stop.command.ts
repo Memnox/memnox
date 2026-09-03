@@ -10,7 +10,7 @@ export function registerStopCommand(
   homeDir: string = homedir(),
 ): void {
   program
-    .command('stop')
+    .command('stop', { noHelp: true })
     .description('Stop the background runtime that "memnox setup" started')
     .action(async () => {
       const { out, style } = context;

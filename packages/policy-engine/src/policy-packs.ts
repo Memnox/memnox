@@ -162,6 +162,54 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
     ],
   },
   {
+    name: 'outward-communication',
+    label: 'Speaking as us',
+    surface: 'assistant-agents',
+    version: '1.0.0',
+    maturity: PACK_MATURITY.STABLE,
+    recommended: true,
+    description:
+      'An agent addressing people outside this machine asks first, whatever tool carries it.',
+    policies: [
+      {
+        name: 'outward-message-approval',
+        description:
+          'Outward communication is external state, and nobody outside agreed to hear from an agent.',
+        match: {
+          actions: [
+            'slack.*',
+            'email.*',
+            'mail.*',
+            'sms.*',
+            '*.send_*',
+            '*.post_*',
+            '*.notify_*',
+            '*.reply_*',
+          ],
+        },
+        decision: {
+          effect: DECISION_EFFECT.ESCALATE,
+          reason: 'Outward communication, addressed to people outside this machine.',
+          approvers: ['you'],
+        },
+      },
+      {
+        name: 'external-broadcast-withhold',
+        description:
+          'A message to everybody cannot be unsent, and no approval scopes it.',
+        match: { actions: ['*.broadcast_*', '*.announce_*'] },
+        decision: {
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'A broadcast cannot be unsent.',
+          alternative: {
+            action: 'draft.write',
+            note: 'Write the message as a draft and let a person send it.',
+          },
+        },
+      },
+    ],
+  },
+  {
     name: 'payments',
     label: 'Payment Code Review',
     surface: 'financial',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discover } from '../src/discover';
-import { runDoctor, scoreFindings } from '../src/doctor';
+import { rankAgents, runDoctor, scoreFindings } from '../src/doctor';
 import {
   applyHardening,
   compareFindings,
@@ -78,6 +78,111 @@ describe('the doctor', () => {
 
     expect(env?.remediation?.apply.contents).toContain('.env.example');
     expect(aws?.remediation?.apply.contents).not.toContain('alternative');
+  });
+});
+
+describe('local work with production credentials', () => {
+  it('puts the two facts next to each other, and asks rather than refuses', async () => {
+    const machine = FakeMachine.from({
+      '/home/dev/.claude.json': JSON.stringify({ mcpServers: {} }),
+      '/work/api/.env': 'DATABASE_URL=postgres://user:pw@db.production.internal/app',
+    });
+    const discovered = await discover(machine, { now: NOW, projectDirs: ['/work/api'] });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    const mismatch = findings.find((finding) => finding.title.includes('is production'));
+    expect(mismatch).toBeDefined();
+    expect(mismatch?.remediation?.description).toBe(
+      'ask before anything touches production',
+    );
+    expect(mismatch?.remediation?.apply.contents).toContain('effect: escalate');
+  });
+
+  it('says nothing about production when nothing here is production', async () => {
+    const machine = FakeMachine.from({
+      '/home/dev/.claude.json': JSON.stringify({ mcpServers: {} }),
+      '/work/api/.env': 'DATABASE_URL=postgres://user:pw@localhost/app',
+    });
+    const discovered = await discover(machine, { now: NOW, projectDirs: ['/work/api'] });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    expect(findings.some((finding) => finding.title.includes('is production'))).toBe(
+      false,
+    );
+  });
+});
+
+describe('the fleet on this machine', () => {
+  it('decomposes findings per agent, and says it ranks nothing else', async () => {
+    const machine = FakeMachine.from(MACHINE);
+    const discovered = await discover(machine, { now: NOW });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    const standings = rankAgents(findings, discovered.surfaces);
+
+    expect(standings.length).toBeGreaterThan(0);
+    expect(standings[0]?.agentId).toContain('claude-code');
+    // The list underneath the count, so a ranking can be argued with.
+    expect(Object.values(standings[0]?.bySeverity ?? {}).reduce((a, b) => a + b, 0)).toBe(
+      standings[0]?.findings,
+    );
+  });
+});
+
+describe('three harmless capabilities at once', () => {
+  it('names the combination one rule at a time would never catch', async () => {
+    const machine = FakeMachine.from({
+      '/home/dev/.claude.json': JSON.stringify({
+        mcpServers: { slack: { command: 'npx', args: ['slack-mcp'] } },
+      }),
+      '/home/dev/.aws/credentials': '[default]\naws_access_key_id = AKIAEXAMPLE',
+    });
+    const discovered = await discover(machine, {
+      now: NOW,
+      lister: {
+        listTools: async () => [{ name: 'send_message' }],
+      },
+    });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    const combined = findings.find((finding) =>
+      finding.title.includes('together that is an export'),
+    );
+    expect(combined).toBeDefined();
+    expect(combined?.evidence).toContain('.aws/credentials');
+    expect(combined?.evidence).toContain('slack.send_message');
+  });
+
+  it('says nothing when the agent cannot send anywhere', async () => {
+    const machine = FakeMachine.from({
+      '/home/dev/.claude.json': JSON.stringify({ mcpServers: {} }),
+    });
+    const discovered = await discover(machine, { now: NOW });
+    const { findings } = runDoctor({
+      resources: discovered.resources,
+      reachability: discovered.reachability,
+      surfaces: discovered.surfaces,
+    });
+
+    expect(
+      findings.some((finding) => finding.title.includes('together that is an export')),
+    ).toBe(false);
   });
 });
 

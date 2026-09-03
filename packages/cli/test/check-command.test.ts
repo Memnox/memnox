@@ -55,6 +55,19 @@ describe('memnox check', () => {
     expect(out.text).toContain('Policies : production-database-protection');
   });
 
+  it('says which of the three classes the action falls in, and what decided it', async () => {
+    const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
+
+    const { out } = await runCli(
+      ['check', '--token', 'mnx_test', '--action', 'slack.send_message'],
+      runtime,
+    );
+
+    // Outward communication is external state whatever the tool calls itself.
+    expect(out.text).toContain('Class    : external-state');
+    expect(out.text).toContain('outward communication');
+  });
+
   it('sends the action, target, and environment the flags describe', async () => {
     const runtime = new FakeRuntime().on('POST', CHECK_PATH, decision());
 

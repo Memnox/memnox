@@ -226,7 +226,36 @@ export interface LearnResponse {
   usage: Array<{ action: string; count: number; distinctResources: number }>;
   unused: Array<{ action: string; grantedVia: string; observedWindowDays: number }>;
   /** Absent from a runtime older than this field; treat it as an unknown, not a zero. */
-  refused?: Array<{ action: string; count: number }>;
+  refused?: Array<{
+    action: string;
+    count: number;
+    first: string;
+    last: string;
+    rules: string[];
+    /** False on a rule that keeps refusing and names no permitted path instead. */
+    namesAlternative: boolean;
+  }>;
+  /** What this agent reached that it was not reaching a window ago. Null is silence. */
+  drift?: {
+    subjectId: string;
+    added: {
+      surfaces: string[];
+      destinations: string[];
+      tools: string[];
+      models: string[];
+    };
+    authorityDelta: number;
+    severity: 'low' | 'medium' | 'high';
+    cause?: string;
+  } | null;
+  /** Allowed again and again with no rule naming it. A candidate, never a rule. */
+  implicit?: Array<{
+    action: string;
+    count: number;
+    sessions: number;
+    first: string;
+    last: string;
+  }>;
   proposal: {
     allow: string[];
     requireApproval: string[];
@@ -239,6 +268,17 @@ export interface LearnResponse {
     };
   };
   policyFile: string;
+}
+
+/** A seam as the runtime holds it: whose it is, what it sees, and whether it enforces. */
+export interface SeamRecord {
+  id: string;
+  agentId: string;
+  kind: string;
+  mode: string;
+  covers: string[];
+  blindTo: string[];
+  lastSeenAt?: string;
 }
 
 export interface ContainmentRequestBody {
@@ -447,6 +487,20 @@ export class MemnoxClient {
   }
 
   /** What each agent was permitted, what it used, and the gap between them. */
+  /**
+   * Every seam this runtime knows about, with the mode each is actually in. One rule
+   * holds at whatever seam each product offers, and the one only observing is the
+   * story rather than the four that enforce.
+   */
+  async listSeams(): Promise<SeamRecord[]> {
+    return this.request<SeamRecord[]>(
+      'GET',
+      '/v1/seams',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
   async learn(days?: number): Promise<LearnResponse[]> {
     const query = days === undefined ? '' : `?days=${days}`;
     return this.request<LearnResponse[]>(

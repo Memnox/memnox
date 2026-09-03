@@ -187,3 +187,52 @@ export type ChangeSubject = (typeof CHANGE_SUBJECT)[keyof typeof CHANGE_SUBJECT]
 
 /** Snapshots kept before the oldest is dropped: enough for "since last week". */
 export const SNAPSHOT_HISTORY_LIMIT = 30;
+
+/** Which kind of document a stated rule came out of. Where it was written matters. */
+export const EVIDENCE_SOURCE = {
+  AGENT_INSTRUCTIONS: 'agent-instructions',
+  DECISION: 'decision',
+  POLICY: 'policy',
+} as const;
+
+export type EvidenceSource = (typeof EVIDENCE_SOURCE)[keyof typeof EVIDENCE_SOURCE];
+
+/**
+ * The modals a person reaches for when they mean it. A line without one is prose, and
+ * promoting prose to a rule would put the whole repository into the evidence set.
+ */
+export const NORMATIVE_MARKERS: readonly string[] = [
+  'must',
+  'must not',
+  'never',
+  'always',
+  'do not',
+  'don’t',
+  "don't",
+  'may not',
+  'shall',
+  'required',
+  'forbidden',
+  'not allowed',
+];
+
+/** Requirements an on-disk control can actually be compared against. */
+export const REVIEW_MARKERS: readonly string[] = [
+  'approval',
+  'approve',
+  'approved',
+  'review',
+  'reviewed',
+  'sign-off',
+  'signed off',
+  'code owner',
+  'codeowner',
+];
+
+/** Something on this disk that makes a rule bite, rather than describing one. */
+export const CONTROL_KIND = {
+  CODE_OWNERS: 'code-owners',
+  GIT_HOOK: 'git-hook',
+} as const;
+
+export type ControlKind = (typeof CONTROL_KIND)[keyof typeof CONTROL_KIND];

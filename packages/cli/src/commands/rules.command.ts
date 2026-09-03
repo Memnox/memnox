@@ -1,7 +1,8 @@
 import type { Command } from 'commander';
 import type { ActionEvent, DecisionEffect, RiskAssessment } from '@memnox/core';
-import { DECISION_EFFECT, DECISION_REASON } from '@memnox/core';
-import type { DecisionRecordResponse } from '@memnox/sdk';
+import { DECISION_EFFECT, DECISION_REASON, ENFORCEMENT_MODE } from '@memnox/core';
+import { matchesPattern } from '@memnox/policy-engine';
+import type { DecisionRecordResponse, SeamRecord } from '@memnox/sdk';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { isEmptyReach, policyReach, reachBeyond } from '../policy-reach';
@@ -116,6 +117,8 @@ export function registerRulesCommand(
         const history = await readable(context, 'the audit trail', () =>
           client.recentAudit(HISTORY_WINDOW),
         );
+        // Admin-only, and a runtime that will not hand it over is not an error here.
+        const seams = await readable(context, 'the seams', () => client.listSeams());
 
         if (options.json === true) {
           out.line(
@@ -125,6 +128,7 @@ export function registerRulesCommand(
                 assessment,
                 decisions: decisions ?? [],
                 observed: summarize(history ?? [], action),
+                enforcedBy: seamsFor(seams ?? [], action),
               },
               null,
               2,
@@ -142,6 +146,7 @@ export function registerRulesCommand(
 
         reportVerdict(context, assessment);
         reportGovernance(context, assessment, ruleSet?.policies ?? [], request);
+        reportEnforcement(context, seams ?? [], action);
         reportApprovers(context, assessment);
         reportDecisions(context, decisions ?? []);
         reportObserved(context, history ?? [], action);
@@ -150,6 +155,49 @@ export function registerRulesCommand(
         out.note(style.dim(`→ Ask for a real decision:  memnox check ${action}`));
       },
     );
+}
+
+/** The seams that actually see this action, whichever agent they belong to. */
+function seamsFor(seams: readonly SeamRecord[], action: string): SeamRecord[] {
+  return seams.filter((seam) => seam.covers.some((glob) => matchesPattern(glob, action)));
+}
+
+const MECHANISM_WIDTH = 14;
+
+/**
+ * A rule agreed once has to be reimplemented in every product's own settings, and it
+ * drifts immediately. This is the same rule at whatever seam each product offers.
+ *
+ * The seam that is only observing is the story. It is not counted as governed until
+ * it enforces, and printing it beside four that do is the whole point.
+ */
+function reportEnforcement(
+  context: CliContext,
+  seams: readonly SeamRecord[],
+  action: string,
+): void {
+  const matching = seamsFor(seams, action);
+  if (matching.length === 0) return;
+
+  const { out, style } = context;
+  out.line(style.bold('Enforced at'));
+  for (const seam of matching) {
+    const enforcing = seam.mode === ENFORCEMENT_MODE.ENFORCE;
+    const agent = seam.agentId.replace('agt_', '');
+    out.line(
+      `  ${agent.padEnd(MECHANISM_WIDTH)}${seam.kind.padEnd(MECHANISM_WIDTH)}` +
+        (enforcing ? 'enforcing' : style.warn('observing')),
+    );
+  }
+  const observing = matching.filter((seam) => seam.mode !== ENFORCEMENT_MODE.ENFORCE);
+  if (observing.length > 0) {
+    out.line(
+      style.dim(
+        `  ${observing.length} of ${matching.length} is only observing, and is not counted as governed until it enforces`,
+      ),
+    );
+  }
+  out.line('');
 }
 
 function reportVerdict(context: CliContext, assessment: RiskAssessment): void {

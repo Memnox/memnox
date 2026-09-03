@@ -64,6 +64,8 @@ export function registerDiscoverCommand(
 ): void {
   program
     .command('discover', { isDefault: true })
+    // The word people reach for first. `memnox` alone runs it either way.
+    .alias('scan')
     .description(
       'What can act on this machine, and what it can reach. No account, no network.',
     )
@@ -125,6 +127,7 @@ function renderTools(context: CliContext, report: DiscoveryReport): void {
       servers.set(tool.server, [...(servers.get(tool.server) ?? []), tool]);
     }
   }
+  const credentials = credentialsByServer(report);
 
   if (servers.size === 0) {
     // Honest when empty: without a probe the servers are named and hold no tools.
@@ -143,6 +146,13 @@ function renderTools(context: CliContext, report: DiscoveryReport): void {
         `${tools.length} tool${tools.length === 1 ? '' : 's'}`,
     );
     total += tools.length;
+
+    // What the config hands it, before anything asks whether it should have it. Names
+    // only: the value stays in the file it was written in.
+    const handed = credentials.get(server) ?? [];
+    if (handed.length > 0) {
+      out.line(`${'credentials'.padEnd(EFFECT_COLUMN)}${style.warn(handed.join(', '))}`);
+    }
 
     for (const { effect, label, mark } of EFFECT_ORDER) {
       const matching = tools.filter((tool) => tool.effect === effect);
@@ -173,6 +183,24 @@ function renderTools(context: CliContext, report: DiscoveryReport): void {
       style.dim(`  ${unknown} could not be classified, so they are counted as neither`),
     );
   }
+}
+
+/**
+ * A server is installed by pasting a line, and nothing between the paste and the first
+ * tool call asks what it wants. This is what it asked for, read off the config.
+ */
+function credentialsByServer(report: DiscoveryReport): Map<string, string[]> {
+  const byServer = new Map<string, string[]>();
+  for (const surface of report.surfaces) {
+    for (const launch of surface.servers ?? []) {
+      const env = launch.env;
+      if (env === undefined || env.length === 0) continue;
+      byServer.set(launch.name, [
+        ...new Set([...(byServer.get(launch.name) ?? []), ...env]),
+      ]);
+    }
+  }
+  return byServer;
 }
 
 function render(context: CliContext, report: DiscoveryReport, counts: LocalCounts): void {

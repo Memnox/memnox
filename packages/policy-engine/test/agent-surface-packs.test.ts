@@ -120,6 +120,34 @@ describe('assistant-agent', () => {
   });
 });
 
+describe('outward-communication', () => {
+  const engine = packEngine('outward-communication');
+
+  it('asks before an agent addresses people, whatever tool carries it', () => {
+    expect(decide(engine, 'slack.send_message')).toBe(DECISION_EFFECT.ESCALATE);
+    expect(decide(engine, 'email.send')).toBe(DECISION_EFFECT.ESCALATE);
+    // The namespace is unknown and the verb is not: an agent speaking as somebody
+    // is the same act whichever server carries it.
+    expect(decide(engine, 'acme_relay.send_update')).toBe(DECISION_EFFECT.ESCALATE);
+  });
+
+  it('withholds a broadcast, and names what to do instead', () => {
+    const decision = engine.evaluate(
+      { action: 'comms.broadcast_all' },
+      { agentName: 'claude-code' },
+    );
+
+    expect(decision.effect).toBe(DECISION_EFFECT.WITHHOLD);
+    // An agent told only "no" abandons the task; one told what to use instead finishes.
+    expect(decision.alternative?.action).toBe('draft.write');
+  });
+
+  it('leaves local work alone', () => {
+    expect(decide(engine, 'filesystem.write')).toBe(DECISION_EFFECT.ALLOW);
+    expect(decide(engine, 'git.commit')).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
 describe('cloud provider packs', () => {
   it('blocks destructive AWS CLI and escalates IAM changes', () => {
     const engine = packEngine('aws');

@@ -89,6 +89,45 @@ describe('memnox diff', () => {
     expect(text).toContain('1 narrows it');
   });
 
+  it('measures the direction of travel across every scan it kept', async () => {
+    const lister = () =>
+      new StubLister({
+        stripe: [{ name: 'create_refund' }, { name: 'delete_customer' }],
+        github: [{ name: 'get_issue' }],
+      });
+    const { snapshots } = await scanTwice(
+      machineWith(GITHUB),
+      machineWith(GITHUB_AND_STRIPE),
+      lister,
+    );
+
+    const { out } = await runCommand(
+      (program, context) =>
+        registerDiffCommand(program, context, () =>
+          fakeSeams(machineWith(GITHUB_AND_STRIPE), {
+            lister,
+            snapshots,
+            times: ['2026-01-03T09:00:00.000Z'],
+          }),
+        ),
+      ['diff', '--trend'],
+    );
+
+    expect(out.text).toContain('EXTERNAL WRITE CAPABILITY');
+    expect(out.text).toContain('LARGEST CONTRIBUTORS');
+    expect(out.text).toContain('stripe');
+  });
+
+  it('has no direction of travel to report from a single scan', async () => {
+    const { out } = await runCommand(
+      (program, context) =>
+        registerDiffCommand(program, context, () => fakeSeams(machineWith(GITHUB))),
+      ['diff', '--trend'],
+    );
+
+    expect(out.text).toContain('no direction of travel');
+  });
+
   it('reports nothing when nothing moved', async () => {
     const { text } = await scanTwice(
       machineWith(GITHUB),

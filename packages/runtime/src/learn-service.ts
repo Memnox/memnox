@@ -1,6 +1,7 @@
 import type { ActionEvent, AuditLog, Seam } from '@memnox/core';
 import { DECISION_EFFECT, UNKNOWN_AGENT_ID } from '@memnox/core';
 import {
+  computeDrift,
   findUnusedGrants,
   proposeLeastPrivilege,
   renderProposal,
@@ -8,6 +9,7 @@ import {
   type CapabilityUsage,
   type GrantedAction,
   type LeastPrivilegeProposal,
+  type DriftFinding,
   type UnusedGrant,
   type UsageObservation,
 } from '@memnox/ledger';
@@ -21,6 +23,30 @@ const AUDIT_WINDOW = 10_000;
 export interface RefusedAction {
   action: string;
   count: number;
+  /** First and last, so "refused once" reads differently from "refused every week". */
+  first: string;
+  last: string;
+  /** The rules that refused it, named so the reader can go and read them. */
+  rules: string[];
+  /**
+   * Whether any of those rules named the permitted path instead. An agent told only
+   * "no" tries again next week: a rule that keeps refusing and names no alternative
+   * is right and incomplete, and that is a finding about the rule.
+   */
+  namesAlternative: boolean;
+}
+
+/**
+ * Nobody ever wrote this down. It follows from the traffic: an action allowed again
+ * and again that no rule names is authority the machine has granted without anybody
+ * deciding to. A candidate a person makes explicit or refuses — never a rule.
+ */
+export interface ImplicitAuthorization {
+  action: string;
+  count: number;
+  sessions: number;
+  first: string;
+  last: string;
 }
 
 export interface LearnResult {
@@ -34,6 +60,13 @@ export interface LearnResult {
    * what a rule already denies would be noise.
    */
   refused: RefusedAction[];
+  /** Allowed repeatedly with no rule naming it. Proposed, never applied. */
+  implicit: ImplicitAuthorization[];
+  /**
+   * What this agent did that it was not doing a window ago. Null when nothing widened,
+   * which is the common case and should read as silence rather than as a clean bill.
+   */
+  drift: DriftFinding | null;
   proposal: LeastPrivilegeProposal;
   /** The file a person reads, edits, applies and commits. */
   policyFile: string;
@@ -66,13 +99,23 @@ export class LearnService {
       limit: AUDIT_WINDOW,
     });
     const decisions = events.filter((event) => event.decisionEventId === undefined);
+    // The window before this one is the baseline: an agent that was safe last week may
+    // not be, and comparing it against itself needs no stored baseline anybody took.
+    const priorSince = new Date(since.getTime() - windowDays * MS_PER_DAY);
+    const prior = (
+      await this.deps.auditLog.query({
+        from: priorSince.toISOString(),
+        to: since.toISOString(),
+        limit: AUDIT_WINDOW,
+      })
+    ).filter((event) => event.decisionEventId === undefined);
     const granted = await this.grantedActions(decisions);
     const usage = rollUpUsage(decisions.map(observe));
 
     const results: LearnResult[] = [];
     for (const [agentId, agentName] of namesOf(decisions)) {
       const own = usage.filter((each) => each.agentId === agentId);
-      const refused = refusedBy(decisions, agentId);
+      const refused = refusedBy(decisions, agentId, this.deps.rules());
       const attempted = new Set(refused.map((each) => each.action));
       /* What was tried and refused is not what was never touched, and a rule already
          refusing it needs no second rule proposing to. Filtered before the proposal is
@@ -99,6 +142,8 @@ export class LearnService {
         usage: own,
         unused,
         refused,
+        implicit: implicitlyAuthorized(decisions, agentId),
+        drift: behaviourDrift(prior, decisions, agentId, windowDays, since.toISOString()),
         proposal,
         policyFile: renderProposal(proposal),
       });
@@ -147,17 +192,136 @@ function observe(event: ActionEvent): UsageObservation {
   };
 }
 
+interface RefusalTally {
+  count: number;
+  first: string;
+  last: string;
+  rules: Set<string>;
+}
+
 /** Counted per action, so "refused once" reads differently from "refused thirty times". */
-function refusedBy(events: readonly ActionEvent[], agentId: string): RefusedAction[] {
-  const counts = new Map<string, number>();
+function refusedBy(
+  events: readonly ActionEvent[],
+  agentId: string,
+  rules: readonly Policy[],
+): RefusedAction[] {
+  const tallies = new Map<string, RefusalTally>();
   for (const event of events) {
     if (event.agentId !== agentId) continue;
     if (event.effect === DECISION_EFFECT.ALLOW) continue;
-    counts.set(event.action, (counts.get(event.action) ?? 0) + 1);
+    const tally = tallies.get(event.action);
+    if (tally === undefined) {
+      tallies.set(event.action, {
+        count: 1,
+        first: event.occurredAt,
+        last: event.occurredAt,
+        rules: new Set(event.matchedPolicies),
+      });
+      continue;
+    }
+    tally.count += 1;
+    if (event.occurredAt < tally.first) tally.first = event.occurredAt;
+    if (event.occurredAt > tally.last) tally.last = event.occurredAt;
+    for (const name of event.matchedPolicies) tally.rules.add(name);
   }
-  return [...counts]
-    .map(([action, count]) => ({ action, count }))
+
+  const byName = new Map(rules.map((policy) => [policy.name, policy]));
+  return [...tallies]
+    .map(([action, tally]) => ({
+      action,
+      count: tally.count,
+      first: tally.first,
+      last: tally.last,
+      rules: [...tally.rules],
+      namesAlternative: [...tally.rules].some(
+        (name) => byName.get(name)?.decision.alternative !== undefined,
+      ),
+    }))
     .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * What the machine has permitted without anybody deciding to: allowed, more than once,
+ * and matched by no rule at all. Surfaced as a candidate so it is made explicit before
+ * something goes wrong under it.
+ */
+function implicitlyAuthorized(
+  events: readonly ActionEvent[],
+  agentId: string,
+): ImplicitAuthorization[] {
+  const tallies = new Map<
+    string,
+    { count: number; sessions: Set<string>; first: string; last: string }
+  >();
+  for (const event of events) {
+    if (event.agentId !== agentId) continue;
+    if (event.effect !== DECISION_EFFECT.ALLOW) continue;
+    if (event.matchedPolicies.length > 0) continue;
+    const tally = tallies.get(event.action);
+    if (tally === undefined) {
+      tallies.set(event.action, {
+        count: 1,
+        sessions: new Set(event.sessionId === undefined ? [] : [event.sessionId]),
+        first: event.occurredAt,
+        last: event.occurredAt,
+      });
+      continue;
+    }
+    tally.count += 1;
+    if (event.sessionId !== undefined) tally.sessions.add(event.sessionId);
+    if (event.occurredAt < tally.first) tally.first = event.occurredAt;
+    if (event.occurredAt > tally.last) tally.last = event.occurredAt;
+  }
+  return [...tallies]
+    .filter(([, tally]) => tally.count > 1)
+    .map(([action, tally]) => ({
+      action,
+      count: tally.count,
+      sessions: tally.sessions.size,
+      first: tally.first,
+      last: tally.last,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * An agent compared against its own behaviour a window ago, which is the only baseline
+ * available with no account: what it reached then, and what it reaches now.
+ */
+function behaviourDrift(
+  prior: readonly ActionEvent[],
+  current: readonly ActionEvent[],
+  agentId: string,
+  windowDays: number,
+  computedAt: string,
+): DriftFinding | null {
+  const before = observedBy(prior, agentId);
+  // Nothing to compare against is not the same as everything being new. An agent whose
+  // first window this is would otherwise read as having widened in every direction.
+  if (before.tools.length === 0) return null;
+  const after = observedBy(current, agentId);
+  return computeDrift(
+    { subjectId: agentId, windowDays, ...before, computedAt },
+    { subjectId: agentId, ...after },
+  );
+}
+
+/** What an agent reached in a window, off the events the seams recorded. */
+function observedBy(
+  events: readonly ActionEvent[],
+  agentId: string,
+): { surfaces: string[]; destinations: string[]; tools: string[]; models: string[] } {
+  const own = events.filter((event) => event.agentId === agentId);
+  return {
+    surfaces: distinct(own.map((event) => event.decidedBy)),
+    destinations: distinct(own.map((event) => event.target)),
+    tools: distinct(own.map((event) => event.action)),
+    models: distinct(own.map((event) => event.model)),
+  };
+}
+
+function distinct(values: readonly (string | undefined)[]): string[] {
+  return [...new Set(values.filter((value): value is string => value !== undefined))];
 }
 
 /**

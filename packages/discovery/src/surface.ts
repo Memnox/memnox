@@ -33,6 +33,11 @@ export interface McpServerLaunch {
   name: string;
   command: string;
   args: string[];
+  /**
+   * The credential names this config hands the server. Names only: what is stored is
+   * a key, never the value behind it.
+   */
+  env?: string[];
 }
 
 /** The protocol's own annotation, when a server bothered to publish one. */

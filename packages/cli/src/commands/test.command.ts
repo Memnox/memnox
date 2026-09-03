@@ -43,7 +43,7 @@ export function registerTestCommand(
   newSessionId: SessionIdFactory = () => `safety-${randomUUID()}`,
 ): void {
   program
-    .command('test')
+    .command('test', { noHelp: true })
     .description(
       `Fire real dangerous actions at your own gate and report what it stops (exit ${EXIT_UNSAFE} = something got through)`,
     )

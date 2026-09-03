@@ -1,5 +1,10 @@
 import type { Command } from 'commander';
-import { DECISION_EFFECT, type Alternative } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  classifyActionClass,
+  describeActionClass,
+  type Alternative,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_BASE_URL } from '../defaults';
 import { resolveProjectId } from '../project-identity';
@@ -93,6 +98,11 @@ export function registerCheckCommand(
           `${label('Risk')}: ${style.risk(decision.riskLevel, decision.riskLevel)}`,
         );
         out.line(`${label('Reason')}: ${decision.reason}`);
+        // The line between a draft and an act, drawn from the verb rather than from
+        // the tool's name. It classifies; the effect above is the policy engine's.
+        out.line(
+          `${label('Class')}: ${describeActionClass(classifyActionClass(action))}`,
+        );
         if (decision.matchedPolicies.length > 0) {
           out.line(
             `${label('Policies')}: ${decision.matchedPolicies.map((p) => p.name).join(', ')}`,

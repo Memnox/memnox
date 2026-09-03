@@ -11,6 +11,17 @@ const RISK_PATH = '/v1/evaluate-risk';
 const POLICIES_PATH = '/v1/policies';
 const SEARCH_PATH = '/v1/memory/decisions/search';
 const AUDIT_PATH = '/v1/audit';
+const SEAMS_PATH = '/v1/seams';
+
+const seam = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'sea_1',
+  agentId: 'agt_claude-code',
+  kind: 'hook',
+  mode: 'enforce',
+  covers: ['database.*'],
+  blindTo: [],
+  ...over,
+});
 
 const assessment = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   effect: DECISION_EFFECT.WITHHOLD,
@@ -64,7 +75,16 @@ const governed = (): FakeRuntime =>
     .on('POST', RISK_PATH, assessment())
     .on('GET', POLICIES_PATH, ruleSet)
     .on('GET', SEARCH_PATH, [])
-    .on('GET', AUDIT_PATH, [auditEvent()]);
+    .on('GET', AUDIT_PATH, [auditEvent()])
+    .on('GET', SEAMS_PATH, [
+      seam(),
+      seam({
+        id: 'sea_2',
+        agentId: 'agt_codex',
+        kind: 'shell',
+        mode: 'observe',
+      }),
+    ]);
 
 async function run(args: string[], runtime: FakeRuntime): Promise<RecordedOutput> {
   const out = new RecordedOutput();
@@ -102,6 +122,20 @@ describe('memnox rules', () => {
     expect(out.text).not.toContain(
       'also governs database.drop, database.truncate in production',
     );
+  });
+
+  it('shows one rule at every mechanism, and names the one only observing', async () => {
+    const out = await run(
+      ['rules', 'database.delete', '--token', 'mnx_test', '--admin-token', 'adm_test'],
+      governed(),
+    );
+
+    expect(out.text).toContain('Enforced at');
+    expect(out.text).toContain('claude-code');
+    expect(out.text).toContain('enforcing');
+    // The seam that is only observing is the story, not the ones that are not.
+    expect(out.text).toContain('observing');
+    expect(out.text).toContain('not counted as governed until it enforces');
   });
 
   it('lists who can authorise it', async () => {

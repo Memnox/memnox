@@ -46,6 +46,34 @@ const STRIPE = {
 };
 
 describe('compareSnapshots', () => {
+  it('names the update as the cause when a credential becomes reachable', () => {
+    const agent = (version: string) => ({
+      id: 'agt_claude-code',
+      kind: 'claude-code',
+      version,
+      surfaces: [],
+    });
+    const secret = (reachableBy: string[]) => ({
+      id: 'res_aws',
+      kind: 'secret' as const,
+      path: '/home/dev/.aws/credentials',
+      sensitivity: SENSITIVITY.CRITICAL,
+      reachableBy,
+    });
+
+    const changes = compareSnapshots(
+      snapshot({ agents: [agent('2.4.1')], resources: [secret([])] }),
+      snapshot({
+        agents: [agent('2.5.0')],
+        resources: [secret(['agt_claude-code'])],
+      }),
+    );
+
+    const reach = changes.find((change) => change.subject === CHANGE_SUBJECT.RESOURCE);
+    expect(reach?.direction).toBe(CHANGE_DIRECTION.WIDENS);
+    expect(reach?.cause).toBe('updated 2.4.1 → 2.5.0');
+  });
+
   it('names an arriving server, what it can do, and the file that granted it', () => {
     const changes = compareSnapshots(
       snapshot({ servers: [GITHUB] }),

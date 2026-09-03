@@ -30,7 +30,7 @@ export function registerHooksCommand(
   installer = new HookInstaller(homedir()),
 ): void {
   const hooks = program
-    .command('hooks')
+    .command('hooks', { noHelp: true })
     .description("Govern an agent's own file, shell and network tools");
 
   hooks

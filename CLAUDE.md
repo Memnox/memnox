@@ -39,6 +39,11 @@ either: `§01` for discovery, `§03` for observation, `§05` for protection, `§
 candidates, or `#09` and `#33` for the drift situations `@memnox/discovery` answers. Naming
 the situation is better where one fits, because it says who is unblocked by the change.
 
+**§07 is open, and §08 is not.** Repository evidence is read from the reader's own checkout
+with no account, which is why it ships here and why `evidence` states plainly that branch
+protection lives in the forge and was not read. Organizational evidence — Slack, Jira,
+Linear, Notion, Drive — needs somebody else's data and is the cloud.
+
 | Package | Phase | Owns |
 |---|---|---|
 | `@memnox/discovery` | §01 | what can act here, what it reaches, findings, reversible harden steps |
@@ -48,8 +53,10 @@ the situation is better where one fits, because it says who is unblocked by the 
 | `SeamService`, `LineageService` | §03 | seams declaring themselves; who caused this, hop by hop |
 | `buildExplanation`, `why`, `rules`, `replay` | §04 | the deterministic answer, built from the match and never from a model |
 | `@memnox/policy-engine` | §05 | policies, the three effects, proposals, simulation, blast radius, the compile into each agent's native control |
-| `@memnox/ledger`, `LearnService` | §03, §06 | frames, usage, unused grants, lineage, counterfactual, coverage, drift, collisions, cost, incidents |
-| `snapshotOf`, `compareSnapshots`, `traceCapability` | §06 | what an environment held at one moment, what moved since, and where one tool came from |
+| `@memnox/ledger`, `LearnService` | §03, §06, §09 | frames, usage, unused grants, lineage, counterfactual, coverage, behaviour drift, collisions, repeated refusals, implicit authorization |
+| `snapshotOf`, `compareSnapshots`, `authorityTrend`, `traceCapability` | §06 | what an environment held at one moment, what moved since, how far authority has travelled, and where one tool came from |
+| `readRepositoryEvidence`, `findPolicyGaps` | §07 | what this repository states about itself, what it enforces, and the distance between the two — off the disk, with no forge and no login |
+| `classifyActionClass` (core) | §03 | local, external state or destructive, taken from the verb rather than from the tool's name |
 | `readinessFor` | §01 | what an agent holds towards an action, off the disk — never what a rule says about it |
 | `concurrentWork`, `overlappingWork` | §03 | two agents in one file; two agents building one thing. Reported, never refereed |
 | `ContainmentService` | §06 | kill, quarantine, panic and what each did not reach |
@@ -125,7 +132,7 @@ different product.
 8. **A secret value never leaves the process that read it.** Discovery stores a path, a kind and a fingerprint; the ledger stores a `payloadDigest`. A report carrying the shape of somebody's SSH key is the worst bug this product could ship.
 9. **The MCP proxy checks both directions.** The call on the way out, the result on the way back. A tool result is wrapped as an untrusted `ContextBlock` whatever it says, instruction-shaped content is recorded and framed rather than removed, and `promotedToIntent` is an invariant rather than a field anything sets.
 10. **Containment names what it did not reach.** `ContainmentAction.unreached` is never empty because it was inconvenient. A kill reporting success while one machine is asleep is the worst possible lie, and the CLI exits non-zero on a partial one.
-11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored.
+11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`, and `stateFactsInForce` takes the moment as an argument rather than reading a clock. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored. Recorded and honourable, not yet enforced: where the fact *comes from* — a channel, an incident tool — is the cloud's half.
 12. **A change carries a direction.** `EnvironmentChange.direction` says whether authority widened or narrowed, and `summarizeChanges` counts both. A drift report that mixed a new credential with a removed one would be a list nobody can act on.
 13. **An unreadable rule set is never an empty one.** `loadLocalRules` returns what would not load, and `memnox readiness` and `memnox watch` say so. Reporting "no rule covers this" about a machine whose rules simply failed to parse is a lie the reader would act on.
 14. **An agent is enrolled with three fields.** `AgentIdentity` requires `kind` (the product), `role` (the job) and `principal` (the person). Policy matches on `roles`, so swapping the product leaves every rule about the job standing, and an incident report names a human rather than an API key. The route refuses an enrolment missing either — defaulted is not stated.
@@ -161,26 +168,50 @@ its internals. A command is a plain word somebody would reach for.
 
 | The question | The command |
 |---|---|
-| what can act here | `memnox` (default), `memnox --tools`, `doctor`, `harden` |
-| what changed, and where did it come from | `watch`, `diff`, `trace` |
+| what can act here | `memnox` (default), `scan`, `memnox --tools`, `doctor`, `doctor --by-agent`, `harden` / `protect` |
+| what changed, and where did it come from | `watch`, `diff`, `diff --trend`, `trace` |
 | could it actually do this | `readiness` |
+| can it do this, right now | `explain "<question>"` |
+| which agents reach this | `who --resource <class>` |
 | should this proceed | `check` |
-| what may it do | `rules`, `policy simulate` |
+| what may it do | `rules` (with the seam each product enforces it at) |
+| what does this repository already say | `evidence`, `evidence --gaps` |
 | why | `why`, `why --evidence`, `replay` |
+| what if we widen it | `what-if` (`simulate`, `policy simulate`) |
 | who authorised it | `approvals`, `approve`, `deny` |
-| who is it | `agents` — enrolled with a product, a job and a person |
-| what happened | `audit`, `learn`, `coverage`, `collisions` |
+| who is it | `agents` — enrolled with a product, a job and a person; `agents unregistered` for the ones acting here through no identity |
+| what happened | `audit`, `learn`, `coverage`, `collisions` — two agents in one file, and three ordinary actions that added up to an export |
 | stop it | `kill`, `quarantine`, `panic` |
 
 Every one of them works with no account and no network, except the four that read the
 runtime's own record over loopback.
 
-Four names went and are not coming back: `explain` (a model narrating a decision),
-`intent` (a model inferring one), `insights` (reporting about this product rather than
-the organization), and `plan`. Two pairs merged, because one question deserves one
-command: `context` + `describe` became `rules`, and `report` + `compliance` became
-`evidence`. `trace` is capability provenance — where a tool came from — and the evidence
-behind a decision is `why --evidence`.
+**A command that answers no question is hidden rather than listed.** `init`, `validate`,
+`hooks`, `stop`, `test` and `reload` still run and are still tested; they are operational
+plumbing, and a help screen that lists them alongside the questions has stopped answering
+any of them. Hidden is `{ noHelp: true }`, one word to undo. Deleting is different, and
+`policy simulate` was deleted rather than hidden because it was the *same* command
+registered twice: one question deserves one command, and it is `simulate` / `what-if`.
+
+`scan` and `protect` are aliases of `discover` and `harden`: those are the words somebody
+says out loud, and the product should answer to them. `doctor --by-agent` decomposes this
+machine's findings per agent — never a safety rating of the products, which would be a claim
+about software nobody tested.
+
+**The four verbs of situation 60** are `explain`, `why`, `who` and `what-if`, and each is
+answered from what is on this disk. `explain` reads the question by matching an agent
+that is here and an action namespace that exists — deterministic, and it refuses rather
+than guessing, because a model reading the sentence would be a model in the path of an
+answer about authority. It is not the old `explain`, which was a model narrating a
+decision after the fact and is not coming back.
+
+Three names went and are not coming back: `intent` (a model inferring one), `insights`
+(reporting about this product rather than the organization), and `plan`. Two pairs merged,
+because one question deserves one command: `context` + `describe` became `rules`, and
+`report` + `compliance` became `evidence` — which now answers §07: what this repository
+states about itself, what it enforces, and the gap between. `trace` is capability
+provenance — where a tool came from — and the evidence behind a decision is
+`why --evidence`.
 
 ## Naming
 

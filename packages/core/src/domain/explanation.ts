@@ -1,5 +1,6 @@
 import type { ActionRequest } from './action-event';
 import { CONTEXT_TRUST } from '../constants/context-trust.constants';
+import { DECISION_EFFECT } from '../constants/decision.constants';
 import { contextRefOf, type ContextRef } from './context-block';
 import type { Decision, RuleRef } from './decision';
 import { SCOPE_MATCH, type ScopeComparison } from './task';
@@ -96,6 +97,34 @@ export function buildExplanation(input: ExplanationInput): Explanation {
     });
   }
 
+  /* "Why did we trust it" is the question an auditor asks first, and almost nothing
+     explains an allow. The conditions that were met are named one at a time, from the
+     record — never a reassurance somebody wrote afterwards. */
+  if (decision.effect === DECISION_EFFECT.ALLOW) {
+    if (scope !== undefined && scope.match === SCOPE_MATCH.IN_SCOPE) {
+      lines.push({
+        claim: 'the request was inside what the task declared',
+        evidence: {
+          kind: EXPLANATION_EVIDENCE.SCOPE,
+          dimension: scope.dimension === undefined ? 'scope' : scope.dimension,
+          declared: scope.declared ?? [],
+          actual: scope.actual ?? '',
+        },
+      });
+    }
+    const approvalId = decision.approvalId;
+    if (approvalId !== undefined) {
+      lines.push({
+        claim: `a person approved it (${approvalId})`,
+        evidence: {
+          kind: EXPLANATION_EVIDENCE.REQUEST,
+          field: 'approvalId',
+          value: approvalId,
+        },
+      });
+    }
+  }
+
   const rule = decision.rule;
   if (rule !== undefined) {
     lines.push({
@@ -117,14 +146,18 @@ export function buildExplanation(input: ExplanationInput): Explanation {
     alternative === undefined
       ? `→ ${decision.effect.toUpperCase()}`
       : `→ ${decision.effect.toUpperCase()}, and ${instead} is permitted instead`;
-  lines.push({
+  const outcomeLine: ExplanationLine = {
     claim: outcome,
     evidence: {
       kind: EXPLANATION_EVIDENCE.REQUEST,
       field: 'effect',
       value: decision.effect,
     },
-  });
+  };
 
-  return { decisionId: decision.eventId, lines: lines.slice(0, EXPLANATION_MAX_LINES) };
+  // The outcome is the line the reader came for, so the cap never drops it.
+  return {
+    decisionId: decision.eventId,
+    lines: [...lines.slice(0, EXPLANATION_MAX_LINES - 1), outcomeLine],
+  };
 }

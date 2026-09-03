@@ -14,5 +14,7 @@ export * from './node-mcp-lister';
 export * from './reach-detail';
 export * from './snapshot';
 export * from './snapshot-store';
+export * from './authority';
 export * from './trace';
 export * from './readiness';
+export * from './repository-evidence';

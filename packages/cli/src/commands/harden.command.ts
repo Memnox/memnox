@@ -77,6 +77,8 @@ export function registerHardenCommand(
 ): void {
   program
     .command('harden')
+    // "Protect this" is what somebody says after a scan; harden is what it does.
+    .alias('protect')
     .description('Close what the doctor found, reversibly — proposed by default')
     .option('--apply', 'write the proposed steps')
     .option(

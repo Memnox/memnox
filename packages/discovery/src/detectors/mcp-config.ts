@@ -3,11 +3,17 @@ export interface McpServerConfig {
   name: string;
   command: string;
   args: string[];
+  /**
+   * Names only, never values. What a config hands a server is the answer to "what
+   * credentials does this thing get", and the value itself never leaves the file.
+   */
+  env: string[];
 }
 
 interface RawServer {
   command?: unknown;
   args?: unknown;
+  env?: unknown;
 }
 
 /**
@@ -35,7 +41,13 @@ export function readMcpServers(raw: string | null): McpServerConfig[] {
     const args = Array.isArray(server.args)
       ? server.args.filter((arg): arg is string => typeof arg === 'string')
       : [];
-    configs.push({ name, command: server.command, args });
+    configs.push({ name, command: server.command, args, env: envNamesIn(server.env) });
   }
   return configs;
+}
+
+/** The keys a config sets for the server. A value read here would be a value stored. */
+function envNamesIn(env: unknown): string[] {
+  if (typeof env !== 'object' || env === null) return [];
+  return Object.keys(env as Record<string, unknown>).sort();
 }

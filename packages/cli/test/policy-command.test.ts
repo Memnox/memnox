@@ -70,7 +70,7 @@ describe('memnox policy version', () => {
   });
 });
 
-describe('memnox policy simulate', () => {
+describe('memnox simulate', () => {
   beforeEach(async () => {
     await writeFile(
       policyFile,
@@ -84,13 +84,13 @@ describe('memnox policy simulate', () => {
       auditEvent('database.delete'),
     ]);
 
-    const { out } = await runCli(['policy', 'simulate', policyFile], runtime);
+    const { out } = await runCli(['simulate', policyFile], runtime);
 
     expect(out.text).toContain('Cases evaluated : 1');
   });
 
   it('says which file it wants rather than printing usage', async () => {
-    await expect(runCli(['policy', 'simulate'])).rejects.toThrow(/memnox simulate/);
+    await expect(runCli(['simulate'])).rejects.toThrow(/memnox simulate/);
   });
 
   it('is reachable as a top-level command', async () => {
@@ -109,7 +109,7 @@ describe('memnox policy simulate', () => {
       auditEvent('file.read'),
     ]);
 
-    const { out } = await runCli(['policy', 'simulate', '--file', policyFile], runtime);
+    const { out } = await runCli(['simulate', '--file', policyFile], runtime);
 
     expect(out.text).toContain('Cases evaluated : 2');
     expect(out.text).toContain('Changed         : 1');
@@ -134,7 +134,7 @@ describe('memnox policy simulate', () => {
     ]);
 
     const { out } = await runCli(
-      ['policy', 'simulate', '--file', policyFile, '--against', baseline],
+      ['simulate', '--file', policyFile, '--against', baseline],
       runtime,
     );
 
@@ -145,7 +145,7 @@ describe('memnox policy simulate', () => {
   it('says nothing changed when the candidate set decides identically', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [auditEvent('file.read')]);
 
-    const { out } = await runCli(['policy', 'simulate', '--file', policyFile], runtime);
+    const { out } = await runCli(['simulate', '--file', policyFile], runtime);
 
     expect(out.text).toContain('No action would be decided differently.');
   });
@@ -164,14 +164,7 @@ describe('memnox policy simulate', () => {
     ]);
 
     const { out } = await runCli(
-      [
-        'policy',
-        'simulate',
-        '--file',
-        policyFile,
-        '--against',
-        join(workspace, 'gone.yaml'),
-      ],
+      ['simulate', '--file', policyFile, '--against', join(workspace, 'gone.yaml')],
       runtime,
     );
 
@@ -183,7 +176,7 @@ describe('memnox policy simulate', () => {
   it('uses the three effects, not the vocabulary that was removed', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, [auditEvent('file.read')]);
 
-    const { out } = await runCli(['policy', 'simulate', '--file', policyFile], runtime);
+    const { out } = await runCli(['simulate', '--file', policyFile], runtime);
 
     expect(out.text).toContain('allow 1, escalate 0, withhold 0');
     expect(out.text).not.toContain('block');
@@ -192,7 +185,7 @@ describe('memnox policy simulate', () => {
   it('stops early when there is no history to simulate against', async () => {
     const runtime = new FakeRuntime().on('GET', AUDIT_PATH, []);
 
-    const { out } = await runCli(['policy', 'simulate', '--file', policyFile], runtime);
+    const { out } = await runCli(['simulate', '--file', policyFile], runtime);
 
     expect(out.text).toBe('No audit history yet — nothing to simulate against.');
   });

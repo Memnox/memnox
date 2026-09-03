@@ -5,7 +5,7 @@ import { DEFAULT_POLICY_FILE } from '../defaults';
 
 export function registerValidateCommand(program: Command, context: CliContext): void {
   program
-    .command('validate [file]')
+    .command('validate [file]', { noHelp: true })
     .description('Validate a YAML policy file')
     .action(async (file: string = DEFAULT_POLICY_FILE) => {
       const policies = await loadPoliciesFromFile(file);

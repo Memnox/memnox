@@ -69,7 +69,11 @@ export class ConfigDetector implements AgentDetector {
           kind: 'mcp',
           detectedFrom: full,
           tools: [],
-          servers: servers.map((server) => ({ ...server, args: [...server.args] })),
+          servers: servers.map((server) => ({
+            ...server,
+            args: [...server.args],
+            env: [...server.env],
+          })),
         });
       }
     }

@@ -109,11 +109,50 @@ function render(context: CliContext, agent: LearnResponse): void {
     out.line(`  ${style.bold('tried and refused')}`);
     for (const entry of refused) {
       out.line(`    ${entry.action}  ${style.dim(`${entry.count}\u00d7`)}`);
+      // A rule that keeps refusing and names nothing instead is right and incomplete:
+      // an agent told only "no" tries the same thing again next week.
+      if (entry.namesAlternative === false && entry.count > 1) {
+        out.line(
+          `    ${style.warn('⚠')} ${style.dim(`${entry.rules.join(', ')} names no alternative`)}`,
+        );
+      }
     }
     out.line(
       style.dim(
         '    Repeatedly refused means a rule is wrong, or no alternative was named.',
       ),
+    );
+  }
+
+  // A runtime one version behind sends no `drift`; that is a gap, not a crash.
+  const drift = agent.drift;
+  if (drift !== undefined && drift !== null) {
+    out.line('');
+    out.line(`  ${style.bold('doing what it was not doing a window ago')}`);
+    for (const [what, added] of Object.entries(drift.added)) {
+      if (added.length === 0) continue;
+      out.line(`    ${what}  ${style.dim(added.join(', '))}`);
+    }
+    out.line(
+      style.dim(
+        `    ${drift.authorityDelta} new, severity ${drift.severity}` +
+          (drift.cause === undefined ? '' : ` — ${drift.cause}`),
+      ),
+    );
+  }
+
+  // A runtime one version behind sends no `implicit`; that is a gap, not a crash.
+  const implicit = agent.implicit ?? [];
+  if (implicit.length > 0) {
+    out.line('');
+    out.line(`  ${style.bold('allowed, and nobody stated it')}`);
+    for (const entry of implicit) {
+      out.line(
+        `    ${entry.action}  ${style.dim(`${entry.count}\u00d7 over ${entry.sessions} session(s), no rule names it`)}`,
+      );
+    }
+    out.line(
+      style.dim('    A candidate: make it explicit, or write the rule that refuses it.'),
     );
   }
   out.line('');

@@ -101,6 +101,38 @@ describe('memnox collisions', () => {
     expect(out.text).toContain('src/auth/tokens.ts');
   });
 
+  it('names three ordinary actions that add up to an export', async () => {
+    const { out } = await run([
+      event({
+        id: 'evt_a',
+        sessionId: 'ses_1',
+        action: 'database.read',
+        target: 'customers',
+        occurredAt: '2026-08-31T11:40:00.000Z',
+      }),
+      event({
+        id: 'evt_b',
+        sessionId: 'ses_1',
+        action: 'filesystem.write',
+        target: '/tmp/export.csv',
+        occurredAt: '2026-08-31T11:41:00.000Z',
+      }),
+      event({
+        id: 'evt_c',
+        sessionId: 'ses_1',
+        action: 'slack.send_message',
+        target: '#general',
+        occurredAt: '2026-08-31T11:42:00.000Z',
+      }),
+    ]);
+
+    expect(out.text).toContain('COMBINED CAPABILITY, OBSERVED IN SEQUENCE');
+    expect(out.text).toContain('database.read customers');
+    expect(out.text).toContain('slack.send_message #general');
+    // The limit is stated rather than left for somebody to discover.
+    expect(out.text).toContain('One machine, one');
+  });
+
   it('refuses a window that is not a positive number', async () => {
     await expect(run([], ['--window', '0'])).rejects.toThrow(/--window must be/);
   });

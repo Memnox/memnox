@@ -82,7 +82,7 @@ async function writePolicyFile(filePath: string, policies: Policy[]): Promise<vo
 export function registerPolicyCommand(program: Command, context: CliContext): void {
   const policy = program
     .command('policy')
-    .description('Inspect, version, simulate, and compose policy sets');
+    .description('Inspect, version, and compose policy sets');
 
   policy
     .command('version')
@@ -170,26 +170,20 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
         DECISION_EFFECT.ALLOW,
       );
 
-  simulateFlags(
-    policy
-      .command('simulate [file]')
-      .description('Show what a candidate policy set would decide differently'),
-  ).action(async (file: string | undefined, options: SimulateOptions) =>
-    runSimulation(file, options),
-  );
-
-  // Top-level alias: this is the step that makes a policy change safe to ship,
-  // so it should not be three words deep.
+  /* One question deserves one command. This was registered twice — once here and once
+     under `policy` — which is two names for one thing and a help screen nobody reads.
+     "what-if" is the same question in the words somebody widening authority would use. */
   simulateFlags(
     program
       .command('simulate [file]')
+      .alias('what-if')
       .description('Replay real history through candidate rules before shipping them'),
   ).action(async (file: string | undefined, options: SimulateOptions) =>
     runSimulation(file, options),
   );
 
   program
-    .command('reload')
+    .command('reload', { noHelp: true })
     .description('Re-read the policy files without restarting the runtime')
     .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
     .option('--admin-token <token>', 'admin token if the runtime requires one')

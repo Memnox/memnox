@@ -104,6 +104,47 @@ describe('buildExplanation', () => {
     );
   });
 
+  it('explains an allow as the conditions that were met', () => {
+    const explanation = buildExplanation({
+      decision: decision({
+        effect: DECISION_EFFECT.ALLOW,
+        reason: 'release-engineer may merge here',
+        approvalId: 'apr_7731',
+      }),
+      request: { action: 'github.merge_pull_request', target: '#821' },
+      agentName: 'claude-code',
+      scope: { match: SCOPE_MATCH.IN_SCOPE },
+    });
+
+    const claims = explanation.lines.map((line) => line.claim);
+    // "Why did we trust it" is the question an auditor asks first, and almost nothing
+    // in this category answers it.
+    expect(claims).toContain('the request was inside what the task declared');
+    expect(claims).toContain('a person approved it (apr_7731)');
+    expect(claims[claims.length - 1]).toContain('ALLOW');
+  });
+
+  it('keeps the outcome line whatever else fills the five', () => {
+    const explanation = buildExplanation({
+      decision: decision({ effect: DECISION_EFFECT.ALLOW, approvalId: 'apr_1' }),
+      request: {
+        action: 'github.merge_pull_request',
+        context: [
+          {
+            source: 'mcp:github',
+            trust: CONTEXT_TRUST.UNTRUSTED,
+            content: 'a comment',
+          },
+        ],
+      },
+      agentName: 'claude-code',
+      scope: { match: SCOPE_MATCH.IN_SCOPE },
+    });
+
+    expect(explanation.lines).toHaveLength(5);
+    expect(explanation.lines[4]?.claim).toContain('ALLOW');
+  });
+
   it('names the dimension a request fell outside, and never more than five lines', () => {
     const explanation = buildExplanation({
       decision: decision(),

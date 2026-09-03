@@ -2,10 +2,13 @@ import type { Command } from 'commander';
 import type { ActionEvent } from '@memnox/core';
 import { effectOfName, TOOL_EFFECT } from '@memnox/discovery';
 import {
+  combinedSequences,
   concurrentWork,
   overlappingWork,
   type Collision,
+  type CombinedSequence,
   type OverlappingWork,
+  type SequenceObservation,
   type WorkObservation,
 } from '@memnox/ledger';
 import type { CliContext } from '../cli-context';
@@ -71,14 +74,54 @@ export function registerCollisionsCommand(
 
         const collisions = concurrentWork(observations, { now: at, windowMinutes });
         const duplicated = overlappingWork(observations, { now: at, windowDays });
+        const combined = combinedSequences(events.flatMap(sequenceOf));
 
         if (options.json === true) {
-          context.out.line(JSON.stringify({ collisions, duplicated }, null, 2));
+          context.out.line(JSON.stringify({ collisions, duplicated, combined }, null, 2));
           return;
         }
-        render(context, collisions, duplicated, windowDays);
+        render(context, collisions, duplicated, combined, windowDays);
       },
     );
+}
+
+/**
+ * Three ordinary actions, in order, in one session. Individually each was allowed and
+ * no single rule refuses the shape they make together.
+ */
+function renderCombined(
+  context: CliContext,
+  combined: readonly CombinedSequence[],
+): void {
+  if (combined.length === 0) return;
+  const { out, style } = context;
+
+  out.line('');
+  out.line(style.warn(style.bold('⚠ COMBINED CAPABILITY, OBSERVED IN SEQUENCE')));
+  out.line('');
+  for (const sequence of combined) {
+    out.line(
+      `  ${style.bold(sequence.agentId.replace('agt_', ''))}  «${sequence.sessionId}»`,
+    );
+    for (const [label, step] of [
+      ['read', sequence.read],
+      ['write', sequence.write],
+      ['send', sequence.send],
+    ] as const) {
+      const target = step.target === undefined ? '' : ` ${step.target}`;
+      out.line(`    ${label.padEnd(6)}${step.action}${target}  ${style.dim(step.at)}`);
+    }
+    out.line('');
+  }
+  out.line(
+    style.dim(
+      '  Together that is an export, and no single rule refused it. One machine, one',
+    ),
+  );
+  out.line(
+    style.dim('  session: the same shape split across two agents is not visible here.'),
+  );
+  out.line('');
 }
 
 /**
@@ -86,6 +129,22 @@ export function registerCollisionsCommand(
  * observation. Whether it wrote is read off the action's verb, the same way a tool's
  * effect is — one verb list, so the two answers cannot drift apart.
  */
+/** One action in one session, which is all the combination detector needs to see. */
+function sequenceOf(event: ActionEvent): SequenceObservation[] {
+  // Outcome events are testimony about a decision, never a step of their own.
+  if (event.decisionEventId !== undefined) return [];
+  if (event.sessionId === undefined) return [];
+  return [
+    {
+      agentId: event.agentId,
+      sessionId: event.sessionId,
+      action: event.action,
+      ...(event.target === undefined ? {} : { target: event.target }),
+      at: event.occurredAt,
+    },
+  ];
+}
+
 function observationOf(event: ActionEvent): WorkObservation[] {
   if (event.target === undefined) return [];
   const effect = effectOfName(event.action);
@@ -105,15 +164,18 @@ function render(
   context: CliContext,
   collisions: readonly Collision[],
   duplicated: readonly OverlappingWork[],
+  combined: readonly CombinedSequence[],
   windowDays: number,
 ): void {
   const { out, style } = context;
 
-  if (collisions.length === 0 && duplicated.length === 0) {
+  if (collisions.length === 0 && duplicated.length === 0 && combined.length === 0) {
     out.line('No two agents have been inside the same work.');
     out.line(style.dim(`Read from ${windowDays} days of this machine's own record.`));
     return;
   }
+
+  renderCombined(context, combined);
 
   for (const collision of collisions) {
     out.line('');

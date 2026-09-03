@@ -2,8 +2,14 @@ import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { AGENT_KIND, AGENT_STATUS } from '@memnox/core';
 import { DEFAULT_BASE_URL } from '../defaults';
+import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
-export function registerAgentsCommand(program: Command, context: CliContext): void {
+export function registerAgentsCommand(
+  program: Command,
+  context: CliContext,
+  buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
+  cwd: () => string = () => process.cwd(),
+): void {
   const agents = program.command('agents').description('Manage agent identities');
 
   agents
@@ -63,6 +69,57 @@ export function registerAgentsCommand(program: Command, context: CliContext): vo
           `${agent.id}  ${agent.name} (${agent.kind}) [${agent.status}] level ${agent.autonomyLevel ?? 'not granted'} — allowed ${agent.stats.allowed}, withheld ${agent.stats.withheld}`,
         );
       }
+    });
+
+  agents
+    .command('unregistered')
+    .description('Agents running on this machine that nobody enrolled')
+    .option('--url <url>', `runtime base URL (default: ${DEFAULT_BASE_URL})`)
+    .option('--admin-token <token>', 'admin token if the runtime requires one')
+    .option(
+      '--no-probe',
+      'do not start MCP servers to ask what they hold; tools go uncounted',
+    )
+    .action(async (options: { url?: string; adminToken?: string; probe: boolean }) => {
+      const { client } = await context.connect(options);
+      const enrolled = await client.listAgents();
+      const seams = buildSeams(cwd());
+      const { report } = await scanMachine(seams, { probe: options.probe });
+
+      /* An agent nobody enrolled is a row with evidence, not an absence: it is on this
+         disk, it can act, and no rule was ever written about it. */
+      const known = new Set(enrolled.map((agent) => agent.kind));
+      const strangers = report.agents.filter((agent) => !known.has(agent.kind));
+
+      const { out, style } = context;
+      if (strangers.length === 0) {
+        out.line('Every agent on this machine is enrolled.');
+        return;
+      }
+
+      out.line('');
+      out.line(style.warn(style.bold('UNREGISTERED')));
+      out.line('');
+      for (const agent of strangers) {
+        const surfaces = report.surfaces
+          .filter((surface) => surface.agentId === agent.id)
+          .map((surface) => surface.kind);
+        out.line(`  ${style.bold(agent.kind)}`);
+        out.line(`    seen in    ${style.dim(agent.configPaths.join(', '))}`);
+        out.line(`    since      ${style.dim(agent.firstSeen)}`);
+        if (surfaces.length > 0) {
+          out.line(`    reaches    ${[...new Set(surfaces)].sort().join(' · ')}`);
+        }
+        out.line(`    owner      ${style.warn('unclaimed')}`);
+        out.line('');
+      }
+      out.line(
+        style.dim(
+          `${strangers.length} agent(s) here act through no identity this runtime issued. ` +
+            'This machine only.',
+        ),
+      );
+      out.line('');
     });
 
   agents

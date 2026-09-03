@@ -196,11 +196,118 @@ describe('learning from a day of work', () => {
     });
     const [result] = await learn.learn(7);
 
-    expect(result?.refused).toEqual([{ action: 'database.delete', count: 2 }]);
+    expect(result?.refused[0]?.action).toBe('database.delete');
+    expect(result?.refused[0]?.count).toBe(2);
+    // The rule refusing it names no permitted path, so the agent will try again next
+    // week. That is a finding about the rule, not about the agent.
+    expect(result?.refused[0]?.rules).toEqual(['no-prod-deletes']);
+    expect(result?.refused[0]?.namesAlternative).toBe(false);
     // Proposing to deny what a rule already denies would be noise, and an action must
     // never land in both lists.
     expect(result?.unused.map((grant) => grant.action)).not.toContain('database.delete');
     expect(result?.proposal.deny).not.toContain('database.delete');
+  });
+
+  it('says whether the rule that kept refusing named a permitted path', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const withAlternative: Policy[] = [
+      {
+        name: 'no-direct-database',
+        match: { actions: ['database.query'] },
+        decision: {
+          effect: DECISION_EFFECT.WITHHOLD,
+          reason: 'services reach data through a repository',
+          alternative: {
+            action: 'repository.find',
+            note: 'BillingRepository.find() is the permitted path',
+          },
+        },
+      },
+    ];
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(withAlternative),
+    });
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
+    await gateway.authorize(token, { action: 'database.query', sessionId: SESSION });
+    await gateway.authorize(token, { action: 'database.query', sessionId: SESSION });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => withAlternative,
+      seams: async () => [],
+    });
+    const [result] = await learn.learn(7);
+
+    expect(result?.refused[0]?.count).toBe(2);
+    expect(result?.refused[0]?.namesAlternative).toBe(true);
+  });
+
+  it('surfaces what was allowed again and again with no rule naming it', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(POLICIES),
+    });
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
+    await gateway.authorize(token, { action: 'github.merge', sessionId: SESSION });
+    await gateway.authorize(token, { action: 'github.merge', sessionId: SESSION });
+    await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => POLICIES,
+      seams: async () => [],
+    });
+    const [result] = await learn.learn(7);
+
+    // Nobody stated it. It follows from the traffic, and it is a candidate.
+    expect(result?.implicit.map((each) => each.action)).toEqual(['github.merge']);
+    expect(result?.implicit[0]?.count).toBe(2);
+    expect(result?.implicit[0]?.sessions).toBe(1);
+  });
+
+  it('compares an agent against its own behaviour a window ago', async () => {
+    const auditLog = new InMemoryAuditLog();
+    const gateway = new ActionGateway({
+      identityStore: new InMemoryIdentityStore(),
+      auditLog,
+      approvalStore: new InMemoryApprovalStore(),
+      policyEngine: new PolicyEngine(POLICIES),
+    });
+    const { token } = await gateway.registerAgent({
+      name: 'claude-code',
+      kind: AGENT_KIND.CLAUDE_CODE,
+      role: 'test-agent',
+      principal: 'moise',
+    });
+    await gateway.authorize(token, { action: 'repository.read', sessionId: SESSION });
+    await gateway.authorize(token, { action: 'cloud.write', sessionId: SESSION });
+
+    const learn = new LearnService({
+      auditLog,
+      rules: () => POLICIES,
+      seams: async () => [],
+    });
+    const [result] = await learn.learn(7);
+
+    // A first window has nothing behind it, and reporting everything as newly reached
+    // would be inventing a baseline nobody took.
+    expect(result?.drift).toBeNull();
   });
 
   it('does not propose denying a pattern covering something the agent used', async () => {

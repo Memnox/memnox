@@ -6,7 +6,7 @@ import { DEFAULT_POLICY_FILE, STARTER_POLICY_FILE } from '../defaults';
 
 export function registerInitCommand(program: Command, context: CliContext): void {
   program
-    .command('init')
+    .command('init', { noHelp: true })
     .description('Create a starter policy file in the current directory')
     .option('-f, --file <path>', 'policy file path', DEFAULT_POLICY_FILE)
     .action(async (options: { file: string }) => {

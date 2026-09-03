@@ -243,6 +243,41 @@ Evidence
 
 Least privilege written from behaviour rather than from imagination. The window, the sessions and the coverage ride in a comment at the top of the file it writes, where they cannot be dropped in the retelling — four days of one developer's work is not a policy for a team, and a proposal that hid how little it saw would be a trap.
 
+**`memnox explain "<question>"`** — can this agent do this, right now. The answer separates what is technically possible from what is organizationally permitted and says plainly which is which. The question is read by matching an agent that is on this machine and an action namespace that exists; it refuses rather than guessing, because no model reads it.
+
+```
+can claude deploy production right now?
+  read as: claude-code · deploy · production
+
+TECHNICALLY         yes
+  ✓   a shell to run it in
+  ✓   a deploy tool on PATH
+  ✓   credentials it can reach
+
+ORGANIZATIONALLY    not right now
+  ✕   production-deploy-approval requires a person
+
+  → ESCALATE
+```
+
+**`memnox who --resource production`** — which agents on this machine reach a class of resource, answered from reachability rather than from a spreadsheet somebody maintains. Every row carries the file that proved it. This machine only: the same question across a fleet needs machines this one cannot see.
+
+**`memnox evidence`** — what this repository already states about itself, what it already enforces, and the distance between the two. Normative sentences out of `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` and your decision log, verbatim and with their line, against the `CODEOWNERS` entries and git hooks that actually run.
+
+```
+POLICY GAP
+
+  documented   Production changes must carry two approvals.
+               SECURITY.md:14
+  enforced     nothing on this disk
+
+  branch protection and required reviews live in the forge, not on this disk
+```
+
+A stated rule is evidence a rule can match on. It permits nothing on its own — the moment text an agent can reach can permit an action, every document in the repository becomes a way to write policy.
+
+**`memnox diff --trend`** — how far authority has travelled across every scan kept here, with each increase attached to the server that caused it and the file that launched it. No single change is alarming; the direction of travel is.
+
 **`memnox collisions`** — two agents inside the same file, and two agents building the same thing. Both read out of your own ledger, because both agents act through seams that recorded what they touched.
 
 ```
@@ -343,7 +378,7 @@ This is a monorepo. Each package is one layer, and the two at the top have zero 
 | [`@memnox/discovery`](packages/discovery) | What can act on this machine, what it reaches, and reversible harden steps. Zero dependencies. |
 | [`@memnox/tool-hook`](packages/tool-hook) | The local seams, starting with the PreToolUse hook |
 | [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, and the local file stores |
-| [`@memnox/ledger`](packages/ledger) | The local record: usage against grant, unused grants, lineage, coverage, drift, cost |
+| [`@memnox/ledger`](packages/ledger) | The local record: usage against grant, unused grants, lineage, coverage, behaviour drift, collisions |
 | [`@memnox/mcp-firewall`](packages/mcp-firewall) | Transparent MCP proxy, so every `tools/call` goes through the runtime |
 | [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments never leave the machine |
 | [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI |

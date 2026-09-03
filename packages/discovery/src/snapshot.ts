@@ -28,6 +28,8 @@ export interface EnvironmentSnapshot {
 export interface SnapshotAgent {
   id: string;
   kind: string;
+  /** So an update is named as the cause of what it changed, rather than raised as an alarm. */
+  version?: string;
   /** One entry per surface kind, so a widened surface is a comparison and not a guess. */
   surfaces: SnapshotSurface[];
 }
@@ -70,6 +72,7 @@ export function snapshotOf(
     agents: report.agents.map((agent) => ({
       id: agent.id,
       kind: agent.kind,
+      ...(agent.version === undefined ? {} : { version: agent.version }),
       surfaces: report.surfaces
         .filter((surface) => surface.agentId === agent.id)
         .map((surface) => ({ kind: surface.kind, detectedFrom: surface.detectedFrom })),
@@ -130,6 +133,11 @@ export interface EnvironmentChange {
   grantedBy?: string;
   /** Agents that reach it after the change. */
   agents?: string[];
+  /**
+   * A widened agent is usually somebody installing something, not an attack. Naming
+   * the cause makes the common case a change to approve, so the rare one stands out.
+   */
+  cause?: string;
 }
 
 /**
@@ -140,16 +148,45 @@ export function compareSnapshots(
   before: EnvironmentSnapshot,
   after: EnvironmentSnapshot,
 ): EnvironmentChange[] {
+  const causes = updateCauses(before, after);
   return [
-    ...serverChanges(before, after),
-    ...resourceChanges(before, after),
-    ...surfaceChanges(before, after),
+    ...serverChanges(before, after, causes),
+    ...resourceChanges(before, after, causes),
+    ...surfaceChanges(before, after, causes),
   ];
+}
+
+/** One entry per agent whose own version moved between the two scans. */
+function updateCauses(
+  before: EnvironmentSnapshot,
+  after: EnvironmentSnapshot,
+): Map<string, string> {
+  const priorById = new Map(before.agents.map((agent) => [agent.id, agent]));
+  const causes = new Map<string, string>();
+  for (const agent of after.agents) {
+    const prior = priorById.get(agent.id);
+    if (prior === undefined) continue;
+    const cause = updateBetween(prior, agent);
+    if (cause !== undefined) causes.set(agent.id, cause);
+  }
+  return causes;
+}
+
+/** The update that explains a change, where exactly one updated agent reaches it. */
+function causeFor(
+  causes: ReadonlyMap<string, string>,
+  agentIds: readonly string[],
+): string | undefined {
+  const named = [...new Set(agentIds.map((id) => causes.get(id)))].filter(
+    (cause): cause is string => cause !== undefined,
+  );
+  return named.length === 1 ? named[0] : undefined;
 }
 
 function serverChanges(
   before: EnvironmentSnapshot,
   after: EnvironmentSnapshot,
+  causes: ReadonlyMap<string, string>,
 ): EnvironmentChange[] {
   const changes: EnvironmentChange[] = [];
   const priorByName = new Map(before.servers.map((server) => [server.name, server]));
@@ -164,6 +201,7 @@ function serverChanges(
         detail: describeTools(server.tools),
         grantedBy: server.grantedBy,
         agents: server.agentIds,
+        ...causeOf(causes, server.agentIds),
       });
       continue;
     }
@@ -178,6 +216,7 @@ function serverChanges(
         detail: `${describeTools(arrived)}: ${arrived.map((tool) => tool.name).join(', ')}`,
         grantedBy: server.grantedBy,
         agents: server.agentIds,
+        ...causeOf(causes, server.agentIds),
       });
     }
   }
@@ -199,6 +238,7 @@ function serverChanges(
 function resourceChanges(
   before: EnvironmentSnapshot,
   after: EnvironmentSnapshot,
+  causes: ReadonlyMap<string, string>,
 ): EnvironmentChange[] {
   const changes: EnvironmentChange[] = [];
   const priorById = new Map(before.resources.map((resource) => [resource.id, resource]));
@@ -214,6 +254,7 @@ function resourceChanges(
         direction: CHANGE_DIRECTION.WIDENS,
         detail: describeReach(resource.sensitivity, reach),
         agents: resource.reachableBy,
+        ...causeOf(causes, resource.reachableBy),
       });
       continue;
     }
@@ -226,6 +267,7 @@ function resourceChanges(
         direction: CHANGE_DIRECTION.WIDENS,
         detail: `${prior.reachableBy.length} → ${reach} agents`,
         agents: resource.reachableBy,
+        ...causeOf(causes, resource.reachableBy),
       });
     } else if (reach < prior.reachableBy.length) {
       changes.push({
@@ -255,6 +297,7 @@ function resourceChanges(
 function surfaceChanges(
   before: EnvironmentSnapshot,
   after: EnvironmentSnapshot,
+  causes: ReadonlyMap<string, string>,
 ): EnvironmentChange[] {
   const changes: EnvironmentChange[] = [];
   const priorById = new Map(before.agents.map((agent) => [agent.id, agent]));
@@ -270,6 +313,7 @@ function surfaceChanges(
       });
       continue;
     }
+    const cause = causes.get(agent.id);
     for (const surface of agent.surfaces) {
       if (prior.surfaces.some((each) => each.kind === surface.kind)) continue;
       changes.push({
@@ -278,6 +322,7 @@ function surfaceChanges(
         direction: CHANGE_DIRECTION.WIDENS,
         detail: 'new surface',
         grantedBy: surface.detectedFrom,
+        ...(cause === undefined ? {} : { cause }),
       });
     }
     for (const surface of prior.surfaces) {
@@ -302,6 +347,25 @@ function surfaceChanges(
     });
   }
   return changes;
+}
+
+function causeOf(
+  causes: ReadonlyMap<string, string>,
+  agentIds: readonly string[],
+): { cause?: string } {
+  const cause = causeFor(causes, agentIds);
+  return cause === undefined ? {} : { cause };
+}
+
+/**
+ * Agent software updates itself, and none of that arrives as an event anywhere. A
+ * version that moved is the cause of what moved with it, and saying so turns the
+ * common case into a change to approve rather than a threat to investigate.
+ */
+function updateBetween(before: SnapshotAgent, after: SnapshotAgent): string | undefined {
+  if (before.version === undefined || after.version === undefined) return undefined;
+  if (before.version === after.version) return undefined;
+  return `updated ${before.version} → ${after.version}`;
 }
 
 /** Counts and names, never a percentage: the denominator here would be invented. */
