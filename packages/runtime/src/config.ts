@@ -1,8 +1,8 @@
 import type { ApiRole, DecisionEffect, EnvironmentModes } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, DEFAULT_HOST, DEFAULT_PORT } from '@memnox/core';
 
-export const DEFAULT_PORT = 7466;
-export const DEFAULT_HOST = '127.0.0.1';
+/* Declared in core so the CLI can read a default port without loading a web server. */
+export { DEFAULT_HOST, DEFAULT_PORT };
 export const DEFAULT_DATA_DIR = '.memnox';
 /** Enough history to be representative, bounded so a simulation stays fast. */
 export const SIMULATION_SAMPLE_LIMIT = 1_000;

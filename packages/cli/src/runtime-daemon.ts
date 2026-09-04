@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { resolveConfig, type RuntimeConfig } from '@memnox/runtime';
+import type { RuntimeConfig } from '@memnox/runtime';
 import type { ServerLauncher } from './commands/serve.command';
 
 /** One runtime serves every project, so these are machine-local facts, not per-repo. */
@@ -86,6 +86,7 @@ export function createDetachedLauncher(
   const alive = deps.alive ?? isAlive;
 
   return async (overrides) => {
+    const { resolveConfig } = await import('@memnox/runtime');
     const config = resolveConfig(overrides);
     const paths = daemonPaths(homeDir);
     await mkdir(dirname(paths.logFile), { recursive: true });

@@ -2,7 +2,7 @@ import { homedir, userInfo } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type { Command } from 'commander';
 import { AGENT_KIND, DECISION_REASON, ENFORCEMENT_MODE } from '@memnox/core';
-import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/runtime';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/core';
 import { createDetachedLauncher, daemonPaths, readDaemonPid } from '../runtime-daemon';
 import { agentConfigPath, readAgentConfig, writeAgentConfig } from '../agent-config';
 import type { CliContext } from '../cli-context';

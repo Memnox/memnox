@@ -1,14 +1,20 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { parseEnforcement } from '../enforcement-args';
-import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
 import {
+  DECISION_EFFECT,
   DEFAULT_HOST,
   DEFAULT_PORT,
-  startServer,
-  type MemnoxServer,
-  type RuntimeConfig,
-} from '@memnox/runtime';
+  type DecisionEffect,
+} from '@memnox/core';
+import type { MemnoxServer, RuntimeConfig } from '@memnox/runtime';
+
+/* Imported here and not at the top: fastify costs ~170ms to load, and every
+   command that never serves was paying it. */
+const defaultLauncher: ServerLauncher = async (overrides) => {
+  const { startServer } = await import('@memnox/runtime');
+  return startServer(overrides);
+};
 
 /** Injected so tests reach the config mapping and the banner. */
 export type ServerLauncher = (
@@ -30,7 +36,7 @@ const envOr = (value: string | undefined, name: string): string | undefined =>
 export function registerServeCommand(
   program: Command,
   context: CliContext,
-  launch: ServerLauncher = startServer,
+  launch: ServerLauncher = defaultLauncher,
 ): void {
   program
     .command('serve')

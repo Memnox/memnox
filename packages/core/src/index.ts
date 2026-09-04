@@ -1,3 +1,4 @@
+export * from './constants/address.constants';
 export * from './constants/action-class.constants';
 export * from './constants/decision.constants';
 export * from './constants/enforcement.constants';
