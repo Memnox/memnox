@@ -27,6 +27,7 @@ import { registerMcpCommand } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerReplayCommand } from './commands/replay.command';
 import { registerServeCommand } from './commands/serve.command';
+import { registerStateCommand } from './commands/state.command';
 import { registerStatusCommand } from './commands/status.command';
 import { registerSetupCommand } from './commands/setup.command';
 import { registerStopCommand } from './commands/stop.command';
@@ -48,6 +49,7 @@ export function buildProgram(context: CliContext): Command {
   registerReadinessCommand(program, context);
   registerExplainCommand(program, context);
   registerWhoCommand(program, context);
+  registerStateCommand(program, context);
   registerEvidenceCommand(program, context);
   registerDoctorCommand(program, context);
   registerHardenCommand(program, context);

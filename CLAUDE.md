@@ -27,17 +27,22 @@ than on a feature count.
 
 ### The phases the packages answer to
 
-`VISION.md` is the vision, and it is written as **sixty situations** rather than as a
-sequence: what is painfully happening today, why the tools somebody already has do not close
-it, what Memnox does, what they get. The one sentence over all of it is that **Memnox closes
-the gap between what AI agents can do, what they actually do, and what the organization
-intended**, which are this project's three kinds of truth under the words a user would use.
+`VISION.md` is the vision, and it is written as **sixty pains** rather than as a sequence:
+what is painfully happening today, why the tools somebody already has fail, what Memnox
+does, what the user gets. They are numbered `2.1` to `2.60` inside its section 2. The one
+sentence over all of it is that **Memnox solves the gap between what AI agents can do, what
+they actually do, and what the organization intended**, which are this project's three kinds
+of truth under the words a user would use.
 
 The ten build phases still exist and are still how the packages are cited. **The phase index
-at the end of `VISION.md` maps each `§NN` to the situations it closes**, so a change can name
+in the appendix of `VISION.md` maps each `§NN` to the pains it closes**, so a change can name
 either: `§01` for discovery, `§03` for observation, `§05` for protection, `§09` for policy
-candidates, or `#09` and `#33` for the drift situations `@memnox/discovery` answers. Naming
-the situation is better where one fits, because it says who is unblocked by the change.
+candidates, or `2.9` and `2.33` for the drift pains `@memnox/discovery` answers. Naming the
+pain is better where one fits, because it says who is unblocked by the change.
+
+**The vision is a brainstorm and says so**, in its own words: the pains should not
+automatically become features. A screen drawn in it is an illustration of the pain, never a
+committed output, and this file remains the authority on what the code actually does.
 
 **§07 is open, and §08 is not.** Repository evidence is read from the reader's own checkout
 with no account, which is why it ships here and why `evidence` states plainly that branch
@@ -132,7 +137,7 @@ different product.
 8. **A secret value never leaves the process that read it.** Discovery stores a path, a kind and a fingerprint; the ledger stores a `payloadDigest`. A report carrying the shape of somebody's SSH key is the worst bug this product could ship.
 9. **The MCP proxy checks both directions.** The call on the way out, the result on the way back. A tool result is wrapped as an untrusted `ContextBlock` whatever it says, instruction-shaped content is recorded and framed rather than removed, and `promotedToIntent` is an invariant rather than a field anything sets.
 10. **Containment names what it did not reach.** `ContainmentAction.unreached` is never empty because it was inconvenient. A kill reporting success while one machine is asleep is the worst possible lie, and the CLI exits non-zero on a partial one.
-11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`, and `stateFactsInForce` takes the moment as an argument rather than reading a clock. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored. Recorded and honourable, not yet enforced: where the fact *comes from* — a channel, an incident tool — is the cloud's half.
+11. **A state fact carries an expiry.** `validateStateFact` refuses one without `validUntil`, and `stateFactsInForce` takes the moment as an argument rather than reading a clock. A freeze that outlives its incident is worse than no freeze, because the next one gets ignored. Honoured on the decision path: the gateway and `LocalGate` pass `stateLabelsOf` into evaluation, so a rule naming `freeze:production` bites, and every verdict is stamped with the `stateVersion` it was decided against, so a bundle that never propagated is visible rather than silent. Where the fact *comes from* — a channel, an incident tool — is still the cloud's half.
 12. **A change carries a direction.** `EnvironmentChange.direction` says whether authority widened or narrowed, and `summarizeChanges` counts both. A drift report that mixed a new credential with a removed one would be a list nobody can act on.
 13. **An unreadable rule set is never an empty one.** `loadLocalRules` returns what would not load, and `memnox readiness` and `memnox watch` say so. Reporting "no rule covers this" about a machine whose rules simply failed to parse is a lie the reader would act on.
 14. **An agent is enrolled with three fields.** `AgentIdentity` requires `kind` (the product), `role` (the job) and `principal` (the person). Policy matches on `roles`, so swapping the product leaves every rule about the job standing, and an incident report names a human rather than an API key. The route refuses an enrolment missing either — defaulted is not stated.
@@ -168,14 +173,15 @@ its internals. A command is a plain word somebody would reach for.
 
 | The question | The command |
 |---|---|
-| what can act here | `memnox` (default), `scan`, `memnox --tools`, `doctor`, `doctor --by-agent`, `harden` / `protect` |
+| what can act here | `memnox` (default), `scan`, `memnox --tools`, `doctor`, `doctor --by-agent`, `mcp review`, `harden` / `protect` |
 | what changed, and where did it come from | `watch`, `diff`, `diff --trend`, `trace` |
 | could it actually do this | `readiness` |
-| can it do this, right now | `explain "<question>"` |
-| which agents reach this | `who --resource <class>` |
+| can it do this, right now | `explain "<question>"` — technically, organizationally, and what is in force |
+| which agents reach this | `who --resource <class>` — direct grants, and the reach that runs through a credential |
 | should this proceed | `check` |
 | what may it do | `rules` (with the seam each product enforces it at) |
-| what does this repository already say | `evidence`, `evidence --gaps` |
+| what is true right now | `state`, `state declare <kind>`, `state lift <id>` |
+| what does this repository already say | `evidence`, `evidence --gaps`, `evidence --against-ledger` |
 | why | `why`, `why --evidence`, `replay` |
 | what if we widen it | `what-if` (`simulate`, `policy simulate`) |
 | who authorised it | `approvals`, `approve`, `deny` |

@@ -1,4 +1,11 @@
-import { STATE_FACT_KIND, type StateFactKind } from '../constants/state-fact.constants';
+import { createHash } from 'node:crypto';
+import {
+  STATE_FACT_KIND,
+  STATE_VERSION_ALGORITHM,
+  STATE_VERSION_LENGTH,
+  STATE_VERSION_NONE,
+  type StateFactKind,
+} from '../constants/state-fact.constants';
 
 /**
  * What is true right now, with a scope and an expiry: a freeze, an open incident, a
@@ -80,4 +87,33 @@ export function stateFactCovering(
 export function describeStateFact(fact: StateFact): string {
   const kind = fact.kind === STATE_FACT_KIND.FREEZE ? 'freeze' : fact.kind;
   return `${kind} on ${fact.scope.join(', ')} until ${fact.validUntil} — ${fact.reason} (${fact.source})`;
+}
+
+/**
+ * The labels a rule's `match.state` is compared against. One per kind and one per
+ * kind:scope pair, so a rule can say "any freeze" or "a freeze on payments" without
+ * the evaluator needing to understand either word.
+ */
+export function stateLabelsOf(facts: readonly StateFact[], at: string): string[] {
+  const labels = new Set<string>();
+  for (const fact of stateFactsInForce(facts, at)) {
+    labels.add(fact.kind);
+    for (const scope of fact.scope) labels.add(`${fact.kind}:${scope.toLowerCase()}`);
+  }
+  return [...labels].sort();
+}
+
+/**
+ * Content version of the facts in force, stamped onto every verdict decided against
+ * them. A freeze that never reached a machine is a version that never changed there,
+ * which is how a bundle that failed to propagate becomes visible instead of silent.
+ */
+export function stateVersionOf(facts: readonly StateFact[], at: string): string {
+  const inForce = stateFactsInForce(facts, at);
+  if (inForce.length === 0) return STATE_VERSION_NONE;
+  const ids = inForce.map((fact) => `${fact.id}@${fact.validUntil}`).sort();
+  return createHash(STATE_VERSION_ALGORITHM)
+    .update(ids.join('\n'))
+    .digest('hex')
+    .slice(0, STATE_VERSION_LENGTH);
 }

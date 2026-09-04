@@ -31,6 +31,7 @@ import type {
   RuleRef,
   ScopeComparison,
   ScopeSubject,
+  StateFactStore,
   Task,
   TaskStore,
 } from '@memnox/core';
@@ -46,6 +47,9 @@ import {
   buildActionBriefing,
   buildExplanation,
   compareDeclaredScope,
+  stateLabelsOf,
+  stateVersionOf,
+  STATE_VERSION_NONE,
   APPROVAL_STATUS,
   APPROVAL_TTL_MS,
   CONSENT,
@@ -218,6 +222,11 @@ export interface ActionGatewayDeps {
   tasks?: TaskStore;
   /** The flight recorder. Full fidelity on anything not simply allowed, sampled otherwise. */
   frames?: FrameStore;
+  /**
+   * What is in force right now. Without it a rule naming a freeze can never match,
+   * which is a freeze nobody is refused by.
+   */
+  stateFacts?: StateFactStore;
 }
 
 /** The ledger label for metered model spend. A name, not a rule. */
@@ -240,6 +249,8 @@ interface Outcome {
   alternative?: Alternative;
   /** How the request compared against the task's declared scope. */
   scope?: ScopeComparison;
+  /** The conditions in force when this was decided; "none" when there were none. */
+  stateVersion?: string;
 }
 
 /** identity → policy → advisors → approval → audit; exactly one event per request. */
@@ -570,10 +581,14 @@ export class ActionGateway {
     }
 
     const scope = await this.compareScope(request);
+    const at = new Date();
+    const inForce = await this.stateInForce(at);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       agentRole: agent.role,
-      now: new Date(),
+      now: at,
+      state: inForce.labels,
+      stateVersion: inForce.version,
       ...(scope === undefined ? {} : { scope: scope.match }),
     });
     const advisories = await this.collectAdvisories(request, agent);
@@ -662,10 +677,14 @@ export class ActionGateway {
     }
 
     const scope = await this.compareScope(request);
+    const at = new Date();
+    const inForce = await this.stateInForce(at);
     const evaluation = this.deps.policyEngine.evaluate(request, {
       agentName: agent.name,
       agentRole: agent.role,
-      now: new Date(),
+      now: at,
+      state: inForce.labels,
+      stateVersion: inForce.version,
       ...(scope === undefined ? {} : { scope: scope.match }),
     });
     const advisories = await advise();
@@ -699,6 +718,7 @@ export class ActionGateway {
       const granted = await this.approvals.claimGrantFor(agent, request);
       if (granted) {
         return this.finalize(startedAt, agent, request, {
+          stateVersion: inForce.version,
           effect: DECISION_EFFECT.ALLOW,
           reason: `${DECISION_REASON.APPROVAL_GRANTED} by ${granted.resolvedBy}`,
           matchedPolicies: evaluation.matchedPolicies,
@@ -727,6 +747,7 @@ export class ActionGateway {
       // Past the ceiling, block rather than add a hold nobody will read.
       if (approval === APPROVAL_CAP_REACHED) {
         return this.finalize(startedAt, agent, request, {
+          stateVersion: inForce.version,
           effect: DECISION_EFFECT.WITHHOLD,
           reason: `${reason} — too many approvals already pending for this agent`,
           matchedPolicies: evaluation.matchedPolicies,
@@ -735,6 +756,7 @@ export class ActionGateway {
         });
       }
       return this.finalize(startedAt, agent, request, {
+        stateVersion: inForce.version,
         effect,
         reason: `${DECISION_REASON.APPROVAL_PENDING}: ${reason}`,
         matchedPolicies: evaluation.matchedPolicies,
@@ -749,6 +771,7 @@ export class ActionGateway {
     }
 
     return this.finalize(startedAt, agent, request, {
+      stateVersion: inForce.version,
       effect,
       reason,
       matchedPolicies: evaluation.matchedPolicies,
@@ -935,6 +958,9 @@ export class ActionGateway {
       riskLevel,
       matchedPolicies: (outcome.matchedPolicies ?? []).map((policy) => policy.name),
       policyVersion: this.deps.policyEngine.version,
+      ...(outcome.stateVersion === undefined
+        ? {}
+        : { stateVersion: outcome.stateVersion }),
       advisories: [
         ...advisories.flatMap((advisory) =>
           advisory.signals.map((signal) => `${advisory.source}:${signal}`),
@@ -972,6 +998,30 @@ export class ActionGateway {
    * Scope is compared, not judged. The task is data the client declared; an unreadable
    * or absent one leaves the comparison undefined rather than assuming the request fits.
    */
+  /**
+   * The conditions in force at this instant. A store that cannot be read yields no
+   * labels rather than throwing: a freeze failing to load must not take the gateway
+   * down with it, and the unchanged version is what makes that visible afterwards.
+   */
+  private async stateInForce(at: Date): Promise<{ labels: string[]; version: string }> {
+    const store = this.deps.stateFacts;
+    if (store === undefined) return { labels: [], version: STATE_VERSION_NONE };
+    const moment = at.toISOString();
+    try {
+      const facts = await store.list();
+      return {
+        labels: stateLabelsOf(facts, moment),
+        version: stateVersionOf(facts, moment),
+      };
+    } catch (err: unknown) {
+      /* Fails open on purpose, and says so: a freeze that cannot be read must not take
+         every ordinary action down with it. The version stays `none`, which is what
+         makes a bundle that never arrived visible on the verdict afterwards. */
+      this.logger.error(`state facts unreadable, deciding without them: ${String(err)}`);
+      return { labels: [], version: STATE_VERSION_NONE };
+    }
+  }
+
   private async compareScope(
     request: ActionRequest,
   ): Promise<ScopeComparison | undefined> {

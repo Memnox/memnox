@@ -17,11 +17,19 @@ import type {
   SeamUnhealthyBehaviour,
   EnforcementMode,
   RiskAssessment,
+  StateFact,
+  StateFactKind,
 } from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import { POLICY_DOCUMENT_VERSION, type Policy } from '@memnox/policy-engine';
 import { ActionWithheldError, EscalationRequiredError, MemnoxApiError } from './errors';
-import type { PolicyApplyResult, PolicyReloadResult, PolicySetView } from './runtime-api';
+import type {
+  DeclareStateRequest,
+  PolicyApplyResult,
+  PolicyReloadResult,
+  PolicySetView,
+  StateFactsResponse,
+} from './runtime-api';
 import {
   runGuarded,
   toOutcomeReport,
@@ -567,6 +575,29 @@ export class MemnoxClient {
   }
 
   /** Kill, quarantine or panic. The reply names every install it could not reach. */
+  /** What is in force right now, and what lapsed — a reader needs to see both. */
+  async listState(): Promise<StateFactsResponse> {
+    return this.request<StateFactsResponse>(
+      'GET',
+      '/v1/state',
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
+  async declareState(request: DeclareStateRequest): Promise<StateFact> {
+    return this.request<StateFact>('POST', '/v1/state', request, this.options.adminToken);
+  }
+
+  async liftState(id: string): Promise<{ id: string; lifted: boolean }> {
+    return this.request<{ id: string; lifted: boolean }>(
+      'DELETE',
+      `/v1/state/${encodeURIComponent(id)}`,
+      undefined,
+      this.options.adminToken,
+    );
+  }
+
   async contain(request: ContainmentRequestBody): Promise<ContainmentAction> {
     return this.request<ContainmentAction>(
       'POST',

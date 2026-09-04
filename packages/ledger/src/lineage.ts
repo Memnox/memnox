@@ -1,10 +1,12 @@
+import type { ActorKind } from '@memnox/core';
 import { LINEAGE_CONFIDENCE, type LineageMethod } from './ledger.constants';
 
 /** A person, through a tool, through an agent, through a repository, to a system. */
 export interface LineageHop {
   at: string;
   actorId: string;
-  actorKind: string;
+  /** Normalized: a person, an agent, a pipeline, a job, a service. Never a free label. */
+  actorKind: ActorKind;
   system: string;
   ref?: string;
   /** Marking an inferred hop as inferred keeps the feature credible when it is wrong. */
@@ -20,7 +22,7 @@ export interface Lineage {
 export interface HopObservation {
   at: string;
   actorId: string;
-  actorKind: string;
+  actorKind: ActorKind;
   system: string;
   ref?: string;
   correlationId?: string;

@@ -6,7 +6,13 @@ import {
   type Readiness,
 } from '@memnox/discovery';
 import { LocalGate } from '@memnox/local-gate';
-import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  describeStateFact,
+  stateFactsInForce,
+  type DecisionEffect,
+  type StateFact,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import {
   defaultScanSeams,
@@ -105,7 +111,21 @@ export function registerExplainCommand(
       }
 
       const rules = await loadLocalRules(seams);
-      const gate = new LocalGate(rules.policies, { agentName: readiness.agentKind });
+      /* "Right now" is the whole question. A rule set alone answers whether an action
+         is ever permitted; only a fact in force answers whether it is permitted today. */
+      const facts = await seams.stateFacts();
+      const now = new Date();
+      const environment = parsed.environment;
+      const inForce = stateFactsInForce(facts, now.toISOString()).filter((fact) =>
+        environment === undefined
+          ? true
+          : fact.scope.some((scope) => scope.toLowerCase() === environment.toLowerCase()),
+      );
+      const gate = new LocalGate(rules.policies, {
+        agentName: readiness.agentKind,
+        stateFacts: facts,
+        now,
+      });
       const verdict = gate.evaluate({
         action: parsed.action,
         ...(parsed.environment === undefined ? {} : { environment: parsed.environment }),
@@ -120,6 +140,7 @@ export function registerExplainCommand(
               technically: readiness.missing.length === 0,
               effect: verdict.effect,
               reason: verdict.reason,
+              inForce,
               ...readiness,
             },
             null,
@@ -128,7 +149,7 @@ export function registerExplainCommand(
         );
         return;
       }
-      render(context, question, parsed, readiness, verdict, rules.unreadable);
+      render(context, question, parsed, readiness, verdict, rules.unreadable, inForce);
     });
 }
 
@@ -139,6 +160,7 @@ function render(
   readiness: Readiness,
   verdict: { effect: DecisionEffect; reason: string },
   rulesUnreadable: string | undefined,
+  inForce: readonly StateFact[],
 ): void {
   const { out, style } = context;
   out.line('');
@@ -180,6 +202,19 @@ function render(
     );
     out.line(
       `  ${''.padEnd(LABEL_WIDTH)}${style.dim((rulesUnreadable ?? '').split('\n')[0] ?? '')}`,
+    );
+  }
+
+  /* Separate from the rules on purpose. A rule says whether this is ever permitted;
+     a fact in force says whether it is permitted today, and conflating the two leaves
+     a reader unable to tell a standing refusal from an incident that ends on Friday. */
+  out.line('');
+  out.line(
+    `${style.bold('RIGHT NOW')}           ${inForce.length === 0 ? 'nothing in force' : 'narrowed'}`,
+  );
+  for (const fact of inForce) {
+    out.line(
+      `  ${style.warn('!')}${''.padEnd(LABEL_WIDTH - 1)}${describeStateFact(fact)}`,
     );
   }
 

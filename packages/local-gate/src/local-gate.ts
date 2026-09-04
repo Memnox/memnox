@@ -3,8 +3,9 @@ import type {
   Alternative,
   DecisionEffect,
   MatchedPolicy,
+  StateFact,
 } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, stateLabelsOf, stateVersionOf } from '@memnox/core';
 import { PolicyEngine, type Policy } from '@memnox/policy-engine';
 import { loadPolicyFiles } from './policy-file';
 
@@ -17,6 +18,11 @@ export interface LocalGateOptions {
   defaultEffect?: DecisionEffect;
   /** Supplied by the caller so a verdict stays reproducible on replay. */
   now?: Date;
+  /**
+   * What is in force, distributed into the process rather than queried from it. A
+   * gate that cannot see a freeze allows through the one action the freeze was for.
+   */
+  stateFacts?: readonly StateFact[];
 }
 
 export interface LocalVerdict {
@@ -61,9 +67,14 @@ export class LocalGate {
   }
 
   evaluate(request: ActionRequest): LocalVerdict {
+    const at = this.options.now ?? new Date();
+    const moment = at.toISOString();
+    const facts = this.options.stateFacts ?? [];
     const evaluation = this.engine.evaluate(request, {
       agentName: this.options.agentName,
-      now: this.options.now ?? new Date(),
+      now: at,
+      state: stateLabelsOf(facts, moment),
+      stateVersion: stateVersionOf(facts, moment),
     });
     return {
       effect: evaluation.effect,

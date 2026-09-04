@@ -11,3 +11,8 @@ export const STATE_FACT_KIND = {
 } as const;
 
 export type StateFactKind = (typeof STATE_FACT_KIND)[keyof typeof STATE_FACT_KIND];
+
+/** Stamped on a verdict decided when no fact was in force, so "none" is a value. */
+export const STATE_VERSION_NONE = 'none';
+export const STATE_VERSION_ALGORITHM = 'sha256';
+export const STATE_VERSION_LENGTH = 16;

@@ -6,6 +6,7 @@ import type {
   ExplanationStore,
   FixedWindowRateLimiter,
   SeamStore,
+  StateFactStore,
   TaskStore,
 } from '@memnox/core';
 import type { Policy } from '@memnox/policy-engine';
@@ -66,6 +67,8 @@ export interface RouteContext {
   containment: ContainmentService;
   /** Usage against grant, and the least-privilege proposal that falls out of it. */
   learn: LearnService;
+  /** What is in force right now: a freeze, an incident, a hold. Honoured, never inferred. */
+  stateFacts: StateFactStore;
 }
 
 export function createRequireRole(config: RuntimeConfig): RequireRole {

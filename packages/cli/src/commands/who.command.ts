@@ -1,8 +1,10 @@
 import type { Command } from 'commander';
 import {
+  effectiveReach,
   PRODUCTION_HINTS,
   RESOURCE_KIND,
   type DiscoveryReport,
+  type EffectiveReach,
   type Resource,
 } from '@memnox/discovery';
 import type { CliContext } from '../cli-context';
@@ -63,14 +65,24 @@ export function registerWhoCommand(
       const seams = buildSeams(cwd());
       const { report } = await scanMachine(seams, { probe: options.probe });
       const answer = reachOf(report, matches);
+      /* A direct grant is the easy half. The reach nobody granted — through a shell,
+         or through a credential handed to a server — is the one that surprises people,
+         so it is reported beside the direct answer rather than folded into it. */
+      const indirect = effectiveReach(report).filter((each) =>
+        answer.some((row) => row.agentId === each.agentId),
+      );
 
       if (options.json === true) {
         context.out.line(
-          JSON.stringify({ resource: options.resource, agents: answer }, null, 2),
+          JSON.stringify(
+            { resource: options.resource, agents: answer, indirect },
+            null,
+            2,
+          ),
         );
         return;
       }
-      render(context, options.resource, answer);
+      render(context, options.resource, answer, indirect);
     });
 }
 
@@ -95,7 +107,12 @@ function reachOf(
   }));
 }
 
-function render(context: CliContext, resource: string, answer: readonly Reach[]): void {
+function render(
+  context: CliContext,
+  resource: string,
+  answer: readonly Reach[],
+  indirect: readonly EffectiveReach[],
+): void {
   const { out, style } = context;
   out.line('');
   out.line(style.bold(`WHO REACHES ${resource.toUpperCase()}`));
@@ -116,6 +133,8 @@ function render(context: CliContext, resource: string, answer: readonly Reach[])
     }
   }
 
+  renderIndirect(context, indirect);
+
   const reaching = answer.filter((row) => row.evidence.length > 0).length;
   out.line('');
   out.line(
@@ -125,4 +144,32 @@ function render(context: CliContext, resource: string, answer: readonly Reach[])
     ),
   );
   out.line('');
+}
+
+/**
+ * Effective authority, hop by hop. Nobody wrote down that the agent may reach this;
+ * it follows from a credential it holds, and following it is the whole point.
+ */
+function renderIndirect(context: CliContext, indirect: readonly EffectiveReach[]): void {
+  if (indirect.length === 0) return;
+  const { out, style } = context;
+  out.line('');
+  out.line(style.bold('NOT DIRECTLY GRANTED'));
+  out.line('');
+  for (const reach of indirect) {
+    out.line(`  ${reach.agentKind} ${style.dim(`«via ${reach.because}»`)}`);
+    for (const [index, hop] of reach.path.entries()) {
+      const arrow = index === 0 ? ' ' : '↓';
+      out.line(`     ${arrow}  ${hop.via.padEnd(NAME_WIDTH)}${style.dim(hop.evidence)}`);
+    }
+    out.line('');
+  }
+  /* Said plainly, because the alternative is a reader believing this was proved
+     against a cloud account rather than read off a configuration file. */
+  out.line(
+    style.dim(
+      '  Read off configuration on this disk. That a credential is present and a ' +
+        'resource is named is proved here; that the one opens the other is not.',
+    ),
+  );
 }

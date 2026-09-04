@@ -5,6 +5,8 @@ import { DEFAULT_BASE_URL } from '../defaults';
 import { McpInstaller, SUPPORTED_MCP_CLIENTS } from '../mcp-installer';
 import { LineBuffer, McpServer, parseMessage, serializeMessage } from '../mcp/mcp-server';
 import { resolveProjectId } from '../project-identity';
+import { reviewServers } from '@memnox/discovery';
+import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
 /** stdin/stdout as an argument, so a test drives the server without a process. */
 interface StdioHost {
@@ -29,6 +31,7 @@ export function registerMcpCommand(
   installer = new McpInstaller(homedir()),
   stdio: StdioHost = processStdio,
   cwd: () => string = () => process.cwd(),
+  buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
 ): void {
   const mcp = program
     .command('mcp')
@@ -64,6 +67,69 @@ export function registerMcpCommand(
           }
         });
       });
+    });
+
+  mcp
+    .command('review')
+    .description('What a server declares, asks for and can reach, before it is trusted')
+    .option('--json', 'emit the reviews as JSON')
+    .option(
+      '--no-probe',
+      'do not start MCP servers to ask what they hold; tools go uncounted',
+    )
+    .action(async (options: { json?: boolean; probe: boolean }) => {
+      const seams = buildSeams(cwd());
+      const { report } = await scanMachine(seams, { probe: options.probe });
+      const reviews = reviewServers(report);
+
+      if (options.json === true) {
+        context.out.line(JSON.stringify(reviews, null, 2));
+        return;
+      }
+
+      const { out, style } = context;
+      if (reviews.length === 0) {
+        // Honest when empty: no config on this machine launches a server.
+        out.line('No MCP server is configured on this machine.');
+        return;
+      }
+
+      for (const review of reviews) {
+        out.line('');
+        out.line(style.bold(`SERVER REVIEW  ${review.server}`));
+        out.line('');
+        out.line(`  declared in   ${review.declaredIn}`);
+        out.line(`  command       ${style.dim(review.command)}`);
+        out.line('');
+        if (review.unprobed) {
+          /* Zero tools on a server nobody started means unknown, and saying "0 write"
+             about a server that was never asked would be the lie doing the damage. */
+          out.line(
+            `  ${style.warn('?')} tools        not asked — run without --no-probe`,
+          );
+        } else {
+          out.line(
+            `  ${String(review.tools).padStart(2)} tools       ${review.read} read`,
+          );
+          out.line(`                 ${review.write} write`);
+          out.line(`                 ${review.destructive} destructive`);
+        }
+        out.line('');
+        out.line(`  filesystem    ${review.filesystem ? 'yes' : 'not seen'}`);
+        out.line(`  network       ${review.network ? 'yes' : 'not seen'}`);
+        out.line(
+          `  credentials   ${review.credentials.length === 0 ? 'none handed by this config' : review.credentials.join(' · ')}`,
+        );
+        out.line('');
+        out.line(`  RISK   ${review.risk.toUpperCase()}`);
+        out.line('');
+        out.line(
+          style.dim(
+            '  protect it with: memnox harden   ·   inspect it with: memnox trace <tool>',
+          ),
+        );
+      }
+      out.line('');
     });
 
   mcp

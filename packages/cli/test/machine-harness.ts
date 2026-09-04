@@ -6,6 +6,7 @@ import type {
   McpToolDeclaration,
   SnapshotStore,
 } from '@memnox/discovery';
+import type { StateFact } from '@memnox/core';
 import type { ScanSeams } from '../src/machine-scan';
 
 export const HOME = '/home/dev';
@@ -88,6 +89,8 @@ interface FakeSeamOptions {
   times?: readonly string[];
   policyFiles?: readonly string[];
   snapshots?: MemorySnapshots;
+  /** What is in force during the scan, so a freeze is testable without a disk. */
+  stateFacts?: readonly StateFact[];
 }
 
 /** One fake for every command that reads the machine, so none of them drift apart. */
@@ -99,6 +102,7 @@ export function fakeSeams(
   let taken = 0;
   return {
     reader: machine,
+    stateFacts: async () => [...(options.stateFacts ?? [])],
     lister: options.lister ?? noTools,
     snapshots: options.snapshots ?? new MemorySnapshots(),
     projectDirs: options.projectDirs ?? [PROJECT],

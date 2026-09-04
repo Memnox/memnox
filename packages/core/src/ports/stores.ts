@@ -3,6 +3,7 @@ import type { AgentIdentity } from '../domain/agent-identity';
 import type { Approval } from '../domain/approval';
 import type { ApprovalStatus } from '../constants/approval.constants';
 import type { AuditChainVerification } from '../domain/audit-chain';
+import type { StateFact } from '../domain/state-fact';
 
 /** Storage ports — the runtime ships local adapters; any backend can implement these. */
 
@@ -39,4 +40,16 @@ export interface ApprovalStore {
   listByStatus(status: ApprovalStatus): Promise<Approval[]>;
   /** Retention sweep over terminal approvals; a pending hold is a decision still owed. */
   pruneResolvedBefore(cutoff: string): Promise<number>;
+}
+
+/**
+ * What is in force right now. Supplied from outside — an incident tool, a channel,
+ * an operator — and honoured here. Where a fact comes from is the cloud's half; a
+ * runtime that cannot read one is a runtime a freeze cannot reach.
+ */
+export interface StateFactStore {
+  save(fact: StateFact): Promise<void>;
+  list(): Promise<StateFact[]>;
+  /** Lifting a fact early is a decision somebody makes, so it is a removal not an expiry. */
+  remove(id: string): Promise<boolean>;
 }

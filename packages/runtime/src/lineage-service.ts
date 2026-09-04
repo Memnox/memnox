@@ -1,4 +1,5 @@
 import type { ActionEvent, Logger } from '@memnox/core';
+import { ACTOR_KIND } from '@memnox/core';
 import {
   assembleLineage,
   lineageConfidence,
@@ -40,7 +41,7 @@ export class LineageService {
       observations.push({
         at: event.occurredAt,
         actorId: event.agentId,
-        actorKind: 'agent',
+        actorKind: ACTOR_KIND.AI_AGENT,
         system: event.action,
         correlationId: sessionId,
         // The session id rode on the request and was read back off the record.
@@ -55,7 +56,7 @@ export class LineageService {
       observations.push({
         at: frame.at,
         actorId: frame.agentId,
-        actorKind: 'seam',
+        actorKind: ACTOR_KIND.AUTOMATION,
         system: frame.kind,
         correlationId: sessionId,
         // Nothing named a verdict, so actor and time are all that joined it.

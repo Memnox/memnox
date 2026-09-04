@@ -1,4 +1,9 @@
-import type { ActionRequest, RiskAssessment } from '@memnox/core';
+import type {
+  ActionRequest,
+  RiskAssessment,
+  StateFact,
+  StateFactKind,
+} from '@memnox/core';
 import { DECISION_EFFECT } from '@memnox/core';
 import type { MemnoxClient } from './client';
 
@@ -75,4 +80,19 @@ export interface PolicySetView {
   policyCount: number;
   policyNames: string[];
   policies: unknown[];
+}
+
+/** What a caller sends to declare a condition in force. The id and clock are the runtime's. */
+export interface DeclareStateRequest {
+  kind: StateFactKind;
+  scope: string[];
+  reason: string;
+  source: string;
+  validUntil: string;
+}
+
+/** Both halves: a lapsed freeze explains an action that got through an hour ago. */
+export interface StateFactsResponse {
+  inForce: StateFact[];
+  lapsed: StateFact[];
 }

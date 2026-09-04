@@ -44,11 +44,13 @@ import { JsonlAuditLog } from './stores/jsonl-audit-log';
 import { InMemoryExplanationStore } from './stores/in-memory-explanation-store';
 import { InMemoryTaskStore } from './stores/in-memory-task-store';
 import { JsonFileSeamStore } from './stores/json-file-seam-store';
+import { JsonFileStateFactStore } from './stores/json-file-state-fact-store';
 import { ContainmentService, LocalInstallDirectory } from './containment-service';
 import { SeamService } from './seam-service';
 import { LineageService } from './lineage-service';
 import { registerOperateRoutes } from './routes/operate.routes';
 import { registerSeamRoutes } from './routes/seam.routes';
+import { registerStateRoutes } from './routes/state.routes';
 import { registerFrameRoutes } from './routes/frame.routes';
 import { LearnService } from './learn-service';
 import { JsonlFrameStore } from './stores/jsonl-frame-store';
@@ -65,6 +67,7 @@ const AUDIT_FILE = 'audit.jsonl';
 const DECISIONS_FILE = 'decisions.json';
 const APPROVALS_FILE = 'approvals.json';
 const SEAMS_FILE = 'seams.json';
+const STATE_FACTS_FILE = 'state-facts.json';
 const FRAMES_FILE = 'frames.jsonl';
 const STATE_FILE = 'state.json';
 /** One machine, always reachable, because it is this process. */
@@ -158,6 +161,9 @@ export async function buildServer(
 
   const taskStore = new InMemoryTaskStore();
   const seamStore = new JsonFileSeamStore(join(config.dataDir, SEAMS_FILE));
+  const stateFactStore = new JsonFileStateFactStore(
+    join(config.dataDir, STATE_FACTS_FILE),
+  );
   const seamService = new SeamService({ store: seamStore, logger: CONSOLE_LOGGER });
   const frameStore = new JsonlFrameStore(join(config.dataDir, FRAMES_FILE));
   const policyHistory = new FilePolicyHistory(config.dataDir);
@@ -178,6 +184,7 @@ export async function buildServer(
     metrics,
     approvalStore,
     rateLimiter,
+    stateFacts: stateFactStore,
     policyEngine: new PolicyEngine(policies, { defaultEffect: config.defaultEffect }),
     ...(startingEnforcement === undefined ? {} : { enforcement: startingEnforcement }),
     ...(config.maxPendingApprovals === undefined
@@ -207,6 +214,7 @@ export async function buildServer(
     explanations,
     seams: seamStore,
     seamService,
+    stateFacts: stateFactStore,
     frames: frameStore,
     lineage: new LineageService({
       events: (sessionId) => gateway.queryAuditEvents({ sessionId }),
@@ -298,6 +306,7 @@ export async function buildServer(
     registerTaskRoutes(scope, ctx);
     registerOperateRoutes(scope, ctx);
     registerSeamRoutes(scope, ctx);
+    registerStateRoutes(scope, ctx);
     registerFrameRoutes(scope, ctx);
     registerProxyRoutes(scope, ctx);
     registerActionRoutes(scope, ctx);

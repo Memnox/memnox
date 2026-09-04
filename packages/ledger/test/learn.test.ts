@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ACTOR_KIND } from '@memnox/core';
 import { CONTEXT_TRUST, DECISION_EFFECT } from '@memnox/core';
 import { FRAME_KIND, LINEAGE_METHOD } from '../src/ledger.constants';
 import { digest, keepFrame, timelineOf, type Frame } from '../src/frame';
@@ -158,7 +159,7 @@ describe('lineage', () => {
     {
       at: '2026-08-28T09:02:00.000Z',
       actorId: AGENT,
-      actorKind: 'agent',
+      actorKind: ACTOR_KIND.AI_AGENT,
       system: 'github',
       ref: 'PR#842',
       correlationId: 'cor_1',

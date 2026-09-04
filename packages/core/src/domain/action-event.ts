@@ -92,6 +92,12 @@ export interface ActionEvent {
   decidedBy?: string;
   /** Content version of the rule set that decided this — see versionPolicySet. */
   policyVersion?: string;
+  /**
+   * The conditions in force when this was decided. "none" means nothing was, which is
+   * how a freeze that never reached this machine is told apart from one that did and
+   * did not apply.
+   */
+  stateVersion?: string;
   /** Names of advisors that escalated or flagged this action. */
   advisories: string[];
   /** Who was asked, recorded because today's rules answer a different question. */

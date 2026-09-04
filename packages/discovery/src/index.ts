@@ -18,3 +18,7 @@ export * from './authority';
 export * from './trace';
 export * from './readiness';
 export * from './repository-evidence';
+export * from './environment-mismatch';
+export * from './server-review';
+export * from './effective-reach';
+export * from './stated-rule-conflict';
