@@ -137,6 +137,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'No AI-initiated destructive database operations in production.',
+          alternative: {
+            action: 'database.query',
+            note: 'Read the rows first and hand a person the list to remove.',
+          },
         },
       },
       {
@@ -262,6 +266,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Agents do not write credential files — use a secrets manager.',
+          alternative: {
+            action: 'secret.reference',
+            note: 'Reference the secret by name; the value stays where it is.',
+          },
         },
       },
     ],
@@ -352,6 +360,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Rewriting published git history is never automated.',
+          alternative: {
+            action: 'repository.push',
+            note: 'Push a new commit that reverts, so the shared history keeps its record.',
+          },
         },
       },
       {
@@ -387,6 +399,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Destroying or unlocking Terraform state is never automated.',
+          alternative: {
+            action: 'infrastructure.plan',
+            note: 'Produce the plan and let a person apply the teardown.',
+          },
         },
       },
       {
@@ -497,6 +513,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'This environment is read-only.',
+          alternative: {
+            action: 'change.request',
+            note: 'File the change so it lands when the freeze lifts.',
+          },
         },
       },
     ],
@@ -526,6 +546,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Governance configuration is not agent-writable.',
+          alternative: {
+            action: 'policy.propose',
+            note: 'Propose the rule change for a person to review and merge.',
+          },
         },
       },
     ],
@@ -568,6 +592,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Recursive force-delete is withheld for agents.',
+          alternative: {
+            action: 'shell.execute',
+            note: 'Name the paths to remove and let a person run the delete.',
+          },
         },
       },
       {
@@ -840,6 +868,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Browser agents do not complete purchases.',
+          alternative: {
+            action: 'payment.draft',
+            note: 'Prepare the payment and leave the confirmation to a person.',
+          },
         },
       },
       {
@@ -956,6 +988,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Transfers to unapproved destinations are withheld.',
+          alternative: {
+            action: 'http.request',
+            note: 'Send it to an allowed destination, or ask for this one to be added.',
+          },
         },
       },
       {
@@ -993,6 +1029,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'This model family is not approved for inference.',
+          alternative: {
+            action: 'llm.invoke',
+            note: 'Use a model on the approved list for this workload.',
+          },
         },
       },
     ],
@@ -1043,6 +1083,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'EU personal data may not leave the EEA.',
+          alternative: {
+            action: 'data.process',
+            note: 'Process it inside the EU region, where this data is allowed to stay.',
+          },
         },
       },
       {
@@ -1098,6 +1142,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Regulated data is not exported by an agent.',
+          alternative: {
+            action: 'report.aggregate',
+            note: 'Export aggregate figures instead of the regulated records.',
+          },
         },
       },
     ],
@@ -1176,6 +1224,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Treasury operations are never automated.',
+          alternative: {
+            action: 'payment.draft',
+            note: 'Draft the transfer and let treasury release it.',
+          },
         },
       },
       {
@@ -1217,6 +1269,10 @@ export const POLICY_PACKS: readonly PolicyPack[] = [
         decision: {
           effect: DECISION_EFFECT.WITHHOLD,
           reason: 'Agents do not escalate their own privileges.',
+          alternative: {
+            action: 'capability.request',
+            note: 'Ask for the capability rather than reaching for a wider tool.',
+          },
         },
       },
       {

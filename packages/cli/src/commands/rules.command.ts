@@ -184,8 +184,10 @@ function reportEnforcement(
   for (const seam of matching) {
     const enforcing = seam.mode === ENFORCEMENT_MODE.ENFORCE;
     const agent = seam.agentId.replace('agt_', '');
+    /* Separated explicitly: a uuid overruns the column, and padEnd then returns it
+       unchanged, which ran the agent and the mechanism together. */
     out.line(
-      `  ${agent.padEnd(MECHANISM_WIDTH)}${seam.kind.padEnd(MECHANISM_WIDTH)}` +
+      `  ${agent.padEnd(MECHANISM_WIDTH)} ${seam.kind.padEnd(MECHANISM_WIDTH)}` +
         (enforcing ? 'enforcing' : style.warn('observing')),
     );
   }
@@ -381,7 +383,10 @@ async function readable<T>(
   try {
     return await read();
   } catch (err) {
-    context.out.note(`Could not read ${what}: ${String(err)}`);
+    // A 404 means this runtime does not serve the surface at all, which narrows
+    // the report exactly as intended and is not something to report as a fault.
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes('404')) context.out.note(`Could not read ${what}.`);
     return null;
   }
 }

@@ -16,6 +16,9 @@ policies:
     decision:
       effect: withhold
       reason: No AI-initiated destructive database operations in production.
+      alternative:
+        action: database.query
+        note: Read the rows first and hand a human the list to delete.
 
   - name: production-deploy-approval
     description: Production deployments need a human sign-off.
@@ -43,4 +46,7 @@ policies:
     decision:
       effect: withhold
       reason: Destructive shell commands are withheld for AI agents.
+      alternative:
+        action: shell.execute
+        note: Name the paths to remove and let a person run the delete.
 `;
