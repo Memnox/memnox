@@ -1,6 +1,7 @@
 import { DEFAULT_HOST, DEFAULT_PORT } from '@memnox/runtime';
 
-export const CLI_VERSION = '0.5.2';
+/** Must equal this package's version; a test asserts it so a release cannot drift. */
+export const CLI_VERSION = '0.6.1';
 export const DEFAULT_BASE_URL = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 export const DEFAULT_POLICY_FILE = 'memnox.policies.yaml';
 export const DEFAULT_CLI_AUDIT_LIMIT = 20;
