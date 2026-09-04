@@ -28,6 +28,19 @@ describe('memnox explain', () => {
     expect(out.text).toContain('read as: claude-code · deploy · production');
   });
 
+  it('refuses when the only namespace word is the agent name itself', async () => {
+    const machine = FakeMachine.from(MACHINE);
+
+    // "claude-code" carries "code", which answered this as a question about code.
+    await expect(
+      runCommand(
+        (program, context) =>
+          registerExplainCommand(program, context, () => fakeSeams(machine)),
+        ['explain', 'can claude-code send money'],
+      ),
+    ).rejects.toThrow('could not read');
+  });
+
   it('refuses to answer off rules that would not load', async () => {
     const machine = FakeMachine.from({
       ...MACHINE,

@@ -40,10 +40,18 @@ function parseQuestion(question: string, report: DiscoveryReport): ParsedQuestio
   const agent = report.agents.find((each) =>
     kindSpellings(each.kind).some((spelling) => words.includes(spelling)),
   );
-  const action = Object.keys(READINESS_NEEDS).find((namespace) =>
-    words.includes(namespace),
+  if (agent === undefined) return null;
+  // What an agent is called is not what it was asked to do: "claude-code" carries
+  // the "code" namespace, so "can claude-code send money" was answered as a
+  // question about code rather than refused.
+  const asked = kindSpellings(agent.kind).reduce(
+    (text, spelling) => text.split(spelling).join(' '),
+    words,
   );
-  if (agent === undefined || action === undefined) return null;
+  const action = Object.keys(READINESS_NEEDS).find((namespace) =>
+    asked.includes(namespace),
+  );
+  if (action === undefined) return null;
 
   const environment = ENVIRONMENTS.find((each) => words.includes(each));
   return {
