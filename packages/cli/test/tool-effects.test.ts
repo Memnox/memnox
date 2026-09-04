@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { McpLister } from '@memnox/discovery';
-import { registerDiscoverCommand } from '../src/commands/discover.command';
+import type { McpLister } from '@memnox/core';
+import { registerScanCommand } from '../src/commands/scan.command';
 import { runCommand } from './cli-harness';
 import { fakeSeams, FakeMachine, HOME, StubLister } from './machine-harness';
 
@@ -25,10 +25,10 @@ const GITHUB_TOOLS = [
 async function tools(lister: () => McpLister) {
   return runCommand(
     (program, context) =>
-      registerDiscoverCommand(program, context, () =>
+      registerScanCommand(program, context, () =>
         fakeSeams(FakeMachine.from(MACHINE), { lister }),
       ),
-    ['discover', '--tools'],
+    ['scan', '--tools'],
   );
 }
 
@@ -91,10 +91,8 @@ describe('memnox --tools', () => {
   it('reads as an answer when nothing was probed', async () => {
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () =>
-          fakeSeams(FakeMachine.from(MACHINE)),
-        ),
-      ['discover', '--tools', '--no-probe'],
+        registerScanCommand(program, context, () => fakeSeams(FakeMachine.from(MACHINE))),
+      ['scan', '--tools', '--no-probe'],
     );
 
     expect(out.text).toContain('No MCP tools found.');

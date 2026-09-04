@@ -43,5 +43,5 @@ export const DESTRUCTIVE_VERBS: readonly string[] = [
   'purge',
 ];
 
-/** Environments where risk is escalated one level. */
+/** Environments where risk is askd one level. */
 export const RISK_ESCALATION_ENVIRONMENTS: readonly string[] = ['production', 'prod'];

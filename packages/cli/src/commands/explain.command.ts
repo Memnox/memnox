@@ -1,232 +1,76 @@
+import { cwd } from 'node:process';
 import type { Command } from 'commander';
 import {
-  READINESS_NEEDS,
-  readinessFor,
-  type DiscoveryReport,
-  type Readiness,
-} from '@memnox/discovery';
-import { LocalGate } from '@memnox/local-gate';
-import {
-  DECISION_EFFECT,
-  describeStateFact,
-  stateFactsInForce,
-  type DecisionEffect,
-  type StateFact,
+  classifyActionClass,
+  toolsMatching,
+  traceCapability,
+  type CapabilityTrace,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import {
-  defaultScanSeams,
-  loadLocalRules,
-  scanMachine,
-  type ScanSeams,
-} from '../machine-scan';
+import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
-const LABEL_WIDTH = 4;
+const LABEL_WIDTH = 10;
 
-/** Environments a person names in a sentence, longest first so "production" wins. */
-const ENVIRONMENTS: readonly string[] = ['production', 'staging', 'prod', 'dev'];
-
-/** What the question resolved to, so a wrong parse is visible rather than mysterious. */
-interface ParsedQuestion {
-  agent: string;
-  action: string;
-  environment?: string;
+function row(context: CliContext, label: string, value: string): void {
+  context.out.line(`  ${label.padEnd(LABEL_WIDTH)}${value}`);
 }
 
-/**
- * The question, in the words somebody would have used anyway — turned into an agent,
- * an action and an environment by matching what is on this machine and nothing else.
- *
- * Deterministic on purpose. A model reading the sentence would be a model on the path
- * of an answer about authority, and a plausible reading of a question is worse than
- * an admission that it could not be read.
- */
-function parseQuestion(question: string, report: DiscoveryReport): ParsedQuestion | null {
-  const words = question.toLowerCase();
-  const agent = report.agents.find((each) =>
-    kindSpellings(each.kind).some((spelling) => words.includes(spelling)),
+/** Every field is read off a scan, so the chain is evidence rather than a guess. */
+function renderTrace(context: CliContext, trace: CapabilityTrace): void {
+  const { out, style } = context;
+  out.line('');
+  out.line(style.bold(trace.tool));
+  out.line('');
+  row(context, 'server', trace.server);
+  row(context, 'declared', trace.grantedBy);
+  row(context, 'class', `${trace.effect} — ${classifyActionClass(trace.tool).class}`);
+  row(
+    context,
+    'reached by',
+    trace.reachedBy.length === 0
+      ? 'no agent here launches it'
+      : trace.reachedBy.join(', '),
   );
-  if (agent === undefined) return null;
-  // What an agent is called is not what it was asked to do: "claude-code" carries
-  // the "code" namespace, so "can claude-code send money" was answered as a
-  // question about code rather than refused.
-  const asked = kindSpellings(agent.kind).reduce(
-    (text, spelling) => text.split(spelling).join(' '),
-    words,
+  row(
+    context,
+    'first seen',
+    trace.firstSeen ?? 'at least as long as the kept scans go back',
   );
-  const action = Object.keys(READINESS_NEEDS).find((namespace) =>
-    asked.includes(namespace),
-  );
-  if (action === undefined) return null;
-
-  const environment = ENVIRONMENTS.find((each) => words.includes(each));
-  return {
-    agent: agent.id,
-    action,
-    ...(environment === undefined ? {} : { environment }),
-  };
+  out.line('');
 }
 
-/** "claude-code" is written "claude code" and "claude" by the people who use it. */
-function kindSpellings(kind: string): string[] {
-  return [kind, kind.replace(/-/g, ' '), kind.split('-')[0] ?? kind];
-}
-
-/**
- * One question, answered in one place. The answer separates what is technically
- * possible from what is organizationally permitted and says plainly which is which,
- * because those are two different facts and conflating them is how a team ends up
- * believing an agent cannot do something it can.
- */
 export function registerExplainCommand(
   program: Command,
   context: CliContext,
-  buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
-  cwd: () => string = () => process.cwd(),
+  buildSeams: (dir: string) => ScanSeams = defaultScanSeams,
 ): void {
   program
-    .command('explain <question>')
-    .description('Can this agent do this, right now — technically, and organizationally')
-    .option('--json', 'emit the answer as JSON')
-    .option(
-      '--no-probe',
-      'do not start MCP servers to ask what they hold; tools go uncounted',
-    )
-    .action(async (question: string, options: { json?: boolean; probe: boolean }) => {
+    .command('explain <capability>')
+    .description('Where one capability came from, and what class it is')
+    .option('--json', 'machine-readable output')
+    .action(async (capability: string, options: { json?: boolean }) => {
       const seams = buildSeams(cwd());
-      const { report } = await scanMachine(seams, { probe: options.probe });
-      const parsed = parseQuestion(question, report);
+      const { snapshot } = await scanMachine(seams, { probe: false });
+      const history = await seams.snapshots.history();
 
-      if (parsed === null) {
-        throw new Error(
-          `could not read "${question}" as a question about this machine.\n` +
-            `Name an agent that is here and one of: ${Object.keys(READINESS_NEEDS).join(', ')}.\n` +
-            'Or ask it directly: memnox readiness <agent> <action>',
-        );
-      }
-
-      const readiness = readinessFor(report, parsed.agent, parsed.action);
-      if (readiness === null) {
-        throw new Error(`no agent "${parsed.agent}" on this machine`);
-      }
-
-      const rules = await loadLocalRules(seams);
-      /* "Right now" is the whole question. A rule set alone answers whether an action
-         is ever permitted; only a fact in force answers whether it is permitted today. */
-      const facts = await seams.stateFacts();
-      const now = new Date();
-      const environment = parsed.environment;
-      const inForce = stateFactsInForce(facts, now.toISOString()).filter((fact) =>
-        environment === undefined
-          ? true
-          : fact.scope.some((scope) => scope.toLowerCase() === environment.toLowerCase()),
-      );
-      const gate = new LocalGate(rules.policies, {
-        agentName: readiness.agentKind,
-        stateFacts: facts,
-        now,
-      });
-      const verdict = gate.evaluate({
-        action: parsed.action,
-        ...(parsed.environment === undefined ? {} : { environment: parsed.environment }),
-      });
-
-      if (options.json === true) {
+      const trace = traceCapability(capability, [...history, snapshot]);
+      if (trace === null) {
+        // Naming near misses beats a bare "not found" for a half-remembered tool.
+        const near = toolsMatching(snapshot, capability);
+        if (near.length === 0) {
+          throw new Error(`Nothing here provides "${capability}". Run "memnox scan".`);
+        }
         context.out.line(
-          JSON.stringify(
-            {
-              question,
-              read: parsed,
-              technically: readiness.missing.length === 0,
-              effect: verdict.effect,
-              reason: verdict.reason,
-              inForce,
-              ...readiness,
-            },
-            null,
-            2,
-          ),
+          `No capability is named exactly "${capability}". Close matches:`,
         );
+        for (const each of near) context.out.line(`  ${each.server}.${each.tool}`);
         return;
       }
-      render(context, question, parsed, readiness, verdict, rules.unreadable, inForce);
+
+      if (options.json === true) {
+        context.out.line(JSON.stringify(trace, null, 2));
+        return;
+      }
+      renderTrace(context, trace);
     });
-}
-
-function render(
-  context: CliContext,
-  question: string,
-  parsed: ParsedQuestion,
-  readiness: Readiness,
-  verdict: { effect: DecisionEffect; reason: string },
-  rulesUnreadable: string | undefined,
-  inForce: readonly StateFact[],
-): void {
-  const { out, style } = context;
-  out.line('');
-  out.line(style.bold(question));
-  out.line(
-    style.dim(
-      `  read as: ${readiness.agentKind} · ${parsed.action}` +
-        (parsed.environment === undefined ? '' : ` · ${parsed.environment}`),
-    ),
-  );
-
-  const technically = readiness.missing.length === 0;
-  out.line('');
-  out.line(`${style.bold('TECHNICALLY')}         ${technically ? 'yes' : 'no'}`);
-  for (const finding of readiness.has) {
-    out.line(`  ${'✓'.padEnd(LABEL_WIDTH)}${finding.need}`);
-  }
-  for (const finding of readiness.missing) {
-    out.line(`  ${style.warn('✕')}${''.padEnd(LABEL_WIDTH - 1)}${finding.need}`);
-  }
-
-  /* A broken rule set is not an empty one. Answering "organizationally yes" off rules
-     that never parsed would be the lie this whole surface exists not to tell. */
-  const answerable = rulesUnreadable === undefined;
-  const permitted = answerable && verdict.effect === DECISION_EFFECT.ALLOW;
-  out.line('');
-  out.line(
-    `${style.bold('ORGANIZATIONALLY')}    ${answerable ? (permitted ? 'yes' : 'not right now') : 'not answerable here'}`,
-  );
-  if (answerable) {
-    out.line(
-      permitted
-        ? `  ${'✓'.padEnd(LABEL_WIDTH)}${verdict.reason}`
-        : `  ${style.warn('✕')}${''.padEnd(LABEL_WIDTH - 1)}${verdict.reason}`,
-    );
-  } else {
-    out.line(
-      `  ${style.warn('✕')}${''.padEnd(LABEL_WIDTH - 1)}the rules on this machine would not load`,
-    );
-    out.line(
-      `  ${''.padEnd(LABEL_WIDTH)}${style.dim((rulesUnreadable ?? '').split('\n')[0] ?? '')}`,
-    );
-  }
-
-  /* Separate from the rules on purpose. A rule says whether this is ever permitted;
-     a fact in force says whether it is permitted today, and conflating the two leaves
-     a reader unable to tell a standing refusal from an incident that ends on Friday. */
-  out.line('');
-  out.line(
-    `${style.bold('RIGHT NOW')}           ${inForce.length === 0 ? 'nothing in force' : 'narrowed'}`,
-  );
-  for (const fact of inForce) {
-    out.line(
-      `  ${style.warn('!')}${''.padEnd(LABEL_WIDTH - 1)}${describeStateFact(fact)}`,
-    );
-  }
-
-  out.line('');
-  if (!answerable) {
-    out.line(style.warn(style.bold('  → NOT ANSWERED')));
-  } else {
-    out.line(
-      technically && permitted
-        ? style.bold(`  → ${DECISION_EFFECT.ALLOW.toUpperCase()}`)
-        : style.warn(style.bold(`  → ${verdict.effect.toUpperCase()}`)),
-    );
-  }
-  out.line('');
 }

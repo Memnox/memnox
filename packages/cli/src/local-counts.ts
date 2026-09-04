@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readPolicyRegistry } from '@memnox/local-gate';
+import { readPolicyRegistry } from '@memnox/core';
 
 const CONFIG_DIR = '.memnox';
 const REGISTRY_FILE = 'policies.json';

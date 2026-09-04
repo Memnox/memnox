@@ -1,13 +1,10 @@
 import type { ActionRequest } from './action-event';
-import { CONTEXT_TRUST } from '../constants/context-trust.constants';
 import { DECISION_EFFECT } from '../constants/decision.constants';
-import { contextRefOf, type ContextRef } from './context-block';
 import type { Decision, RuleRef } from './decision';
 import { SCOPE_MATCH, type ScopeComparison } from './task';
 
 export const EXPLANATION_EVIDENCE = {
   RULE: 'rule',
-  CONTEXT: 'context',
   /** The request itself: what was asked, of what, by whom. */
   REQUEST: 'request',
   /** The task's declared scope, compared rather than judged. */
@@ -19,7 +16,6 @@ export type ExplanationEvidenceKind =
 
 export type ExplanationEvidence =
   | { kind: 'rule'; rule: RuleRef }
-  | { kind: 'context'; context: ContextRef }
   | { kind: 'request'; field: string; value: string }
   | { kind: 'scope'; dimension: string; declared: readonly string[]; actual: string };
 
@@ -54,10 +50,7 @@ export interface ExplanationInput {
   scope?: ScopeComparison;
 }
 
-/**
- * Assembled from the same match the verdict came from, so every line traces back to a
- * rule version or a context block. Nothing here is generated, summarised or inferred.
- */
+// Assembled from the same match the verdict came from; nothing here is inferred.
 export function buildExplanation(input: ExplanationInput): Explanation {
   const { decision, request } = input;
   const lines: ExplanationLine[] = [];
@@ -73,16 +66,6 @@ export function buildExplanation(input: ExplanationInput): Explanation {
     },
   });
 
-  const untrusted = (request.context ?? []).filter(
-    (block) => block.trust !== CONTEXT_TRUST.TRUSTED,
-  );
-  for (const block of untrusted.slice(0, 1)) {
-    lines.push({
-      claim: `context from ${block.source} is ${block.trust}, so it is evidence and not instruction`,
-      evidence: { kind: EXPLANATION_EVIDENCE.CONTEXT, context: contextRefOf(block) },
-    });
-  }
-
   const scope = input.scope;
   if (scope !== undefined && scope.match === SCOPE_MATCH.OUT_OF_SCOPE) {
     const dimension = scope.dimension === undefined ? 'scope' : scope.dimension;
@@ -97,9 +80,7 @@ export function buildExplanation(input: ExplanationInput): Explanation {
     });
   }
 
-  /* "Why did we trust it" is the question an auditor asks first, and almost nothing
-     explains an allow. The conditions that were met are named one at a time, from the
-     record — never a reassurance somebody wrote afterwards. */
+  // Almost nothing explains an allow, so name the conditions that were met, from the record.
   if (decision.effect === DECISION_EFFECT.ALLOW) {
     if (scope !== undefined && scope.match === SCOPE_MATCH.IN_SCOPE) {
       lines.push({

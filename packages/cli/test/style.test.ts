@@ -8,7 +8,7 @@ describe('plainStyle', () => {
     expect(plainStyle.dim('x')).toBe('x');
     expect(plainStyle.ok('x')).toBe('x');
     expect(plainStyle.warn('x')).toBe('x');
-    expect(plainStyle.effect(DECISION_EFFECT.WITHHOLD, 'BLOCK')).toBe('BLOCK');
+    expect(plainStyle.effect(DECISION_EFFECT.DENY, 'BLOCK')).toBe('BLOCK');
     expect(plainStyle.risk(RISK_LEVEL.CRITICAL, 'critical')).toBe('critical');
     expect(plainStyle.symbol(DECISION_EFFECT.ALLOW)).toBe('');
   });
@@ -16,7 +16,7 @@ describe('plainStyle', () => {
 
 describe('ansiStyle', () => {
   it('wraps a verdict in colour and leaves the text intact', () => {
-    const styled = ansiStyle.effect(DECISION_EFFECT.WITHHOLD, 'BLOCK');
+    const styled = ansiStyle.effect(DECISION_EFFECT.DENY, 'BLOCK');
 
     expect(styled).toContain('BLOCK');
     expect(styled.startsWith('\u001b[')).toBe(true);
@@ -38,8 +38,8 @@ describe('ansiStyle', () => {
 
   it('gives each effect its own marker', () => {
     expect(ansiStyle.symbol(DECISION_EFFECT.ALLOW)).toBe('✓');
-    expect(ansiStyle.symbol(DECISION_EFFECT.WITHHOLD)).toBe('✗');
-    expect(ansiStyle.symbol(DECISION_EFFECT.ESCALATE)).toBe('●');
+    expect(ansiStyle.symbol(DECISION_EFFECT.DENY)).toBe('✗');
+    expect(ansiStyle.symbol(DECISION_EFFECT.ASK)).toBe('●');
   });
 
   it('passes through an effect or risk it does not know', () => {

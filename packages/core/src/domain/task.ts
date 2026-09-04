@@ -69,7 +69,7 @@ const DIMENSIONS: readonly (readonly [keyof ScopeSubject, keyof DeclaredScope])[
 
 /**
  * Scope is compared, not judged. No model is consulted and none ever will be here: an
- * undeclared dimension is undeclared, never a guess, and the ambiguous middle escalates
+ * undeclared dimension is undeclared, never a guess, and the ambiguous middle asks
  * because a rule said so rather than because a classifier had an opinion.
  */
 export function compareDeclaredScope(

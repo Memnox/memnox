@@ -1,17 +1,17 @@
 /** Three effects, not two: the third is what keeps a governed system from being a wall. */
 export const DECISION_EFFECT = {
   ALLOW: 'allow',
-  WITHHOLD: 'withhold',
-  ESCALATE: 'escalate',
+  DENY: 'deny',
+  ASK: 'ask',
 } as const;
 
 export type DecisionEffect = (typeof DECISION_EFFECT)[keyof typeof DECISION_EFFECT];
 
-/** Higher value wins when several rules match: withhold overrides allow at equal priority. */
+/** Higher value wins when several rules match: deny overrides allow at equal priority. */
 export const EFFECT_PRECEDENCE: Record<DecisionEffect, number> = {
   [DECISION_EFFECT.ALLOW]: 0,
-  [DECISION_EFFECT.ESCALATE]: 1,
-  [DECISION_EFFECT.WITHHOLD]: 2,
+  [DECISION_EFFECT.ASK]: 1,
+  [DECISION_EFFECT.DENY]: 2,
 };
 
 export const DECISION_REASON = {
@@ -23,7 +23,7 @@ export const DECISION_REASON = {
   APPROVAL_PENDING: 'human approval required and pending',
   CAPABILITY: "capability: action is outside this agent's declared capabilities",
   BREAK_GLASS_OVERRIDE: 'break-glass override',
-  NON_OVERRIDABLE: 'non-overridable withhold — no approval can satisfy this action',
+  NON_OVERRIDABLE: 'non-overridable deny — no approval can satisfy this action',
   RATE_LIMIT: 'rate limit exceeded for this rule',
   OUT_OF_DECLARED_SCOPE: 'this was not part of what the task declared',
 } as const;

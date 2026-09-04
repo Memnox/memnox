@@ -9,14 +9,8 @@ export default defineConfig({
     // Tests run against source so a build step is never required for local development.
     alias: {
       '@memnox/core': packageSrc('core'),
-      '@memnox/discovery': packageSrc('discovery'),
-      '@memnox/ledger': packageSrc('ledger'),
-      '@memnox/policy-engine': packageSrc('policy-engine'),
-      '@memnox/local-gate': packageSrc('local-gate'),
-      '@memnox/runtime': packageSrc('runtime'),
-      '@memnox/sdk': packageSrc('sdk'),
-      '@memnox/mcp-firewall': packageSrc('mcp-firewall'),
-      '@memnox/tool-hook': packageSrc('tool-hook')
+      '@memnox/proxy': packageSrc('proxy'),
+      '@memnox/interceptors': packageSrc('interceptors')
     }
   },
   test: {

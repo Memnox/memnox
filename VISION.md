@@ -1,2186 +1,450 @@
-# Memnox — Complete User Pain Brainstorm
+# Memnox — Build Plan: Milestones and Developer Tasks
 
-> **Memnox connects three realities:**
->
-> **What an AI agent can do → What it actually does → What humans intended it to do.**
+**From empty repo to live product, for the open-source runtime and the closed-source cloud**
 
----
-
-## Table of Contents
-
-1. [The Core Problem](#1-the-core-problem)
-2. [User Pain Brainstorm](#2-user-pain-brainstorm)
-3. [The Pains I Would Prioritize](#3-the-pains-i-would-prioritize)
-4. [Three Layers of Pain](#4-three-layers-of-pain)
-5. [The 10 WOWs I'd Actually Build](#5-the-10-wows-id-actually-build)
-6. [The Ultimate Memnox Loop](#6-the-ultimate-memnox-loop)
-7. [The Product Evolution](#7-the-product-evolution)
-8. [The Core Memnox Model](#8-the-core-memnox-model)
-9. [The Four Questions Memnox Should Own](#9-the-four-questions-memnox-should-own)
-10. [The OSS Wedge](#10-the-oss-wedge)
-11. [The Core Positioning](#11-the-core-positioning)
-12. [The One Sentence Above the Roadmap](#12-the-one-sentence-above-the-roadmap)
-13. [Final Product Flywheel](#13-final-product-flywheel)
-
-Appendix: [The phase index](#appendix-the-phase-index)
-
----
-
-## 1. The Core Problem
-
-AI agents are becoming capable of:
-
-- Reading repositories
-- Modifying code
-- Executing commands
-- Accessing GitHub
-- Creating and closing issues
-- Sending messages
-- Accessing databases
-- Calling APIs
-- Deploying services
-- Interacting with cloud infrastructure
-- Using MCP servers
-- Operating for long periods without human supervision
-
-But developers and organisations increasingly face **three disconnected realities**:
-
-```
-┌─────────────────────────────────────┐
-│      WHAT THE AGENT CAN DO          │
-│                                     │
-│  Permissions • MCP • Tools • Access │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│      WHAT THE AGENT ACTUALLY DID    │
-│                                     │
-│  Actions • Tool calls • Changes     │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│     WHAT HUMANS ACTUALLY INTENDED   │
-│                                     │
-│  Policies • Decisions • Context     │
-└─────────────────────────────────────┘
-
-                    ▲
-                    │
-                 MEMNOX
-                    │
-                    ▼
-
-        ┌───────────────────────┐
-        │ Technical Truth       │
-        │ Runtime Truth         │
-        │ Organizational Truth  │
-        └───────────────────────┘
-```
-
-**This is the fundamental product problem.**
-
----
-
-## 2. User Pain Brainstorm
-
-> The pains below should **not** automatically become features.
-
-Each pain should be evaluated through:
-
-```
-PAINFUL SITUATION
-       ↓
-WHY EXISTING TOOLS FAIL
-       ↓
-WHAT MEMNOX DOES
-       ↓
-WHAT THE USER GETS
-```
-
----
-
-### 2.1 I Don't Know What My AI Agent Can Access
-
-**Pain**
-
-A developer installs Claude Code, MCP servers, and other agents. Weeks later:
-
-> "Wait… can this thing modify my GitHub?"
-> "Does this MCP have access to my filesystem?"
-> "Which tools can actually write data?"
-
-Today, users often have to inspect configuration files manually.
-
-**Memnox**
-
-```bash
-memnox scan
-```
-
-Discovers:
-
-```
-Agent
- ├── MCP servers
- ├── Tools
- ├── Repositories
- ├── Filesystem access
- ├── Credentials / configuration
- ├── Write capabilities
- └── Native security settings
-```
-
-**Example**
-
-```
-WOW — YOUR AI ENVIRONMENT
-
-Claude Code
-├── Filesystem
-│   └── READ + WRITE
-│
-├── Shell
-│   └── EXECUTE
-│
-└── GitHub MCP
-    ├── 12 read tools
-    └── 6 write tools
-
-⚠ 6 write-capable capabilities detected
-```
-
-**User Value** — Visibility. The user finally understands their own AI environment.
-
----
-
-### 2.2 I Gave the Agent Access Months Ago and Forgot About It
-
-**Pain**
-
-AI configuration is becoming permanent infrastructure. Developers add GitHub MCP, Slack MCP, Database MCP, Linear MCP, Stripe MCP, Filesystem MCP — then forget about them.
-
-**Memnox**
-
-```bash
-memnox watch
-```
-
-Detects capability changes:
-
-```
-⚠ NEW MCP SERVER
-
-Stripe
-14 tools discovered
-5 write-capable
-
-No protection rule exists.
-
-[ Review ]
-[ Protect ]
-```
-
-**User Value** — Prevent forgotten AI permissions from becoming invisible permanent risk.
-
----
-
-### 2.3 I Don't Know Which MCP Tools Are Dangerous
-
-**Pain**
-
-An MCP server might expose 30+ tools. The developer doesn't want to inspect every tool. They want to know:
-
-> "Which ones can actually cause damage?"
-
-**Memnox**
-
-Classify tools by capability:
-
-```
-GitHub
-
-READ
-✓ list_repositories
-✓ get_issue
-✓ search_code
-
-WRITE
-⚠ create_issue
-⚠ merge_pull_request
-⚠ delete_branch
-```
-
-Instead of `31 tools`, Memnox tells the developer:
-
-```
-8 capabilities can change external state.
-```
-
-**User Value** — Understand capability, not just tool count.
-
----
-
-### 2.4 I Want My AI to Be Autonomous, But I'm Scared
-
-**Pain**
-
-Developers want to say: *"Let Claude handle this overnight."* But then:
-
-- What if it deletes something?
-- What if it merges something?
-- What if it sends something?
-- What if it deploys?
-
-So autonomy gets artificially limited.
-
-**Memnox**
-
-Turn risky actions into three decisions:
-
-```
-┌──────────┐   ┌──────────┐   ┌──────────┐
-│  ALLOW   │   │   ASK    │   │   DENY   │
-└──────────┘   └──────────┘   └──────────┘
-```
-
-Example:
-
-```
-Agent:
-github.merge_pull_request
-
-          ↓
-
-       MEMNOX
-
-          ↓
-
-⚠ APPROVAL REQUIRED
-
-[ Allow once ]   [ Deny ]
-```
-
-**User Value** — More autonomy without blind trust.
-
----
-
-### 2.5 I Don't Want to Manually Approve Everything
-
-**Pain** — the opposite problem. Without risk-based controls:
-
-```
-Read file?              → YES
-Run command?            → YES
-Create branch?          → YES
-Create issue?           → YES
-Modify file?            → YES
-Merge production PR?    → YES
-```
-
-The AI is no longer autonomous.
-
-**Memnox**
-
-| Action | Decision |
-| --- | --- |
-| Read repository | ALLOW |
-| Create local branch | ALLOW |
-| Create GitHub issue | ALLOW |
-| Merge production PR | ASK |
-| Refund payment | ASK |
-| Delete customer | DENY |
-
-**User Value** — Remove unnecessary human approvals while keeping important ones.
-
----
-
-### 2.6 Why Did Memnox Block My Agent?
-
-**Pain**
-
-Security systems often say `BLOCKED` and stop there. The developer asks: *"Why?"*
-
-**Memnox**
-
-```bash
-memnox why <event>
-```
-
-```
-ACTION
-github.merge_pull_request
-
-AGENT
-Claude Code
-
-DECISION
-DENY
-
-WHY?
-GitHub branch protection requires 2 approvals.
-
-EVIDENCE
-• CODEOWNERS
-• Branch protection
-• PR #821
-
-POLICY
-Production changes require review.
-```
-
-**User Value** — Security becomes understandable instead of annoying.
-
----
-
-### 2.7 The Agent Says It Can Do Something — But Can It Actually?
-
-**Pain**
-
-User asks: *"Can you deploy production?"* The agent says: *"Yes."*
-
-But that doesn't necessarily mean it has the required credentials, permissions, repository access, deployment tools, or runtime authority.
-
-**Memnox**
-
-```
-Can Claude deploy production?
-
-CURRENT CAPABILITY
-✓ AWS credentials
-✓ Deployment CLI
-✓ Production repository
-✓ Deployment script
-
-BUT
-✗ Production deploy permission
-✗ Required approval
-
-RESULT
-NOT AUTHORIZED
-```
-
-**User Value** — Replace AI assumptions with observed reality.
-
----
-
-### 2.8 My Agent Has Access to Things It Doesn't Need
-
-**Pain**
-
-```
-Coding Agent
-
-NEEDS                 HAS
-├── GitHub read       ├── GitHub admin
-└── GitHub PR create  ├── AWS
-                      ├── Stripe
-                      ├── Slack
-                      ├── Database
-                      └── Filesystem
-```
-
-**Memnox**
-
-```
-UNUSED AUTHORITY
-
-GitHub
-24 tools available
-
-Used:    6
-Unused: 18
-
-⚠ 3 unused tools can modify external state.
-```
-
-**User Value** — Reduce permissions based on actual usage rather than guesswork.
-
----
-
-### 2.9 I Don't Know What Changed in My AI Environment
-
-**Pain**
-
-Yesterday everything worked. Today: *"Why does Claude suddenly have access to this?"*
-
-Possible causes: new MCP, new credentials, changed permissions, new repository, modified configuration, changed agent instructions.
-
-**Memnox**
-
-```bash
-memnox diff
-```
-
-```
-CHANGES SINCE YESTERDAY
-
-+ Slack MCP
-+ 8 tools
-+ AWS credential
-+ /production directory access
-
-Claude Code permissions
-
-BEFORE          AFTER
-READ            READ + WRITE
-```
-
-**User Value** — AI configuration drift becomes visible.
-
----
-
-### 2.10 A New MCP Server Suddenly Appeared
-
-**Memnox**
-
-```
-⚠ NEW CAPABILITY
-
-MCP        Stripe
-Tools      14 added
-READ       9
-WRITE      5
-
-No policy exists.
-
-[ Review ]
-[ Protect ]
-```
-
-**User Value** — No silent expansion of agent authority.
-
----
-
-### 2.11 My AI Is Using a Tool I Didn't Know Existed
-
-**Memnox** — trace the capability:
-
-```
-ACTION
-refund_payment
-      │
-      ▼
-Stripe MCP
-      │
-      ▼
-Agent
-Hermes
-      │
-      ▼
-SOURCE
-stripe MCP configuration
-      │
-      ▼
-ADDED
-14 days ago
-```
-
-**User Value** — Capability provenance.
-
----
-
-### 2.12 I Don't Know What My AI Actually Did While I Was Away
-
-This becomes critical when agents operate asynchronously.
-
-**Scenario**
-
-Developer starts: *"Fix the authentication issue."* Three hours later, they return.
-
-**Memnox Timeline**
-
-```
-10:04  Claude Code started
-  │
-10:04  read auth.ts
-  │
-10:07  searched repository
-  │
-10:11  modified auth.ts
-  │
-10:18  ran tests
-  │
-10:21  created branch
-  │
-10:25  opened PR
-  │
-10:31  attempted merge
-  │
-10:31  BLOCKED
-```
-
-**User Value** — A factual activity history instead of asking the agent to summarize itself.
-
----
-
-### 2.13 I Don't Trust the Agent's Own Summary
-
-**Agent says**
-
-> "Deployment completed successfully."
-
-**Memnox observes**
-
-```
-✓ Build
-✓ Tests
-✗ Deployment API call failed
-
-STATUS
-DEPLOYMENT FAILED
-```
-
-**User Value** — Independent observability. Memnox becomes the source of runtime truth.
-
----
-
-### 2.14 The AI Did Something Weird. What Happened?
-
-**Memnox Trace**
-
-```
-PRODUCTION CONFIG CHANGED
-          │
-          ▼
-Agent: Claude Code
-          │
-          ▼
-Tool: github.update_file
-          │
-          ▼
-Human authorization: Moïse
-          │
-          ▼
-Evidence: PR #921
-          │
-          ▼
-RESULT
-Configuration changed
-```
-
-**User Value** — Agent accountability.
-
----
-
-### 2.15 Which Agent Did This?
-
-As teams adopt Claude Code, Codex, Cursor, OpenCode, OpenClaw, Hermes, Devin — they begin to look identical from the outside.
-
-**Memnox**
-
-```
-WHO ACTED?
-
-Agent       OpenClaw
-Identity    production-agent
-Tool        deploy_service
-Repository  payments
-Time        14:03
-```
-
-**User Value** — Agent identity.
-
----
-
-### 2.16 Two Agents Are Doing Conflicting Things
-
-**Scenario**
-
-Both agents are modifying the same production-critical file.
-
-**Memnox**
-
-```
-⚠ AGENT CONFLICT
-
-Claude Code ──┐
-              ├── payments.ts
-Codex ────────┘
-
-[ Pause Claude ]
-[ Pause Codex ]
-[ Review ]
-```
-
-**User Value** — Prevent multi-agent collisions.
-
----
-
-### 2.17 Two Agents Are Duplicating Work
-
-**Memnox**
-
-```
-⚠ DUPLICATE WORK
-
-Claude Code
-└── OAuth token refresh
-
-Codex
-└── OAuth token refresh
-
-Related:
-PR #812
-Issue #442
-Branch: oauth-refresh
-```
-
-**User Value** — Prevent AI-driven duplicate engineering.
-
----
-
-### 2.18 My AI Doesn't Know Our Team's Decisions
-
-> This is where Memnox expands beyond security.
-
-**Pain**
-
-A team decides in Slack: *"Don't use Redis for this service."* Three weeks later, AI proposes Redis. Why? Because organizational decisions aren't necessarily stored in the repository.
-
-**Memnox**
-
-```
-Question
-Why shouldn't we use Redis here?
-
-          ↓
-
-MEMNOX SEARCH
-
-Slack        Aug 12   Architecture discussion
-Google Doc   Aug 13   ADR-019
-GitHub                PR #821
-
-          ↓
-
-ANSWER
-
-Redis was rejected because:
-
-1. Team wants stateless deployment
-2. Existing infrastructure doesn't support it
-3. Decision recorded in ADR-019
-
-Confidence: HIGH
-```
-
-**User Value** — Organizational memory with evidence.
-
----
-
-### 2.19 The AI Keeps Violating Our Architecture
-
-**Memnox**
-
-```
-AGENT ACTION
-Added direct DB access
-
-          ↓
-
-CONFLICT
-Architecture rule:
-Services must use repository layer.
-
-          ↓
-
-EVIDENCE
-ADR-023
-AGENTS.md
-```
-
-**User Value** — Turn documentation into enforceable context.
-
----
-
-### 2.20 Documentation Says One Thing; The System Does Another
-
-> A particularly powerful enterprise pain.
-
-```
-DOCUMENTED
-Production deployments require 2 approvals.
-
-          ↓
-
-ACTUAL SYSTEM
-Production branch
-└── No branch protection
-```
-
-**Memnox**
-
-```
-⚠ POLICY GAP
-
-DOCUMENTED    2 approvals required
-ACTUAL        0 approvals enforced
-
-SOURCES
-Security Policy
-GitHub configuration
-```
-
-**User Value** — Find the gap between organizational intent and technical reality.
-
----
-
-### 2.21 Nobody Knows Who Authorized the Agent
-
-**Memnox**
-
-```
-ACTION          deploy payments-service
-AGENT           Claude Code
-AUTHORIZED BY   Sarah
-AUTHORIZATION   Slack #platform, 09:42
-RELATED         Jira PAY-821, PR #821
-```
-
-**User Value** — Human accountability around autonomous systems.
-
----
-
-### 2.22 Why Was the Agent Allowed to Do That?
-
-> The inverse of blocking.
-
-```
-WHY WAS THIS ALLOWED?
-
-ACTION
-merge PR #821
-
-ALLOWED BECAUSE
-✓ PR approved
-✓ CODEOWNER approved
-✓ Branch protected
-✓ Deployment window open
-✓ Policy allows production merge
-
-AUTHORIZATION
-Sarah + Daniel
-```
-
-**User Value** — Not only *"Why did we block it?"* but *"Why did we trust it?"*
-
----
-
-### 2.23 What Happens If I Give the Agent More Access?
-
-```
-CURRENT          PROPOSED
-GitHub           GitHub
-├── read         ├── read
-└── issues       ├── write
-                 └── merge
-```
-
-**Memnox**
-
-```
-IMPACT
-
-+3 capabilities
-+2 external-state actions
-
-Potential conflicts    2
-Required approvals     1
-```
-
-**User Value** — Safe autonomy expansion.
-
----
-
-### 2.24 Can This Agent Safely Perform This Task?
-
-> This could become a killer command.
-
-```bash
-memnox explain "can Claude deploy payments?"
-```
-
-```
-CAN IT?
-
-Technically           YES
-Organizationally      NO
-Runtime permissions   YES
-Current policy        DENY
-
-REASON
-Production deployment requires platform approval.
-
-EVIDENCE
-GitHub PR #821
-Jira PAY-821
-Slack #platform
-```
-
-**User Value** — One question instead of manually checking five systems.
-
----
-
-### 2.25 The Information I Need Is Scattered Everywhere
-
-**Pain** — a simple question may require Slack + GitHub + Jira + Docs + README + PRs.
-
-**Memnox**
-
-```
-Why can't this agent deploy?
-             ↓
-           MEMNOX
-             ↓
-        ONE ANSWER
-             ↓
-        WITH EVIDENCE
-             ↓
-    FROM MULTIPLE SYSTEMS
-```
-
-**User Value** — Reduce organizational archaeology.
-
----
-
-### 2.26 Company Decisions Disappear Into Slack
-
-**Memnox** extracts durable decisions:
-
-```
-DECISION
-"Use PostgreSQL instead of MongoDB."
-
-PARTICIPANTS   Sarah, Daniel, Moïse
-DATE           Aug 19
-REASON         ...
-RELATED        ADR-034, PR #812
-```
-
-**User Value** — Turn conversations into durable operational knowledge.
-
----
-
-### 2.27 A New Engineer Doesn't Know Why Things Are the Way They Are
-
-**Question** — *"Why is this weird service structured like this?"*
-
-**Memnox**
-
-```
-WHY?  payments-service
-          ↓
-Decision              ADR-019
-          ↓
-Slack discussion      ...
-          ↓
-Related PR            ...
-          ↓
-Rejected alternatives ...
-          ↓
-Current implementation ...
-```
-
-**User Value** — Instant institutional context.
-
----
-
-### 2.28 A Senior Engineer Left and Took the Context With Them
-
-The code remains. The reasoning disappears.
-
-**Memnox preserves**
-
-| Dimension | Question |
-| --- | --- |
-| WHY | Why was this architecture chosen? |
-| WHO | Who made the decision? |
-| WHEN | When? |
-| EVIDENCE | Slack, PRs, Docs, Issues |
-| OUTCOME | What happened afterward? |
-
-**User Value** — Knowledge continuity.
-
----
-
-### 2.29 I Don't Know Whether an Old Decision Is Still Valid
-
-```
-DECISION
-Use service A
-
-STATUS
-⚠ Possibly outdated
-
-EVIDENCE
-+ New architecture PR
-+ New deployment configuration
-+ Recent Slack discussion
-```
-
-**User Value** — Detect stale organizational knowledge.
-
----
-
-### 2.30 Our Policies Are Written, But Nobody Follows Them
-
-```
-POLICY
-Never deploy Friday afternoon.
-
-          ↓
-
-AGENT ACTION
-Deploy Friday 16:45.
-
-          ↓
-
-MEMNOX
-
-⚠ POLICY VIOLATION
-
-Agent    Codex
-Action   Production deployment
-Policy   No production deployments after 16:00 Friday.
-Result   BLOCKED
-```
-
-**User Value** — Policies become operational instead of PDFs nobody reads.
-
----
-
-### 2.31 The Same Rule Needs to Work Across Every AI Agent
-
-Teams may use Claude Code, Cursor, Codex, OpenClaw, Hermes — each with different configuration mechanisms.
-
-**Memnox** — one conceptual policy:
-
-```
-Production deployment
-        ↓
-       ASK
-```
-
-Memnox translates that into each runtime's native controls.
-
-**User Value** — One control plane across heterogeneous agents.
-
----
-
-### 2.32 I Use Five AI Tools and Don't Know Which Is Safest
-
-**Memnox**
-
-```
-AGENT COMPARISON
-
-Claude Code   Risk: Medium
-Codex         Risk: Low
-OpenClaw      Risk: High
-
-Why?
-
-OpenClaw currently has:
-• 3 write-capable tools
-• Messaging capability
-• Filesystem access
-```
-
-**User Value** — Understand the AI fleet instead of every agent individually.
-
----
-
-### 2.33 My Agent's Capabilities Changed After an Update
-
-**Memnox**
-
-```
-AGENT CHANGE
-
-Claude Code
-
-BEFORE   12 capabilities
-AFTER    17 capabilities
-
-NEW      +5 tools (2 write-capable)
-
-[ Review ]
-```
-
-**User Value** — Agent updates become observable security events.
-
----
-
-### 2.34 Someone Accidentally Exposed a Secret to an Agent
-
-**Memnox**
-
-```
-⚠ NEW CREDENTIAL ACCESS
-
-Agent        Claude Code
-Resource     AWS production credentials
-
-Previously   NOT AVAILABLE
-Now          AVAILABLE
-
-Detected     2 minutes ago
-```
-
-**User Value** — Catch dangerous capability expansion immediately.
-
----
-
-### 2.35 The Agent Can Access Production When It Only Needs Development
-
-```
-ENVIRONMENT MISMATCH
-
-Agent    Claude Code
-Task     Local development
-Access   Production database
-
-Recommendation
-REMOVE / PROTECT
-```
-
-**User Value** — Least privilege for AI agents.
-
----
-
-### 2.36 The Agent Is Using Production Credentials for Development Work
-
-```
-TASK
-Fix local login bug
-          ↓
-AGENT
-Claude Code
-          ↓
-ACCESS
-Production database
-          ↓
-⚠ UNNECESSARY PRODUCTION CAPABILITY
-```
-
-**User Value** — Make contextual over-privilege actionable.
-
----
-
-### 2.37 I Installed an MCP But Don't Trust It
-
-**Memnox**
-
-```
-MCP REVIEW
-
-Server        unknown-server
-Tools         21
-READ          13
-WRITE         8
-Filesystem    YES
-Network       YES
-Credentials   AWS
-
-Risk          HIGH
-
-[ Protect ]
-[ Disable ]
-[ Inspect ]
-```
-
-**User Value** — Make MCPs inspectable before trust.
-
----
-
-### 2.38 The Agent Has a Dangerous Tool, But I Don't Want to Remove the Whole MCP
-
-```
-STRIPE MCP
-
-KEEP
-✓ get_payment
-✓ list_payments
-
-PROTECT
-⚠ refund_payment
-⚠ create_payment
-
-DENY
-✕ delete_customer
-```
-
-**User Value** — Granular autonomy instead of all-or-nothing access.
-
----
-
-### 2.39 The AI Can Message People
-
-Agents increasingly gain the ability to send Slack messages, send emails, post publicly, create tickets.
-
-**Memnox treats communication as external state.**
-
-```
-Agent wants:
-slack.send_message
-
-          ↓
-
-MEMNOX
-
-Decision:  ASK
-Reason:    External communication
-```
-
-**User Value** — Prevent agents from speaking on behalf of humans without authorization.
-
----
-
-### 2.40 The AI Created Something Externally Without Me Knowing
-
-Potential external state: GitHub issue, Linear task, Jira ticket, Slack message, Pull request, Cloud resource.
-
-**Memnox classifies**
-
-```
-LOCAL
-   ↓
-Usually ALLOW
-
-EXTERNAL STATE
-   ↓
-ASK / POLICY
-
-DESTRUCTIVE
-   ↓
-DENY
-```
-
----
-
-### 2.41 The AI Keeps Repeating the Same Mistake
-
-**Memnox remembers**
-
-```
-Previous violation
-
-Claude Code
-↓
-Bypassed repository layer
-
-Blocked  Aug 12
-Blocked  Aug 18
-Blocked  Aug 29
-```
-
-Then:
-
-```
-⚠ REPEATED VIOLATION
-
-This agent has attempted the same prohibited action 3 times.
-```
-
-**User Value** — Turn repeated failures into organizational learning.
-
----
-
-### 2.42 We Don't Know Which AI Agents Are Actually Being Used
-
-```
-AI INVENTORY
-
-Claude Code      14 users
-Cursor           31 users
-Codex             8 users
-OpenClaw          3 users
-
-MCP servers      42
-
-Agents with
-production access  7
-```
-
-**User Value** — Shadow AI visibility.
-
----
-
-### 2.43 Someone Is Using an AI Agent Nobody Approved
-
-```
-⚠ UNREGISTERED AGENT
-
-Agent       OpenClaw
-User        Sarah
-Connected   GitHub, Slack, Filesystem
-
-Organization policy
-Unapproved agents require review.
-```
-
-**User Value** — Discover shadow agents.
-
----
-
-### 2.44 We Don't Know Which Agents Have Production Access
-
-```bash
-memnox who --resource production
-```
-
-```
-PRODUCTION ACCESS
-
-Claude Code   ✓
-Codex         ✓
-OpenClaw      ✓
-Cursor        ✗
-```
-
-**User Value** — Instant blast-radius visibility.
-
----
-
-### 2.45 We Don't Know Which Agents Can Touch Customer Data
-
-```bash
-memnox who --resource customer-data
-```
-
-```
-AGENTS
-
-Claude Code
-✓ database.read
-
-OpenClaw
-✓ database.read
-✓ database.write
-
-Codex
-✗
-```
-
-**User Value** — Understand sensitive-data exposure.
-
----
-
-### 2.46 We Don't Know What an Agent Can Do Because Its Access Is Indirect
-
-> A particularly interesting technical problem.
-
-```
-Claude Code
-      │
-      ▼
-AWS MCP
-      │
-      ▼
-AWS credentials
-      │
-      ▼
-Lambda
-      │
-      ▼
-Production DB
-```
-
-The agent may not directly have database access. But effectively:
+> Companion to `memnox-functional-spec.md`. Section numbers like *spec §2.4* point there.
+> Stack choices are **[proposed]** — Memnox already ships on npm (`npx memnox`), so the plan assumes TypeScript/Node throughout to keep one language across OSS and cloud.
 
-```
-Claude Code
-      │
-      ▼
-EFFECTIVE CAPABILITY
-WRITE → Production DB
-```
-
-**User Value** — Understand effective authority, not only direct permissions.
-
----
-
-### 2.47 An Agent Can Chain Tools Together to Do Something Dangerous
-
-Individual tools may appear harmless:
-
-```
-read_customer
-      +
-create_export
-      +
-send_file
-      ↓
-Customer-data exfiltration
-```
-
-**Memnox**
-
-```
-⚠ COMBINED CAPABILITY
-
-Agent can:
-
-READ customer records
-        +
-WRITE local files
-        +
-SEND external messages
-
-Potential:
-Customer-data export
-```
-
-**User Value** — Reason about what combinations of permissions enable.
-
-> Note: a later-stage capability, but potentially extremely powerful.
-
----
-
-### 2.48 Permissions Are Technically Valid but Contextually Wrong
-
-Agent technically has deployment permission. But:
-
-```
-INCIDENT ACTIVE
-       +
-DEPLOYMENT FREEZE
-       +
-PRODUCTION ACTION
-
-TECHNICALLY     ✓ Authorized
-CONTEXTUALLY    ✗ Not authorized
-```
-
-**Memnox**
-
-```
-Reason:    Deployment freeze active.
-Source:    Slack #incident
-Incident:  INC-421
-```
-
-**User Value** — Ask not only *"Does the agent have permission?"* but *"Should the agent do this right now?"*
-
----
-
-### 2.49 The Agent Doesn't Know We're in an Incident
-
-```
-Agent wants:
-deploy payments
-
-          ↓
-
-MEMNOX checks:
-
-Slack    ↓  Deployment freeze
-Pager    ↓  INC-421 active
-GitHub   ↓  PR pending
-
-          ↓
-
-DECISION
-ASK / DENY
-```
-
-**User Value** — Give agents organizational situational awareness.
-
----
-
-### 2.50 Our AI Has Context, But Not Authority
-
-> One of the most important conceptual distinctions.
-
-An agent might know *"We normally deploy after review."* But knowledge isn't enforcement.
-
-**Memnox**
-
-```
-KNOWLEDGE
-     +
-EVIDENCE
-     +
-CURRENT STATE
-     +
-POLICY
-     ↓
-  MEMNOX
-     ↓
-┌────────┬────────┬────────┐
-│ ALLOW  │  ASK   │  DENY  │
-└────────┴────────┴────────┘
-```
-
-**Core Idea** — Knowledge + evidence + current state → enforceable decision.
-
----
-
-### 2.51 We Need to Know Why an AI Made a Decision
-
-Eventually Memnox should trace:
-
-```
-AGENT → TASK → CONTEXT → EVIDENCE → POLICY → HUMAN APPROVAL → ACTION → OUTCOME
-```
-
-**User Value** — Explainable autonomous operations.
-
----
-
-### 2.52 We Can't Investigate an AI Incident
-
-**Current reality** — investigation may require GitHub logs + Cloud logs + Slack + CI + Agent logs + MCP logs.
-
-**Memnox**
-
-```
-INCIDENT #421
-
-14:02  Agent started
-14:04  Accessed production
-14:05  Modified configuration
-14:05  Deployment triggered
-14:06  Deployment failed
-
-Agent    Claude Code
-User     Sarah
-Tool     github.update_file
-Related  PR #921
-```
-
-**User Value** — AI incident investigation.
-
----
-
-### 2.53 We Don't Know Whether a Human or AI Caused an Action
-
-Memnox should normalize actors: `HUMAN` · `AI AGENT` · `CI` · `AUTOMATION` · `SERVICE`
-
-Then answer *"Who actually caused this change?"* instead of only *"Who pressed the button?"*
-
-**User Value** — Causal accountability.
-
----
-
-### 2.54 We Need an Audit Trail for AI Actions
-
-For meaningful actions:
-
-```
-WHO · WHAT · WHEN · WHERE · WHY · AUTHORIZED BY · POLICY · EVIDENCE · OUTCOME
-```
-
-**User Value** — Accountability, incident response, security review, internal audit.
-
----
-
-### 2.55 AI Permissions Keep Growing But Nobody Notices
-
-```
-AI AUTHORITY OVER TIME
-
-January    ██████
-February   ████████
-March      ██████████████
-April      ████████████████████
-
-+217% authority
-```
-
-Potential insight:
-
-> "Your agents now have 4.2× more external write capability than 90 days ago."
-
-**User Value** — AI privilege drift becomes measurable.
-
----
-
-### 2.56 Our AI Environment Is Becoming Too Complicated
-
-Eventually a company may have 43 agents, 112 MCP servers, 1,200 tools, 87 repositories, 26 policies, 14,000 decisions. Nobody can reason about the entire system.
-
-**Memnox Normalized Model**
-
-```
-Agent → Capability → Resource → Identity → Policy → Evidence → Decision → Outcome
-```
-
-This is where the **Decision Graph** becomes useful.
-
----
-
-### 2.57 We Don't Know What the Company Has Implicitly Authorized
-
-A company may never explicitly write *"Claude can merge PRs."* But perhaps:
-
-```
-CODEOWNERS allows it
-       +
-Branch rules allow it
-       +
-Slack says "Claude can handle these"
-       +
-Manager approved the agent
-       +
-Previous PRs were merged
-```
-
-Memnox can eventually derive:
-
-```
-OBSERVED AUTHORIZATION
-
-Source
-Slack
-GitHub
-Previous approvals
-Current configuration
-```
-
-**User Value** — Understand implicit organizational authorization.
-
----
-
-### 2.58 Written Policy and Actual Human Behavior Disagree
-
-```
-POLICY
-Every production deploy requires 2 approvals.
-
-          ↓
-
-OBSERVED BEHAVIOR
-73% follow policy
-27% bypass it
-
-Common exception:
-Platform lead approval in Slack
-```
-
-**User Value** — Understand how organizations actually operate.
-
----
-
-### 2.59 We Keep Answering the Same AI Permission Questions
-
-| Who | Question |
-| --- | --- |
-| Developer | Can Claude merge? |
-| Security | Which agents access GitHub? |
-| Manager | Who approved this? |
-| Platform | What changed? |
-
-**Memnox becomes the answer layer**
-
-| Question | Layer |
-| --- | --- |
-| What can it do? | Capability |
-| What did it do? | Runtime |
-| Why? | Evidence |
-| Who allowed it? | Identity |
-| What happens if we change it? | Simulation |
-
----
-
-### 2.60 I Want to Ask Memnox a Normal Question
-
-The ideal UX should not require another dashboard. Instead:
-
-```bash
-memnox explain "Can Claude safely deploy payments right now?"
-memnox why     "Was the production deploy blocked?"
-memnox who     "Can modify the payments database?"
-memnox what-if "What happens if I give Codex production access?"
-```
-
-This maps to four fundamental questions:
-
-```
-┌─────────────────────────────────────┐
-│  WHAT CAN AGENTS DO?                │
-└──────────────────┬──────────────────┘
-                   ↓
-┌─────────────────────────────────────┐
-│  WHAT ARE THEY DOING?               │
-└──────────────────┬──────────────────┘
-                   ↓
-┌─────────────────────────────────────┐
-│  WHY ARE THEY ALLOWED?              │
-└──────────────────┬──────────────────┘
-                   ↓
-┌─────────────────────────────────────┐
-│  WHAT IF WE GIVE THEM MORE POWER?   │
-└─────────────────────────────────────┘
-```
-
----
-
-## 3. The Pains I Would Prioritize
-
-> Not all 60 pains should become features.
-
-| Priority | User Pain | Memnox Answer | Who Feels It |
-| --- | --- | --- | --- |
-| 🔥 1 | What can my agent access? | `memnox scan` | Developer |
-| 🔥 2 | Can I safely let it run? | `memnox protect` | Developer |
-| 🔥 3 | What did it actually do? | Runtime activity | Developer |
-| 🔥 4 | Why was it blocked/allowed? | `memnox why` | Developer |
-| 🔥 5 | What changed? | `memnox diff` | Developer |
-| 🔥 6 | This MCP has too much access | Capability analysis | Developer |
-| 🔥 7 | Can this agent do X? | `memnox explain` | Developer |
-| 🔥 8 | AI violated our team's decision | Organizational evidence | Team |
-| 🔥 9 | Why isn't this action authorized? | GitHub + Slack + Jira + Docs | Team |
-| 🔥 10 | Who authorized this? | Identity + evidence | Company |
-| 🔥 11 | Which agents have production access? | Agent/resource graph | Platform |
-| 🔥 12 | Policy says X, reality says Y | Policy/runtime gap | Enterprise |
-| 🔥 13 | Two agents are conflicting | Agent coordination | Engineering |
-| 🔥 14 | We lost the reasoning behind this | Decision history | Engineering |
-| 🔥 15 | Give agents more autonomy safely | What-if/control | Enterprise |
-
----
-
-## 4. Three Layers of Pain
-
-Memnox should evolve through three layers.
-
-```
-┌───────────────────────────────────────────┐
-│              LAYER 3                      │
-│            COMPANY PAIN                   │
-│                                           │
-│  Agents • MCP • GitHub • Slack • Jira     │
-│  Linear • Docs • CI/CD • Cloud            │
-│                                           │
-│           Decision Graph                  │
-└─────────────────────▲─────────────────────┘
-                      │
-┌─────────────────────┴─────────────────────┐
-│              LAYER 2                      │
-│         ENGINEERING-TEAM PAIN             │
-│                                           │
-│  Decisions • Policies • Architecture      │
-│  Evidence • Agent conflicts • Context     │
-└─────────────────────▲─────────────────────┘
-                      │
-┌─────────────────────┴─────────────────────┐
-│              LAYER 1                      │
-│        PERSONAL DEVELOPER PAIN            │
-│                                           │
-│  Access • Actions • Risk • Autonomy       │
-│                                           │
-│  scan • explain • protect • watch         │
-│  why • diff                               │
-└───────────────────────────────────────────┘
-```
-
-### 4.1 Layer 1 — Personal Developer Pain
-
-**This is the OSS wedge.**
-
-```
-I use AI agents
-       ↓
-I don't know what they can access
-       ↓
-I don't know what they're doing
-       ↓
-I'm afraid to give them more autonomy
-       ↓
-              MEMNOX
-       ↓
-┌──────────────────────────────┐
-│ memnox scan                  │
-│ memnox explain               │
-│ memnox protect               │
-│ memnox watch                 │
-│ memnox why                   │
-│ memnox diff                  │
-└──────────────────────────────┘
-```
-
-**First Experience**
-
-```
-INSTALL → SCAN → DISCOVER → EXPLAIN → FIX → WATCH
-```
-
-This should remain extremely small.
-
-### 4.2 Layer 2 — Engineering-Team Pain
-
-Now connect organizational sources:
-
-```
-GitHub ──────┐
-Slack ───────┤
-Jira ────────┤
-Linear ──────┤
-Docs ────────┤
-ADRs ────────┤
-Runbooks ────┘
-       │
-       ▼
-    MEMNOX
-       │
-       ▼
-   AI AGENTS
-```
-
-The questions change:
-
-- Why did the agent do this?
-- Does this violate our architecture?
-- Who decided this?
-- Is this decision still valid?
-- Is this agent allowed to do this?
-- Are two agents conflicting?
-- What changed?
-
-This is where organizational memory becomes useful rather than just another searchable knowledge base.
-
-### 4.3 Layer 3 — Company Pain
-
-```
-              MEMNOX
-                 │
- ┌───────────────┼────────────────┐
- │               │                │
- ▼               ▼                ▼
-Agents          MCP             GitHub
- │               │                │
- ▼               ▼                ▼
-Slack           Jira            Linear
- │               │                │
- ▼               ▼                ▼
-Docs            CI/CD           Cloud
- └───────────────┬────────────────┘
-                 ▼
-          DECISION GRAPH
-                 │
-                 ▼
-      ORGANIZATIONAL TRUTH
-```
-
-The company can then answer:
-
-```
-What AI do we have?
-        ↓
-What can it access?
-        ↓
-What is it doing?
-        ↓
-Who authorized it?
-        ↓
-Why was it allowed?
-        ↓
-Did it follow company policy?
-        ↓
-What changed?
-        ↓
-What happens if we give it more autonomy?
-```
-
----
-
-## 5. The 10 WOWs I'd Actually Build
-
-If the entire brainstorm had to be reduced to 10 things capable of making users say *"Holy shit."*:
-
-| # | WOW | The user reaction |
-| --- | --- | --- |
-| 1 | `memnox scan` | "I didn't know my agent had all this access." — Real machine, real configuration, no demo data. |
-| 2 | `memnox explain` | "Now I understand exactly what it can do." |
-| 3 | `memnox protect` | "It fixed the dangerous access without me learning another security system." |
-| 4 | `memnox watch` | "Someone added an MCP and Memnox immediately noticed." |
-| 5 | Runtime Interception | "My agent actually tried to do that." — Observe the real action, not what the agent claims it did. |
-| 6 | `memnox why` | "I know exactly why it was blocked." — With real evidence. |
-| 7 | `memnox diff` | "Something changed, and Memnox found it." |
-| 8 | Cross-Agent View | "I can finally see my AI fleet." — Claude Code, Cursor, Codex, OpenClaw, Hermes in one place. |
-| 9 | Organizational Answer | "Memnox checked everything and told me whether this action is actually allowed." |
-| 10 | What-If | "Before giving my agent more power, I can see what that actually enables." |
-
-**WOW 9 — Organizational Answer**
-
-```
-Slack + GitHub + Jira + Docs
-              ↓
-           MEMNOX
-              ↓
-   ONE ANSWER + REAL EVIDENCE
-```
-
-**WOW 10 — What-If**
-
-```
-"What happens if I give Codex production access?"
-
-CURRENT               Read-only
-PROPOSED              Read + Write + Deploy
-
-NEW CAPABILITIES      +3
-NEW EXTERNAL ACTIONS  +2
-POLICY CONFLICTS      2
-REQUIRED APPROVALS    1
-```
-
----
-
-## 6. The Ultimate Memnox Loop
-
-> This is the product loop to obsess over.
-
-```
-┌────────────────────────────┐
-│          INSTALL           │
-└──────────────┬─────────────┘
-               ↓
-┌────────────────────────────┐
-│            SCAN            │
-└──────────────┬─────────────┘
-               ↓
-     "Whoa, my agent can do THAT?"
-               ↓
-┌────────────────────────────┐
-│          EXPLAIN           │
-└──────────────┬─────────────┘
-               ↓
-        "Okay, protect it."
-               ↓
-┌────────────────────────────┐
-│          PROTECT           │
-└──────────────┬─────────────┘
-               ↓
-       Agent works autonomously
-               ↓
-       REAL ACTION HAPPENS
-               ↓
-┌────────────────────────────┐
-│          OBSERVE           │
-└──────────────┬─────────────┘
-               ↓
-       ALLOW / ASK / DENY
-               ↓
-            "Why?"
-               ↓
-┌────────────────────────────┐
-│  EXPLAIN WITH REAL EVIDENCE│
-└──────────────┬─────────────┘
-               ↓
-       User trusts Memnox
-               ↓
-      Configuration changes
-               ↓
-┌────────────────────────────┐
-│            WATCH           │
-└──────────────┬─────────────┘
-               ↓
-        User connects
-   GitHub → Slack → Jira → Docs
-               ↓
-┌────────────────────────────┐
-│   MEMNOX LEARNS            │
-│   ORGANIZATIONAL INTENT    │
-└──────────────┬─────────────┘
-               ↓
-   "Should this agent be allowed?"
-               ↓
-┌────────────────────────────┐
-│      MEMNOX ANSWERS        │
-└──────────────┬─────────────┘
-               ↓
-  "Can we give it MORE autonomy?"
-               ↓
-┌────────────────────────────┐
-│    WHAT-IF SIMULATION      │
-└──────────────┬─────────────┘
-               │
-               └───────────────┐
-                               ↓
-                         MORE AUTONOMY
-                               ↓
-                            OBSERVE  ──► (loop)
-```
-
-**This is the real product flywheel.**
-
----
-
-## 7. The Product Evolution
-
-```
-             TODAY
-               │
-               ▼
-        ┌──────────────┐
-        │ Agent Access │
-        │ Visibility   │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │   Runtime    │
-        │  Protection  │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │ Observability│
-        │  + Evidence  │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │Organizational│
-        │    Memory    │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │   Policy +   │
-        │   Authority  │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │  What-If /   │
-        │  Simulation  │
-        └──────┬───────┘
-               ▼
-        ┌──────────────┐
-        │  Autonomous  │
-        │  Operations  │
-        └──────────────┘
-```
-
----
-
-## 8. The Core Memnox Model
-
-Everything eventually connects to one normalized model:
-
-```
-┌─────────────┐
-│    AGENT    │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│ CAPABILITY  │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│  RESOURCE   │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│  IDENTITY   │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│   POLICY    │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│  EVIDENCE   │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│  DECISION   │
-└──────┬──────┘
-       ▼
-┌─────────────┐
-│   OUTCOME   │
-└─────────────┘
-```
-
----
-
-## 9. The Four Questions Memnox Should Own
-
-Everything ultimately reduces to four questions:
-
-```
-┌────────────────────────────────────────┐
-│       WHAT CAN IT DO?                  │
-│       Capabilities / Access            │
-└───────────────────┬────────────────────┘
-                    ↓
-┌────────────────────────────────────────┐
-│       WHAT IS IT DOING?                │
-│       Runtime / Actions                │
-└───────────────────┬────────────────────┘
-                    ↓
-┌────────────────────────────────────────┐
-│       WHY IS IT ALLOWED?               │
-│       Policy / Evidence / Authority    │
-└───────────────────┬────────────────────┘
-                    ↓
-┌────────────────────────────────────────┐
-│       WHAT IF WE GIVE IT MORE POWER?   │
-│       Simulation / Consequences        │
-└────────────────────────────────────────┘
-```
-
----
-
-## 10. The OSS Wedge
-
-For the open-source product, **do not** try to implement all 60 pains. The initial product should focus on the local developer's immediate problem:
-
-```
-                 AI AGENT
-                    │
-                    ▼
-              ┌───────────┐
-              │  MEMNOX   │
-              └─────┬─────┘
-                    │
-       ┌────────────┼────────────┐
-       ▼            ▼            ▼
-     ACCESS       ACTION       CHANGE
-       │            │            │
-       ▼            ▼            ▼
-     SCAN        OBSERVE        DIFF
-       │            │            │
-       └────────────┼────────────┘
-                    ▼
-             PROTECT / ASK
-                    │
-                    ▼
-               EXPLAIN WHY
-```
-
-**Initial OSS commands**
-
-```bash
-memnox scan
-memnox explain
-memnox protect
-memnox watch
-memnox why
-memnox diff
-```
-
-**The first experience**
-
-```
-INSTALL
-   ↓
-SCAN
-   ↓
-"Whoa."
-   ↓
-EXPLAIN
-   ↓
-PROTECT
-   ↓
-WATCH
-   ↓
-OBSERVE REAL ACTIONS
-   ↓
-ALLOW / ASK / DENY
-```
-
----
-
-## 11. The Core Positioning
-
-Do **not** reduce Memnox to "AI security", "AI governance", "AI memory", or "Agent monitoring". Those are components.
-
-The deeper problem is:
-
-> **Loss of control and understanding as AI becomes autonomous.**
-
 ---
 
-## 12. The One Sentence Above the Roadmap
+## 0. How to read this plan
 
-> **Memnox solves the gap between what AI agents can do, what they actually do, and what your organization intended them to do.**
+### 0.1 Task format
 
-The user-facing progression:
+Every task is sized for one junior developer with a reviewer, **0.5–3 days**, and has:
 
+```text
+ID        OSS-1.3 / CLD-4.2
+Goal      one sentence
+Deliver   the artifact (file, command, endpoint, table)
+Accept    checkable acceptance criteria
+Depends   task IDs that must be merged first
+Size      S (≤1 day) · M (1–2 days) · L (2–3 days)
 ```
-WHAT CAN IT DO?
-        ↓
-WHAT IS IT DOING?
-        ↓
-WHY IS IT ALLOWED?
-        ↓
-WHAT IF WE GIVE IT MORE POWER?
-```
-
-That is the product.
-
----
 
-## 13. Final Product Flywheel
+If a task looks bigger than L while you're doing it, stop and split it — that is expected, not a failure.
 
-```
-              ┌─────────────────┐
-              │  UNDERSTAND     │
-              │  AI CAPABILITY  │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │    CONTROL      │
-              │  AI AUTHORITY   │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │    OBSERVE      │
-              │  REAL ACTIONS   │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │    EXPLAIN      │
-              │ WITH EVIDENCE   │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │    REMEMBER     │
-              │ ORGANIZATIONAL  │
-              │     INTENT      │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │    SIMULATE     │
-              │ MORE AUTONOMY   │
-              └────────┬────────┘
-                       ↓
-              ┌─────────────────┐
-              │   TRUST AI      │
-              │   TO DO MORE    │
-              └────────┬────────┘
-                       │
-                       └──────────► MORE AUTONOMY ──► OBSERVE (loop)
-```
-
-**Memnox is the layer that makes autonomous AI understandable, controllable, and progressively trustworthy.**
-
----
+### 0.2 Definition of done (applies to every task)
 
-## Appendix: the phase index
+- Code merged to `main` through a PR with one approving review.
+- Unit tests for new logic; an integration test when a command or endpoint is added.
+- `README`/docs updated if a user-visible command, flag, file, or endpoint changed.
+- No new dependency without a one-line justification in the PR.
+- Nothing writes outside `~/.memnox/` or `<project>/.memnox/` (OSS) unless the task says so and a backup is taken.
+- No LLM call on any enforcement path. Ever.
 
-The build sequence is cited by number across all three repositories, from `CLAUDE.md`,
-`CONTRIBUTING.md`, `CHANGELOG.md` and source comments. This table is what makes those
-citations resolve: a phase is the engineering that closes a group of the pains above.
+### 0.3 Proposed stack **[proposed]**
 
-| Phase | Owns | Closes |
+| Layer | Choice | Why |
 |---|---|---|
-| `§01` Discovery | what can act here, what it reaches, findings, reversible harden steps | 2.1, 2.3, 2.7, 2.11, 2.34, 2.35, 2.46 |
-| `§02` Evidence | one normalized model, defined once, that every later phase writes into | 2.56 |
-| `§03` Observation | seams, interception both ways, the ledger, frames, lineage | 2.12, 2.13, 2.14, 2.16, 2.36, 2.39, 2.40, 2.51 |
-| `§04` Explain | the deterministic answer, built from the match and never from a model | 2.6, 2.22, 2.24, 2.25, 2.60 |
-| `§05` Protect | policies, the three effects, proposals, simulation, native controls | 2.4, 2.5, 2.30, 2.31, 2.38 |
-| `§06` Watch | configuration and behaviour drift, with the cause named | 2.2, 2.9, 2.10, 2.33, 2.55 |
-| `§07` Repository evidence | CODEOWNERS, ADRs, AGENTS.md, branch rules, already on disk | 2.19, 2.20, 2.57 |
-| `§08` Organizational evidence | Slack, Jira, Linear, Notion, Drive, and current state | 2.18, 2.26, 2.27, 2.28, 2.29, 2.48, 2.49, 2.58 |
-| `§09` Policy candidates | the bridge from what was observed to what is enforced | 2.8, 2.41, 2.50 |
-| `§10` Cloud | identity, the fleet, approvals, chains, evidence, autonomy | 2.15, 2.17, 2.21, 2.23, 2.32, 2.37, 2.42, 2.43, 2.44, 2.45, 2.47, 2.52, 2.53, 2.54, 2.59 |
+| OSS CLI/daemon | TypeScript, Node ≥ 20, pnpm workspace, `commander`, `better-sqlite3`, `@modelcontextprotocol/sdk`, `chokidar`, `vitest` | Already on npm; single-binary via `pkg`/`bun build` later |
+| OSS repo layout | `packages/core` (engine, store), `packages/cli`, `packages/proxy`, `packages/shims` | Lets cloud reuse `core` |
+| Cloud API | TypeScript, Hono (or Fastify), Postgres, Drizzle ORM, BullMQ (Redis) for jobs | Boring, fast, small |
+| Cloud web | Next.js app router, Tailwind | Dashboard only; CLI stays primary |
+| Auth | WorkOS or Auth.js with SSO (Google, GitHub, SAML later) | Enterprise SSO without building it |
+| Infra | Fly.io or Railway + managed Postgres; Cloudflare in front | One person can operate it |
+| Connectors | GitHub App, Slack App, Jira/Linear OAuth, Google Drive, PagerDuty/incident.io webhooks | |
 
-**Why this order.** Discovery first, because a count read off the reader's own disk is the
-only honest aggregate at minute zero. The model before the sources, which is why §07, §08
-and §09 add evidence without a rewrite. Observation before enforcement, because a verdict
-nobody is obliged to ask for is advice. Explanation before protection, because a block a
-user cannot interrogate is a block they will disable. Evidence before policy, because a
-policy editor opened before there is traffic to write about is a blank form. Repository
-before Slack, because level two evidence needs no account. Local before cloud, because the
-open half's entire credibility is that nothing leaves the machine.
+### 0.4 Milestone map
+
+```text
+OSS (open source, Apache-2.0)                  CLOUD (closed source)
+────────────────────────────────               ─────────────────────────────────
+M0  Foundation                                  C0  Foundation (auth, tenancy, ingest)
+M1  scan                                        C1  Enrollment + sync   ◄── needs M6
+M2  explain + diff                              C2  Agent inventory
+M3  protect (policy engine)                     C3  Central policies    ◄── needs M3
+M4  MCP proxy                                   C4  Routed approvals    ◄── needs M4/M5
+M5  Shell / git / fs / network interception     C5  Graph + who + effective capability
+M6  Event store + why + timeline                C6  Org context connectors + overlays
+M7  watch + sessions + limits + conflicts       C7  Decisions + organizational answer + suggestions
+M8  Hardening + OSS go-live                     C8  Gap analysis + authority over time
+                                                C9  what-if simulation
+                                                C10 Audit, export, billing
+                                                C11 Cloud go-live
+```
+
+OSS is strictly sequential (each milestone is the demo for the next). Cloud C0 can start once M6's event schema is frozen; C1 onward needs a working OSS runtime to sync from.
+
+---
+
+# PART A — OPEN SOURCE RUNTIME
+
+## M0 — Foundation (≈ 1 week)
+
+**Milestone demo:** `npx memnox --version` works from a fresh clone; CI is green; a hello-world command writes to `~/.memnox/`.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-0.1 | Create pnpm monorepo | `packages/core`, `packages/cli`, `packages/proxy`, `packages/shims`, root `tsconfig`, `vitest` | `pnpm test` runs an example test in each package | — | S |
+| OSS-0.2 | CLI skeleton | `memnox` bin with `commander`, `--version`, `--json` global flag, `--help` | `npx memnox --help` lists placeholder subcommands | 0.1 | S |
+| OSS-0.3 | Home directory + config | `~/.memnox/config.toml` created on first run with `mode = "observe"` | Running twice does not overwrite; `memnox config get mode` prints `observe` | 0.2 | S |
+| OSS-0.4 | Logger + output renderer | `core/render`: table/tree/plain renderers; `--json` bypasses renderers | Snapshot tests for each renderer | 0.2 | S |
+| OSS-0.5 | CI pipeline | GitHub Actions: lint, typecheck, test on macOS + Ubuntu, Node 20/22 | Badge green on `main` | 0.1 | S |
+| OSS-0.6 | Release tooling | changesets + `npm publish` dry-run job; `CONTRIBUTING.md`; PR template | Tag → dry-run publish succeeds | 0.5 | S |
+| OSS-0.7 | Fix public-surface bugs already known | README issues link → correct repo; hero command becomes `npx memnox` (not `setup`); remove fictional-company demo CTA | Links resolve; homepage shows the discovery command | — | S |
+
+---
+
+## M1 — `memnox scan` (≈ 2 weeks) — spec §2.1, §2.2
+
+**Milestone demo:** on a real laptop with Claude Code + 2 MCP servers, `memnox scan` prints the capability tree with correct read/write counts and lists `~/.ssh` as readable. This is WOW 1; nothing else matters until it's true.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-1.1 | `CapabilityInventory` type | `core/inventory.ts`: agents[], mcpServers[], tools[], filesystem[], shell, git[], credentials[], network; JSON schema | Type + schema exported; fixture round-trips | 0.4 | S |
+| OSS-1.2 | Agent detector: Claude Code | Read `~/.claude/settings.json`, project `.claude/`, permission mode, bypass flag | Unit tests with 3 fixture configs (default, allow-list, bypass) | 1.1 | M |
+| OSS-1.3 | Agent detector: Cursor | Same for Cursor's MCP/config paths | Fixture tests | 1.1 | M |
+| OSS-1.4 | Agent detector: Codex + generic | Codex config; generic `.mcp.json` fallback | Fixture tests | 1.1 | M |
+| OSS-1.5 | MCP config parser | Normalize stdio/HTTP server entries from all detectors into `mcpServers[]` with env var **names** | Secrets never appear in output (test asserts) | 1.2–1.4 | S |
+| OSS-1.6 | MCP handshake client | Spawn/connect each server, `initialize` + `tools/list`, 5 s timeout, cache to `~/.memnox/manifests/<server>.json` | Works against the reference filesystem MCP server; timeout produces `unreachable`, not a crash | 1.5 | L |
+| OSS-1.7 | Tool classifier v1 | `core/classify.ts`: annotations (`readOnlyHint`, `destructiveHint`) → verb table (`get_/list_/search_` read; `create_/update_/merge_/send_/post_` write; `delete_/remove_/force_/refund_/drop_` destructive) → `communication` for message-like tools | Table-driven tests, ≥ 40 tool names; overrides file supported | 1.6 | M |
+| OSS-1.8 | Filesystem probe | Check readability/writability of sensitive path list (`~/.ssh`, `~/.aws`, `~/.gcloud`, `~/.kube`, `.env*`, keychain dirs) as current user; list writable roots from cwd | Reports `readable/writable/none` per path; never reads file contents | 1.1 | M |
+| OSS-1.9 | Shell + git probe | Shell enabled?; git remotes, credential helper present, token env names | Fixture repo tests | 1.1 | S |
+| OSS-1.10 | Network probe | Proxy env, sandbox flags, quick egress check (DNS resolve only, no request) | Reports `outbound: detected/restricted/unknown` | 1.1 | S |
+| OSS-1.11 | Risk band rule table | `core/risk.ts`: fixed rules → `LOW/MEDIUM/HIGH`, returns the rules that fired | Table documented in `docs/risk-bands.md`; tests per rule | 1.7, 1.8 | S |
+| OSS-1.12 | `scan` command + tree renderer | Compose probes → inventory → render tree with counts ("6 capabilities can change external state", "`~/.ssh` readable by N agents") | Manual run on a real machine matches expectations; `--json` outputs the inventory | 1.2–1.11 | M |
+| OSS-1.13 | `--save` snapshots | Write `~/.memnox/scans/<ts>.json`; keep last 30 | `memnox scan --save` twice → two files | 1.12 | S |
+| OSS-1.14 | `scan --mcp <server>` review view | Tools split read/write, filesystem/network/credential reach, risk band | Output matches spec §2.1 MCP review block | 1.12 | S |
+| OSS-1.15 | Scan performance + resilience | Parallel handshakes, total run < 10 s with 5 servers; broken server never aborts scan | Timed test; chaos test with a hanging server | 1.6 | M |
+
+---
+
+## M2 — `memnox explain` + `memnox diff` (≈ 1 week) — spec §2.3, §2.7
+
+**Milestone demo:** `memnox explain refund_payment` prints the provenance chain; add an MCP server, run `memnox diff`, see it listed.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-2.1 | Provenance index | Map every capability back to `{agent, configFile, addedAt (file mtime / git blame if available)}` | Inventory entries carry `source` | 1.12 | M |
+| OSS-2.2 | `explain <capability>` | Resolve arg to tool / path / server / agent; print chain + class + governing policy (none yet) | 4 fixture cases | 2.1 | M |
+| OSS-2.3 | Question grammar | Parse `can <agent> <verb> <resource>` with a small synonym table (deploy, merge, push, read, write, delete, send) | Parser tests; unknown phrasing → helpful usage message, never a guess | 2.2 | M |
+| OSS-2.4 | `explain "<question>"` (local rows) | Answer `Technically` and `Runtime permissions` rows from inventory; `Policy` row from M3 once available | Works on `"can claude read ~/.aws"` | 2.3 | S |
+| OSS-2.5 | Snapshot differ | `core/diff.ts`: added/removed/changed servers, tools, credentials, paths, permission mode | Pure-function tests | 1.13 | M |
+| OSS-2.6 | `diff` command | `--since yesterday`, `--from/--to`, default = last two snapshots; render `+ Slack MCP / + 8 tools / READ → READ+WRITE` | Matches spec §2.7 output | 2.5 | S |
+| OSS-2.7 | `diff --fail-on` | `write-capable`, `credential`, `any` → non-zero exit for CI | CI example in docs | 2.6 | S |
+
+---
+
+## M3 — `memnox protect` + policy engine (≈ 2 weeks) — spec §2.4
+
+**Milestone demo:** `memnox protect --from-scan` writes a sensible `.memnox/policy.toml`; `memnox policy test "git push --force origin main"` prints `DENY` with the rule and file line. Nothing is enforced yet — the engine is proven standalone first.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-3.1 | Policy schema + parser | TOML → typed `Policy` (filesystem, shell, git, mcp, network, schedule, limits); validation errors with line numbers | 10 valid + 10 invalid fixtures | 0.4 | M |
+| OSS-3.2 | Matchers | Glob for paths; command pattern matcher; tool pattern (`server.tool`, wildcards); host matcher (`*.example.com`, CIDR) | Table tests for each | 3.1 | M |
+| OSS-3.3 | Command classifier for shell | Parse a shell line into argv (+ pipes); classify `destructive`, `network`, `package-install`, `normal` | ≥ 50 command fixtures incl. `rm -rf`, `dd`, `curl \| sh`, `git push --force` | 3.2 | M |
+| OSS-3.4 | Decision engine | `evaluate(action, policyStack) → {decision, rule, layer, file, line, reason, alternative}`; order deny > ask > allow > default; most-specific wins | Property tests: deny always beats allow; default differs by mode | 3.1–3.3 | L |
+| OSS-3.5 | Layer stacking | org (placeholder) → user → project; `locked` domains can only tighten | Tests where project tries to loosen a locked org rule | 3.4 | M |
+| OSS-3.6 | Schedule rules | `when = "Fri 16:00-23:59"` evaluated in local tz | Tests with frozen clock | 3.4 | S |
+| OSS-3.7 | Alternative text | Rule `alternative` field + defaults per class (force-push → "push a branch and open a PR") | Every DENY has non-empty alternative (test) | 3.4 | S |
+| OSS-3.8 | `protect --from-scan` generator | Inventory → baseline policy: deny sensitive paths, ask write MCP tools, deny destructive, allow reads | Generated file passes parser; reviewed by hand once | 3.1, 1.12 | M |
+| OSS-3.9 | `protect` interactive | Walk domains, show current decision, arrow keys to change; writes file | Manual test; `--yes` skips prompts | 3.8 | M |
+| OSS-3.10 | `protect --edit` / `--observe` / `--enforce` | Open in `$EDITOR`; flip mode in config with confirmation | Mode change logged | 3.9 | S |
+| OSS-3.11 | `policy test "<action>"` | Dry-run evaluation with full explanation | Used in README | 3.4 | S |
+| OSS-3.12 | Native translation v1 (Claude Code) | `protect --apply-native`: write Claude Code allow/deny lists from policy; backup to `.memnox/backup/` | `--revert-native` restores byte-identical file | 3.8 | M |
+
+---
+
+## M4 — MCP proxy (≈ 2 weeks) — spec §2.5
+
+**Milestone demo:** `memnox mcp wrap` repoints Claude Code's servers; a `merge_pull_request` call is held with `[Allow once] [Deny]` in the terminal; `[Deny]` returns a structured error the agent can read. WOW 5.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-4.1 | Event type + in-memory sink | `core/event.ts` per spec §6; `EventSink` interface (memory now, SQLite in M6) | Schema test; sink receives events | 3.4 | S |
+| OSS-4.2 | Proxy skeleton (stdio) | `memnox mcp-proxy --upstream <cmd>`: forward `initialize`, `tools/list`, `resources/*`, notifications transparently | Passes MCP SDK conformance against reference server | 0.1 | L |
+| OSS-4.3 | HTTP/SSE upstream | Same for URL upstreams | Works with a public HTTP MCP server | 4.2 | M |
+| OSS-4.4 | Manifest cache + classification in proxy | On `tools/list`, store manifest + classes; honor `mcp.hide` by filtering the list | Hidden tools invisible to the agent | 4.2, 1.7 | S |
+| OSS-4.5 | `tools/call` interception | Build action `{surface: mcp, operation: server.tool, args}` → engine → ALLOW forwards; DENY returns MCP error `{policy, reason, alternative}` | Integration test with fixture policy | 4.2, 3.4, 4.1 | L |
+| OSS-4.6 | ASK hold + terminal prompt | Hold the call; prompt in the proxy's controlling TTY or via daemon socket (M7); options once / session / deny; timeout → deny | Manual test; timeout test | 4.5 | M |
+| OSS-4.7 | Argument redaction | Secret detector (regex set: keys, tokens, JWT, `password=`) applied before storage; keep digest | Test corpus; no raw secret in sink | 4.5 | S |
+| OSS-4.8 | `mcp wrap` / `mcp unwrap` | Rewrite each agent's MCP config to route via proxy; backup; unwrap restores | Round-trip byte-identical; supports Claude Code, Cursor, Codex | 4.2, 1.5 | M |
+| OSS-4.9 | Proxy latency + robustness | ALLOW path overhead < 5 ms median; upstream crash → error to agent, proxy stays up | Benchmark script committed | 4.5 | M |
+
+---
+
+## M5 — Shell / git / filesystem / network interception (≈ 2–3 weeks) — spec §2.5
+
+**Milestone demo:** with `enforce` on, Claude Code running `rm -rf ./build` is asked, `cat ~/.aws/credentials` is denied with an alternative, `git push --force` is denied, and `curl unknown.example.com` is asked.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-5.1 | Shim runtime | `packages/shims`: tiny wrapper that receives argv, calls daemon/engine, then `exec`s the real binary; PATH-prefix dir `~/.memnox/bin` | Wrapper adds < 10 ms; passes through stdin/stdout/exit code | 3.4, 4.1 | L |
+| OSS-5.2 | `memnox-shell` | Shell wrapper: parse command line (reuse 3.3), evaluate, exec via user's shell; record exit code + duration + output digest | Works as `SHELL` for Claude Code | 5.1 | M |
+| OSS-5.3 | `rm` / `dd` / `curl` / `wget` / `ssh` shims | Register in shim dir; classify; evaluate | Each has a test hitting ASK/DENY | 5.1 | M |
+| OSS-5.4 | `git` shim | Parse subcommand, branch, remote, `--force`; evaluate `git.*` operations | 20 command fixtures | 5.1 | M |
+| OSS-5.5 | Git hooks (defense in depth) | Optional `pre-push`/`pre-commit` hooks that call `memnox policy check`; installed by `protect --hooks` | Hook blocks even when shim bypassed | 5.4 | S |
+| OSS-5.6 | Filesystem path checks | Path policy evaluated for file args in shell shim (`cat`, `cp`, editors) and in MCP filesystem tools | `cat ~/.aws/credentials` → DENY event | 5.2, 4.5 | M |
+| OSS-5.7 | OS guard (macOS) | Generate a `sandbox-exec` profile from filesystem policy; `protect --os-guard` | Denied path unreadable even by a raw binary | 5.6 | L |
+| OSS-5.8 | OS guard (Linux) | Landlock-based restriction when kernel supports it; graceful no-op otherwise | Same test on Ubuntu 22.04+ | 5.6 | L |
+| OSS-5.9 | Egress proxy | Local HTTP(S)/SOCKS proxy per session; injected via `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`; evaluate host against `[network]`; record host/port only | `curl allowed.host` passes; unknown host → ASK | 5.1 | L |
+| OSS-5.10 | Environment injection | `memnox run -- <agent command>`: sets PATH, SHELL, proxy vars, session id for the child | Documented as the recommended launch | 5.2, 5.9 | M |
+| OSS-5.11 | Interceptor conformance suite | One test matrix: (surface × class × mode) → expected decision + event | All green on macOS + Ubuntu CI | 5.2–5.10 | M |
+
+---
+
+## M6 — Event store + `why` + `timeline` (≈ 1.5 weeks) — spec §2.8, §2.9, §5.1–5.2
+
+**Milestone demo:** after a real session, `memnox timeline` shows the ordered actions with exit codes; `memnox why` on the blocked push prints the rule, file line, reason, alternative, evidence. WOW 6.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-6.1 | SQLite store | `~/.memnox/memnox.db` WAL; migrations; tables `events`, `sessions`, `approvals`, `policy_versions`, `capability_snapshots` | Migration up/down tests; concurrent-writer test (5 processes) | 4.1 | L |
+| OSS-6.2 | SQLite `EventSink` | Replace memory sink; append-only guarantees (no UPDATE on `events` except approval status) | Insert 10k events < 2 s | 6.1 | S |
+| OSS-6.3 | Policy version tracking | Hash policy stack on load; store; events reference hash | `why` after editing policy still shows the rule in force at the time | 6.1, 3.4 | S |
+| OSS-6.4 | `why` command | Last non-allow / by id / `--allowed`; show rule, origin file:line, reason, alternative, local evidence (branch protection, CODEOWNERS presence, sensitive-path list) | Matches spec §2.8 | 6.2, 6.3 | M |
+| OSS-6.5 | `timeline` command | Filters `--session --agent --since --only`; grouped by session; `--export jsonl/json` | Spec §2.9 output | 6.2 | M |
+| OSS-6.6 | Retention + purge | `retention_days` in config; `memnox purge`; snapshot pruning | Old rows gone after purge; never deletes pending approvals | 6.1 | S |
+| OSS-6.7 | Freeze event schema v1 | `docs/event-schema.md` + JSON schema published; version field | Cloud team signs off (unblocks C0) | 6.2 | S |
+
+---
+
+## M7 — `watch`, sessions, limits, conflicts (≈ 2 weeks) — spec §2.6, §2.10–2.13
+
+**Milestone demo:** add a Stripe MCP while `memnox watch` runs → `⚠ NEW MCP SERVER … [Protect]`; run two agents on the same file → `⚠ AGENT CONFLICT`; agent says "tests passed" after a failing `npm test` → warning. WOW 4.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-7.1 | Daemon + local socket | `memnox daemon` (auto-started by shims/proxy); Unix socket / named pipe; RPC for evaluate, prompt, subscribe | Shims fall back to in-process engine if daemon absent | 5.1 | L |
+| OSS-7.2 | Session manager | Session created from process tree + `MEMNOX_SESSION` env; start/end; capabilities-observed accumulation | Two concurrent agents → two sessions; idle timeout closes | 7.1, 6.1 | M |
+| OSS-7.3 | Config watcher | `chokidar` on agent/MCP config paths + 15-min timer → re-scan → diff vs baseline → `capability.*` events | Adding a server triggers an event within 2 s | 7.1, 2.5 | M |
+| OSS-7.4 | `watch` command | Live tail of decisions + capability events; inline ASK answering; `[Review] [Protect]` actions open `explain`/`protect --for <server>` | Manual test session recorded | 7.1–7.3 | M |
+| OSS-7.5 | Agent update detection | Detect agent version change → re-scan → "BEFORE 12 / AFTER 17 capabilities" event | Fixture test with two versions | 7.3 | S |
+| OSS-7.6 | Credential exposure alert | Diff shows a credential name newly visible → high-priority watch event | Test: export new AWS var → event | 7.3 | S |
+| OSS-7.7 | Limit enforcer | Counters per session: runtime, tool calls, identical action (surface+normalized args digest); `block` decision + optional SIGTERM | Tests for each counter | 7.2 | M |
+| OSS-7.8 | Repeated-violation memory | `violations` table; `why` shows prior attempts; watch shows `⚠ REPEATED VIOLATION` on 3rd | Test across three sessions | 6.1, 6.4 | S |
+| OSS-7.9 | Unused authority report | `memnox scan --usage 7d`: granted vs used per server; "3 unused tools can modify external state"; `[Protect unused]` writes ask rules | Counts correct on fixture sessions | 7.2, 3.8 | M |
+| OSS-7.10 | Agent-collision + duplicate-work detector | Same file written by two sessions within window; same branch/PR/issue touched by two sessions; `conflict` events; `pause` = gate session to ASK-all | Tests with two synthetic sessions | 7.2 | M |
+| OSS-7.11 | Transcript tap | Optional: tee agent stdout to `~/.memnox/transcripts/<session>.log` (local only, retention-bound) | Off by default; documented privacy note | 7.2 | S |
+| OSS-7.12 | Claim-vs-evidence matcher | Pattern table (tests passed / deployed / committed / pushed / created X) → check events → `conflict(kind=claim)` | ≥ 20 claim fixtures; zero LLM | 7.11, 6.2 | M |
+
+---
+
+## M8 — Hardening + OSS go-live (≈ 2 weeks)
+
+**Milestone demo:** a stranger installs from the README, runs `npx memnox`, sees their own machine, and can uninstall cleanly. Everything in the three public-surface contradictions is fixed.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-8.1 | `npx memnox` = scan | Bare command runs `scan`; `setup` removed from the hero | First-run < 60 s | 1.12 | S |
+| OSS-8.2 | `memnox uninstall` | Unwrap MCP, revert native, remove shims from PATH, offer to delete `~/.memnox` | Machine byte-identical to before (test on VM) | 4.8, 3.12, 5.10 | M |
+| OSS-8.3 | `memnox doctor` | Check daemon, shims on PATH, proxy wiring, policy validity, DB health; fix hints | Each failure has a fix line | 7.1 | M |
+| OSS-8.4 | Security self-review | Threat model doc; verify no secrets in DB/logs; socket permissions 0600; shim path-hijack review | Checklist signed off; one external reviewer | all | L |
+| OSS-8.5 | Windows support decision | Either WSL-only documented or shims/socket ported | Decision recorded in ADR | 5.1, 7.1 | M |
+| OSS-8.6 | Docs site | Quickstart, policy reference, command reference, event schema, FAQ ("does it call an LLM?" → no) | Every command has a page | all | L |
+| OSS-8.7 | README recording | 2-minute asciinema/GIF: real machine, `npx memnox`, `~/.ssh — 3 agents`, protect, one blocked action, `why` | Embedded at top of README | 8.1 | S |
+| OSS-8.8 | Share card | `memnox scan --share` renders a PNG/text card with counts only (no paths, no secrets) | Reviewed for leakage | 1.12 | M |
+| OSS-8.9 | Telemetry decision | Opt-in only, counts only, documented; or none | ADR + toggle | 0.3 | S |
+| OSS-8.10 | Issue templates + triage labels | Bug/feature templates asking for `memnox doctor` output | Templates live | 8.3 | S |
+| OSS-8.11 | 1.0.0 release | Changelog, npm publish, GitHub release, signed tarball | `npx memnox@1` works on clean macOS + Ubuntu VMs | all | S |
+| OSS-8.12 | Launch post | One post (HN / blog) leading with the recording; link to `awesome-ai-agent-governance` PR | Published | 8.7 | S |
+
+---
+
+# PART B — CLOSED-SOURCE CLOUD
+
+## C0 — Foundation (≈ 2 weeks) — can start once OSS-6.7 freezes the schema
+
+**Milestone demo:** an org can sign in with SSO, create an API key, and POST a signed event batch that lands in Postgres.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-0.1 | Repo + infra | Private monorepo: `apps/api`, `apps/web`, `packages/db`; Fly/Railway envs `staging`/`prod`; managed Postgres + Redis | Deploy on merge to `main` (staging) | — | M |
+| CLD-0.2 | DB schema v1 | Drizzle: `orgs`, `users`, `memberships`, `runtimes`, `agents`, `sessions`, `events`, `policy_versions` | Migrations + seed | 0.1 | M |
+| CLD-0.3 | Auth + SSO | Auth.js/WorkOS: Google + GitHub login; org creation; invite by email | Two users in one org | 0.1 | L |
+| CLD-0.4 | Tenancy guard | Every query scoped by `org_id`; RLS policies in Postgres as second line | Test: cross-org read fails at both layers | 0.2 | M |
+| CLD-0.5 | Runtime enrollment API | `POST /runtimes/enroll` with one-time token → stores runtime public key, owner | Enroll from CLI stub | 0.3 | M |
+| CLD-0.6 | Ingest endpoint | `POST /ingest`: verify Ed25519 signature, validate against event schema v1, dedup by id, insert | 1k-event batch < 500 ms; bad signature 401 | 0.5, OSS-6.7 | L |
+| CLD-0.7 | Job queue | BullMQ workers: `graph-build`, `enrich`, `analyze` (empty handlers) | Worker health endpoint | 0.1 | S |
+| CLD-0.8 | Web shell | Next.js app: login, org switcher, empty "Agents" page, settings | Deployed at staging URL | 0.3 | M |
+| CLD-0.9 | Audit of the audit | Append-only `events`; admin actions logged in `admin_events` | Attempted UPDATE on events rejected by trigger | 0.2 | S |
+
+---
+
+## C1 — Enrollment + sync from OSS (≈ 1 week)
+
+**Milestone demo:** `memnox cloud login` → `memnox cloud enroll` → events from a real session appear in the dashboard within 10 s; disconnecting the network does not affect enforcement.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-1.1 | OSS: `cloud login/enroll/logout` | Device-code flow; store token in `~/.memnox/identity/`; generate keypair | Token never printed | 0.5 | M |
+| CLD-1.2 | OSS: outbox + sync client | Batch N events/T seconds; sign; retry with backoff; `sync.filter = ask,deny,conflict` option | Offline for 1 h → all events arrive later, in order | 1.1, OSS-6.2 | M |
+| CLD-1.3 | OSS: sync privacy filter | Strip transcript text, full args; keep digests; drop network payloads (there are none) | Snapshot test of synced payload | 1.2 | S |
+| CLD-1.4 | Heartbeat | Runtime sends version, mode, policy hash every 5 min | Dashboard shows "last seen" | 1.2 | S |
+| CLD-1.5 | Web: runtime list | Runtimes per org with owner, agent versions, mode | Page live | 1.4, 0.8 | S |
+
+---
+
+## C2 — Agent inventory (≈ 1.5 weeks) — spec §4.1
+
+**Milestone demo:** WOW 8 — one screen showing Claude Code / Cursor / Codex / OpenClaw across the org with session counts, capabilities, and an "unregistered" badge.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-2.1 | Agent dedup | Fingerprint `{name, major.minor}` across runtimes → `agents` rows | Same agent on 3 laptops = 1 row | 1.2 | M |
+| CLD-2.2 | Capability rollup | Union of `capabilities_observed` per agent; counts of read/write/destructive | Matches OSS scan numbers | 2.1 | M |
+| CLD-2.3 | Registered agents policy | Org setting: approved agent list; unlisted → `unregistered` flag + notification | Flag appears on new agent | 2.1 | S |
+| CLD-2.4 | Web: inventory page | Table + drill-down (sessions, capabilities, owners) | Spec §4.1 view | 2.2 | M |
+| CLD-2.5 | Web: agent comparison | Side-by-side counts + risk band from the same OSS rule table (shared `core`) | No numeric score anywhere | 2.2 | S |
+| CLD-2.6 | Notifications v1 | Email + Slack webhook for `unregistered agent`, `credential exposure`, `conflict` | Sent once per event | 2.3 | M |
+
+---
+
+## C3 — Central policies (≈ 1.5 weeks) — spec §4.6, flow §7.7
+
+**Milestone demo:** a rule set in the dashboard reaches a laptop on next heartbeat and `memnox why` shows `layer: org`.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-3.1 | Policy tables | `policies`, `policy_versions` (content, hash, author, approved_by), `policy_assignments` (org / team / runtime) | Migrations | 0.2 | S |
+| CLD-3.2 | Policy editor | Web TOML editor with the OSS parser (shared) for validation; `locked` domains toggle | Invalid policy cannot be saved | 3.1, OSS-3.1 | M |
+| CLD-3.3 | Approval workflow for policies | Draft → review → active; two-person rule optional | State machine tests | 3.2 | S |
+| CLD-3.4 | Distribution | `GET /runtimes/:id/policy` on heartbeat; ETag; runtime stores hash in `policy_versions` | Change → applied within one heartbeat | 3.3, 1.4 | M |
+| CLD-3.5 | OSS: org layer in engine | Load org policy as top layer; honor `locked`; offline keeps last | Test: project can't loosen locked rule | 3.4, OSS-3.5 | S |
+| CLD-3.6 | Native translation at scale | Org can push "apply native" for Claude Code/Cursor with backup on each runtime | Revert works fleet-wide | 3.4, OSS-3.12 | M |
+| CLD-3.7 | Web: policy coverage | Which runtimes are on which version; drift list | Page live | 3.4 | S |
+
+---
+
+## C4 — Routed approvals (≈ 1.5 weeks) — spec §3.6, flow §7.3
+
+**Milestone demo:** a developer's agent hits ASK; a platform lead approves from Slack; the action releases on the developer's machine.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-4.1 | Approval routing rules | Policy `ask` entries may name `route = ["team:platform", "user:sarah"]` | Parser + validation | 3.1 | S |
+| CLD-4.2 | Pending approvals API | Runtime posts `approval.requested`; cloud stores; `GET /approvals/pending` | Timeout mirrored from runtime | 1.2 | M |
+| CLD-4.3 | Slack app | Interactive message with Approve / Deny; identity mapped to org user | Button → resolution in < 2 s | 4.2 | L |
+| CLD-4.4 | Web: approvals inbox | List, detail (event, evidence), approve/deny | Page live | 4.2 | M |
+| CLD-4.5 | OSS: remote resolution | Runtime long-polls / receives push; first resolution wins; local prompt shows "waiting for platform" | Race test local vs remote | 4.2, OSS-4.6 | M |
+| CLD-4.6 | `authorized_by` enrichment | Set on the event from the approval | Visible in `why` and timeline | 4.5 | S |
+
+---
+
+## C5 — Graph, `who`, effective capability (≈ 2 weeks) — spec §4.2–4.3
+
+**Milestone demo:** `memnox who --resource production` lists agents with the credential path; a chain `Claude → AWS MCP → creds → Lambda → prod DB` renders as `EFFECTIVE: WRITE → Production DB`.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-5.1 | Graph tables | `resources`, `edges` (kind, first/last seen, evidence_event_ids[]), `effective_paths` | Migrations | 0.2 | S |
+| CLD-5.2 | Resource normalizer | Map repo URLs, MCP server names, credential names, cloud roles, hosts to canonical resource ids | 30 fixture inputs | 5.1 | M |
+| CLD-5.3 | Graph builder job | From events + inventories → idempotent edge upserts with evidence | Re-run produces identical graph | 5.2, 0.7 | L |
+| CLD-5.4 | Resource tags | Org marks resources `production`, `customer-data`, etc.; suggestions from names (`prod`, `customers`) require confirmation | Tag UI | 5.1 | S |
+| CLD-5.5 | Effective-path walker | Traverse credential → role → service → data store edges (from declared infra mappings + observed calls); materialize | Fixture chain from spec resolves | 5.3 | L |
+| CLD-5.6 | `who` API + CLI | `GET /who?resource=…`; OSS `memnox who --resource` and question form | Output per spec §4.2 | 5.5, OSS-2.3 | M |
+| CLD-5.7 | Web: graph view | Agent → server → credential → resource, filter by tag | Renders 500 nodes usably | 5.3 | L |
+| CLD-5.8 | Combined-capability rules (later-stage) | Rule file: e.g. `read:customer-data + write:filesystem + communication ⇒ flag "data export"`; evaluated over per-agent capability sets | 3 seed rules; flagged agents listed | 5.5 | M |
+
+---
+
+## C6 — Organizational context connectors + overlays (≈ 3 weeks) — spec §3.3, flow §7.8
+
+**Milestone demo:** an incident opens in PagerDuty; within a minute, deploys of the affected service on every laptop move ALLOW → ASK with reason `Deployment freeze active — INC-421 (Slack #incident)`.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-6.1 | Connector framework | `context_sources` table, OAuth storage (encrypted), poll/webhook scheduler, per-connector normalizer interface | Framework test with a fake connector | 0.7 | L |
+| CLD-6.2 | GitHub App | Read repos, branch protection, CODEOWNERS, PR reviews, deployments; webhook for changes | Evidence rows for a PR | 6.1 | L |
+| CLD-6.3 | Slack app (read) | Channels the org selects; message ingest with author, ts, permalink; retention setting | Evidence rows from a channel | 6.1, 4.3 | L |
+| CLD-6.4 | Jira + Linear | Issues, status, links | Evidence rows | 6.1 | M |
+| CLD-6.5 | Docs (Google Drive / Notion) | Fetch ADRs/runbooks by folder; store text + link | Evidence rows | 6.1 | M |
+| CLD-6.6 | Incident connectors | PagerDuty / incident.io / Opsgenie webhooks → `context_signal(incident, service, active)` | Signal opens and closes with incident | 6.1 | M |
+| CLD-6.7 | Signal rules | Org rules: `on incident(service) → class:external-state touching service ⇒ ask`; deploy-freeze keyword detection in Slack requires human confirm | Rule tests | 6.6 | M |
+| CLD-6.8 | Overlay distribution | Signals pushed to runtimes as short-lived overlays (TTL); OSS engine applies overlay layer | Overlay expires when signal closes | 6.7, 3.4, OSS-3.5 | M |
+| CLD-6.9 | Evidence attachment | Enrich job attaches evidence refs (PR, CODEOWNERS, ticket, Slack permalink) to events by resource + time | `why` shows evidence list | 6.2–6.5 | M |
+| CLD-6.10 | Documented-vs-configured check | Parse policy docs for approval counts / protected branches; compare with GitHub config → `policy_gaps` | Spec §4.4 row 1 | 6.2, 6.5 | M |
+
+---
+
+## C7 — Decisions, organizational answer, suggestions (≈ 3 weeks) — spec §3.1, §3.2, §3.5
+
+**Milestone demo:** WOW 9 — `memnox explain "can Claude deploy payments right now?"` returns four rows with evidence from GitHub, Jira, Slack; a suggested rule from Slack sits in the review queue and becomes policy only after a click.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-7.1 | `decisions` + `evidence_refs` tables | Statement, participants, date, reason, related refs, alternatives, outcome, status (draft/confirmed), `stale_signals[]` | Migrations | 0.2 | S |
+| CLD-7.2 | Decision extractor (model, off-hot-path) | Job over Slack/Docs: propose decision drafts with source excerpts; never auto-confirm | Precision review on 50 samples | 6.3, 6.5 | L |
+| CLD-7.3 | Web: decision review | Confirm / edit / reject drafts; link to ADR | Reviewer flow < 30 s per item | 7.2 | M |
+| CLD-7.4 | Organizational answer engine | For a parsed question: resolve agent, resource, capability (graph) + policy + signals + confirmed decisions → four rows + evidence list; **counts of sources**, no confidence label | Deterministic given the same inputs | 5.6, 6.9, 7.1 | L |
+| CLD-7.5 | OSS: `explain` org row | CLI calls cloud when enrolled; degrades gracefully offline | Output per spec §2.3 | 7.4 | S |
+| CLD-7.6 | Architecture-rule evaluation | Confirmed decisions with a `rule` field (e.g. "no direct DB access in services") compiled to policy overlays by resource/path pattern | Test: agent adds DB import → ASK with ADR evidence | 7.3, 6.8 | M |
+| CLD-7.7 | Staleness checker | Newer contradicting evidence (PR touching the subject, later discussion) → `stale_signals`; badge "possibly outdated" | Fixture test | 7.1, 6.2 | M |
+| CLD-7.8 | Suggestions | `suggestions` table; extractor proposes rules from repeated intent; review UI → approve creates draft policy_version | Approved suggestion → policy in C3 flow | 7.2, 3.3 | M |
+| CLD-7.9 | Why-was-this-allowed enrichment | For ALLOW events on tagged resources, attach the satisfied conditions (PR approved, CODEOWNER, window open) | `why --allowed` complete | 6.9 | S |
+| CLD-7.10 | "New engineer" view | Web: resource → decisions → discussions → PRs → alternatives | Page live | 7.3 | M |
+
+---
+
+## C8 — Gap analysis + authority over time (≈ 1.5 weeks) — spec §4.4–4.5
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-8.1 | Observed-behavior gap | Per written policy: share of decisions that followed it; top exception pattern (e.g. Slack approval by platform lead) | Spec §4.4 row 2 | 6.9, 3.1 | M |
+| CLD-8.2 | Implicit authorization | For agents performing actions no policy names: list the evidence that permits it (CODEOWNERS, branch rules, prior approvals, Slack) | Spec §4.4 row 3 | 7.9, 5.3 | M |
+| CLD-8.3 | `authority_series` job | Monthly external-write capability count per agent + org | Backfills from snapshots | 2.2 | S |
+| CLD-8.4 | Web: authority over time | Bar series; ratio as secondary annotation only | Page live | 8.3 | S |
+| CLD-8.5 | Unused authority (org) | Fleet-wide granted vs used; `[Propose least-privilege policy]` creates a draft | Draft opens in editor | OSS-7.9, 3.2 | M |
+| CLD-8.6 | Web: gaps dashboard | Documented vs configured vs observed, per resource | Page live | 6.10, 8.1, 8.2 | M |
+
+---
+
+## C9 — What-if simulation (≈ 1.5 weeks) — spec §4.7
+
+**Milestone demo:** WOW 10 — "what if I give Codex production access?" returns +capabilities, +external actions, conflicts, approvals required, and the list of past actions whose decision would change.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-9.1 | Simulation input model | `{agent, grant: capabilities[] | policyDiff, window}` | Validation | 5.5 | S |
+| CLD-9.2 | Replay engine | Load historical events for agent → re-run shared OSS engine with hypothetical stack → diff decisions | Pure function; identical output on repeat | 9.1, OSS-3.4 | L |
+| CLD-9.3 | Capability delta | Graph-based: new resources reachable, new external-state actions, combined-capability flags | Fixture chain | 9.1, 5.8 | M |
+| CLD-9.4 | Conflict + approval count | Policies and signals the grant would trip; approvals it would need | Counts match manual calc on fixture | 9.2 | S |
+| CLD-9.5 | `what-if` API + CLI + web | `memnox what-if "…"` (question form via shared grammar) and dashboard panel; output counts + lists, no prose | Spec §4.7 | 9.2–9.4 | M |
+| CLD-9.6 | "Apply as draft policy" | One click turns an accepted what-if into a draft policy_version | Draft created | 9.5, 3.3 | S |
+
+---
+
+## C10 — Audit, export, billing (≈ 2 weeks)
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-10.1 | Org timeline + incident view | Cross-agent timeline; `incident_id` scoping; actor-type filter | Spec §4.6 | 6.9 | M |
+| CLD-10.2 | Actor normalization | `actor_type` from runtime + CI/service tokens + human dashboard actions | Filter works | 4.6 | S |
+| CLD-10.3 | Export | Signed JSONL/CSV bundles per period; audit-field completeness check (WHO…OUTCOME) | Bundle verifies with published key | 10.1 | M |
+| CLD-10.4 | Retention + deletion | Per-org retention; org delete wipes all rows + connector tokens | Deletion test | 0.4 | M |
+| CLD-10.5 | Billing | Stripe: free (1 user), team (per seat), enterprise (self-hosted ingest later); feature flags | Paywall on 2nd seat | 0.3 | L |
+| CLD-10.6 | Admin + support tooling | Impersonation with audit, org lookup, job retry | Internal only | 0.9 | M |
+| CLD-10.7 | SAML SSO + SCIM | Via auth provider | Enterprise checkbox | 0.3 | M |
+
+---
+
+## C11 — Cloud go-live (≈ 2 weeks)
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| CLD-11.1 | Security review | Threat model, pen-test of ingest/auth/connectors, secrets at rest encrypted, RLS verified | Findings closed or accepted | all | L |
+| CLD-11.2 | Data-processing docs | DPA, subprocessors, what leaves the laptop (names only, digests) — one page | Published | 1.3 | S |
+| CLD-11.3 | Observability | Metrics, alerts on ingest lag, queue depth, connector failures; on-call runbook | Alert fires in staging drill | 0.7 | M |
+| CLD-11.4 | Load test | 100 runtimes × 10 events/s sustained; graph rebuild under load | p95 ingest < 1 s | 0.6 | M |
+| CLD-11.5 | Backups + restore drill | Daily Postgres backups; restore to staging documented and rehearsed | Drill passed | 0.1 | S |
+| CLD-11.6 | Onboarding flow | Sign up → enroll first runtime → first inventory in < 10 min, no fixtures | Timed with a new user | 1.1, 2.4 | M |
+| CLD-11.7 | Status page + support inbox | | Live | — | S |
+| CLD-11.8 | Launch | Pricing page, docs, announcement; design partners' feedback closed | Live | all | S |
+
+---
+
+## 12. Sequencing and staffing
+
+**Critical path (OSS):** M0 → M1 → M3 → M4 → M6 → M8. M2, M5, M7 can each be one developer in parallel once their dependencies land.
+
+**Critical path (Cloud):** C0 → C1 → C3 → C6 → C7. C2, C4, C5 hang off C1; C8/C9 hang off C5–C7.
+
+**With one senior + two juniors:** OSS 1.0 in roughly 3 months; cloud C0–C5 in the following 3 months; C6–C11 in the 3 after that. **Solo:** double each block and cut C5.8, C7.10, C10.7 from the first live version.
+
+**Design partners:** recruit 3 teams at M4 (proxy works); they gate C1–C4 priorities and are the source of real evidence for C6/C7 — never fixtures.
+
+**Two rules that override the schedule:**
+1. A milestone ships only when its demo works on a real, non-team machine.
+2. Any task that puts a model on the enforcement path is rejected in review, whatever the deadline.

@@ -2,8 +2,6 @@ import type { ActionEvent, AuditQuery } from '../domain/action-event';
 import type { AgentIdentity } from '../domain/agent-identity';
 import type { Approval } from '../domain/approval';
 import type { ApprovalStatus } from '../constants/approval.constants';
-import type { AuditChainVerification } from '../domain/audit-chain';
-import type { StateFact } from '../domain/state-fact';
 
 /** Storage ports — the runtime ships local adapters; any backend can implement these. */
 
@@ -21,8 +19,6 @@ export interface AuditLog {
   query(filter: AuditQuery): Promise<ActionEvent[]>;
   /** Retention sweep: drops events older than the cutoff, returns how many. */
   pruneBefore(cutoff: string): Promise<number>;
-  /** Walks the hash chain and reports the first broken link. */
-  verifyChain(): Promise<AuditChainVerification>;
 }
 
 /** Notifies humans that an approval is waiting. Failures must never affect the decision. */
@@ -47,9 +43,3 @@ export interface ApprovalStore {
  * an operator — and honoured here. Where a fact comes from is the cloud's half; a
  * runtime that cannot read one is a runtime a freeze cannot reach.
  */
-export interface StateFactStore {
-  save(fact: StateFact): Promise<void>;
-  list(): Promise<StateFact[]>;
-  /** Lifting a fact early is a decision somebody makes, so it is a removal not an expiry. */
-  remove(id: string): Promise<boolean>;
-}

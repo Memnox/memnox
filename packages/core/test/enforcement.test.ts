@@ -52,33 +52,27 @@ describe('resolveEnforcementMode', () => {
 
 describe('applyEnforcementMode', () => {
   it('applies the verdict when enforcing', () => {
-    expect(
-      applyEnforcementMode(DECISION_EFFECT.WITHHOLD, ENFORCEMENT_MODE.ENFORCE),
-    ).toEqual({
-      effect: DECISION_EFFECT.WITHHOLD,
+    expect(applyEnforcementMode(DECISION_EFFECT.DENY, ENFORCEMENT_MODE.ENFORCE)).toEqual({
+      effect: DECISION_EFFECT.DENY,
     });
   });
 
   // The whole point of monitor mode: the verdict is preserved, not applied.
-  it('withholds a block in monitor mode and reports what it would have done', () => {
-    expect(
-      applyEnforcementMode(DECISION_EFFECT.WITHHOLD, ENFORCEMENT_MODE.OBSERVE),
-    ).toEqual({
+  it('denies a block in monitor mode and reports what it would have done', () => {
+    expect(applyEnforcementMode(DECISION_EFFECT.DENY, ENFORCEMENT_MODE.OBSERVE)).toEqual({
       effect: DECISION_EFFECT.ALLOW,
-      shadowEffect: DECISION_EFFECT.WITHHOLD,
+      shadowEffect: DECISION_EFFECT.DENY,
     });
   });
 
-  it('withholds an approval requirement in monitor mode', () => {
-    expect(
-      applyEnforcementMode(DECISION_EFFECT.ESCALATE, ENFORCEMENT_MODE.OBSERVE),
-    ).toEqual({
+  it('denies an approval requirement in monitor mode', () => {
+    expect(applyEnforcementMode(DECISION_EFFECT.ASK, ENFORCEMENT_MODE.OBSERVE)).toEqual({
       effect: DECISION_EFFECT.ALLOW,
-      shadowEffect: DECISION_EFFECT.ESCALATE,
+      shadowEffect: DECISION_EFFECT.ASK,
     });
   });
 
-  it('reports nothing withheld when the verdict was already allow', () => {
+  it('reports nothing denied when the verdict was already allow', () => {
     expect(applyEnforcementMode(DECISION_EFFECT.ALLOW, ENFORCEMENT_MODE.OBSERVE)).toEqual(
       {
         effect: DECISION_EFFECT.ALLOW,
@@ -86,7 +80,7 @@ describe('applyEnforcementMode', () => {
     );
   });
 
-  it('never escalates — no mode turns an allow into a block', () => {
+  it('never asks — no mode turns an allow into a block', () => {
     for (const mode of Object.values(ENFORCEMENT_MODE)) {
       expect(applyEnforcementMode(DECISION_EFFECT.ALLOW, mode).effect).toBe(
         DECISION_EFFECT.ALLOW,
@@ -100,7 +94,7 @@ describe('isEnforcementMode', () => {
     expect(isEnforcementMode('enforce')).toBe(true);
     expect(isEnforcementMode('observe')).toBe(true);
     expect(isEnforcementMode('off')).toBe(true);
-    expect(isEnforcementMode('withhold')).toBe(false);
+    expect(isEnforcementMode('deny')).toBe(false);
     expect(isEnforcementMode(undefined)).toBe(false);
   });
 });

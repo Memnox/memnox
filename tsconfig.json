@@ -5,14 +5,8 @@
     "baseUrl": ".",
     "paths": {
       "@memnox/core": ["packages/core/src"],
-      "@memnox/discovery": ["packages/discovery/src"],
-      "@memnox/ledger": ["packages/ledger/src"],
-      "@memnox/policy-engine": ["packages/policy-engine/src"],
-      "@memnox/local-gate": ["packages/local-gate/src"],
-      "@memnox/runtime": ["packages/runtime/src"],
-      "@memnox/sdk": ["packages/sdk/src"],
-      "@memnox/mcp-firewall": ["packages/mcp-firewall/src"],
-      "@memnox/tool-hook": ["packages/tool-hook/src"]
+      "@memnox/proxy": ["packages/proxy/src"],
+      "@memnox/interceptors": ["packages/interceptors/src"]
     }
   },
   "include": ["packages/*/src", "packages/*/test"]

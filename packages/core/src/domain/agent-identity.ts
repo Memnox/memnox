@@ -18,7 +18,7 @@ export function isReadOnlyAction(action: string): boolean {
 
 export interface AgentActionStats {
   allowed: number;
-  withheld: number;
+  denied: number;
   approvalsRequested: number;
 }
 
@@ -59,6 +59,6 @@ export interface AgentIdentity {
 
 export const EMPTY_AGENT_STATS: AgentActionStats = {
   allowed: 0,
-  withheld: 0,
+  denied: 0,
   approvalsRequested: 0,
 };

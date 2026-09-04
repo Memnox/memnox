@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOOK_EVENT_NAME } from '@memnox/tool-hook';
+import { HOOK_EVENT_NAME } from '@memnox/interceptors';
 import { HOOK_MATCHER, HookInstaller, MEMNOX_HOOK_MARKER } from '../src/hook-installer';
 
 const COMMAND = '/usr/bin/node /opt/memnox/tool-hook/cli.js';

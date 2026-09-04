@@ -2,8 +2,6 @@ import type { DecisionEffect } from '../constants/decision.constants';
 import type { EnforcementMode } from '../constants/enforcement.constants';
 import type { ExecutionStatus } from '../constants/execution.constants';
 import type { RiskLevel } from '../constants/risk.constants';
-import type { ContextBlock } from './context-block';
-import type { TaintAssessment } from './taint';
 import type { TaskRef } from './task';
 
 /** The core primitive: every AI action becomes an event Memnox can rule on and prove. */
@@ -21,10 +19,6 @@ export interface ActionRequest {
   principal?: string;
   /** Facts this action relies on, so "may not do" is tellable from "should not know". */
   reads?: readonly string[];
-  /** Untrusted sources that influenced the agent's context, reported by the caller. */
-  taint?: TaintAssessment;
-  /** What the agent read, each block carrying the trust of whoever supplied it. */
-  context?: readonly ContextBlock[];
   /** What was actually asked for. Declared by the client; never inferred here. */
   task?: TaskRef;
   /** The agent's stated intent — recorded verbatim for the audit trail. */
@@ -48,7 +42,7 @@ export interface ActionRequest {
   branch?: string;
   /** LOCAL ONLY: the raw payload. The SDK strips it; `signals` travel instead. */
   arguments?: Record<string, string>;
-  /** What the local gate found. Testimony: it may escalate, never loosen. */
+  /** What the local gate found. Testimony: it may ask, never loosen. */
   signals?: string[];
 }
 
@@ -67,7 +61,6 @@ export interface ActionEvent {
   projectId?: string;
   /** Whose authority the agent drew on. Audited: "who asked for this" is the first question. */
   principal?: string;
-  taint?: TaintAssessment;
   model?: string;
   provider?: string;
   dataClassification?: string;
@@ -98,8 +91,6 @@ export interface ActionEvent {
    * did not apply.
    */
   stateVersion?: string;
-  /** Names of advisors that escalated or flagged this action. */
-  advisories: string[];
   /** Who was asked, recorded because today's rules answer a different question. */
   approvers?: string[];
   reason: string;
@@ -111,9 +102,6 @@ export interface ActionEvent {
   rollbackFailed?: boolean;
   /** The agent claimed success on something not allowed — its claim, not a measurement. */
   defiedVerdict?: true;
-  /** Tamper evidence, set by the audit log at append time (see audit-chain). */
-  prevHash?: string;
-  hash?: string;
 }
 
 export interface AuditQuery {

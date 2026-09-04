@@ -1,0 +1,116 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DECISION_EFFECT } from '@memnox/core';
+import type { Policy } from '@memnox/core';
+import { LocalGate } from '../src/index';
+
+const gate = (policies: Policy[]): LocalGate =>
+  new LocalGate(policies, { agentName: 'mcp:github' });
+
+const blockRecursiveDelete: Policy = {
+  name: 'no-rm-rf',
+  match: { actions: ['mcp.*'], arguments: { command: ['*rm -rf*'] } },
+  decision: { effect: DECISION_EFFECT.DENY, reason: 'recursive delete' },
+};
+
+const blockToolByName: Policy = {
+  name: 'no-deploy-tool',
+  match: { actions: ['mcp.deploy'] },
+  decision: {
+    effect: DECISION_EFFECT.DENY,
+    reason: 'deploys are not an agent action',
+  },
+};
+
+/** Calls the policy engine directly, so it is its own path to a verdict. */
+describe('LocalGate — a tool name dressed up to miss its rule', () => {
+  it.each([
+    ['a trailing space', 'mcp.deploy '],
+    ['a leading space', ' mcp.deploy'],
+    ['a trailing newline', 'mcp.deploy\n'],
+    ['a zero-width space', 'mcp.deploy\u200b'],
+  ])('blocks it just the same with %s', (_name, action) => {
+    const verdict = gate([blockToolByName]).evaluate({ action });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.DENY);
+  });
+
+  it('still allows a tool no rule names', () => {
+    const verdict = gate([blockToolByName]).evaluate({ action: 'mcp.read_file' });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
+describe('LocalGate — argument rules', () => {
+  it('blocks on the call arguments, which never leave this process', () => {
+    const verdict = gate([blockRecursiveDelete]).evaluate({
+      action: 'mcp.run_shell',
+      arguments: { command: 'rm -rf /srv' },
+    });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.DENY);
+    expect(verdict.reason).toContain('recursive delete');
+  });
+
+  it('names the rules it matched as signals, and nothing from the payload', () => {
+    const verdict = gate([blockRecursiveDelete]).evaluate({
+      action: 'mcp.run_shell',
+      arguments: { command: 'rm -rf /srv' },
+    });
+
+    expect(verdict.signals).toEqual(['policy:no-rm-rf']);
+  });
+
+  it('allows a call no rule matches', () => {
+    const verdict = gate([blockRecursiveDelete]).evaluate({
+      action: 'mcp.run_shell',
+      arguments: { command: 'ls' },
+    });
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
+describe('LocalGate — rules from disk', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'memnox-local-gate-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('loads the same policy file the runtime reads', async () => {
+    const file = join(dir, 'memnox.policies.yaml');
+    await writeFile(
+      file,
+      `version: 1
+policies:
+  - name: no-env-writes
+    match:
+      actions: ["file.write"]
+      arguments:
+        file_path: ["*.env"]
+    decision:
+      effect: deny
+      reason: credentials file
+`,
+      'utf8',
+    );
+
+    const loaded = await LocalGate.fromFiles([file], { agentName: 'editor-hook' });
+
+    expect(
+      loaded.evaluate({
+        action: 'file.write',
+        arguments: { file_path: 'services/api/.env' },
+      }).effect,
+    ).toBe(DECISION_EFFECT.DENY);
+    expect(loaded.rules().map((rule) => rule.name)).toEqual(['no-env-writes']);
+  });
+});

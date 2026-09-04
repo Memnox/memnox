@@ -14,7 +14,7 @@ policies:
       actions: ["database.delete", "database.drop", "database.truncate"]
       environments: ["production"]
     decision:
-      effect: withhold
+      effect: deny
       reason: No AI-initiated destructive database operations in production.
       alternative:
         action: database.query
@@ -26,7 +26,7 @@ policies:
       actions: ["deploy.*"]
       environments: ["production"]
     decision:
-      effect: escalate
+      effect: ask
       approvers: ["eng-lead"]
 
   - name: payment-code-approval
@@ -35,7 +35,7 @@ policies:
       actions: ["code.modify", "code.delete"]
       targets: ["payment/*"]
     decision:
-      effect: escalate
+      effect: ask
       approvers: ["security-team"]
 
   - name: destructive-shell-protection
@@ -44,8 +44,8 @@ policies:
       actions: ["shell.execute"]
       targets: ["*drop table*", "*drop database*", "*truncate table*", "*rm -rf /*"]
     decision:
-      effect: withhold
-      reason: Destructive shell commands are withheld for AI agents.
+      effect: deny
+      reason: Destructive shell commands are denied for AI agents.
       alternative:
         action: shell.execute
         note: Name the paths to remove and let a person run the delete.

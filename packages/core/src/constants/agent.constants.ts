@@ -11,7 +11,7 @@ export type AgentKind = (typeof AGENT_KIND)[keyof typeof AGENT_KIND];
 export const AGENT_STATUS = {
   ACTIVE: 'active',
   SUSPENDED: 'suspended',
-  /** Held read-only by quarantine: reads pass, everything else is withheld. */
+  /** Held read-only by quarantine: reads pass, everything else is denied. */
   QUARANTINED: 'quarantined',
 } as const;
 

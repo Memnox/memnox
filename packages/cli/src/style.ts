@@ -31,8 +31,8 @@ const ANSI = {
 
 const EFFECT_COLOUR: Record<string, string> = {
   [DECISION_EFFECT.ALLOW]: ANSI.GREEN,
-  [DECISION_EFFECT.WITHHOLD]: ANSI.RED,
-  [DECISION_EFFECT.ESCALATE]: ANSI.YELLOW,
+  [DECISION_EFFECT.DENY]: ANSI.RED,
+  [DECISION_EFFECT.ASK]: ANSI.YELLOW,
 };
 
 const RISK_COLOUR: Record<string, string> = {
@@ -44,8 +44,8 @@ const RISK_COLOUR: Record<string, string> = {
 
 const EFFECT_SYMBOL: Record<string, string> = {
   [DECISION_EFFECT.ALLOW]: '✓',
-  [DECISION_EFFECT.WITHHOLD]: '✗',
-  [DECISION_EFFECT.ESCALATE]: '●',
+  [DECISION_EFFECT.DENY]: '✗',
+  [DECISION_EFFECT.ASK]: '●',
 };
 
 const UNSTYLED_SYMBOL = '';

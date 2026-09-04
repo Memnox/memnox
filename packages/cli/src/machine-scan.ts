@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { validateStateFact, type StateFact } from '@memnox/core';
 import {
   discover,
   NodeMachineReader,
@@ -13,9 +12,9 @@ import {
   type MachineReader,
   type McpLister,
   type SnapshotStore,
-} from '@memnox/discovery';
-import { loadPolicyFiles, readPolicyRegistry } from '@memnox/local-gate';
-import { matchesPattern, type Policy } from '@memnox/policy-engine';
+} from '@memnox/core';
+import { loadPolicyFiles, readPolicyRegistry } from '@memnox/core';
+import { matchesPattern, type Policy } from '@memnox/core';
 
 /** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
 const MEMNOX_HOME = '.memnox';
@@ -38,7 +37,6 @@ export interface ScanSeams {
   /** Rule files the runtime would read, so "no rule covers this" is checkable offline. */
   policyFiles: () => Promise<string[]>;
   /** What is in force, read off the same disk, so a freeze binds offline answers too. */
-  stateFacts: () => Promise<StateFact[]>;
 }
 
 export function defaultScanSeams(cwd: string = process.cwd()): ScanSeams {
@@ -50,7 +48,6 @@ export function defaultScanSeams(cwd: string = process.cwd()): ScanSeams {
     projectDirs: [cwd],
     now: () => new Date().toISOString(),
     policyFiles: () => readPolicyRegistry(join(home, MEMNOX_HOME, REGISTRY_FILE)),
-    stateFacts: () => readStateFacts(join(home, MEMNOX_HOME, STATE_FACTS_FILE)),
   };
 }
 
@@ -140,15 +137,3 @@ function reaches(policy: Policy, action: string): boolean {
  * says nothing: a missing file is the first run, and every caller states separately
  * whether a rule set failed to load.
  */
-async function readStateFacts(filePath: string): Promise<StateFact[]> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(filePath, 'utf8'));
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (fact): fact is StateFact => validateStateFact(fact as StateFact).length === 0,
-    );
-  } catch {
-    // First run, or nothing has ever been declared in force on this machine.
-    return [];
-  }
-}

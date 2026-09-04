@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { McpLister } from '@memnox/discovery';
-import { registerDiscoverCommand } from '../src/commands/discover.command';
+import type { McpLister } from '@memnox/core';
+import { registerScanCommand } from '../src/commands/scan.command';
 import { registerDoctorCommand } from '../src/commands/doctor.command';
-import { registerHardenCommand } from '../src/commands/harden.command';
+import { registerProtectCommand } from '../src/commands/protect.command';
 import { runCommand } from './cli-harness';
 import {
   fakeSeams,
@@ -20,14 +20,14 @@ const MACHINE = {
   [`${HOME}/.aws/credentials`]: '[default]\naws_access_key_id = AKIAEXAMPLE',
 };
 
-describe('memnox (discover)', () => {
+describe('memnox (scan)', () => {
   it('names the agents and what they can reach right now', async () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
-      ['discover'],
+        registerScanCommand(program, context, () => fakeSeams(machine)),
+      ['scan'],
     );
 
     expect(out.text).toContain('AI AGENTS');
@@ -44,7 +44,7 @@ describe('memnox (discover)', () => {
     await expect(
       runCommand(
         (program, context) =>
-          registerDiscoverCommand(program, context, () => fakeSeams(machine)),
+          registerScanCommand(program, context, () => fakeSeams(machine)),
         ['audti'],
       ),
     ).rejects.toThrow(/unknown command "audti"/);
@@ -60,7 +60,7 @@ describe('memnox (discover)', () => {
             .command('audit')
             .description('the real one')
             .action(() => undefined);
-          registerDiscoverCommand(program, context, () => fakeSeams(machine));
+          registerScanCommand(program, context, () => fakeSeams(machine));
         },
         ['audti'],
       ),
@@ -82,8 +82,8 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => fakeSeams(machine, { lister })),
-      ['discover'],
+        registerScanCommand(program, context, () => fakeSeams(machine, { lister })),
+      ['scan'],
     );
 
     expect(out.text).toContain('3 tools');
@@ -101,8 +101,8 @@ describe('memnox (discover)', () => {
 
     await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => fakeSeams(machine, { lister })),
-      ['discover', '--no-probe'],
+        registerScanCommand(program, context, () => fakeSeams(machine, { lister })),
+      ['scan', '--no-probe'],
     );
 
     expect(started).toBe(0);
@@ -112,7 +112,7 @@ describe('memnox (discover)', () => {
    * discover showed the project's .env and doctor could not rank it, so harden wrote
    * no rule for it — the reader was told about a credential and offered no fix.
    */
-  it('doctor and harden cover the same ground discover does', async () => {
+  it('doctor and protect cover the same ground scan does', async () => {
     const withProject = FakeMachine.from({
       ...MACHINE,
       [`${PROJECT}/.env`]: 'STRIPE_KEY=sk_live_x',
@@ -121,13 +121,13 @@ describe('memnox (discover)', () => {
 
     const seen = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(
+        registerScanCommand(
           program,
           context,
           () => fakeSeams(withProject, { projectDirs: [PROJECT] }),
           here,
         ),
-      ['discover', '--json'],
+      ['scan', '--json'],
     );
     const ranked = await runCommand(
       (program, context) =>
@@ -145,8 +145,8 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
-      ['discover', '--json'],
+        registerScanCommand(program, context, () => fakeSeams(machine)),
+      ['scan', '--json'],
     );
 
     expect(out.text).not.toContain('AKIAEXAMPLE');
@@ -157,8 +157,8 @@ describe('memnox (discover)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerDiscoverCommand(program, context, () => fakeSeams(machine)),
-      ['discover'],
+        registerScanCommand(program, context, () => fakeSeams(machine)),
+      ['scan'],
     );
 
     expect(out.text).toContain('No AI agents found on this machine.');
@@ -196,7 +196,7 @@ describe('memnox doctor', () => {
   });
 });
 
-describe('memnox harden', () => {
+describe('memnox protect', () => {
   const registered: string[] = [];
   const seams = (machine: FakeMachine) => () => ({
     reader: machine,
@@ -212,12 +212,12 @@ describe('memnox harden', () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
-      (program, context) => registerHardenCommand(program, context, seams(machine)),
-      ['harden'],
+      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      ['protect'],
     );
 
     expect(out.text).toContain('PROPOSED');
-    expect(out.text).toContain('undo: memnox harden --revert');
+    expect(out.text).toContain('undo: memnox protect --revert');
     expect(out.text).toContain('Nothing was changed.');
     expect(machine.paths).not.toContain('harden-state.json');
   });
@@ -226,16 +226,16 @@ describe('memnox harden', () => {
     const machine = FakeMachine.from(MACHINE);
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerHardenCommand(program, context, seams(machine)),
+        (program, context) => registerProtectCommand(program, context, seams(machine)),
         args,
       );
 
-    const applied = await run(['harden', '--apply']);
+    const applied = await run(['protect', '--apply']);
     expect(applied.out.text).toContain('applied');
     const written = machine.paths.filter((path) => path.startsWith('policies/'));
     expect(written.length).toBeGreaterThan(0);
 
-    const reverted = await run(['harden', '--revert']);
+    const reverted = await run(['protect', '--revert']);
     expect(reverted.out.text).toContain('reverted');
     expect(machine.paths.filter((path) => path.startsWith('policies/'))).toEqual([]);
   });
@@ -252,18 +252,18 @@ describe('memnox harden', () => {
     });
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerHardenCommand(program, context, seams(machine)),
+        (program, context) => registerProtectCommand(program, context, seams(machine)),
         args,
       );
 
-    await run(['harden', '--apply']);
+    await run(['protect', '--apply']);
     const written = machine.paths.filter((path) => path.startsWith('policies/'));
     expect(written.length).toBeGreaterThan(1);
 
     const state = JSON.parse((await machine.read('harden-state.json')) ?? '[]') as {
       id: string;
     }[];
-    const reverted = await run(['harden', '--revert', String(state[0]?.id)]);
+    const reverted = await run(['protect', '--revert', String(state[0]?.id)]);
 
     expect(reverted.out.text).toContain('reverted');
     // Only the named one goes; the rest of the machine stays hardened.
@@ -278,13 +278,13 @@ describe('memnox harden', () => {
     });
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerHardenCommand(program, context, seams(machine)),
+        (program, context) => registerProtectCommand(program, context, seams(machine)),
         args,
       );
 
-    await run(['harden', '--apply']);
+    await run(['protect', '--apply']);
     const before = machine.paths.filter((path) => path.startsWith('policies/')).length;
-    const { out } = await run(['harden', '--revert', 'hs_nope']);
+    const { out } = await run(['protect', '--revert', 'hs_nope']);
 
     expect(out.text).toContain('No applied step with id hs_nope');
     expect(machine.paths.filter((path) => path.startsWith('policies/')).length).toBe(
@@ -302,8 +302,8 @@ describe('memnox harden', () => {
     registered.length = 0;
 
     await runCommand(
-      (program, context) => registerHardenCommand(program, context, seams(machine)),
-      ['harden', '--apply'],
+      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      ['protect', '--apply'],
     );
 
     const written = machine.paths.filter((path) => path.startsWith('policies/'));
@@ -320,8 +320,8 @@ describe('memnox harden', () => {
     registered.length = 0;
 
     await runCommand(
-      (program, context) => registerHardenCommand(program, context, seams(machine)),
-      ['harden'],
+      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      ['protect'],
     );
 
     expect(registered).toEqual([]);
@@ -331,8 +331,8 @@ describe('memnox harden', () => {
     const machine = FakeMachine.from({});
 
     const { out } = await runCommand(
-      (program, context) => registerHardenCommand(program, context, seams(machine)),
-      ['harden', '--revert'],
+      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      ['protect', '--revert'],
     );
 
     expect(out.text).toContain('no harden step has been applied');

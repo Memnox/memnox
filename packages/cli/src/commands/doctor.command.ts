@@ -2,15 +2,13 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
   discover,
-  environmentMismatches,
   NodeMachineReader,
   rankAgents,
   runDoctor,
   type AgentStanding,
-  type EnvironmentMismatch,
   type Finding,
   type MachineReader,
-} from '@memnox/discovery';
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 
 const SEVERITY_WIDTH = 10;
@@ -50,15 +48,9 @@ export function registerDoctorCommand(
       });
 
       const standings = rankAgents(report.findings, discovered.surfaces);
-      /* Neither half is a finding on its own. An agent that reaches production while
-         the work is happening in a local checkout is doing local work with production
-         authority, and that pair is what is worth removing. */
-      const mismatches = environmentMismatches(discovered, [cwd()]);
 
       if (options.json === true) {
-        context.out.line(
-          JSON.stringify({ ...report, agents: standings, mismatches }, null, 2),
-        );
+        context.out.line(JSON.stringify({ ...report, agents: standings }, null, 2));
         return;
       }
 
@@ -67,7 +59,7 @@ export function registerDoctorCommand(
         renderByAgent(context, standings);
         return;
       }
-      if (report.findings.length === 0 && mismatches.length === 0) {
+      if (report.findings.length === 0) {
         out.line('Nothing on this machine is reachable that should not be.');
         return;
       }
@@ -86,8 +78,6 @@ export function registerDoctorCommand(
         out.line('');
       }
 
-      renderMismatches(context, mismatches);
-
       // A decomposition of this list, granting nothing and ranking against nobody.
       out.line(
         `Risk ${report.score.total}, from ${report.findings.length} finding(s) above. ` +
@@ -97,32 +87,6 @@ export function registerDoctorCommand(
 }
 
 const AGENT_WIDTH = 16;
-
-/**
- * Least privilege, stated as the one pair a scan can actually prove: this agent is
- * working here, and it can reach that. The recommendation is remove or protect, and a
- * person chooses which — narrowing it here would be hardening nobody asked for.
- */
-function renderMismatches(
-  context: CliContext,
-  mismatches: readonly EnvironmentMismatch[],
-): void {
-  if (mismatches.length === 0) return;
-  const { out, style } = context;
-  out.line(style.bold('ENVIRONMENT MISMATCH'));
-  out.line('');
-  for (const mismatch of mismatches) {
-    out.line(`  ${mismatch.agentKind}`);
-    out.line(`  ${style.dim(`working in  ${mismatch.workingIn}`)}`);
-    for (const resource of mismatch.reaches) {
-      out.line(
-        `  ${style.warn('!')}  reaches     ${resource.id} ${style.dim(`«${resource.declaredIn}»`)}`,
-      );
-    }
-    out.line(`  ${style.dim('remove it, or protect it with: memnox harden')}`);
-    out.line('');
-  }
-}
 
 /**
  * Five agents installed on five different days, put side by side. Ranked by what is

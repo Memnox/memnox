@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { HOOK_EVENT_NAME, TOOL_ACTIONS } from '@memnox/tool-hook';
+import { HOOK_EVENT_NAME, TOOL_ACTIONS } from '@memnox/interceptors';
 
 /**
  * The entry is marked by its own status message rather than by its path: an upgrade

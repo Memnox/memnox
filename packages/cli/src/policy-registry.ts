@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { readPolicyRegistry } from '@memnox/local-gate';
+import { readPolicyRegistry } from '@memnox/core';
 
 /** One runtime serves every project, so a second repository has to join the list. */
 const CONFIG_DIR = '.memnox';

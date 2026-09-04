@@ -2,7 +2,7 @@
 export const ENFORCEMENT_MODE = {
   /** No policy evaluation at all — the action proceeds and is audited as ungoverned. */
   OFF: 'off',
-  /** Evaluate and record the real verdict, but never withhold the action. */
+  /** Evaluate and record the real verdict, but never deny the action. */
   OBSERVE: 'observe',
   /** Tell the caller what the verdict was and let it proceed anyway. */
   ADVISE: 'advise',

@@ -5,7 +5,7 @@ import {
   compareSnapshots,
   type EnvironmentChange,
   type EnvironmentSnapshot,
-} from '@memnox/discovery';
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import {
   defaultScanSeams,
