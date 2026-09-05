@@ -15,6 +15,7 @@ export * from './domain/egress-inspector';
 export * from './discovery/index';
 export * from './policy/index';
 export * from './ledger/index';
+export * from './recovery/index';
 export * from './gate/index';
 export * from './domain/action-identity';
 export * from './config/index';

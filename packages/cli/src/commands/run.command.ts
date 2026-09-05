@@ -5,9 +5,17 @@ import { homedir, release } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { delimiter } from 'node:path';
 import type { Command } from 'commander';
-import { guardFor, MEMNOX_HOME, OS_GUARD, sandboxCommand } from '@memnox/core';
+import {
+  guardFor,
+  MEMNOX_HOME,
+  MILESTONE_REASON,
+  Milestones,
+  OS_GUARD,
+  sandboxCommand,
+} from '@memnox/core';
 import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
+import { NodeGit, NodeWorktree } from '../node-git';
 
 export const SESSION_VAR = 'MEMNOX_SESSION';
 
@@ -41,6 +49,8 @@ function newSessionId(): string {
 }
 
 interface RunDeps {
+  /** Injected so a test never writes a ref into the repository it is running in. */
+  milestones?: () => Milestones;
   /** Injected so a test drives the real command body without starting a process. */
   start?: (
     command: string,
@@ -109,10 +119,16 @@ export function registerRunCommand(
       'keep a local copy of what the agent printed, so a claim can be checked against the record',
     )
     .option('--no-guard', 'start outside the kernel sandbox even when a profile exists')
+    .option('--no-milestone', 'do not keep the working tree before the agent starts')
     .action(
       async (
         command: string[],
-        options: { shell: string; transcript?: boolean; guard?: boolean },
+        options: {
+          shell: string;
+          transcript?: boolean;
+          guard?: boolean;
+          milestone?: boolean;
+        },
       ) => {
         const binary = command[0];
         if (binary === undefined) {
@@ -125,6 +141,16 @@ export function registerRunCommand(
 
         context.out.note(`session ${sessionId}`);
         context.out.note(`interceptors on PATH from ${interceptorDirFor(home)}`);
+
+        /* Taken before a single command runs, because the point is the willingness to
+           let it run unsupervised — and that only exists if the way back is already
+           there when somebody realises they need it. */
+        if (options.milestone !== false) {
+          const kept = await keepMilestone(sessionId, binary, deps);
+          if (kept !== null) {
+            context.out.note(`working tree kept as ${kept} — "memnox rewind" undoes it`);
+          }
+        }
 
         /* The kernel guard, when one was written and this platform takes it. It is a
            second line, not the gate: without it a binary that never saw a wrapper can
@@ -164,4 +190,30 @@ export function sandboxed(
   const profile = join(home, MEMNOX_HOME, 'guard', 'memnox.sb');
   if (!(seams.exists ?? existsSync)(profile)) return command;
   return sandboxCommand(profile, command);
+}
+
+/**
+ * Best effort, and quiet about it: not being in a repository is the ordinary case for
+ * somebody running an agent in a scratch directory, and it must not stop the agent.
+ */
+async function keepMilestone(
+  sessionId: string,
+  binary: string,
+  deps: RunDeps,
+): Promise<string | null> {
+  try {
+    const milestones =
+      deps.milestones === undefined
+        ? new Milestones(new NodeGit(process.cwd()), new NodeWorktree(process.cwd()))
+        : deps.milestones();
+    const taken = await milestones.take({
+      at: new Date().toISOString(),
+      reason: MILESTONE_REASON.SESSION,
+      sessionId,
+      note: `before ${binary}`,
+    });
+    return taken.id;
+  } catch {
+    return null;
+  }
 }
