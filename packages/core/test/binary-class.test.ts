@@ -39,7 +39,11 @@ describe('classifying one command from argv', () => {
   });
 
   it('names the host a request reaches, never the whole line', () => {
-    const verdict = classifyBinary('curl', ['-H', 'Authorization: Bearer sekret', 'https://api.example.com/v1/x']);
+    const verdict = classifyBinary('curl', [
+      '-H',
+      'Authorization: Bearer sekret',
+      'https://api.example.com/v1/x',
+    ]);
     expect(verdict?.target).toBe('api.example.com');
     // The header carried a credential; only the host is ever recorded.
     expect(JSON.stringify(verdict)).not.toContain('sekret');

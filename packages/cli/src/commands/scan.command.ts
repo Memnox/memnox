@@ -313,8 +313,14 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
     `${counts.policies} ${counts.policies === 1 ? 'policy' : 'policies'}.  ${counts.records} record${counts.records === 1 ? '' : 's'}.`,
   );
   out.line('');
-  out.line(`  ${style.dim('memnox doctor')}   what is risky and why`);
-  out.line(`  ${style.dim('memnox protect')}   fix it, reversibly`);
+  // Padded on the plain text, so colour codes never throw the column off.
+  const NEXT_WIDTH = 16;
+  for (const [command, what] of [
+    ['memnox doctor', 'what is risky and why'],
+    ['memnox protect', 'fix it, reversibly'],
+  ] as const) {
+    out.line(`  ${style.dim(command)}${' '.repeat(NEXT_WIDTH - command.length)}${what}`);
+  }
 }
 
 /** What one server declares, asks for and can reach — read before it is trusted. */

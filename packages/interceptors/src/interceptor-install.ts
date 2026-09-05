@@ -34,7 +34,10 @@ export async function installInterceptors(
   const installed: string[] = [];
   for (const binary of interceptedBinaries()) {
     const path = join(directory, binary);
-    await writeFile(path, scriptFor(binary, interceptBinary), { encoding: 'utf8', mode: 0o700 });
+    await writeFile(path, scriptFor(binary, interceptBinary), {
+      encoding: 'utf8',
+      mode: 0o700,
+    });
     await chmod(path, 0o700);
     installed.push(binary);
   }

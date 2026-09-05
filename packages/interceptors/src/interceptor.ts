@@ -128,7 +128,10 @@ async function askPerson(
 
 function refusal(
   verdict: BinaryVerdict,
-  decision: { reason: string; alternative?: { action: string; resource?: string; note: string } },
+  decision: {
+    reason: string;
+    alternative?: { action: string; resource?: string; note: string };
+  },
 ): string {
   const alternative = decision.alternative;
   // A refusal that names no way forward is a dead end the agent abandons the task over.
@@ -142,7 +145,11 @@ function refusal(
 }
 
 /** Where the real binary lives, found along PATH with our own directory removed. */
-export function resolveReal(binary: string, path: string, exists: (p: string) => boolean): string | null {
+export function resolveReal(
+  binary: string,
+  path: string,
+  exists: (p: string) => boolean,
+): string | null {
   for (const entry of path.split(delimiter)) {
     if (entry === '') continue;
     const candidate = join(entry, binary);

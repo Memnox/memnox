@@ -41,7 +41,10 @@ async function main(): Promise<void> {
 
   /* Hand over stdio untouched and pass the exit code straight back: anything the
      agent reads or writes must look exactly as it would have without the interceptor. */
-  const result = spawnSync(real, args, { stdio: 'inherit', env: { ...process.env, PATH: path } });
+  const result = spawnSync(real, args, {
+    stdio: 'inherit',
+    env: { ...process.env, PATH: path },
+  });
   process.exit(result.status ?? 1);
 }
 

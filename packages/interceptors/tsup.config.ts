@@ -8,12 +8,12 @@ export default defineConfig([
     clean: true,
   },
   {
+    // One entry per binary the interceptor directory and the seams install.
     entry: [
-      'src/cli.ts',
+      'src/interceptor-cli.ts',
       'src/shell-cli.ts',
       'src/git-credential-cli.ts',
       'src/egress-cli.ts',
-      'src/docker-cli.ts',
     ],
     format: ['esm'],
     banner: { js: '#!/usr/bin/env node' },

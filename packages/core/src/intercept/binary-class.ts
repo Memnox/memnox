@@ -134,7 +134,9 @@ function classifyGit(args: readonly string[]): BinaryVerdict {
     return { action: 'git.status', class: COMMAND_CLASS.NORMAL, because: 'git' };
   }
 
-  const forced = args.some((arg) => arg === '--force' || arg === '-f' || arg === '--force-with-lease');
+  const forced = args.some(
+    (arg) => arg === '--force' || arg === '-f' || arg === '--force-with-lease',
+  );
   const positional = args.filter((arg) => !arg.startsWith('-'));
   const target = positional.slice(1).join(' ');
 

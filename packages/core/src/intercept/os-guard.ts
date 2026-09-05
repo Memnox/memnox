@@ -44,7 +44,8 @@ export function guardFor(platform: string, kernelRelease: string): GuardSupport 
     }
     const supported =
       version.major > LANDLOCK_MINIMUM.major ||
-      (version.major === LANDLOCK_MINIMUM.major && version.minor >= LANDLOCK_MINIMUM.minor);
+      (version.major === LANDLOCK_MINIMUM.major &&
+        version.minor >= LANDLOCK_MINIMUM.minor);
     return supported
       ? { guard: OS_GUARD.LANDLOCK, because: `Linux ${kernelRelease} supports Landlock` }
       : {
@@ -127,6 +128,9 @@ export function landlockRuleset(policy: GuardPolicy): LandlockRuleset {
   };
 }
 
-export function sandboxCommand(profilePath: string, command: readonly string[]): string[] {
+export function sandboxCommand(
+  profilePath: string,
+  command: readonly string[],
+): string[] {
   return ['sandbox-exec', '-f', profilePath, ...command];
 }

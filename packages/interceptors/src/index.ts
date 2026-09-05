@@ -1,9 +1,5 @@
 export * from './tool-hook.constants';
-export * from './hook-input';
-export * from './tool-action';
 export * from './hook-authorizer';
-export * from './hook-decision';
-export * from './hook-session';
 export * from './hook-config';
 export * from './hook-gate-loader';
 export * from './shell-seam';
@@ -11,4 +7,4 @@ export * from './git-credential-seam';
 export * from './egress-seam';
 export * from './interceptor';
 export * from './interceptor-install';
-
+export * from './git-hooks';

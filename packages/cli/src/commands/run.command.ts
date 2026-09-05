@@ -8,11 +8,6 @@ import type { CliContext } from '../cli-context';
 
 export const SESSION_VAR = 'MEMNOX_SESSION';
 
-export interface RunEnvironment {
-  env: NodeJS.ProcessEnv;
-  sessionId: string;
-}
-
 /**
  * Everything the child needs to be governed, set as environment rather than asked of
  * the agent: PATH so the interceptors are found first, SHELL so its `Bash` tool goes through
@@ -35,11 +30,11 @@ export function environmentFor(
   };
 }
 
-export function newSessionId(): string {
+function newSessionId(): string {
   return `ses_${randomUUID().slice(0, 12)}`;
 }
 
-export interface RunDeps {
+interface RunDeps {
   /** Injected so a test drives the real command body without starting a process. */
   start?: (
     command: string,
