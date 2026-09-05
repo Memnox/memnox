@@ -97,7 +97,7 @@ export function preflightFor(intent: string, env: NodeJS.ProcessEnv = {}): Prefl
     };
   }
 
-  const subject = subjectIn(intent, verb);
+  const subject = subjectIn(intent);
   const actions = candidatesFor(verb, subject, env);
   return {
     kind: INTENT_KIND.PHRASE,
@@ -129,7 +129,7 @@ const FILLER = new Set([
   'app',
 ]);
 
-function subjectIn(intent: string, verb: QuestionVerb): string | null {
+function subjectIn(intent: string): string | null {
   const words = intent
     .toLowerCase()
     .split(/[^a-z0-9._-]+/)
@@ -140,7 +140,6 @@ function subjectIn(intent: string, verb: QuestionVerb): string | null {
   const rest = (at === -1 ? words : words.slice(at + 1)).filter(
     (word) => !FILLER.has(word),
   );
-  void verb;
   return rest[0] ?? null;
 }
 

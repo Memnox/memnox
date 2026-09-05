@@ -23,7 +23,7 @@ export function registerFreezeCommand(
   home: () => string = homedir,
   now: () => Date = () => new Date(),
 ): void {
-  const freeze = program
+  program
     .command('freeze [subject]')
     .description('Stop external-state actions for a while, then let them resume')
     .option('--for <duration>', 'how long, e.g. 2h', String(DEFAULT_FREEZE_MINUTES))
@@ -87,5 +87,4 @@ export function registerFreezeCommand(
         context.out.note(`A rule matching state "freeze:${subject}" now bites.`);
       },
     );
-  void freeze;
 }

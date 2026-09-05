@@ -2,6 +2,11 @@
 
 Every command works with no account and no network.
 
+Anywhere a flag names a stretch of time — `--since`, `--for`, `--usage`,
+`--from-usage`, `--days` — it takes the same shapes: `30m`, `2h`, `7d`. A bare
+number is read in whatever that flag is about, so `--for 30` is half an hour and
+`--days 30` is a month. `--since` also takes an ISO timestamp.
+
 ## What can act here
 
 ### `memnox scan`
@@ -109,7 +114,7 @@ ignored.
 
 | Flag | What it does |
 |---|---|
-| `--for <window>` | how long, e.g. `2h`. Required unless a default applies |
+| `--for <window>` | how long, e.g. `2h` or `3d`. Defaults to two hours |
 | `--reason <text>` | what the refusal will say |
 | `--lift` | end it early; it stays in the record rather than vanishing |
 
