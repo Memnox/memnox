@@ -144,16 +144,24 @@ export function registerRunCommand(
     );
 }
 
+interface GuardSeams {
+  exists?: (path: string) => boolean;
+  platform?: string;
+  kernel?: string;
+}
+
 /** Wraps the command in `sandbox-exec` when a profile is there and the platform takes it. */
 export function sandboxed(
   command: readonly string[],
   home: string,
   wanted: boolean,
-  exists: (path: string) => boolean = existsSync,
+  seams: GuardSeams = {},
 ): readonly string[] {
   if (!wanted) return command;
-  if (guardFor(process.platform, release()).guard !== OS_GUARD.SEATBELT) return command;
+  const platform = seams.platform ?? process.platform;
+  const kernel = seams.kernel ?? release();
+  if (guardFor(platform, kernel).guard !== OS_GUARD.SEATBELT) return command;
   const profile = join(home, MEMNOX_HOME, 'guard', 'memnox.sb');
-  if (!exists(profile)) return command;
+  if (!(seams.exists ?? existsSync)(profile)) return command;
   return sandboxCommand(profile, command);
 }

@@ -7,6 +7,7 @@ import { plainStyle } from '../src/style';
 import {
   environmentFor,
   registerRunCommand,
+  sandboxed,
   SESSION_VAR,
   transcriptPathFor,
 } from '../src/commands/run.command';
@@ -117,5 +118,36 @@ describe('the transcript tap', () => {
 
   it('names the session in the file, so a claim joins the actions it was made about', () => {
     expect(transcriptPathFor(HOME, 'ses_abc')).toContain('ses_abc.log');
+  });
+});
+
+describe('starting an agent inside the kernel sandbox', () => {
+  const mac = { platform: 'darwin', kernel: '23.5.0', exists: () => true };
+
+  it('wraps the command when a profile was written', () => {
+    expect(sandboxed(['claude'], '/home/me', true, mac)).toEqual([
+      'sandbox-exec',
+      '-f',
+      '/home/me/.memnox/guard/memnox.sb',
+      'claude',
+    ]);
+  });
+
+  /* No profile means nobody asked for one. Starting the sandbox anyway would deny
+     nothing and only add a process between the person and their agent. */
+  it('leaves the command alone when no profile was written', () => {
+    expect(
+      sandboxed(['claude'], '/home/me', true, { ...mac, exists: () => false }),
+    ).toEqual(['claude']);
+  });
+
+  it('leaves the command alone on a platform with no seatbelt', () => {
+    expect(
+      sandboxed(['claude'], '/home/me', true, { ...mac, platform: 'linux' }),
+    ).toEqual(['claude']);
+  });
+
+  it('leaves the command alone when the person said not to', () => {
+    expect(sandboxed(['claude'], '/home/me', false, mac)).toEqual(['claude']);
   });
 });

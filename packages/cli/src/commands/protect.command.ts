@@ -684,7 +684,7 @@ async function runHooks(context: CliContext, repoDir: string): Promise<void> {
 const GUARD_DIR = 'guard';
 const GUARD_PROFILE = 'memnox.sb';
 
-export function guardProfilePath(home: string): string {
+function guardProfilePath(home: string): string {
   return join(home, MEMNOX_HOME, GUARD_DIR, GUARD_PROFILE);
 }
 
