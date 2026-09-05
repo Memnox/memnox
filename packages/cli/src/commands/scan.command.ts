@@ -17,6 +17,7 @@ import {
   TOOL_EFFECT,
   type DiscoveryReport,
   type McpTool,
+  verbAction,
   verbTableFor,
   type Policy,
   type ServerReview,
@@ -580,10 +581,7 @@ export function reachingActions(report: DiscoveryReport): string[] {
   const cliActions = report.authenticated.flatMap((cli) => {
     const table = verbTableFor(cli.name);
     if (table === null) return [];
-    return externalStateVerbs(table).map((verb) => {
-      const head = verb.match.split(/\s+/)[0] ?? verb.match;
-      return `${cli.name}.${head}`;
-    });
+    return externalStateVerbs(table).map((verb) => verbAction(cli.name, verb));
   });
   return [...tools, ...cliActions];
 }

@@ -10,6 +10,7 @@ import {
   MEMNOX_HOME,
   type BinaryVerdict,
   type HoldService,
+  verbAction,
   verbTableFor,
   type LocalGate,
 } from '@memnox/core';
@@ -181,9 +182,8 @@ export function verdictFor(binary: string, args: readonly string[]): BinaryVerdi
   const table = verbTableFor(binary);
   if (table !== null) {
     const verb = classOf(table, args);
-    const head = verb.match.split(/\s+/)[0] ?? verb.match;
     return {
-      action: `${binary}.${head === '**' ? 'run' : head}`,
+      action: verbAction(binary, verb),
       class: verb.class as BinaryVerdict['class'],
       because: verb.note ?? `${binary} ${verb.match}`,
       ...(args[0] === undefined || args[0].startsWith('-') ? {} : { target: args[0] }),

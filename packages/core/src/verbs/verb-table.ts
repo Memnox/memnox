@@ -128,6 +128,32 @@ export function destructiveVerbs(table: VerbTable): Verb[] {
   return table.verbs.filter((verb) => verb.class === TOOL_CLASS.DESTRUCTIVE);
 }
 
+/**
+ * The single action name for a verb, used by the scan, `explain`, `protect`, the
+ * interceptor and `policy test`. One function, because a rule written from one screen
+ * that failed to match at another would be a gate nobody could trust.
+ */
+export function verbAction(cli: string, verb: Verb): string {
+  /* Flags stay in the name. `push --force` and `push origin main` are different
+     actions, and collapsing them would make a rule about force-pushing deny every
+     push — which is how a gate stops being used. */
+  const words = verb.match
+    .split(/\s+/)
+    .filter((word) => word !== '' && !word.includes('*'))
+    .map((word) => word.replace(/^-+/, '').toLowerCase());
+  return words.length === 0 ? `${cli}.run` : `${cli}.${words.join('-')}`;
+}
+
+/** The action a command line resolves to, whether or not a table covers it. */
+export function actionForCommand(
+  cli: string,
+  table: VerbTable,
+  argv: readonly string[],
+): string {
+  const matched = matchVerb(table, argv);
+  return matched === null ? `${cli}.unknown` : verbAction(cli, matched.verb);
+}
+
 export function hasTag(verb: Verb, tag: VerbTag): boolean {
   return (verb.tags ?? []).includes(tag);
 }

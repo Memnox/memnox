@@ -44,8 +44,9 @@ describe('the interceptor runtime', () => {
   });
 
   it('denies what a rule denies, and names a way forward', async () => {
+    // Precise actions, so a rule about force-pushing names force-pushing.
     const outcome = await ruleOnCommand('git', ['push', '--force'], {
-      gate: gate(DECISION_EFFECT.DENY, 'git.push'),
+      gate: gate(DECISION_EFFECT.DENY, 'git.push-force'),
       log,
     });
     expect(outcome.allowed).toBe(false);

@@ -14,7 +14,7 @@ version = 1
 [[policies]]
 name = "git-deny"
 [policies.match]
-actions = ["git.push"]
+actions = ["git.push*"]
 [policies.decision]
 effect = "deny"
 reason = "it rewrites shared history"
@@ -67,8 +67,32 @@ describe('memnox policy test', () => {
   });
 
   it('takes a namespaced action too, the way a git hook calls it', async () => {
-    const out = await run(['policy', 'test', 'git.push', '-f', await rules()]);
+    const out = await run(['policy', 'test', 'git.push-force', '-f', await rules()]);
     expect(out.text).toContain('DENY');
+  });
+
+  /* Actions are precise and rules are patterns: a force push is its own action, so a
+     rule about force-pushing cannot accidentally deny every push. */
+  it('separates a force push from an ordinary one', async () => {
+    const precise = `
+version = 1
+[[policies]]
+name = "force-only"
+[policies.match]
+actions = ["git.push-force"]
+[policies.decision]
+effect = "deny"
+reason = "it rewrites shared history"
+`;
+    const path = join(await mkdtemp(join(tmpdir(), 'memnox-pt2-')), 'p.toml');
+    await writeFile(path, precise);
+
+    expect(
+      (await run(['policy', 'test', 'git push --force', '-f', path])).text,
+    ).toContain('DENY');
+    expect(
+      (await run(['policy', 'test', 'git push origin main', '-f', path])).text,
+    ).toContain('ALLOW');
   });
 
   it('asks about a destructive command rather than denying it', async () => {

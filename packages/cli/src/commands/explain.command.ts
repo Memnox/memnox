@@ -3,6 +3,9 @@ import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import {
   actionForVerb,
+  hasTag,
+  VERB_TAG,
+  verbTableFor,
   classifyActionClass,
   inventoryOf,
   LocalGate,
@@ -11,13 +14,16 @@ import {
   traceCapability,
   type CapabilityInventory,
   type CapabilityTrace,
+  type AuthenticatedCli,
+  type DiscoveryReport,
   type ParsedQuestion,
+  type VerbTable,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
-const LABEL_WIDTH = 12;
+const LABEL_WIDTH = 14;
 
 function row(context: CliContext, label: string, value: string): void {
   context.out.line(`  ${label.padEnd(LABEL_WIDTH)}${value}`);
@@ -153,6 +159,14 @@ export function registerExplainCommand(
       const seams = buildSeams(cwd());
       const { report, snapshot } = await scanMachine(seams, { probe: false });
 
+      // An authenticated CLI is the thing people ask about first, so it is checked
+      // before the tool index: "vercel" means the CLI, not a tool named vercel.
+      const cli = report.authenticated.find((each) => each.name === subject);
+      if (cli !== undefined && !subject.includes(' ')) {
+        renderCli(context, cli, report, options.json === true);
+        return;
+      }
+
       // A sentence is a question; a bare word is a capability. Nothing is inferred.
       if (subject.trim().includes(' ')) {
         const { question, error } = parseQuestion(subject);
@@ -190,4 +204,58 @@ export function registerExplainCommand(
       }
       renderTrace(context, trace);
     });
+}
+
+/**
+ * The verb table shown here is the one enforcement reads, so what this promises is
+ * exactly what `protect` will gate. A screen that listed capabilities the gate did not
+ * actually recognise would be worse than no screen.
+ */
+function renderCli(
+  context: CliContext,
+  cli: AuthenticatedCli,
+  report: DiscoveryReport,
+  asJson: boolean,
+): void {
+  const table = verbTableFor(cli.name) as VerbTable;
+  if (asJson) {
+    context.out.line(JSON.stringify({ cli, verbs: table.verbs }, null, 2));
+    return;
+  }
+
+  const { out, style } = context;
+  out.line('');
+  out.line(`${style.bold(cli.name)}  ${style.dim('· authenticated CLI')}`);
+  out.line('');
+
+  const agents = report.agents.map((agent) => agent.kind);
+  row(context, 'Reachable by', agents.length === 0 ? 'no agent here' : agents.join(', '));
+  row(context, 'Credential', cli.via);
+  if (cli.detail !== undefined) row(context, '', cli.detail);
+  if (cli.productionLooking !== undefined) {
+    // A guess from a name stays a guess all the way into the screen.
+    row(context, '', style.warn(`"${cli.productionLooking}" is named like production`));
+  }
+  out.line('');
+  out.line('  Can');
+
+  const width = Math.max(...table.verbs.map((verb) => verb.match.length)) + 2;
+  for (const verb of table.verbs) {
+    const tags = [
+      verb.class,
+      ...(hasTag(verb, VERB_TAG.PRODUCTION) ? ['production'] : []),
+      ...(hasTag(verb, VERB_TAG.SECRETS) ? ['secrets'] : []),
+    ].join(' · ');
+    const marked = verb.class === 'destructive' ? style.warn(tags) : style.dim(tags);
+    out.line(`    ${verb.match.padEnd(width)}${marked}`);
+    if (verb.note !== undefined) {
+      out.line(`    ${''.padEnd(width)}${style.dim(verb.note)}`);
+    }
+  }
+
+  out.line('');
+  out.line(
+    `  ${style.dim(`memnox protect --for ${cli.name}`)}   put the dangerous ones behind ask or deny`,
+  );
+  out.line('');
 }

@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import {
+  actionForCommand,
   classifyBinary,
   DECISION_EFFECT,
   LocalGate,
-  normalizeShellCommand,
+  verbTableFor,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
@@ -13,6 +14,13 @@ interface TestOptions {
   file?: string;
   agent: string;
   target?: string;
+}
+
+/** Quotes kept together, order preserved: this is argv as the kernel would hand it over. */
+function splitCommand(input: string): string[] {
+  return (input.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((word) =>
+    word.replace(/^["']|["']$/g, ''),
+  );
 }
 
 /**
@@ -32,11 +40,23 @@ function requestFor(
     };
   }
 
-  const segment = normalizeShellCommand(input).segments[0] ?? input;
-  const argv = segment.split(/\s+/).filter((word) => word !== '');
+  /* Split in order. `normalizeShellCommand` sorts flags ahead of positionals, which
+     is right for spotting a destructive pattern in a shell string and wrong here: argv
+     order is what a verb pattern matches against. */
+  const argv = splitCommand(input);
   const binary = argv[0] ?? input;
-  const classified = classifyBinary(binary, argv.slice(1));
+  const args = argv.slice(1);
 
+  // The verb table first, exactly as the interceptor resolves it.
+  const table = verbTableFor(binary);
+  if (table !== null) {
+    return {
+      action: actionForCommand(binary, table, args),
+      ...(options.target === undefined ? {} : { target: options.target }),
+    };
+  }
+
+  const classified = classifyBinary(binary, args);
   return {
     action: classified === null ? 'shell.execute' : classified.action,
     ...(options.target !== undefined

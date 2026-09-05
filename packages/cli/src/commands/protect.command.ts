@@ -31,6 +31,11 @@ import {
   type PolicyDomain,
   type NativeSettings,
   POLICY_FILE_EXTENSION,
+  TOOL_CLASS,
+  verbAction,
+  verbTableFor,
+  verbTableNames,
+  type Policy,
 } from '@memnox/core';
 import { installInterceptors, interceptorDirFor } from '@memnox/interceptors';
 import { registerPolicyFile } from '../policy-registry';
@@ -109,6 +114,7 @@ export function registerProtectCommand(
       '--interceptors',
       'install the PATH wrappers, so shell and git commands meet the rules too',
     )
+    .option('--for <name>', 'write rules for one CLI or MCP server only')
     .option('--interactive', 'walk the five domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
@@ -119,6 +125,7 @@ export function registerProtectCommand(
       async (options: {
         apply?: boolean;
         revert?: boolean | string;
+        for?: string;
         interceptors?: boolean;
         interactive?: boolean;
         yes?: boolean;
@@ -144,6 +151,10 @@ export function registerProtectCommand(
               'Verdicts now bite. "memnox protect --observe" puts it back.',
             );
           }
+          return;
+        }
+        if (options.for !== undefined) {
+          await runForCli(context, options.for);
           return;
         }
         if (options.interceptors === true) {
@@ -423,4 +434,85 @@ async function runInterceptors(context: CliContext): Promise<void> {
   out.note(
     `Undo with "memnox uninstall". Nothing outside ${interceptorDirFor(home)} was touched.`,
   );
+}
+
+/**
+ * One CLI, from its own verb table. Denying the credential *file* while allowing the
+ * CLI is the distinction that makes this adoptable: the tool keeps working, and the
+ * agent cannot read the key out from under it.
+ */
+async function runForCli(context: CliContext, name: string): Promise<void> {
+  const table = verbTableFor(name);
+  if (table === null) {
+    throw new Error(
+      `No verb table for "${name}". Known: ${verbTableNames().join(', ')}.`,
+    );
+  }
+
+  const rules: Policy[] = [];
+  const destructive = table.verbs.filter((verb) => verb.class === TOOL_CLASS.DESTRUCTIVE);
+  const external = table.verbs.filter((verb) => verb.class === TOOL_CLASS.WRITE);
+
+  if (destructive.length > 0) {
+    rules.push(ruleFor(name, 'deny', destructive, 'these do not come back'));
+  }
+  if (external.length > 0) {
+    rules.push(ruleFor(name, 'ask', external, 'somebody else sees the result'));
+  }
+
+  const paths = table.credential.filter((source) => source.startsWith('~'));
+  if (paths.length > 0) {
+    rules.push({
+      name: `${name}-credential-deny`,
+      description: `${name} keeps working; the agent just cannot read the key.`,
+      match: {
+        actions: ['filesystem.read'],
+        targets: paths.flatMap((path) => [
+          path.replace('~', '**'),
+          `${path.replace('~', '**')}/**`,
+        ]),
+      },
+      decision: {
+        effect: DECISION_EFFECT.DENY,
+        reason: `reading ${name}'s credential is not needed to use ${name}`,
+        alternative: { action: name, note: `run ${name} instead of reading its key` },
+      },
+    } as unknown as Policy);
+  }
+
+  const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
+  await writePolicyDocumentFile(path, { version: 1, policies: rules });
+  await registerPolicyFile(homedir(), path);
+
+  const { out, style } = context;
+  out.line('');
+  for (const rule of rules) out.line(`  ${rule.decision.effect.padEnd(6)}${rule.name}`);
+  out.line('');
+  out.line(`Wrote ${rules.length} rule(s) for ${name} to ${path}.`);
+  out.note(
+    `${style.bold(name)} keeps working — only reading its credential file is denied.`,
+  );
+}
+
+function ruleFor(
+  cli: string,
+  effect: string,
+  verbs: readonly { match: string; alternative?: string }[],
+  because: string,
+): Policy {
+  const first = verbs[0];
+  return {
+    name: `${cli}-${effect}`,
+    match: {
+      actions: verbs.map((verb) => verbAction(cli, verb as never)),
+    },
+    decision: {
+      effect,
+      reason: `${cli}: ${because}`,
+      alternative: {
+        action: cli,
+        note: first?.alternative ?? 'ask somebody, or change this rule',
+      },
+    },
+  } as unknown as Policy;
 }

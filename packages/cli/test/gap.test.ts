@@ -81,10 +81,7 @@ describe('the gap', () => {
   });
 
   it('reads as an answer on a machine with nothing on it', () => {
-    const empty = measureGap(
-      report({ surfaces: [], authenticated: [] } as never),
-      [],
-    );
+    const empty = measureGap(report({ surfaces: [], authenticated: [] } as never), []);
     expect(empty.total).toBe(0);
     expect(gapLines(empty)[0]).toContain('0 capabilities');
   });
