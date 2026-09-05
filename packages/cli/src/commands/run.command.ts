@@ -11,13 +11,12 @@ import {
   Milestones,
   OS_GUARD,
   sandboxCommand,
+  SESSION_VAR,
 } from '@memnox/core';
 import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import { guardProfilePath, transcriptPathFor } from '../memnox-paths';
 import { NodeGit, NodeWorktree } from '../node-git';
-
-export const SESSION_VAR = 'MEMNOX_SESSION';
 
 /**
  * Everything the child needs to be governed, set as environment rather than asked of

@@ -57,11 +57,14 @@ function describe(message: JsonRpcMessage): string {
  */
 export class FirewallSession {
   private readonly listRequestIds = new Set<MessageId>();
-  /** Open tool calls, so a reply can be matched to the call that asked for it. */
-  /** The verdict rides with the call, so its result joins the same decision. */
+  /**
+   * Open tool calls, so a reply can be matched to the call that asked for it. The
+   * verdict rides along because the row is written when the outcome is known, and by
+   * then the decision that allowed it is several messages behind.
+   */
   private readonly openCalls = new Map<
     MessageId,
-    { call: ToolCall; decisionId?: string }
+    { call: ToolCall; verdict: CallVerdict }
   >();
 
   constructor(private readonly deps: FirewallSessionDeps) {}
@@ -82,18 +85,15 @@ export class FirewallSession {
     if (verdict.effect === DECISION_EFFECT.ASK)
       verdict = await this.askPerson(call, verdict);
     if (isAllowed(verdict)) {
-      if (id !== null) {
-        this.openCalls.set(id, {
-          call,
-          ...(verdict.decisionId === undefined ? {} : { decisionId: verdict.decisionId }),
-        });
-      }
-      this.record(call, undefined, verdict);
+      /* The row waits for the result, so one call is one row carrying what came back.
+         A notification gets no reply, so nothing would ever arrive to write it. */
+      if (id === null) this.record(call, verdict, undefined);
+      else this.openCalls.set(id, { call, verdict });
       return this.forward(message);
     }
 
     this.deps.log(`denied tools/call "${call.name}": ${verdict.reason}`);
-    this.record(call, undefined, verdict);
+    this.record(call, verdict, undefined);
     this.deps.channel.toClient(
       serializeMessage(denial(message.id, verdict.reason, verdict.alternative)),
     );
@@ -153,7 +153,7 @@ export class FirewallSession {
        recorded and framed rather than removed: silently editing a payload is a bug the
        agent cannot see and the reader cannot audit. */
     const result = recordResult(message);
-    this.record(call, result, { decisionId: open.decisionId });
+    this.record(call, open.verdict, result);
     if (result.containsInstruction) {
       this.deps.log(
         `tool result for "${call.name}" carried instruction-shaped content; it was quoted, not obeyed`,
@@ -164,8 +164,8 @@ export class FirewallSession {
 
   private record(
     call: ToolCall,
+    verdict: CallVerdict,
     result: ReturnType<typeof recordResult> | undefined,
-    verdict?: { decisionId?: string },
   ): void {
     const sink = this.deps.record;
     if (sink === undefined) return;
@@ -173,9 +173,10 @@ export class FirewallSession {
       server: this.serverName,
       tool: call.name,
       argsDigest: digestArguments(call.arguments),
-      ...(verdict === undefined || verdict.decisionId === undefined
-        ? {}
-        : { decisionId: verdict.decisionId }),
+      effect: verdict.effect,
+      reason: verdict.reason,
+      ...(verdict.rule === undefined ? {} : { rule: verdict.rule }),
+      ...(verdict.decisionId === undefined ? {} : { decisionId: verdict.decisionId }),
       ...(result === undefined ? {} : { result }),
     });
   }

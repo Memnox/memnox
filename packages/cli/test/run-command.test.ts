@@ -8,8 +8,8 @@ import {
   environmentFor,
   registerRunCommand,
   sandboxed,
-  SESSION_VAR,
 } from '../src/commands/run.command';
+import { SESSION_VAR } from '@memnox/core';
 import { transcriptPathFor } from '../src/memnox-paths';
 
 const HOME = '/home/dev';

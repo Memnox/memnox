@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { LocalGate } from '@memnox/core';
+import type { EventSink, LocalGate } from '@memnox/core';
 import {
   LocalGateAuthorizer,
   UngovernedAuthorizer,
@@ -7,6 +7,8 @@ import {
 } from './call-authorizer';
 import { FirewallSession, type FirewallChannel } from './firewall-session';
 import { LineBuffer } from './json-rpc';
+import { recordToLedger, type LedgerContext } from './ledger';
+import type { McpCallRecord } from './result-guard';
 import { ToolFilter } from './tool-filter';
 
 export interface FirewallOptions {
@@ -20,6 +22,16 @@ export interface FirewallOptions {
   /** Loading is the caller's job because it reads files; see loadLocalGate. */
   gate?: LocalGate;
   log?: (message: string) => void;
+  /** The MCP client this wraps, for the row. Never a credential. */
+  agent?: string;
+  /**
+   * Where rows go. Opening it reads a disk, so it is the caller's job for the same
+   * reason the gate is — and absent means no recording, so a test writes nothing to
+   * the developer's own ledger by forgetting.
+   */
+  ledger?: EventSink;
+  /** Supplied so a row's time is the caller's to fix in a test. */
+  now?: () => Date;
 }
 
 /** How the proxy reaches the process table and the client stream. */
@@ -36,9 +48,11 @@ const defaultSpawn = (command: string, args: string[]): ChildProcess =>
 export class McpFirewall {
   private readonly session: FirewallSession;
   private readonly log: (message: string) => void;
+  private readonly ledger: EventSink | null;
   private child: ChildProcess | null = null;
 
   constructor(private readonly options: FirewallOptions) {
+    this.ledger = options.ledger ?? null;
     // stderr is the safe side channel — stdout carries the JSON-RPC stream.
     this.log =
       options.log ?? ((message) => process.stderr.write(`[memnox] ${message}\n`));
@@ -52,11 +66,29 @@ export class McpFirewall {
       channel: this.buildChannel(),
       log: this.log,
       server: options.serverName,
-      /* No ledger sink: the reporter this called was dropped when the packages
-         collapsed, and the empty function left behind read as recording. A proxied
-         call is therefore ruled on but not written, so `memnox timeline` shows the
-         shell and git seams and not this one. See docs/threat-model.md. */
+      // Every call reaches the ledger once, when its outcome is known.
+      record: (call) => this.write(call),
     });
+  }
+
+  /**
+   * One row per call, written where the verdict is already applied so a failure here
+   * can only lose a row — never a decision, and never the JSON-RPC stream.
+   */
+  private write(call: McpCallRecord): void {
+    const sink = this.ledger;
+    if (sink === null) return;
+    const now = this.options.now ?? (() => new Date());
+    recordToLedger(sink, call, now().toISOString(), this.ledgerContext);
+  }
+
+  private get ledgerContext(): LedgerContext {
+    return {
+      ...(this.options.sessionId === undefined
+        ? {}
+        : { sessionId: this.options.sessionId }),
+      ...(this.options.agent === undefined ? {} : { agent: this.options.agent }),
+    };
   }
 
   /** Spawn, stream, and exit are parameters — this class's only ambient dependencies. */

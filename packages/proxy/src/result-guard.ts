@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { DecisionEffect } from '@memnox/core';
 import type { JsonRpcMessage } from './json-rpc';
 
 /**
@@ -22,6 +23,15 @@ export interface McpCallRecord {
   tool: string;
   /** Hashed, not stored raw: a session replays without keeping what was in it. */
   argsDigest: string;
+  /**
+   * The verdict, carried on the record rather than left to the writer to guess. Without
+   * it a row could say a call happened and not whether it was allowed to, which is the
+   * one thing the ledger exists to answer.
+   */
+  effect: DecisionEffect;
+  reason: string;
+  /** The rule that decided, by name. Absent means nothing matched, and says so. */
+  rule?: string;
   decisionId?: string;
   result?: McpResultRecord;
 }

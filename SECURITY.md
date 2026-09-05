@@ -34,6 +34,7 @@ Anything that breaks one of the runtime's guarantees:
 | A secret value never leaves the process that read it | a credential value reaching a report, a snapshot, a ledger row, or any output |
 | The ledger is append-only | a recorded event altered or removed without the database refusing it |
 | Removal is complete | something Memnox installed surviving `memnox uninstall` |
+| Every governed action is recorded | an action that was ruled on leaving no row behind |
 
 A `tools/call` reaching the wrapped server after the MCP proxy denied it is in
 scope, as is a shell line that reaches a binary after the seam denied it.

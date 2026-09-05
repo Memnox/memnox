@@ -6,6 +6,7 @@ import {
   DECISION_EFFECT,
   isBrowserLauncher,
   readOverlays,
+  SESSION_VAR,
   splitCommandLine,
   SqliteEventStore,
   urlArgumentIn,
@@ -51,9 +52,9 @@ async function main(): Promise<void> {
     ...(gate === null ? {} : { gate }),
     overlays,
     env: process.env,
-    ...(process.env['MEMNOX_SESSION'] === undefined
+    ...(process.env[SESSION_VAR] === undefined
       ? {}
-      : { sessionId: process.env['MEMNOX_SESSION'] }),
+      : { sessionId: process.env[SESSION_VAR] }),
     log,
   });
 
@@ -85,9 +86,9 @@ async function main(): Promise<void> {
       reason: outcome.reason ?? 'denied',
       ...(outcome.rule === undefined ? {} : { rule: outcome.rule }),
       at: new Date().toISOString(),
-      ...(process.env['MEMNOX_SESSION'] === undefined
+      ...(process.env[SESSION_VAR] === undefined
         ? {}
-        : { sessionId: process.env['MEMNOX_SESSION'] }),
+        : { sessionId: process.env[SESSION_VAR] }),
     });
     process.exit(1);
   }
@@ -99,9 +100,9 @@ async function main(): Promise<void> {
     if (url !== null) {
       const seam = new BrowserSeam({
         ...(gate === null ? {} : { gate }),
-        ...(process.env['MEMNOX_SESSION'] === undefined
+        ...(process.env[SESSION_VAR] === undefined
           ? {}
-          : { sessionId: process.env['MEMNOX_SESSION'] }),
+          : { sessionId: process.env[SESSION_VAR] }),
       });
       const visit = await seam.navigate(url);
       if (!visit.allowed) {
@@ -144,9 +145,9 @@ async function handAndRecord(
     at: new Date().toISOString(),
     exitCode: status,
     durationMs: Date.now() - started,
-    ...(process.env['MEMNOX_SESSION'] === undefined
+    ...(process.env[SESSION_VAR] === undefined
       ? {}
-      : { sessionId: process.env['MEMNOX_SESSION'] }),
+      : { sessionId: process.env[SESSION_VAR] }),
   });
   process.exit(status);
 }

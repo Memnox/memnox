@@ -13,6 +13,8 @@ export interface CallVerdict {
   alternative?: { action: string; resource?: string; note: string };
   /** The verdict this came from, so a proxied call joins its decision in the ledger. */
   decisionId?: string;
+  /** The rule that decided, by name, so `why` does not answer "none matched". */
+  rule?: string;
 }
 
 /** Decides whether one tool call may reach the wrapped server. */
@@ -46,12 +48,14 @@ export class LocalGateAuthorizer implements CallAuthorizer {
       arguments: call.arguments,
       ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
     });
+    const decided = verdict.matchedPolicies[0];
     return {
       effect: verdict.effect,
       reason: verdict.reason,
       signals: verdict.signals,
       // A local refusal names its alternative too, or offline is a dead end.
       ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
+      ...(decided === undefined ? {} : { rule: decided.name }),
     };
   }
 }

@@ -4,6 +4,13 @@ import {
 } from '../constants/enforcement.constants';
 
 export const MEMNOX_HOME = '.memnox';
+
+/**
+ * Set by `memnox run` and read by every seam, so one agent's actions group into one
+ * session in the timeline. Three packages spelled this themselves; a typo in any of
+ * them would have scattered a session silently.
+ */
+export const SESSION_VAR = 'MEMNOX_SESSION';
 export const CONFIG_FILE = 'config.toml';
 
 /** Observe-first: a runtime that denied on the first run would be uninstalled by lunch. */

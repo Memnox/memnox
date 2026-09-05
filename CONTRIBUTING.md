@@ -81,7 +81,8 @@ commented-out block, never open a file with a banner. Anything longer belongs in
 
 **5. An empty function body is a lie about what the code does.** If a seam is not
 wired, say so where it would have been wired and in the docs. The MCP proxy went a
-release recording nothing behind a comment that said every call reached the ledger.
+release recording nothing behind a comment that said every call reached the ledger,
+and every test passed the whole time.
 
 ## Two things that are rejected whatever the deadline
 

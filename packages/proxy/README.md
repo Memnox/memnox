@@ -31,9 +31,13 @@ server does on its own once a call is allowed through. A governed agent with an
 unwatched side channel is worse than an ungoverned one, so the blind spots are a
 constant in the code.
 
-**Proxied calls are not written to the ledger.** The reporter that did this was
-dropped when the packages were consolidated. `memnox timeline` therefore shows the
-shell and git seams and not this one — see `docs/threat-model.md`.
+**Every call reaches the ledger once**, when its outcome is known: a refusal as it is
+refused, an allowed call when its result comes back carrying what came back. One call
+is one row, so `memnox timeline`, `why` and `trace` answer about MCP calls the same way
+they answer about the shell. The arguments never reach the row — a digest does.
+
+Opening the ledger is the caller's job, like loading the gate: `cli.ts` does it, so a
+test that forgets writes nothing to the developer's own history.
 
 ## Environment
 
