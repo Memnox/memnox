@@ -1,430 +1,137 @@
-<div align="center">
+<p align="center">
+  <img src="assets/logo.png" alt="Memnox" width="96">
+</p>
 
-<img src="assets/logo.png" alt="Memnox" width="120" height="120">
+<h1 align="center">Memnox</h1>
 
-[Documentation](docs/) • [Quickstart](docs/getting-started.md) • [Concepts](docs/concepts.md) • [Changelog](CHANGELOG.md)
+<p align="center">
+  <strong>See what your AI agents can actually reach. Then decide what they may do.</strong>
+</p>
 
-<!-- Static badges render before the first publish. After publishing, swap the first two for:
-     [![CI](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/memnox/memnox-runtime/actions/workflows/ci.yml)
-     [![npm](https://img.shields.io/npm/v/memnox?label=memnox)](https://www.npmjs.com/package/memnox) -->
+<p align="center">
+  No account. No network. Nothing leaves your machine.
+</p>
 
-[![memnox](https://img.shields.io/badge/memnox-v0.5.2-orange)](packages/cli)
-[![@memnox/sdk](https://img.shields.io/badge/%40memnox%2Fsdk-v0.5.2-orange)](packages/sdk)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
+---
 
-</div>
-
-# Memnox
-
-Memnox gives your AI agents a deterministic policy gate, human approvals, tamper-evident audit, delegated authority, and prompt-injection defense — so you can let agents act on real systems without hoping they behave.
-
-**A refusal names what to use instead**, so the agent finishes the task under constraint rather than abandoning it and leaving you to blame the tool.
-
-This is the Memnox runtime monorepo. It contains:
-
-- [`memnox`](packages/cli): the CLI — set up, observe, tune, enforce, and approve from your shell
-- [`@memnox/sdk`](packages/sdk): the TypeScript SDK
-- [`@memnox/runtime`](packages/runtime): the decision gateway and HTTP API you run locally or for a team
-- [`@memnox/mcp-firewall`](packages/mcp-firewall): a transparent MCP proxy, so every `tools/call` is gated
-- **Adapters** for MCP clients, OpenAI Agents, LangChain, and [more](docs/governing-agents.md)
-
-## What it does
-
-AI agents now write files, run shell commands, and call APIs on your behalf. Memnox sits between those agents and your systems, and decides on every action before it runs: **allow, withhold, or escalate to a person.**
-
-```
-AI Agent  ──▶  Memnox Runtime  ──▶  Your Systems
-                    │
-        Identity → Policy → Decision → Audit
-```
-
-Three things make that decision worth trusting.
-
-**It is deterministic.** There is no LLM in the decision path, so the same input always produces the same decision. Security decisions need guarantees rather than probabilities.
-
-**It is a gate, not a worker.** It answers *"is this allowed, and who authorizes it?"* and never does the work itself. Memnox reads an action request and decides on it; it never generates, edits, or commits anything, and runs no sandbox. Governing an agent and being an agent do not belong in the same trust boundary.
-
-**It leaves proof.** Every decision appends one event to a hash-chained audit log, so you can replay any session and show exactly what was allowed, what was stopped, and under which rule.
-
-## Start with no account at all
-
-Before any rules, any login and any network call, one question is worth
-answering: **what on this machine is already able to act, and what can it reach?**
-
-```bash
+```sh
 npx memnox
 ```
+
+That reads the agent configs on your laptop, asks each MCP server what it holds, and
+prints what is reachable from where. On most machines one line is a surprise:
 
 ```
 AI AGENTS               claude-code, claude-desktop, cursor, codex-cli
 MCP CLIENTS             claude-code, cursor
+MCP SERVERS             github, filesystem, postgres
+TOOLS                   git, docker, kubectl, psql
 
 REACHABLE FROM AN AGENT RIGHT NOW
 
-  !  ~/.ssh/id_ed25519         3 agents
-  !  ~/.docker/config.json     3 agents
-  !  /var/run/docker.sock      3 agents
+  !  ~/.ssh/id_ed25519          3 agents
+  !  ~/.aws/credentials         3 agents
+  !  network                    4 agents
+     unrestricted
 
 11 execution surfaces.
-
-  memnox doctor   what is risky and why
-  memnox harden   fix it, reversibly
 ```
 
-Nothing is transmitted. That is the only reason this is safe to run on a laptop
-holding production credentials, and it is why the first four things Memnox does
-need no account.
+Nobody granted that. It accumulated.
 
-Finding a credential means opening the file it lives in — so the value stays in
-the process that read it. What is stored is a path, a kind and a hash, and
-`--json` lists every file it opened, so the tool that inspects your credentials
-can itself be inspected.
+## What this is
 
-`memnox doctor` ranks that into findings, each naming the one change that closes
-it. `memnox harden` writes those changes, and **prints the undo before it runs**.
+Three questions, answered from your own disk:
 
-## What changed while you were not looking
+| Question | Command |
+|---|---|
+| What can act here, and what can it reach? | `memnox scan` |
+| What changed since last time? | `memnox diff`, `memnox watch` |
+| May this action proceed? | `memnox protect`, `memnox policy test` |
 
-Agent configuration has become permanent infrastructure. A server is added once,
-for one afternoon's task, and nothing in any of these tools carries a review
-date. Every scan Memnox takes is kept, so the next one has something true to
-compare against — still with no account and nothing transmitted.
+And afterwards: `memnox timeline` for what happened, `memnox why` for why it was
+decided that way.
 
-```bash
-memnox diff       # what moved since the last scan, and which way
-memnox watch      # keep the inventory current and report what arrives
-memnox trace <tool>   # which server, which file granted it, and when
+## Governing an agent
+
+```sh
+memnox protect                 # propose reversible steps; changes nothing
+memnox protect --apply         # write them; the undo is printed first
+memnox mcp wrap                # route every MCP server through the proxy
+memnox run -- claude           # start the agent behind the gate
 ```
 
-```
-CHANGES SINCE  2026-09-01T09:04:11.522Z
-
-  + stripe «server»            14 tools · 5 write · 1 destructive
-      ~/.config/mcp.json
-  + ~/.aws/credentials «resource»   1 → 3 agents
-  - linear «server»            removed
-
-3 changes widen authority, 1 narrows it
-```
-
-A change carries a direction, because a list that mixed a new credential with a
-removed one is a list nobody can act on. And **`memnox readiness`** answers the
-question an agent gets wrong about itself — *can it actually deploy?* — from the
-credentials, the tooling and the reach on the machine, plus the rule that still
-refuses.
-
-## Quickstart
-
-```bash
-npx memnox setup
-```
-
-That one command scaffolds a policy file from what it detects in your repository, registers a local agent, registers the MCP server (Model Context Protocol — how AI assistants connect to external tools) so your agent can ask about rules before it acts, and starts the runtime. **Restart your agent and it is governed.**
-
-New to this? [Concepts and vocabulary](docs/concepts.md) explains agents, actions, approvals, and the rest in five minutes.
+A refusal always names a way forward:
 
 ```
-Wrote starter policies to memnox.policies.yaml (project: acme-checkout)
-Detected: payments, database migrations, CI/CD, infrastructure as code
-Packs: production-safety, terminal-safety, payments, money-movement, data-privacy, supply-chain
+DENY  git.push origin main
+  reason      main is shared, and a force push loses somebody's work
+  rule        no-force-push-to-main  (project layer)
+  declared in memnox.policies.yaml:12
+
+  Instead:  git.push a branch
+            Push a branch and open a PR.
 ```
 
-The first run **observes without blocking**, because a rule you have not read yet should not wedge your agent on minute one.
+An agent told only "no" abandons the task. One told what to use instead finishes it.
 
-Ask it something before your agent does. This needs no traffic and no waiting:
+## It starts in observe
 
-```bash
-memnox check shell.execute "rm -rf /"
+A tool that denies something important on its first day gets uninstalled on its first
+day. Observe records the real verdict and applies nothing:
+
+```sh
+memnox config get mode         # observe
+memnox timeline                # look at a few days
+memnox protect --enforce       # when the verdicts look right
 ```
 
-```
-Decision : ALLOW
-Risk     : critical
-Reason   : Recursive force-delete is withheld from agents.
-Policies : recursive-delete-protection
-Shadow   : withhold (this environment is only being observed)
-```
+## Three promises
 
-That rule was scaffolded from your repository, nothing was withheld to produce
-the answer, and the last line is what enforcing would have done. Then watch it
-against real work:
+**No model decides anything.** Every verdict comes from a rule table and a matcher.
+A model is not consulted, so a prompt cannot talk one around.
 
-```bash
-memnox status   # is it on, what is in force, what would it have stopped
-memnox audit    # every decision, newest first
-```
+**A secret value never leaves the process that read it.** What is stored is a path, a
+kind and a fingerprint. The event schema refuses a digest field long enough to be a
+payload.
 
-```
-Runtime   : http://127.0.0.1:7466
-Policies  : 10 (version e852ac2d63d0)
-Credential: stored (config)
-Decisions : 214 recent
-Waiting   : 1 approval(s)
-Observed  : 9 would have been stopped if enforcing
+**It comes off cleanly.** `memnox uninstall` removes the interceptors, the hooks and
+the wrapping. `--purge` takes the history and rules too. A tool that cannot be removed
+is one people never install.
+
+## Install
+
+```sh
+npm install -g memnox     # or just use npx
 ```
 
-That last line is the number to watch, because it tells you whether enforcing is safe yet. When the decisions look right, re-run as `memnox setup --enforce`.
-
-Everything runs on your machine. No account, no API key, and no network call.
-
-**→ [Full walkthrough: observe, tune, enforce, and the daily approval loop](docs/getting-started.md)**
-
-## The commands that answer with your own environment
-
-Nothing below uses demo data or a hosted account. Every number comes from your rules, your agent, and your trail.
-
-**`memnox test`** — fire real dangerous actions at your own gate and see which ones it stops. It is read-only by default: nothing is recorded and no action is taken.
-
-```
-  PASS  WITHHELD  Wipe a directory tree with rm -rf
-        shell.execute "rm -rf /" — destructive-shell-protection
-  PASS  ESCALATED Deploy to production unattended
-        deploy.release "api" — production-deploy-approval
-  GAP   ALLOWED   Force-push over shared git history
-        repository.force_push "main" — no rule your organization wrote covers this
-
-Result
-  11 capabilities tested
-  4 withheld, 1 escalated to a person, 6 allowed
-
-  5 of these your agent can do right now, unattended:
-    - Rewrite a credential file
-    - Force-push over shared git history
-```
-
-It exits non-zero when something got through, so it belongs in CI. Add `--record` to put the run in the audit trail as a replayable session.
-
-**`memnox rules <action> [target]`** — what governs one action, and how far the rules that catch it reach.
-
-```
-Governed by
-  policy  production-database-protection — withholds
-          also governs database.drop, database.truncate
-  signal  behavior-guard — requires approval
-          4 withheld attempts in the last 10 minutes — agent is probing policy boundaries
-
-Who can authorise it
-  team-lead
-
-Observed
-  1 of the last 11 audited actions — 1 withheld, 0 escalated, 0 allowed
-```
-
-**`memnox why <eventId> --evidence`** — the evidence behind one recorded decision, link by link, with no model involved. Only what the record actually carries is ticked.
-
-```
-  Requested   shell.execute rm -rf /
-       ↓
-  Rules       destructive-shell-protection
-       ↓
-  Decision    WITHHOLD
-
-Evidence
-  ✓ agent identity    local-editor (f7652c84…)
-  · human principal   not stated by the caller
-  ✓ tamper evidence   chained — 000000000000… → b67f3c788bd1…
-  · reported outcome  never reported
-```
-
-**`memnox why <decisionId>`** — the same decision in five lines, read back off the record: source, resource, authority, rule, outcome. Every line cites the rule version or the context block it came from. Nothing here is generated, because an explanation a model wrote afterwards is a plausible story about a decision, which is worse than none.
-
-**`memnox learn`** — after a day of real work, what each agent was permitted, what it actually used, and what it never needed. Rendered as a policy file in the format a person writes.
-
-```
-  You granted this agent 14 action(s) and it used 27% of them.
-
-  From 7 day(s), 31 session(s), covering 96% of its traffic.
-
-  used            filesystem.read, repository.read
-  never touched   cloud.write, database.delete
-  tried, refused  filesystem.read .env  4×
-```
-
-Least privilege written from behaviour rather than from imagination. The window, the sessions and the coverage ride in a comment at the top of the file it writes, where they cannot be dropped in the retelling — four days of one developer's work is not a policy for a team, and a proposal that hid how little it saw would be a trap.
-
-**`memnox explain "<question>"`** — can this agent do this, right now. The answer separates what is technically possible from what is organizationally permitted and says plainly which is which. The question is read by matching an agent that is on this machine and an action namespace that exists; it refuses rather than guessing, because no model reads it.
-
-```
-can claude deploy production right now?
-  read as: claude-code · deploy · production
-
-TECHNICALLY         yes
-  ✓   a shell to run it in
-  ✓   a deploy tool on PATH
-  ✓   credentials it can reach
-
-ORGANIZATIONALLY    not right now
-  ✕   production-deploy-approval requires a person
-
-  → ESCALATE
-```
-
-**`memnox who --resource production`** — which agents on this machine reach a class of resource, answered from reachability rather than from a spreadsheet somebody maintains. Every row carries the file that proved it. This machine only: the same question across a fleet needs machines this one cannot see.
-
-**`memnox evidence`** — what this repository already states about itself, what it already enforces, and the distance between the two. Normative sentences out of `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` and your decision log, verbatim and with their line, against the `CODEOWNERS` entries and git hooks that actually run.
-
-```
-POLICY GAP
-
-  documented   Production changes must carry two approvals.
-               SECURITY.md:14
-  enforced     nothing on this disk
-
-  branch protection and required reviews live in the forge, not on this disk
-```
-
-A stated rule is evidence a rule can match on. It permits nothing on its own — the moment text an agent can reach can permit an action, every document in the repository becomes a way to write policy.
-
-**`memnox diff --trend`** — how far authority has travelled across every scan kept here, with each increase attached to the server that caused it and the file that launched it. No single change is alarming; the direction of travel is.
-
-**`memnox collisions`** — two agents inside the same file, and two agents building the same thing. Both read out of your own ledger, because both agents act through seams that recorded what they touched.
-
-```
-⚠ CONCURRENT WORK
-
-  src/payments.ts
-
-    claude-code     writing   2026-08-31T11:50:00.000Z
-    codex           writing   2026-08-31T11:56:00.000Z
-
-  One file, two agents, no shared awareness.
-```
-
-It reports the collision. It does not open the diff and decide which agent is right — that is code review, a different product with a different buyer, and out of scope permanently.
-
-## What you actually get, in the order you get it
-
-Each step is worth something on its own. Nothing below needs the step after it.
-
-| When | What you run | What you did not have before |
-|---|---|---|
-| Minute 0 | `npx memnox` | A true list of what can act on this machine and what it can reach. No account, nothing transmitted. |
-| Minute 1 | `memnox doctor` · `harden` | The worst of it closed, every step reversible, and the undo printed before it ran. |
-| Minute 2 | `memnox setup` | Rules scaffolded from your own repository, and an agent that is governed the moment you restart it. |
-| Minute 3 | `memnox test` | Proof, against your own gate, of which dangerous capabilities it actually stops — and which it does not. |
-| Hour 1 | `memnox check` · `why` | A refusal your agent can act on, because it names what to use instead, and an explanation that reads the same a year later. |
-| Day 1 | `memnox audit` · `replay` | A hash-chained record of every decision, replayable session by session. |
-| Week 1 | `memnox learn` | The sentence nobody else can produce about your setup: *you granted this agent everything and it used twenty-seven percent of it.* |
-| Week 2 | `memnox coverage` · `collisions` | How much of what your agents do is really governed, weighted by risk — and where two of them are inside the same file, or building the same thing twice. |
-| When it matters | `memnox kill` · `panic` | One command stops an agent everywhere, and tells you every machine it could not reach. |
-
-The order is not a funnel. **The first four rows need no account, no cloud and no network**, which is architecture rather than a free tier: if a capability works on one laptop with no login, putting it behind one would be the mistake people notice first.
-
-## Beyond one machine
-
-The runtime governs the agents on your laptop or in your cluster, free and Apache-2.0, forever. It answers one question completely: **does this action break a rule?**
-
-There is a second question it cannot answer, because the answer is not in your repository. *Nothing forbids this refund, and it is still somebody's to authorize.* Who owns this system. What the company already decided last quarter. How much of the evidence this particular agent is entitled to see. Those are facts about an organization, gathered from systems you didn't write, and they are what **Memnox Cloud** holds. It is free for one person.
-
-The two compose in one direction only: the runtime's refusal is final and the organization never widens it. The organization may only tighten an allow into an escalation — the case no policy file can express.
-
-That half lives in a different repository. `VISION.md` §08 to §10 is where it arrives, and this runtime ships nothing that pretends to answer it in the meantime.
-
-## Use it from code
-
-```ts
-import { MemnoxClient } from '@memnox/sdk';
-
-const memnox = new MemnoxClient({ baseUrl: 'http://127.0.0.1:7466', token: agentToken });
-
-// Inspect the decision yourself…
-const decision = await memnox.check({ action: 'deploy.service', environment: 'production' });
-
-// …or wrap the dangerous work, so it only runs if the runtime allows it.
-await memnox.guard({ action: 'code.modify', target: 'payment/checkout.ts' }, async () => {
-  await applyChanges();
-});
-```
-
-Rules are plain YAML that you commit and review like any other code:
-
-```yaml
-- name: payment-code-approval
-  match:
-    actions: ["code.modify"]
-    targets: ["payment/*"]
-  decision:
-    effect: escalate
-    approvers: ["security-team"]
-```
-
-**→ [Writing policies](docs/policies.md)**
+Node 20 or newer, on macOS or Linux. On Windows, run it inside WSL —
+[ADR 0001](docs/adr/0001-windows-support.md) says why.
 
 ## Documentation
 
-| Guide | What it covers |
-|---|---|
-| [Concepts and vocabulary](docs/concepts.md) | New here? The mental model and every term the other guides assume |
-| [What can already act on this machine](docs/discovering-your-machine.md) | Discovery, doctor, harden, and the drift commands — watch, diff, trace, readiness. No account, no network |
-| [Getting started](docs/getting-started.md) | From nothing to a governed agent, then observing, tuning, and enforcing |
-| [Governing your agents](docs/governing-agents.md) | MCP clients, SDK callers, and agent frameworks. How an agent asks what the rules are |
-| [Writing policies](docs/policies.md) | YAML rules, quorum, time windows, argument matching, and multi-repo projects |
-| [How a decision is made](docs/how-it-works.md) | The five-step pipeline, approvals, provenance, and the platform API |
-| [Learning from behaviour](docs/learning-from-behaviour.md) | A week of real work becomes a policy file you read, edit and commit |
-| [Operating](docs/operating.md) | Coverage, containment, and what you hand an auditor |
-| [Deployment](docs/deployment.md) | One process, one machine, containers, audit verification, and metrics |
-| [Troubleshooting](docs/troubleshooting.md) | The failure modes people actually hit |
-| [Architecture](ARCHITECTURE.md) | How each layer maps onto the code, and what the system deliberately does not do |
+- [Quickstart](docs/quickstart.md)
+- [Commands](docs/commands.md) — every command and flag
+- [Policies](docs/policies.md) — the rule file
+- [Risk bands](docs/risk-bands.md) — how a band is decided, rule by rule
+- [Event schema](docs/event-schema.md) — the frozen v1 row
+- [Threat model](docs/threat-model.md) — including where it would fail
+- [FAQ](docs/faq.md) — starting with "does it call an LLM?" (no)
 
-## Packages
+## What it deliberately does not do
 
-This is a monorepo. Each package is one layer, and the two at the top have zero dependencies.
+No code review. No diff scanning. No risk score — a single number is unarguable, and
+an unarguable number is one nobody acts on. There are counts by severity and a band
+that names every rule that fired.
 
-| Package | Purpose |
-|---------|---------|
-| [`@memnox/core`](packages/core) | Domain types, decision constants, and store ports. Zero dependencies. |
-| [`@memnox/policy-engine`](packages/policy-engine) | Deterministic policy evaluation and risk classification. Zero dependencies. |
-| [`@memnox/discovery`](packages/discovery) | What can act on this machine, what it reaches, and reversible harden steps. Zero dependencies. |
-| [`@memnox/tool-hook`](packages/tool-hook) | The local seams, starting with the PreToolUse hook |
-| [`@memnox/runtime`](packages/runtime) | The gateway, the HTTP API with RBAC, and the local file stores |
-| [`@memnox/ledger`](packages/ledger) | The local record: usage against grant, unused grants, lineage, coverage, behaviour drift, collisions |
-| [`@memnox/mcp-firewall`](packages/mcp-firewall) | Transparent MCP proxy, so every `tools/call` goes through the runtime |
-| [`@memnox/local-gate`](packages/local-gate) | In-process gate, so a call's arguments never leave the machine |
-| [`@memnox/sdk`](packages/sdk) · [`memnox`](packages/cli) | TypeScript client, and the CLI |
+Memnox rules on an action an agent says it intends to take. It does not do the work,
+and it has no opinion about yours.
 
 ## Contributing
 
-Contributions are welcome, and the fastest way in is to run the test suite and read one package.
+[CONTRIBUTING.md](CONTRIBUTING.md). Every change ships with a test, and
+`pnpm typecheck && pnpm test && pnpm deadcode` has to pass.
 
-```bash
-npm install
-npm test           # vitest runs against source, so there is no build step
-npm run build      # every package, through tsup
-```
+## Licence
 
-```
-packages/          one package per layer
-docs/              guides
-examples/          ready-to-use policy files and a governed agent
-```
-
-Before opening a pull request, these four must pass. CI enforces them plus the build, a publish dry run, and the five SDK suites:
-
-```bash
-npm run format && npm run typecheck && npm test && npm run deadcode
-```
-
-A few rules keep the codebase coherent: the decision path stays deterministic, no `any`, no magic values, and every behavior change ships with a test. New escalation logic is an `ActionAdvisor`, which may only tighten a decision and must never crash. [CONTRIBUTING.md](CONTRIBUTING.md) explains why each rule exists and shows how to test without processes or sockets.
-
-## Design principles
-
-**Deterministic core.** No LLM, no network calls, and no randomness in the decision path. Intelligence can draft and explain, and it never enforces.
-
-**Fail closed.** Unknown identity, unreadable state, or ambiguous input produces a withhold rather than a guess.
-
-**Everything auditable.** A decision that cannot be proven afterwards did not happen.
-
-**Small, inspectable pieces.** This runtime governs what AI does in your environment, so you should be able to read every line of it.
-
-**Ports over lock-in.** Storage sits behind small interfaces, the local adapters are plain JSON and JSONL files, and any backend can implement them.
-
-## Support
-
-- [Documentation](docs/) for guides, and [troubleshooting](docs/troubleshooting.md) when something breaks
-- [Open an issue](https://github.com/memnox/memnox-runtime/issues) for bugs and feature requests
-- `security@memnox.dev` for policy bypasses and audit-tampering findings. Never a public issue; see [SECURITY.md](SECURITY.md)
-
-## License
-
-[Apache-2.0](LICENSE)
+Apache-2.0. See [LICENSE](LICENSE).
