@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { invokedAs, realPath, resolveReal, ruleOnCommand } from './interceptor';
+import { invokedFor, realPath, resolveReal, ruleOnCommand } from './interceptor';
 import { loadHookGate } from './hook-gate-loader';
 import { readHookConfig } from './hook-config';
 import { log } from './seam-runtime';
@@ -12,8 +12,15 @@ import { log } from './seam-runtime';
  * to the real binary with our directory taken off PATH.
  */
 async function main(): Promise<void> {
-  const binary = invokedAs(process.argv[1] ?? 'memnox-intercept');
-  const args = process.argv.slice(2);
+  const invocation = invokedFor(process.argv);
+  if (invocation === null) {
+    process.stderr.write(
+      'memnox-intercept is run through the wrappers in ~/.memnox/bin, not directly.\n' +
+        'Usage: memnox-intercept <binary> [args...]\n',
+    );
+    process.exit(2);
+  }
+  const { binary, args } = invocation;
   const home = homedir();
 
   const config = await readHookConfig(process.env, home);

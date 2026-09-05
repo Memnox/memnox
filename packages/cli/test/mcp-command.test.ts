@@ -8,10 +8,19 @@ import { RecordedOutput } from '../src/cli-output';
 import { plainStyle } from '../src/style';
 import { registerMcpCommand } from '../src/commands/mcp.command';
 
-async function run(args: string[], home: string): Promise<RecordedOutput> {
+async function run(
+  args: string[],
+  home: string,
+  proxyPresent = true,
+): Promise<RecordedOutput> {
   const out = new RecordedOutput();
   const program = new Command();
-  registerMcpCommand(program, new CliContext(out, plainStyle), () => home);
+  registerMcpCommand(
+    program,
+    new CliContext(out, plainStyle),
+    () => home,
+    () => proxyPresent,
+  );
   await program.parseAsync(args, { from: 'user' });
   return out;
 }
@@ -109,5 +118,26 @@ describe('memnox mcp wrap', () => {
     const home = await machine();
     const out = await run(['mcp', 'unwrap'], home);
     expect(out.text).toContain('nothing was changed');
+  });
+});
+
+describe('before it touches a single config', () => {
+  it('refuses when the proxy is not on PATH, because wrapping would stop the agent starting', async () => {
+    const home = await machine();
+    const before = await readFile(join(home, '.claude.json'), 'utf8');
+
+    await expect(run(['mcp', 'wrap'], home, false)).rejects.toThrow(/not on PATH/);
+    expect(await readFile(join(home, '.claude.json'), 'utf8')).toBe(before);
+  });
+
+  it('says how to fix it rather than only that it failed', async () => {
+    await expect(run(['mcp', 'wrap'], await machine(), false)).rejects.toThrow(
+      /npm install -g memnox/,
+    );
+  });
+
+  it('still shows a dry run, which changes nothing and so is always safe', async () => {
+    const out = await run(['mcp', 'wrap', '--dry-run'], await machine(), false);
+    expect(out.text).toContain('Nothing was changed.');
   });
 });

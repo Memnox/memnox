@@ -1,6 +1,6 @@
 {
   "name": "memnox",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Memnox CLI \u2014 run the trust runtime, manage policies, inspect the audit trail.",
   "keywords": [
     "ai-agents",
@@ -26,7 +26,12 @@
   },
   "type": "module",
   "bin": {
-    "memnox": "dist/index.js"
+    "memnox": "dist/index.js",
+    "memnox-mcp-proxy": "dist/bin/mcp-proxy.js",
+    "memnox-shell": "dist/bin/shell.js",
+    "memnox-intercept": "dist/bin/intercept.js",
+    "memnox-git-credential": "dist/bin/git-credential.js",
+    "memnox-egress": "dist/bin/egress.js"
   },
   "engines": {
     "node": ">=20"

@@ -53,9 +53,20 @@ export interface InterceptDeps {
   log: (message: string) => void;
 }
 
-/** The name the interceptor was invoked as, which is how one binary serves every interceptor. */
-export function invokedAs(argv0: string): string {
-  return basename(argv0);
+/** Our own name. Nothing resolved to this may ever be exec'd — that is the fork bomb. */
+export const INTERCEPT_BINARY = 'memnox-intercept';
+
+/**
+ * The wrapper passes the binary it stands for as the first argument, so one executable
+ * serves every entry in the directory. Reading it from argv[1] instead would read our
+ * own path, classify us, and exec us again — which is a fork bomb, not a gate.
+ */
+export function invokedFor(
+  argv: readonly string[],
+): { binary: string; args: string[] } | null {
+  const binary = argv[2];
+  if (binary === undefined || basename(binary) === INTERCEPT_BINARY) return null;
+  return { binary: basename(binary), args: [...argv.slice(3)] };
 }
 
 /**
@@ -150,9 +161,13 @@ export function resolveReal(
   path: string,
   exists: (p: string) => boolean,
 ): string | null {
+  /* Never our own executable: a second line under `realPath`, because one stray PATH
+     entry there would otherwise mean a process that spawns itself without end. */
+  if (basename(binary) === INTERCEPT_BINARY) return null;
   for (const entry of path.split(delimiter)) {
     if (entry === '') continue;
     const candidate = join(entry, binary);
+    if (basename(candidate) === INTERCEPT_BINARY) continue;
     if (exists(candidate)) return candidate;
   }
   return null;

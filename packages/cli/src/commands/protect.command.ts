@@ -32,6 +32,7 @@ import {
   type NativeSettings,
   POLICY_FILE_EXTENSION,
 } from '@memnox/core';
+import { installInterceptors, interceptorDirFor } from '@memnox/interceptors';
 import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
@@ -104,6 +105,10 @@ export function registerProtectCommand(
       '--revert [id]',
       'undo one applied step, or every one this machine applied when no id is given',
     )
+    .option(
+      '--interceptors',
+      'install the PATH wrappers, so shell and git commands meet the rules too',
+    )
     .option('--interactive', 'walk the five domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
@@ -114,6 +119,7 @@ export function registerProtectCommand(
       async (options: {
         apply?: boolean;
         revert?: boolean | string;
+        interceptors?: boolean;
         interactive?: boolean;
         yes?: boolean;
         observe?: boolean;
@@ -138,6 +144,10 @@ export function registerProtectCommand(
               'Verdicts now bite. "memnox protect --observe" puts it back.',
             );
           }
+          return;
+        }
+        if (options.interceptors === true) {
+          await runInterceptors(context);
           return;
         }
         if (options.interactive === true || options.yes === true) {
@@ -388,4 +398,29 @@ async function runInteractive(
   out.line('');
   out.line(`Wrote ${policies.length} rule(s) to ${path}.`);
   out.note('Open it — it is yours to edit. Test one with "memnox policy test".');
+}
+
+/** The binary every wrapper execs. Shipped by the CLI package, so it is beside us. */
+const INTERCEPT_BINARY = 'memnox-intercept';
+
+/**
+ * PATH is the whole mechanism, and we deliberately do not edit anybody's shell
+ * profile: the directory is printed and `memnox run` sets it for the agent it starts.
+ * A tool that silently rewrote your `.zshrc` is one you would not trust twice.
+ */
+async function runInterceptors(context: CliContext): Promise<void> {
+  const home = homedir();
+  const report = await installInterceptors(home, INTERCEPT_BINARY);
+  const { out, style } = context;
+
+  out.line(`Installed ${report.installed.length} interceptor(s) in ${report.directory}`);
+  out.line(`  ${report.installed.join(', ')}`);
+  out.line('');
+  out.line('They only bite when that directory comes first on PATH:');
+  out.line(`  ${style.bold('memnox run -- <your agent>')}   sets it for that agent`);
+  out.line(`  ${style.dim(report.pathLine)}   sets it for your shell, if you want that`);
+  out.line('');
+  out.note(
+    `Undo with "memnox uninstall". Nothing outside ${interceptorDirFor(home)} was touched.`,
+  );
 }

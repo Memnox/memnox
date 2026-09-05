@@ -1,6 +1,6 @@
 {
   "name": "@memnox/proxy",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Transparent MCP proxy \u2014 stdio or remote HTTP \u2014 that routes every tools/call through the Memnox runtime before it reaches the server.",
   "keywords": [
     "mcp",
@@ -34,7 +34,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./cli": "./dist/cli.js"
   },
   "engines": {
     "node": ">=20"

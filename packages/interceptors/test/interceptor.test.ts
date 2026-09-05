@@ -6,7 +6,8 @@ import { DECISION_EFFECT, HOLD_ANSWER, HoldService, LocalGate } from '@memnox/co
 import {
   installInterceptors,
   interceptorDirFor,
-  invokedAs,
+  INTERCEPT_BINARY,
+  invokedFor,
   realPath,
   removeInterceptors,
   resolveReal,
@@ -82,9 +83,33 @@ describe('the interceptor runtime', () => {
     expect(JSON.stringify({ digest: outcome.argsDigest })).not.toContain('sekret');
   });
 
-  it('knows which name it was invoked as, since one binary serves every entry', () => {
-    expect(invokedAs('/home/dev/.memnox/bin/git')).toBe('git');
-    expect(invokedAs('rm')).toBe('rm');
+  it('takes the binary from the argument the wrapper passes, not from its own path', () => {
+    const argv = [
+      '/usr/bin/node',
+      '/usr/local/bin/memnox-intercept',
+      'git',
+      'push',
+      '-f',
+    ];
+    expect(invokedFor(argv)).toEqual({ binary: 'git', args: ['push', '-f'] });
+  });
+
+  /* Reading the name from argv[1] read our own path, classified us, and exec'd us
+     again — a fork bomb rather than a gate. Both halves are guarded. */
+  it('refuses to run for itself, which would spawn itself without end', () => {
+    expect(invokedFor(['node', '/x/memnox-intercept'])).toBeNull();
+    expect(
+      invokedFor(['node', '/x/memnox-intercept', 'memnox-intercept', 'rm']),
+    ).toBeNull();
+  });
+
+  it('never resolves its own executable as the real binary', () => {
+    const always = (): boolean => true;
+    expect(resolveReal(INTERCEPT_BINARY, '/usr/bin', always)).toBeNull();
+    // Even when a stray PATH entry holds one, it is skipped rather than exec'd.
+    expect(resolveReal('git', '/usr/bin', (p) => p === '/usr/bin/git')).toBe(
+      '/usr/bin/git',
+    );
   });
 });
 

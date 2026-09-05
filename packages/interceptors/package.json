@@ -1,6 +1,6 @@
 {
   "name": "@memnox/interceptors",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "The local seams \u2014 a PreToolUse hook, a shell wrapper, a git credential helper, an egress proxy and a Docker socket gate \u2014 that route what an agent does through Memnox before it happens.",
   "keywords": [
     "hooks",
@@ -38,11 +38,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./cli": "./dist/cli.js",
-    "./shell": "./dist/shell-cli.js",
-    "./git-credential": "./dist/git-credential-cli.js",
-    "./egress": "./dist/egress-cli.js",
-    "./docker": "./dist/docker-cli.js"
+    "./interceptor-cli": "./dist/interceptor-cli.js",
+    "./shell-cli": "./dist/shell-cli.js",
+    "./git-credential-cli": "./dist/git-credential-cli.js",
+    "./egress-cli": "./dist/egress-cli.js"
   },
   "engines": {
     "node": ">=20"

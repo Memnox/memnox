@@ -127,7 +127,7 @@ function interceptorCheck(facts: HealthFacts): HealthCheck {
       name: CHECK_NAME.INTERCEPTORS,
       state: CHECK.INERT,
       detail: 'no interceptors installed, so shell and git commands are not seen',
-      fix: 'memnox protect --apply',
+      fix: 'memnox protect --interceptors',
     };
   }
   if (missing.length > 0) {
@@ -135,7 +135,7 @@ function interceptorCheck(facts: HealthFacts): HealthCheck {
       name: CHECK_NAME.INTERCEPTORS,
       state: CHECK.BROKEN,
       detail: `${missing.length} missing: ${missing.join(', ')}`,
-      fix: 'memnox protect --apply',
+      fix: 'memnox protect --interceptors',
     };
   }
   return {
@@ -151,7 +151,7 @@ function pathCheck(facts: HealthFacts): HealthCheck {
       name: CHECK_NAME.PATH,
       state: CHECK.INERT,
       detail: 'nothing to put on PATH yet',
-      fix: 'memnox protect --apply',
+      fix: 'memnox protect --interceptors',
     };
   }
   if (!facts.interceptorDirFirstOnPath) {

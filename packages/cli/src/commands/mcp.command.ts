@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import {
   MEMNOX_HOME,
+  PROXY_BINARY,
   planUnwrap,
   planWrap,
   serversKeyOf,
@@ -78,10 +80,30 @@ async function writeConfig(
   await writeFile(file.path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
 }
 
+/**
+ * Wrapping points every server at a binary. If that binary is not on PATH the agent
+ * starts nothing at all, which is a worse failure than being ungoverned — so it is
+ * checked before a single config is touched, not discovered afterwards.
+ */
+function proxyOnPath(resolve: (binary: string) => boolean = defaultResolve): boolean {
+  return resolve(PROXY_BINARY);
+}
+
+const defaultResolve = (binary: string): boolean => {
+  try {
+    execFileSync('command', ['-v', binary], { stdio: 'ignore', shell: true });
+    return true;
+  } catch {
+    // Not on PATH, which is the whole thing this check exists to catch.
+    return false;
+  }
+};
+
 export function registerMcpCommand(
   program: Command,
   context: CliContext,
   home: () => string = homedir,
+  resolveBinary: (binary: string) => boolean = defaultResolve,
 ): void {
   const mcp = program
     .command('mcp')
@@ -92,6 +114,12 @@ export function registerMcpCommand(
     .description('Repoint every MCP server at the proxy, keeping a backup')
     .option('--dry-run', 'print what would change and write nothing')
     .action(async (options: { dryRun?: boolean }) => {
+      if (options.dryRun !== true && !proxyOnPath(resolveBinary)) {
+        throw new Error(
+          `"${PROXY_BINARY}" is not on PATH, so wrapping would stop your agents starting at all.\n` +
+            'Install the CLI first (npm install -g memnox), then run this again.',
+        );
+      }
       const configs = await readConfigs(home());
       if (configs.length === 0) {
         context.out.line('No MCP config on this machine, so there is nothing to wrap.');
