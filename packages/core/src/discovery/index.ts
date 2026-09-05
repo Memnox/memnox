@@ -16,3 +16,6 @@ export * from './server-review';
 export * from './reachability';
 export * from './reach-detail';
 export * from './trace';
+export * from './network';
+export * from './risk';
+export * from './classify';

@@ -12,7 +12,7 @@ export const FRAME_KIND = {
 export type FrameKind = (typeof FRAME_KIND)[keyof typeof FRAME_KIND];
 
 /**
- * Full fidelity on anything denied or askd, sampled on the allowed majority,
+ * Full fidelity on anything denied or asked, sampled on the allowed majority,
  * which is where the bytes are. A laptop is not a warehouse.
  */
 export const DEFAULT_ALLOW_SAMPLE_RATE = 0.05;

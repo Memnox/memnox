@@ -12,6 +12,7 @@ import {
 } from './resource';
 import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
 import { toMcpTool, type Surface } from './surface';
+import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
 import {
   databasesIn,
   detectTools,
@@ -61,10 +62,14 @@ export interface DiscoveryReport {
   probed: string[];
   /** Command-line tools an agent with a shell can invoke, each with what proved it. */
   tools: DiscoveredTool[];
+  /** What the environment says about reaching the network. Never measured by dialling. */
+  egress: NetworkProbe;
 }
 
 export interface DiscoveryOptions {
   detectors?: readonly AgentDetector[];
+  /** Supplied rather than read, so discovery stays a function of what it was given. */
+  env?: NodeJS.ProcessEnv;
   /**
    * Directories the reader actually works in. The home directory holds the credentials
    * a person has; these hold the ones a repository has, and the doc's opening screen
@@ -108,6 +113,12 @@ export async function discover(
   const network = networkReach(surfaces);
   if (network !== null) resources.push(network);
 
+  const present: string[] = [];
+  for (const path of SANDBOX_PATHS) {
+    if (await reader.exists(path)) present.push(path);
+  }
+  const egress = probeNetwork({ env: options.env ?? {}, present });
+
   const refs: AgentRef[] = agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
 
@@ -116,9 +127,10 @@ export async function discover(
     surfaces,
     resources: attributeResources(resources, reachability, refs),
     reachability,
-    read,
+    read: [...read, ...egress.read],
     probed,
     tools: await detectTools(reader),
+    egress,
   };
 }
 

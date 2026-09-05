@@ -1,11 +1,14 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
+  renderFields,
+  reviewServers,
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
   type DiscoveryReport,
   type McpTool,
+  type ServerReview,
   type ToolEffect,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
@@ -76,6 +79,8 @@ export function registerScanCommand(
     .argument('[unrecognized...]')
     .option('--json', 'emit the report as JSON')
     .option('--tools', 'list every tool by what it does, server by server')
+    .option('--mcp <server>', 'review one MCP server before you trust it')
+    .option('--save', 'keep this scan, so a later "memnox diff" has a baseline')
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
@@ -83,13 +88,26 @@ export function registerScanCommand(
     .action(
       async (
         unrecognized: string[],
-        options: { json?: boolean; tools?: boolean; probe: boolean },
+        options: {
+          json?: boolean;
+          tools?: boolean;
+          probe: boolean;
+          mcp?: string;
+          save?: boolean;
+        },
       ) => {
         if (unrecognized.length > 0) {
           throw new Error(unknownCommand(program, unrecognized[0] as string));
         }
-        // Every scan is kept, which is the only reason `memnox diff` has a baseline.
-        const { report } = await scanMachine(buildSeams(cwd()), { probe: options.probe });
+        // Kept only when asked: a scan every command runs would churn the history.
+        const { report } = await scanMachine(buildSeams(cwd()), {
+          probe: options.probe,
+          save: options.save === true,
+        });
+        if (options.mcp !== undefined) {
+          renderServerReview(context, report, options.mcp, options.json === true);
+          return;
+        }
         if (options.json === true) {
           context.out.line(JSON.stringify(report, null, 2));
           return;
@@ -293,4 +311,56 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
   out.line('');
   out.line(`  ${style.dim('memnox doctor')}   what is risky and why`);
   out.line(`  ${style.dim('memnox protect')}   fix it, reversibly`);
+}
+
+/** What one server declares, asks for and can reach — read before it is trusted. */
+function renderServerReview(
+  context: CliContext,
+  report: DiscoveryReport,
+  wanted: string,
+  asJson: boolean,
+): void {
+  const reviews = reviewServers(report);
+  const match = reviews.find((review) => review.server === wanted);
+  if (match === undefined) {
+    const names = reviews.map((review) => review.server);
+    throw new Error(
+      names.length === 0
+        ? `No MCP server is configured on this machine, so there is no "${wanted}" to review.`
+        : `No MCP server named "${wanted}". Configured here: ${names.join(', ')}.`,
+    );
+  }
+  if (asJson) {
+    context.out.line(JSON.stringify(match, null, 2));
+    return;
+  }
+  context.out.line('');
+  context.out.line(context.style.bold(match.server));
+  context.out.line('');
+  context.out.line(renderFields(fieldsFor(match)));
+  context.out.line('');
+  // Zero tools on a server nobody started means unknown, never harmless.
+  if (match.unprobed) {
+    context.out.note('This server was never started, so its tools are unknown, not absent.');
+    context.out.note('Run without --no-probe to ask it.');
+  }
+}
+
+function fieldsFor(review: ServerReview): { label: string; value: string }[] {
+  return [
+    { label: 'declared in', value: review.declaredIn },
+    { label: 'command', value: review.command },
+    { label: 'risk', value: review.risk },
+    { label: 'tools', value: String(review.tools) },
+    { label: 'read', value: String(review.read) },
+    { label: 'write', value: String(review.write) },
+    { label: 'destructive', value: String(review.destructive) },
+    {
+      label: 'credentials',
+      value:
+        review.credentials.length === 0 ? 'none' : review.credentials.join(', '),
+    },
+    { label: 'filesystem', value: review.filesystem ? 'reaches it' : 'no' },
+    { label: 'network', value: review.network ? 'reaches it' : 'no' },
+  ];
 }

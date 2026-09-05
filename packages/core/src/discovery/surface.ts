@@ -136,12 +136,27 @@ export function inferToolEffect(declaration: McpToolDeclaration): {
  * wire is named the same way a tool is, and two verb lists would drift apart.
  */
 export function effectOfName(name: string): ToolEffect | null {
-  const lowered = name.toLowerCase();
-  if (DESTRUCTIVE_VERBS.some((verb) => lowered.includes(verb)))
-    return TOOL_EFFECT.DESTRUCTIVE;
-  if (WRITE_VERBS.some((verb) => lowered.includes(verb))) return TOOL_EFFECT.WRITE;
-  if (READ_VERBS.some((verb) => lowered.includes(verb))) return TOOL_EFFECT.READ;
+  const segments = nameSegments(name);
+  const has = (verbs: readonly string[]): boolean =>
+    verbs.some((verb) => segments.includes(verb));
+
+  if (has(DESTRUCTIVE_VERBS)) return TOOL_EFFECT.DESTRUCTIVE;
+  if (has(WRITE_VERBS)) return TOOL_EFFECT.WRITE;
+  if (has(READ_VERBS)) return TOOL_EFFECT.READ;
   return null;
+}
+
+/**
+ * Split on separators and camel humps rather than matching substrings: "widget"
+ * contains "get", and a tool called `frobnicate_widget` read as a read is exactly the
+ * wrong kind of confident.
+ */
+export function nameSegments(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .map((part) => part.toLowerCase())
+    .filter((part) => part !== '');
 }
 
 export function toMcpTool(server: string, declaration: McpToolDeclaration): McpTool {
