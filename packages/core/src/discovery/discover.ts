@@ -144,18 +144,29 @@ async function enumerateTools(
   lister: McpLister | undefined,
 ): Promise<string[]> {
   if (lister === undefined) return [];
+
+  /* In parallel, because each handshake carries its own timeout: five servers probed
+     one after another cost five timeouts end to end, and a scan nobody waits for is a
+     scan nobody runs. One server that hangs must not hold up the other four. */
+  const work = surfaces.flatMap((surface) =>
+    (surface.servers ?? []).map(async (server) => {
+      try {
+        const declared = await lister.listTools(server.name, server.command, server.args);
+        return { surface, server, declared };
+      } catch {
+        /* A server that will not start is a gap in the report, never a crash. It is
+           still named as present below, because zero tools means unknown. */
+        return { surface, server, declared: [] };
+      }
+    }),
+  );
+
   const probed: string[] = [];
-
-  for (const surface of surfaces) {
-    const servers = surface.servers;
-    if (servers === undefined || servers.length === 0) continue;
-
+  for (const outcome of await Promise.all(work)) {
+    const { surface, server, declared } = outcome;
+    probed.push(`${server.name}: ${[server.command, ...server.args].join(' ')}`);
     const tools = surface.tools ?? [];
-    for (const server of servers) {
-      probed.push(`${server.name}: ${[server.command, ...server.args].join(' ')}`);
-      const declared = await lister.listTools(server.name, server.command, server.args);
-      for (const declaration of declared) tools.push(toMcpTool(server.name, declaration));
-    }
+    for (const declaration of declared) tools.push(toMcpTool(server.name, declaration));
     surface.tools = tools;
   }
   return probed;
