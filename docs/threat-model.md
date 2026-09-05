@@ -54,6 +54,7 @@ any `UPDATE` except recording who released a held call.
 | Another local user reads the ledger | **Covered** by owner-only permissions, and no further |
 | Malicious MCP server lies in `tools/list` | **Partly.** Classification is by name and annotation; a tool that lies about its name is classified by the lie |
 | A dependency of ours is compromised | **Not covered.** Four runtime dependencies, pinned, with a lockfile |
+| Memnox itself sends something somewhere | **Covered by construction.** Nothing in the shipped code originates a network request; the only sockets are the daemon's unix socket and the egress proxy on loopback, which forwards the agent's own traffic |
 
 ## Where it would fail
 

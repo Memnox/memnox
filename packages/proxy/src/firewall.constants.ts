@@ -23,9 +23,3 @@ export const MCP_PROXY_BLIND_SPOTS: readonly string[] = [
   'anything the agent does without a tool call',
   "the wrapped server's own side effects once a call is allowed through",
 ];
-
-/** MCP's session correlation header; reused to group a client's calls in the timeline. */
-export const HEADER_MCP_SESSION = 'mcp-session-id';
-export const HEADER_CONTENT_TYPE = 'content-type';
-export const CONTENT_TYPE_JSON = 'application/json';
-export const CONTENT_TYPE_EVENT_STREAM = 'text/event-stream';
