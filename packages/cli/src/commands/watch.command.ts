@@ -1,8 +1,11 @@
 import type { Command } from 'commander';
 import {
+  agentUpdates,
+  alertsFor,
   CHANGE_DIRECTION,
   CHANGE_SUBJECT,
   compareSnapshots,
+  describeUpdate,
   type EnvironmentChange,
   type EnvironmentSnapshot,
 } from '@memnox/core';
@@ -71,9 +74,12 @@ export function registerWatchCommand(
           if (cycle > 0) await sleep(interval * MILLISECONDS);
           const { snapshot } = await scanMachine(seams, { probe: options.probe });
           const changes = baseline === null ? [] : compareSnapshots(baseline, snapshot);
+          /* An agent that updated itself is reported even when nothing else moved:
+             nobody granted the difference, which is what makes it worth saying. */
+          const updates = baseline === null ? [] : agentUpdates(baseline, snapshot);
           baseline = snapshot;
-          if (changes.length === 0) continue;
-          await report(context, seams, snapshot, changes, options.json === true);
+          if (changes.length === 0 && updates.length === 0) continue;
+          await report(context, seams, snapshot, changes, updates, options.json === true);
         }
       },
     );
@@ -84,12 +90,24 @@ async function report(
   seams: ScanSeams,
   snapshot: EnvironmentSnapshot,
   changes: readonly EnvironmentChange[],
+  updates: ReturnType<typeof agentUpdates>,
   asJson: boolean,
 ): Promise<void> {
+  const alerts = alertsFor(changes);
   if (asJson) {
-    context.out.line(JSON.stringify({ at: snapshot.takenAt, changes }));
+    context.out.line(JSON.stringify({ at: snapshot.takenAt, changes, alerts, updates }));
     return;
   }
+
+  for (const update of updates) {
+    context.out.line(`  ${context.style.warn('!')} ${describeUpdate(update)}`);
+  }
+  // The alert first, then the detail: what to do about it is the line people need.
+  for (const alert of alerts) {
+    context.out.line(`  ${context.style.warn('!')} ${alert.headline}`);
+    context.out.line(`      ${context.style.dim(alert.next)}`);
+  }
+
   for (const change of changes) {
     if (
       change.subject === CHANGE_SUBJECT.SERVER &&

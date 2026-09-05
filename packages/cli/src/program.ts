@@ -13,6 +13,7 @@ import {
   registerPurgeCommand,
   registerTimelineCommand,
 } from './commands/timeline.command';
+import { registerDaemonCommand } from './commands/daemon.command';
 import { registerUninstallCommand } from './commands/uninstall.command';
 import { registerRunCommand } from './commands/run.command';
 import { registerMcpCommand } from './commands/mcp.command';
@@ -31,6 +32,7 @@ export function buildProgram(context: CliContext): Command {
   registerProtectCommand(program, context);
   registerRunCommand(program, context);
   registerUninstallCommand(program, context);
+  registerDaemonCommand(program, context);
   registerMcpCommand(program, context);
   registerWhyCommand(program, context);
   registerTimelineCommand(program, context);

@@ -8,3 +8,4 @@ export * from './egress-seam';
 export * from './interceptor';
 export * from './interceptor-install';
 export * from './git-hooks';
+export * from './daemon-client';
