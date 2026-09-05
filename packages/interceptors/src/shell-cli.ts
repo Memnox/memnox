@@ -1,20 +1,58 @@
 import { spawn } from 'node:child_process';
 import { ShellSeam, SHELL_EXIT_WITHHELD } from './shell-seam';
+import {
+  realShell,
+  shellInvocation,
+  SHELL_MODE,
+  type ShellInvocation,
+} from './shell-invocation';
 import { buildAuthorizer, log } from './seam-runtime';
 
-const USAGE = `Usage: memnox-shell -- <command...>
+const USAGE = `Usage: memnox-shell -c "<command line>"
+       memnox-shell -- <command...>
 
-Gates one command against policy, then runs it unchanged. A refusal names an
-alternative where the rule gave one, and nothing is ever rewritten on the way through.`;
+Gates what was asked against policy, then runs it unchanged through the real shell.
+A refusal names an alternative where the rule gave one, and nothing is ever rewritten.`;
 
-function commandFrom(argv: readonly string[]): string[] {
-  const separator = argv.indexOf('--');
-  return separator === -1 ? [...argv] : [...argv.slice(separator + 1)];
+const SHELL_NAME = 'memnox-shell';
+
+/** What the gate rules on: the line as typed, whichever form it arrived in. */
+function commandOf(invocation: ShellInvocation): string[] {
+  if (invocation.mode === SHELL_MODE.COMMAND) return [invocation.line ?? ''];
+  return invocation.argv ?? [];
+}
+
+function run(executable: string, args: readonly string[]): void {
+  const child = spawn(executable, args, { stdio: 'inherit' });
+  child.on('exit', (code, signal) => {
+    // A signalled child is not an exit code; 128+n is what a shell reports for one.
+    process.exitCode =
+      code === null ? (signal === null ? SHELL_EXIT_WITHHELD : 128) : code;
+  });
+  child.on('error', (err: unknown) => {
+    log(`could not run the command: ${String(err)}`);
+    process.exitCode = SHELL_EXIT_WITHHELD;
+  });
 }
 
 async function main(): Promise<void> {
-  const command = commandFrom(process.argv.slice(2));
-  if (command.length === 0) {
+  const invocation = shellInvocation(process.argv.slice(2));
+  const shell = realShell(process.env, SHELL_NAME);
+
+  /* An interactive shell has nothing to rule on yet; every command typed into it is
+     gated by the interceptors on PATH. Refusing here would only break the terminal. */
+  if (invocation.mode === SHELL_MODE.INTERACTIVE) {
+    if (process.stdin.isTTY !== true) {
+      process.stderr.write(`${USAGE}\n`);
+      process.exitCode = SHELL_EXIT_WITHHELD;
+      return;
+    }
+    run(shell, invocation.flags);
+    return;
+  }
+
+  const command = commandOf(invocation);
+  if (command.length === 0 || command[0] === '') {
     process.stderr.write(`${USAGE}\n`);
     process.exitCode = SHELL_EXIT_WITHHELD;
     return;
@@ -23,6 +61,7 @@ async function main(): Promise<void> {
   const seam = new ShellSeam({
     authorizer: await buildAuthorizer(),
     workingDirectory: process.cwd(),
+    env: process.env,
   });
   const outcome = await seam.gate(command);
 
@@ -32,17 +71,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Allowed: run it unchanged, and let its exit code be the one the caller sees.
+  // Allowed: handed on exactly as it arrived, so what runs is what was written.
+  if (invocation.mode === SHELL_MODE.COMMAND) {
+    run(shell, [...invocation.flags, '-c', invocation.line ?? '']);
+    return;
+  }
   const [executable, ...args] = outcome.run;
   if (executable === undefined) return;
-  const child = spawn(executable, args, { stdio: 'inherit' });
-  child.on('exit', (code) => {
-    process.exitCode = code === null ? SHELL_EXIT_WITHHELD : code;
-  });
-  child.on('error', (err: unknown) => {
-    log(`could not run the command: ${String(err)}`);
-    process.exitCode = SHELL_EXIT_WITHHELD;
-  });
+  run(executable, args);
 }
 
 main().catch((err: unknown) => {

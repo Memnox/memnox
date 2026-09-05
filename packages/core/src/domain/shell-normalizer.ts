@@ -13,8 +13,17 @@ export const OPAQUE_REASON = {
 export type OpaqueReason = (typeof OPAQUE_REASON)[keyof typeof OPAQUE_REASON];
 
 export interface NormalizedCommand {
-  /** Every executable command found, unwrapped and decoded where possible. */
+  /**
+   * Every executable command found, unwrapped and decoded where possible, with flags
+   * sorted ahead of operands so the same command always reads the same way.
+   */
   segments: string[];
+  /**
+   * The same commands with argv in the order it was typed. A verb table matches argv
+   * as written — `vercel deploy --prod` canonicalizes to `vercel --prod deploy`, which
+   * resolves to the wrong verb — so resolution reads these and patterns read the above.
+   */
+  commands: string[];
   /** Sorted, deduplicated. Non-empty means something could not be resolved. */
   opaque: OpaqueReason[];
 }
@@ -35,20 +44,33 @@ const DECODERS = new Set(['base64', 'openssl']);
 const DOWNLOADERS = new Set(['curl', 'wget', 'fetch']);
 
 /** Flattens a command into what it will really run; offline, never executes anything. */
+interface FoundCommand {
+  canonical: string;
+  literal: string;
+}
+
 export function normalizeShellCommand(raw: string): NormalizedCommand {
-  const segments: string[] = [];
+  const found: FoundCommand[] = [];
   const opaque = new Set<OpaqueReason>();
-  walk(raw, 0, segments, opaque);
-  return {
-    segments: [...new Set(segments.filter((segment) => segment.length > 0))],
-    opaque: [...opaque].sort(),
-  };
+  walk(raw, 0, found, opaque);
+
+  // Deduplicated on the canonical form, so both lists name the same commands.
+  const seen = new Set<string>();
+  const segments: string[] = [];
+  const commands: string[] = [];
+  for (const command of found) {
+    if (command.canonical.length === 0 || seen.has(command.canonical)) continue;
+    seen.add(command.canonical);
+    segments.push(command.canonical);
+    commands.push(command.literal);
+  }
+  return { segments, commands, opaque: [...opaque].sort() };
 }
 
 function walk(
   raw: string,
   depth: number,
-  segments: string[],
+  found: FoundCommand[],
   opaque: Set<OpaqueReason>,
 ): void {
   if (depth > MAX_DEPTH) {
@@ -72,10 +94,10 @@ function walk(
 
     const inner = unwrap(binary, words, opaque);
     if (inner !== null) {
-      walk(inner, depth + 1, segments, opaque);
+      walk(inner, depth + 1, found, opaque);
       continue;
     }
-    segments.push(canonicalize(words));
+    found.push({ canonical: canonicalize(words), literal: words.join(' ') });
   }
 }
 

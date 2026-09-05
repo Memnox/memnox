@@ -6,7 +6,11 @@ import { randomUUID } from 'node:crypto';
 import { delimiter } from 'node:path';
 import type { Command } from 'commander';
 import { MEMNOX_HOME } from '@memnox/core';
-import { interceptorDirFor } from '@memnox/interceptors';
+import {
+  FALLBACK_SHELL,
+  interceptorDirFor,
+  REAL_SHELL_VAR,
+} from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 
 export const SESSION_VAR = 'MEMNOX_SESSION';
@@ -29,6 +33,9 @@ export function environmentFor(
     ...base,
     PATH: path.startsWith(interceptors) ? path : `${interceptors}${delimiter}${path}`,
     SHELL: shellBinary,
+    /* The shell we displace, so the wrapper has something to hand the command to and
+       never reads `SHELL` back to find itself. */
+    [REAL_SHELL_VAR]: base['SHELL'] ?? FALLBACK_SHELL,
     [SESSION_VAR]: sessionId,
   };
 }

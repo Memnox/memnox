@@ -2,6 +2,10 @@ import { classifyBinary, COMMAND_CLASS } from './binary-class';
 import { inspectSql, isDatabaseClient, nonLocalHost, SQL_RISK, statementIn } from './sql';
 import { actionForCommand, classOf, verbAction, verbTableFor } from '../verbs/index';
 import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
+import {
+  normalizeShellCommand,
+  type OpaqueReason,
+} from '../domain/shell-normalizer';
 
 /**
  * One command line, one action name. Every surface that has an opinion about a command
@@ -84,3 +88,43 @@ export function actionNameFor(binary: string, args: readonly string[]): string {
 }
 
 export { TOOL_CLASS };
+
+/**
+ * argv as the kernel would hand it over: quotes held together, order preserved.
+ * `normalizeShellCommand` sorts flags ahead of positionals, which is right for spotting
+ * a destructive pattern in a whole line and wrong here — a verb pattern matches argv in
+ * the order it was typed, so `git push --force` must not become `git --force push`.
+ */
+export function splitCommandLine(input: string): string[] {
+  return (input.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((word) =>
+    word.replace(/^["']|["']$/g, ''),
+  );
+}
+
+export interface ResolvedShellLine {
+  /** One per command in the line, in the order they would run. */
+  actions: ResolvedAction[];
+  /** Indirection nothing could see through, so a caller can say the answer is partial. */
+  opaque: OpaqueReason[];
+}
+
+/**
+ * A whole shell line, resolved command by command. `gh pr merge && vercel deploy` is
+ * two rulings, not one opaque `shell.execute` — a rule written from what `scan` and
+ * `explain` showed has to fire on the surface an agent actually types into.
+ */
+export function resolveShellLine(
+  line: string,
+  env: NodeJS.ProcessEnv = {},
+): ResolvedShellLine {
+  const normalized = normalizeShellCommand(line);
+  const actions: ResolvedAction[] = [];
+  // The literal form: a verb table matches argv in the order somebody typed it.
+  for (const command of normalized.commands) {
+    const argv = splitCommandLine(command);
+    const binary = argv[0];
+    if (binary === undefined) continue;
+    actions.push(resolveAction(binary, argv.slice(1), env));
+  }
+  return { actions, opaque: normalized.opaque };
+}
