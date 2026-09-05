@@ -21,3 +21,4 @@ export * from './domain/action-identity';
 export * from './config/index';
 export * from './render/index';
 export * from './domain/question';
+export * from './event/index';

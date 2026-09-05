@@ -8,6 +8,11 @@ import { registerExplainCommand } from './commands/explain.command';
 import { registerConfigCommand } from './commands/config.command';
 import { registerDoctorCommand } from './commands/doctor.command';
 import { registerProtectCommand } from './commands/protect.command';
+import { registerWhyCommand } from './commands/why.command';
+import {
+  registerPurgeCommand,
+  registerTimelineCommand,
+} from './commands/timeline.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
 
@@ -23,6 +28,9 @@ export function buildProgram(context: CliContext): Command {
   registerExplainCommand(program, context);
   registerProtectCommand(program, context);
   registerMcpCommand(program, context);
+  registerWhyCommand(program, context);
+  registerTimelineCommand(program, context);
+  registerPurgeCommand(program, context);
   registerPolicyCommand(program, context);
   registerWatchCommand(program, context);
   registerDoctorCommand(program, context);
