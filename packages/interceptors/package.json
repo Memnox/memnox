@@ -29,8 +29,7 @@
     "memnox-shell": "dist/shell-cli.js",
     "memnox-git-credential": "dist/git-credential-cli.js",
     "memnox-egress": "dist/egress-cli.js",
-    "memnox-docker": "dist/docker-cli.js",
-    "memnox-shim": "dist/cli.js"
+    "memnox-intercept": "dist/interceptor-cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

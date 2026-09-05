@@ -9,3 +9,6 @@ export * from './hook-gate-loader';
 export * from './shell-seam';
 export * from './git-credential-seam';
 export * from './egress-seam';
+export * from './interceptor';
+export * from './interceptor-install';
+

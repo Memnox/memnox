@@ -209,12 +209,12 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 
 | ID | Goal | Deliver | Accept | Depends | Size |
 |---|---|---|---|---|---|
-| OSS-5.1 | Shim runtime | `packages/interceptors`: tiny wrapper that receives argv, calls daemon/engine, then `exec`s the real binary; PATH-prefix dir `~/.memnox/bin` | Wrapper adds < 10 ms; passes through stdin/stdout/exit code | 3.4, 4.1 | L |
+| OSS-5.1 | Interceptor runtime | `packages/interceptors`: tiny wrapper that receives argv, calls the engine, then `exec`s the real binary; PATH-prefix dir `~/.memnox/bin` | Wrapper adds < 10 ms; passes through stdin/stdout/exit code | 3.4, 4.1 | L |
 | OSS-5.2 | `memnox-shell` | Shell wrapper: parse command line (reuse 3.3), evaluate, exec via user's shell; record exit code + duration + output digest | Works as `SHELL` for Claude Code | 5.1 | M |
-| OSS-5.3 | `rm` / `dd` / `curl` / `wget` / `ssh` shims | Register in shim dir; classify; evaluate | Each has a test hitting ASK/DENY | 5.1 | M |
-| OSS-5.4 | `git` shim | Parse subcommand, branch, remote, `--force`; evaluate `git.*` operations | 20 command fixtures | 5.1 | M |
-| OSS-5.5 | Git hooks (defense in depth) | Optional `pre-push`/`pre-commit` hooks that call `memnox policy check`; installed by `protect --hooks` | Hook blocks even when shim bypassed | 5.4 | S |
-| OSS-5.6 | Filesystem path checks | Path policy evaluated for file args in shell shim (`cat`, `cp`, editors) and in MCP filesystem tools | `cat ~/.aws/credentials` → DENY event | 5.2, 4.5 | M |
+| OSS-5.3 | `rm` / `dd` / `curl` / `wget` / `ssh` interceptors | Register in the interceptor dir; classify; evaluate | Each has a test hitting ASK/DENY | 5.1 | M |
+| OSS-5.4 | `git` interceptor | Parse subcommand, branch, remote, `--force`; evaluate `git.*` operations | 20 command fixtures | 5.1 | M |
+| OSS-5.5 | Git hooks (defense in depth) | Optional `pre-push`/`pre-commit` hooks that call `memnox policy check`; installed by `protect --hooks` | Hook blocks even when the interceptor is bypassed | 5.4 | S |
+| OSS-5.6 | Filesystem path checks | Path policy evaluated for file args in the shell interceptor (`cat`, `cp`, editors) and in MCP filesystem tools | `cat ~/.aws/credentials` → DENY event | 5.2, 4.5 | M |
 | OSS-5.7 | OS guard (macOS) | Generate a `sandbox-exec` profile from filesystem policy; `protect --os-guard` | Denied path unreadable even by a raw binary | 5.6 | L |
 | OSS-5.8 | OS guard (Linux) | Landlock-based restriction when kernel supports it; graceful no-op otherwise | Same test on Ubuntu 22.04+ | 5.6 | L |
 | OSS-5.9 | Egress proxy | Local HTTP(S)/SOCKS proxy per session; injected via `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`; evaluate host against `[network]`; record host/port only | `curl allowed.host` passes; unknown host → ASK | 5.1 | L |
@@ -245,7 +245,7 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 
 | ID | Goal | Deliver | Accept | Depends | Size |
 |---|---|---|---|---|---|
-| OSS-7.1 | Daemon + local socket | `memnox daemon` (auto-started by shims/proxy); Unix socket / named pipe; RPC for evaluate, prompt, subscribe | Shims fall back to in-process engine if daemon absent | 5.1 | L |
+| OSS-7.1 | Daemon + local socket | `memnox daemon` (auto-started by interceptors/proxy); Unix socket / named pipe; RPC for evaluate, prompt, subscribe | Interceptors fall back to the in-process engine if the daemon is absent | 5.1 | L |
 | OSS-7.2 | Session manager | Session created from process tree + `MEMNOX_SESSION` env; start/end; capabilities-observed accumulation | Two concurrent agents → two sessions; idle timeout closes | 7.1, 6.1 | M |
 | OSS-7.3 | Config watcher | `chokidar` on agent/MCP config paths + 15-min timer → re-scan → diff vs baseline → `capability.*` events | Adding a server triggers an event within 2 s | 7.1, 2.5 | M |
 | OSS-7.4 | `watch` command | Live tail of decisions + capability events; inline ASK answering; `[Review] [Protect]` actions open `explain`/`protect --for <server>` | Manual test session recorded | 7.1–7.3 | M |
@@ -267,10 +267,10 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 | ID | Goal | Deliver | Accept | Depends | Size |
 |---|---|---|---|---|---|
 | OSS-8.1 | `npx memnox` = scan | Bare command runs `scan`; `setup` removed from the hero | First-run < 60 s | 1.12 | S |
-| OSS-8.2 | `memnox uninstall` | Unwrap MCP, revert native, remove shims from PATH, offer to delete `~/.memnox` | Machine byte-identical to before (test on VM) | 4.8, 3.12, 5.10 | M |
-| OSS-8.3 | `memnox doctor` | Check daemon, shims on PATH, proxy wiring, policy validity, DB health; fix hints | Each failure has a fix line | 7.1 | M |
-| OSS-8.4 | Security self-review | Threat model doc; verify no secrets in DB/logs; socket permissions 0600; shim path-hijack review | Checklist signed off; one external reviewer | all | L |
-| OSS-8.5 | Windows support decision | Either WSL-only documented or shims/socket ported | Decision recorded in ADR | 5.1, 7.1 | M |
+| OSS-8.2 | `memnox uninstall` | Unwrap MCP, revert native, remove interceptors from PATH, offer to delete `~/.memnox` | Machine byte-identical to before (test on VM) | 4.8, 3.12, 5.10 | M |
+| OSS-8.3 | `memnox doctor` | Check daemon, interceptors on PATH, proxy wiring, policy validity, DB health; fix hints | Each failure has a fix line | 7.1 | M |
+| OSS-8.4 | Security self-review | Threat model doc; verify no secrets in DB/logs; socket permissions 0600; interceptor path-hijack review | Checklist signed off; one external reviewer | all | L |
+| OSS-8.5 | Windows support decision | Either WSL-only documented or interceptors/socket ported | Decision recorded in ADR | 5.1, 7.1 | M |
 | OSS-8.6 | Docs site | Quickstart, policy reference, command reference, event schema, FAQ ("does it call an LLM?" → no) | Every command has a page | all | L |
 | OSS-8.7 | README recording | 2-minute asciinema/GIF: real machine, `npx memnox`, `~/.ssh — 3 agents`, protect, one blocked action, `why` | Embedded at top of README | 8.1 | S |
 | OSS-8.8 | Share card | `memnox scan --share` renders a PNG/text card with counts only (no paths, no secrets) | Reviewed for leakage | 1.12 | M |

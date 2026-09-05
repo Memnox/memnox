@@ -23,3 +23,4 @@ export * from './render/index';
 export * from './domain/question';
 export * from './event/index';
 export * from './domain/digest';
+export * from './intercept/index';

@@ -204,7 +204,7 @@ const COLUMNS = Object.keys(
 );
 
 /**
- * WAL, because a shim, the proxy and a daemon all write while `timeline` reads. The
+ * WAL, because an interceptor, the proxy and a daemon all write while `timeline` reads. The
  * default rollback journal locks readers out, which would turn every concurrent tool
  * call into a stall the agent feels.
  */

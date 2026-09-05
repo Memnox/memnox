@@ -11,7 +11,7 @@ const WRITERS = 5;
 const PER_WRITER = 200;
 
 /**
- * Real processes, not promises: WAL exists so a shim, the proxy and a daemon can write
+ * Real processes, not promises: WAL exists so an interceptor, the proxy and a daemon can write
  * while `timeline` reads, and only separate processes actually take separate locks.
  */
 const WRITER = `

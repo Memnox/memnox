@@ -9,7 +9,7 @@ export const log = (message: string): void => {
   process.stderr.write(`[memnox] ${message}\n`);
 };
 
-// The environment first, then what was written to config: shared by every local shim.
+// The environment first, then what was written to config: shared by every local interceptor.
 export async function buildAuthorizer(): Promise<HookAuthorizer> {
   const config = await readHookConfig(process.env, homedir());
   const gate = await loadHookGate(config);

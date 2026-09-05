@@ -70,7 +70,9 @@ export class HoldService {
 
   /** Whether this exact call was already answered "for this session". */
   hasSessionGrant(request: HoldRequest): boolean {
-    return this.granted.get(request.sessionId)?.has(request.fingerprint) === true;
+    const grants = this.granted.get(request.sessionId);
+    if (grants === undefined) return false;
+    return grants.has(request.fingerprint);
   }
 
   async hold(request: HoldRequest): Promise<HoldResult> {
