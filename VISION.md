@@ -1618,9 +1618,158 @@ This maps to four fundamental questions:
 
 ---
 
+### 2.61 The Nine Seconds Between "Be Helpful" and No Database
+
+**Pain**
+
+An agent is asked to clean up an environment. It scans the filesystem, finds a cloud
+token that was over-privileged two years ago, and issues a volume delete. Nine seconds
+between the prompt and an empty production database. Nobody was watching, because
+watching was not the job.
+
+The prompt said *don't touch production*. The prompt is not on the execution path.
+
+**Why existing tools fail**
+
+A system prompt is a request. An IAM policy is written months earlier by somebody who
+did not know today's incident was open. Neither of them knows that four minutes ago
+somebody wrote "freeze production while we troubleshoot" in an ops channel — which is
+the only fact in the room that would have stopped it.
+
+**Memnox**
+
+The refusal carries the evidence that produced it:
+
+```
+[Memnox] cursor tried to run: railway volume delete pg-prod
+
+  DENIED  no volume deletes while payments is frozen
+
+  what said so
+    freeze:payments        declared 4 min ago by moise, 1h 56m left
+    memnox.policies.toml   line 34, railway-destructive
+    .github/CODEOWNERS     infra/ is owned by @platform
+
+  [d] deny and tell the agent   [e] edit the command   [o] overrule, recorded
+```
+
+**What the user gets**
+
+A refusal that is arguable. `[e]` opens the command in an editor so a wrong flag can be
+fixed without killing the agent's loop; `[o]` lets a person overrule, and the overrule is
+a row in the ledger with their name on it, because an override nobody can find later is
+just a slower allow.
+
+---
+
+### 2.62 The Overnight Loop That Left the Working Tree in Pieces
+
+**Pain**
+
+An agent runs unsupervised for three hours. It writes a broken migration, reformats forty
+files it was not asked to touch, and deletes a directory it misread as generated. None of
+it is committed. `git checkout .` throws away the good with the bad, and there is no
+commit to go back to because the agent never made one.
+
+The morning is spent untangling, and the lesson learned is *do not run it unsupervised* —
+which is the opposite of the point.
+
+**Why existing tools fail**
+
+Undo in an editor is per-file and dies with the window. A container is a different
+machine, so the work is not there afterwards. Committing before every agent run pollutes
+the history with commits nobody meant.
+
+**Memnox**
+
+A milestone is a tree object, taken the moment an agent task starts, stored under
+`refs/memnox/` where nothing else looks:
+
+```bash
+memnox rewind                    # back to before the last agent task
+memnox rewind --list             # the milestones there are
+memnox rewind --to mst_a1b2c3    # back to a named one
+```
+
+It moves the working tree only. Never a commit, never a branch, never the stash. And a
+rewind takes its own milestone first, so the thing it replaced is still reachable.
+
+**What the user gets**
+
+The nerve to let it run. That is the whole feature: not the rollback, the willingness.
+
+---
+
+### 2.63 I Want to Know Before the Loop, Not During It
+
+**Pain**
+
+The decision to let an agent run is made once, at the start, with no information. Half an
+hour later it hits the one thing it should not have touched, and the choice is to abandon
+the run or approve under pressure.
+
+**Why existing tools fail**
+
+Every gate in the category is an interrupt. Interrupts are answered by whoever is in the
+terminal, at the moment they are least able to think about it, and the answer is almost
+always yes.
+
+**Memnox**
+
+```bash
+memnox check "deploy the payments service"
+```
+
+The same engine, the same rules, the same state — run ahead of time against the actions
+that intent resolves to, with nothing executed:
+
+```
+  deny   railway.deploy-prod    freeze:payments, 1h 56m left
+  ask    gh.pr-merge            merges are reviewed
+  allow  npm.test
+
+  1 of 3 would stop. Lift the freeze or pick a different service.
+```
+
+**What the user gets**
+
+The expensive decision made when it is cheap.
+
+---
+
+### 2.64 What Actually Came Out of That Command
+
+**Pain**
+
+The timeline says the deploy ran and exited zero. It does not say what it printed, and the
+agent's own account of it is a summary written by something with an interest in the
+summary being good.
+
+**Why existing tools fail**
+
+Shell history has the command and not the output. The agent transcript has the agent's
+version. Neither is the process's own stream.
+
+**Memnox**
+
+```bash
+memnox trace evt_01H8X
+```
+
+One action: the command, the rule that governed it, the exit code, the duration, and the
+first and last of what it actually wrote to stdout and stderr — recorded locally, capped,
+retention-bound, and never sent anywhere.
+
+**What the user gets**
+
+The difference between "it says the tests passed" and "the tests passed".
+
+
+---
+
 ## 3. The Pains I Would Prioritize
 
-> Not all 60 pains should become features.
+> Not all 64 pains should become features.
 
 | Priority | User Pain | Memnox Answer | Who Feels It |
 | --- | --- | --- | --- |
@@ -1639,6 +1788,9 @@ This maps to four fundamental questions:
 | 🔥 13 | Two agents are conflicting | Agent coordination | Engineering |
 | 🔥 14 | We lost the reasoning behind this | Decision history | Engineering |
 | 🔥 15 | Give agents more autonomy safely | What-if/control | Enterprise |
+| 🔥 16 | It ruined my working tree overnight | `memnox rewind` | Developer |
+| 🔥 17 | Decide before the loop, not during it | `memnox check` | Developer |
+| 🔥 18 | What did that command actually print? | `memnox trace` | Developer |
 
 ---
 
@@ -1788,7 +1940,9 @@ What happens if we give it more autonomy?
 
 ## 5. The 10 WOWs I'd Actually Build
 
-If the entire brainstorm had to be reduced to 10 things capable of making users say *"Holy shit."*:
+If the entire brainstorm had to be reduced to the things capable of making users say
+*"Holy shit."* — 1 to 10 are the original set, 11 and 12 are the two that came out of
+watching what people actually lose:
 
 | # | WOW | The user reaction |
 | --- | --- | --- |
@@ -1802,6 +1956,8 @@ If the entire brainstorm had to be reduced to 10 things capable of making users 
 | 8 | Cross-Agent View | "I can finally see my AI fleet." — Claude Code, Cursor, Codex, OpenClaw, Hermes in one place. |
 | 9 | Organizational Answer | "Memnox checked everything and told me whether this action is actually allowed." |
 | 10 | What-If | "Before giving my agent more power, I can see what that actually enables." |
+| 11 | `memnox rewind` | "It wrecked the branch and I got it back in one command." — The one that changes behaviour: people start letting agents run unsupervised. |
+| 12 | The justified refusal | "It blocked it, and then showed me the Slack message that said to." |
 
 **WOW 9 — Organizational Answer**
 
@@ -2023,7 +2179,7 @@ Everything ultimately reduces to four questions:
 
 ## 10. The OSS Wedge
 
-For the open-source product, **do not** try to implement all 60 pains. The initial product should focus on the local developer's immediate problem:
+For the open-source product, **do not** try to implement all 64 pains. The initial product should focus on the local developer's immediate problem:
 
 ```
                  AI AGENT
@@ -2057,7 +2213,15 @@ memnox protect
 memnox watch
 memnox why
 memnox diff
+memnox check
+memnox rewind
+memnox trace
 ```
+
+`rewind` is the wedge inside the wedge. Everything else on that list asks somebody to
+care about governance before anything has gone wrong; `rewind` pays them back the first
+morning an agent leaves a mess, and it works on one laptop with no account, no network
+and nothing to configure.
 
 **The first experience**
 
@@ -2167,7 +2331,7 @@ citations resolve: a phase is the engineering that closes a group of the pains a
 |---|---|---|
 | `§01` Discovery | what can act here, what it reaches, findings, reversible harden steps | 2.1, 2.3, 2.7, 2.11, 2.34, 2.35, 2.46 |
 | `§02` Evidence | one normalized model, defined once, that every later phase writes into | 2.56 |
-| `§03` Observation | seams, interception both ways, the ledger, frames, lineage | 2.12, 2.13, 2.14, 2.16, 2.36, 2.39, 2.40, 2.51 |
+| `§03` Observation | seams, interception both ways, the ledger, frames, lineage | 2.12, 2.13, 2.14, 2.16, 2.36, 2.39, 2.40, 2.51, 2.64 |
 | `§04` Explain | the deterministic answer, built from the match and never from a model | 2.6, 2.22, 2.24, 2.25, 2.60 |
 | `§05` Protect | policies, the three effects, proposals, simulation, native controls | 2.4, 2.5, 2.30, 2.31, 2.38 |
 | `§06` Watch | configuration and behaviour drift, with the cause named | 2.2, 2.9, 2.10, 2.33, 2.55 |
@@ -2175,6 +2339,7 @@ citations resolve: a phase is the engineering that closes a group of the pains a
 | `§08` Organizational evidence | Slack, Jira, Linear, Notion, Drive, and current state | 2.18, 2.26, 2.27, 2.28, 2.29, 2.48, 2.49, 2.58 |
 | `§09` Policy candidates | the bridge from what was observed to what is enforced | 2.8, 2.41, 2.50 |
 | `§10` Cloud | identity, the fleet, approvals, chains, evidence, autonomy | 2.15, 2.17, 2.21, 2.23, 2.32, 2.37, 2.42, 2.43, 2.44, 2.45, 2.47, 2.52, 2.53, 2.54, 2.59 |
+| `§11` Recovery | milestones, rewind, pre-flight, the raw stream behind one action | 2.61, 2.62, 2.63, 2.64 |
 
 **Why this order.** Discovery first, because a count read off the reader's own disk is the
 only honest aggregate at minute zero. The model before the sources, which is why §07, §08

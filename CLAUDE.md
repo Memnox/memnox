@@ -279,6 +279,46 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 | OSS-8.11 | 1.0.0 release | Changelog, npm publish, GitHub release, signed tarball | `npx memnox@1` works on clean macOS + Ubuntu VMs | all | S |
 | OSS-8.12 | Launch post | One post (HN / blog) leading with the recording; link to `awesome-ai-agent-governance` PR | Published | 8.7 | S |
 
+
+---
+
+## M9 — Recovery and pre-flight (≈ 1.5 weeks) — vision 2.61–2.64
+
+**Milestone demo:** an agent wrecks an uncommitted working tree; `memnox rewind` puts it
+back in one command and the wreckage is still reachable. `memnox check "deploy payments"`
+answers before the loop starts rather than interrupting it half an hour in.
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-9.1 | Milestone snapshots | `core/recovery`: tree object of tracked + untracked-not-ignored, written with `commit-tree` under `refs/memnox/milestones/<id>`; never a branch, never the stash | Snapshot of a dirty tree round-trips; `git log` and `git stash list` unchanged | 5.1 | L |
+| OSS-9.2 | `memnox rewind` | `--list`, `--to <id>`, default = the last milestone; restores the working tree only | Files added since the milestone are removed, files changed are restored, ignored files untouched | 9.1 | L |
+| OSS-9.3 | Rewind is undoable | A rewind takes its own milestone first | `rewind` twice returns to where it started | 9.2 | S |
+| OSS-9.4 | Refuse an unsafe rewind | Merge, rebase, bisect or detached mid-operation → refuse and say which | Fixture repos per state | 9.2 | S |
+| OSS-9.5 | Milestone on task start | `memnox run` takes one; interceptors take one before the first write-class action of a session | One session, one milestone, not one per command | 9.1, 7.2 | M |
+| OSS-9.6 | Retention | Keep the last N per repository; `memnox rewind --forget` | Old refs deleted, never the newest | 9.1 | S |
+| OSS-9.7 | `memnox check "<intent>"` | Resolve intent to actions through the one resolver; evaluate against rules, overlays and layers; execute nothing | Same verdicts as the interceptor would give | 3.4, 5.12 | M |
+| OSS-9.8 | Evidence on a refusal | The hold prompt lists what produced the verdict: overlay, rule file and line, repository evidence | Every non-allow names at least the rule | 6.4, 4.6 | M |
+| OSS-9.9 | Refusal options | `[d]` deny, `[e]` edit the command, `[o]` overrule — recorded with the person and the reason | An overrule is a row in the ledger, never a silent allow | 9.8 | M |
+| OSS-9.10 | `memnox trace <id>` | One action: command, rule, exit code, duration, head and tail of stdout/stderr, capped and retention-bound | Off unless the session recorded streams; documented privacy note | 6.5, 7.11 | M |
+
+**Two rules for this milestone.**
+
+**A rewind that cannot be undone is a second way to lose work.** It snapshots before it
+restores, it touches the working tree and nothing else, and it refuses outright when the
+repository is mid-merge or mid-rebase.
+
+**An overrule is a row, not a mood.** `[o]` exists because a deterministic block that
+cannot be beaten gets uninstalled the first time it is wrong. It carries who and why, and
+`why` shows it forever after.
+
+### What is deliberately not here
+
+Slack, meeting transcripts and Notion are **cloud** (C6). The runtime can put the *shape*
+of the justified refusal on screen — the overlay, the rule, the repository evidence that
+is already on disk — and the cloud fills the rows that need an account. Shipping a Slack
+reader in the open half would mean a token on every laptop and a demo instead of a
+product.
+
 ---
 
 # PART B — CLOSED-SOURCE CLOUD
