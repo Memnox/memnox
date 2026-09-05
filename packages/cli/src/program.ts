@@ -25,6 +25,8 @@ import { registerUninstallCommand } from './commands/uninstall.command';
 import { registerRunCommand } from './commands/run.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
+import { registerLoginCommand } from './commands/login.command';
+import { registerSyncCommand } from './commands/sync.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
 export function buildProgram(context: CliContext): Command {
@@ -49,6 +51,9 @@ export function buildProgram(context: CliContext): Command {
   registerTimelineCommand(program, context);
   registerPurgeCommand(program, context);
   registerPolicyCommand(program, context);
+  // Off until somebody runs `login`: with no account file these reach nothing.
+  registerLoginCommand(program, context);
+  registerSyncCommand(program, context);
   registerWatchCommand(program, context);
   registerRewindCommand(program, context);
   registerCheckCommand(program, context);
