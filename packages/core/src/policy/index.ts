@@ -8,3 +8,4 @@ export * from './policy-version';
 export * from './layers';
 export * from './native';
 export * from './domains';
+export * from './overlay';

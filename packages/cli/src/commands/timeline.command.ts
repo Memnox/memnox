@@ -1,8 +1,11 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
+import { writeFile } from 'node:fs/promises';
 import {
+  buildBundle,
   classOf,
   DECISION_EFFECT,
+  generateKeys,
   verbTableFor,
   loadOrCreateConfig,
   SqliteEventStore,
@@ -93,7 +96,8 @@ export function registerTimelineCommand(
     .option('--since <when>', 'e.g. 30m, 2h, 7d, or an ISO timestamp')
     .option('--only <effect>', `allow | ask | deny | blocked`)
     .option('--limit <n>', 'how many actions', String(DEFAULT_LIMIT))
-    .option('--export <format>', 'jsonl | json')
+    .option('--export <format>', 'jsonl | json | bundle')
+    .option('--out <path>', 'write the bundle here instead of to the terminal')
     .action(
       async (options: {
         session?: string;
@@ -102,6 +106,7 @@ export function registerTimelineCommand(
         only?: string;
         limit: string;
         export?: string;
+        out?: string;
       }) => {
         if (options.only !== undefined && ONLY[options.only] === undefined) {
           throw new Error(
@@ -118,6 +123,10 @@ export function registerTimelineCommand(
 
           const events = await store.query(filter);
 
+          if (options.export === 'bundle') {
+            await writeBundle(context, events, filter, options.out, now());
+            return;
+          }
           if (options.export === 'jsonl') {
             for (const event of events) context.out.line(JSON.stringify(event));
             return;
@@ -180,4 +189,50 @@ function verbNote(operation: string): string {
 
   const verb = classOf(table, rest.split('-'));
   return verb.note === undefined ? '' : `  (${verb.note})`;
+}
+
+/**
+ * A period of history, signed, so an auditor is looking at evidence rather than at a
+ * file somebody could have edited. It states the range it covers and what was left
+ * out — an export that quietly omitted a day would be worse than none, because
+ * somebody would rely on it.
+ */
+async function writeBundle(
+  context: CliContext,
+  events: readonly MemnoxEvent[],
+  filter: EventQuery,
+  out: string | undefined,
+  moment: Date,
+): Promise<void> {
+  const excluded: string[] = [];
+  if (filter.limit !== undefined && events.length === filter.limit) {
+    // Hitting the limit means older events exist and are not in here. Say so.
+    excluded.push(
+      `stopped at --limit ${filter.limit}; older events exist and are not included`,
+    );
+  }
+  if (filter.effects !== undefined) {
+    excluded.push(`only ${filter.effects.join(', ')} events were asked for`);
+  }
+
+  const { header, body } = buildBundle({
+    events,
+    range: {
+      from: filter.since ?? events[0]?.at ?? moment.toISOString(),
+      to: filter.until ?? events[events.length - 1]?.at ?? moment.toISOString(),
+    },
+    createdAt: moment.toISOString(),
+    excluded,
+    keys: generateKeys(),
+  });
+
+  const bundle = `${JSON.stringify(header, null, 2)}\n\n${body}\n`;
+  if (out === undefined) {
+    context.out.line(bundle);
+    return;
+  }
+  await writeFile(out, bundle, { encoding: 'utf8', mode: 0o600 });
+  context.out.line(`Wrote ${header.events} event(s) to ${out}.`);
+  context.out.note(`Check it with "memnox verify ${out}".`);
+  for (const each of excluded) context.out.note(`  not included: ${each}`);
 }

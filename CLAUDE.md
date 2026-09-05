@@ -624,3 +624,83 @@ the agent could be steered by beyond that.
 > **Memnox shows you what your AI agents can actually do on your machine — every
 > credential, every CLI, every tool — and lets you put the dangerous ones behind ask or
 > deny in two minutes.**
+
+---
+
+# PART D — WHAT PEOPLE PAY FOR
+
+Ordered by who signs the invoice, not by what is interesting to build. Each item names
+the buyer, the trigger, and what they do today instead — because a feature whose
+current workaround is *fine* does not get bought.
+
+## D.0 How this changes the build
+
+Most of these are **cloud** features. That is not a reason for the runtime to ignore
+them: every one of them is worthless without a substrate the runtime has to provide,
+and shipping the cloud half against a runtime that cannot hold a call, cannot be
+frozen, and cannot sign an export would mean rebuilding both.
+
+So the rule for Part D is: **the runtime builds the substrate, and the substrate is
+useful on its own machine before any cloud exists.** A freeze that only works when
+somebody buys the cloud is a feature nobody can evaluate. A freeze one person can set
+on their own laptop is a feature that already works and later gets a fleet.
+
+## D.1 The list
+
+| # | What they pay for | Buyer | What they do today |
+|---|---|---|---|
+| 1 | Approval routing for production actions | platform lead | grant nothing, or trust the prompt |
+| 2 | Freeze enforcement during incidents | on-call lead | hope |
+| 3 | One policy across 30 laptops | eng manager | a README nobody follows |
+| 4 | Which laptops can reach production | security | a spreadsheet survey |
+| 5 | Shadow agents | security | nothing detects it |
+| 6 | What did the AI actually do | postmortem owner | stitching four logs together |
+| 7 | Audit trail for AI actions | compliance | a policy PDF |
+| 8 | Credential exposure alerts | security | invisible |
+| 9 | Least-privilege from actual usage | platform | guesswork |
+| 10 | Agent collisions on shared repos | eng lead | found in review |
+
+**If only three ship first: 1, 3 and 6** — approvals, shared policy, and the timeline.
+Each is something a team lead is already doing badly by hand.
+
+**Deliberately not here:** organizational answers with evidence, decision extraction,
+policy-vs-reality gaps, `what-if`. They need months of events and connectors before
+they are true, so they are renewal features and not first-invoice features. Building
+them early produces a demo, not a sale.
+
+## D.2 What each needs from the runtime
+
+The honest split. "Runtime" means it works on one laptop with no account.
+
+| # | Runtime substrate | Cloud half |
+|---|---|---|
+| 1 | A hold that something **other than the terminal** can release, and a pending-approval store to release it from | routing to Slack, identity of the approver |
+| 2 | An **overlay layer** with an expiry that flips verbs to ask or deny, and `memnox freeze` to set one locally | PagerDuty/incident.io signal, fleet distribution |
+| 3 | Layering with locked domains *(built)*, plus **reporting which version is in force** | central authoring, drift view |
+| 4 | Credential paths and production-looking names in the inventory *(built)* | rolling it up across laptops |
+| 5 | An **approved-agent list**, so an agent absent from it is flagged | org-wide list, notification |
+| 6 | The timeline, actor type, and claim-vs-evidence *(built)* | cross-agent, cross-laptop |
+| 7 | A **signed, verifiable export** — the compliance line item is unsellable without it | retention, bundles per period |
+| 8 | Credential watching and alerts *(built)* | escalation and the weekly digest |
+| 9 | Granted-vs-used *(built)*, plus **a draft policy generated from it** | fleet-wide, one click |
+| 10 | Collision detection *(built)* — **but no command reaches it** | across people, not just sessions |
+
+Six gaps, all in the runtime, all useful alone:
+
+1. **Pending approvals** — a hold another terminal can release. `memnox approvals`, `memnox approve <id>`, `memnox deny <id>`.
+2. **Freeze** — an overlay with an expiry. `memnox freeze <service> --for 2h`, `memnox freeze --lift`. The engine already takes state labels and a rule already carries a `state` field; nothing feeds them.
+3. **Policy version** — what is in force, by layer and hash.
+4. **Approved agents** — a list in config; anything absent is `unregistered`.
+5. **Signed export** — Ed25519 over the event bundle, and `memnox verify` to check one.
+6. **`memnox collisions`** and **`protect --from-usage`** — the two things already computed and unreachable.
+
+## D.3 The rule that keeps this honest
+
+**A freeze that outlives its incident is worse than no freeze**, because the next one
+gets ignored. Every overlay carries an expiry, `stateFactsInForce` takes the moment as
+an argument rather than reading a clock, and a verdict records the state version it was
+decided against — so a freeze that never propagated is visible rather than silent.
+
+The same rule applies to a signed export: it states the range it covers and what was
+excluded. An export that quietly omitted a day would be worse than no export, because
+somebody would rely on it.
