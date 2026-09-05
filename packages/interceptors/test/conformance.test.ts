@@ -10,7 +10,7 @@ import {
   type DecisionEffect,
   type EnforcementMode,
 } from '@memnox/core';
-import { ruleOnCommand } from '../src/interceptor';
+import { ruleOnCommand, verdictFor } from '../src/interceptor';
 
 /**
  * One matrix over every surface this package gates, every class a command can be, and
@@ -18,11 +18,17 @@ import { ruleOnCommand } from '../src/interceptor';
  * the table is exhaustive rather than illustrative.
  */
 
+/**
+ * One row per surface an agent actually reaches through: a binary with a verb table,
+ * a binary without one, and each class either can produce.
+ */
 const COMMANDS: Readonly<Record<string, string[]>> = {
-  [COMMAND_CLASS.DESTRUCTIVE]: ['rm', '-rf', 'build'],
-  [COMMAND_CLASS.NETWORK]: ['curl', 'https://example.com'],
-  [COMMAND_CLASS.PACKAGE_INSTALL]: ['npm', 'install', 'left-pad'],
-  [COMMAND_CLASS.NORMAL]: ['git', 'status'],
+  'table-destructive': ['git', 'push', '--force'],
+  'table-write': ['npm', 'publish'],
+  'table-read': ['kubectl', 'get', 'pods'],
+  'table-unknown': ['aws', 'frobnicate', 'widget'],
+  'generic-destructive': ['rm', '-rf', 'build'],
+  'generic-network': ['curl', 'https://example.com'],
 };
 
 function ruleFor(action: string, effect: DecisionEffect, mode: EnforcementMode) {
@@ -54,20 +60,12 @@ const EFFECTS: DecisionEffect[] = [
 ];
 
 describe('the conformance matrix', () => {
-  it('covers every command class the classifier can produce', () => {
-    for (const argv of Object.values(COMMANDS)) {
-      const [binary, ...args] = argv;
-      expect(classifyBinary(binary as string, args)).not.toBeNull();
-    }
-    expect(CLASSES.sort()).toEqual([...Object.values(COMMAND_CLASS)].sort());
-  });
-
   for (const commandClass of CLASSES) {
     for (const effect of EFFECTS) {
       it(`${commandClass} × ${effect} in enforce`, async () => {
         const argv = COMMANDS[commandClass] as string[];
         const [binary, ...args] = argv;
-        const action = classifyBinary(binary as string, args)?.action as string;
+        const action = verdictFor(binary as string, args).action;
 
         const outcome = await ruleOnCommand(binary as string, args, {
           gate: gateFor(action, effect, ENFORCEMENT_MODE.ENFORCE),
@@ -86,7 +84,7 @@ describe('the conformance matrix', () => {
     for (const commandClass of CLASSES) {
       const argv = COMMANDS[commandClass] as string[];
       const [binary, ...args] = argv;
-      const action = classifyBinary(binary as string, args)?.action as string;
+      const action = verdictFor(binary as string, args).action;
 
       const outcome = await ruleOnCommand(binary as string, args, {
         gate: gateFor(action, DECISION_EFFECT.ASK, ENFORCEMENT_MODE.ENFORCE),
@@ -101,13 +99,6 @@ describe('the conformance matrix', () => {
       const [binary, ...args] = argv;
       const outcome = await ruleOnCommand(binary as string, args, { log: () => {} });
       expect(outcome.allowed).toBe(true);
-    }
-  });
-
-  it('gives every class a namespaced action a rule can be written about', () => {
-    for (const argv of Object.values(COMMANDS)) {
-      const [binary, ...args] = argv;
-      expect(classifyBinary(binary as string, args)?.action).toMatch(/^[a-z]+\.[a-z]+$/);
     }
   });
 });

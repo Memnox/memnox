@@ -4,6 +4,7 @@ import {
   DECISION_EFFECT,
   findUnusedGrants,
   inventoryOf,
+  externalStateVerbs,
   matchesPattern,
   renderFields,
   renderShareCard,
@@ -16,6 +17,8 @@ import {
   TOOL_EFFECT,
   type DiscoveryReport,
   type McpTool,
+  verbTableFor,
+  type Policy,
   type ServerReview,
   type ToolEffect,
 } from '@memnox/core';
@@ -305,6 +308,9 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
     );
   }
 
+  renderCredentials(context, report);
+  renderAuthenticatedClis(context, report);
+
   const reachable = report.resources.filter(
     (resource) =>
       resource.sensitivity !== SENSITIVITY.ORDINARY && resource.reachableBy.length > 0,
@@ -330,18 +336,27 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
   const surfaces = report.surfaces.filter((surface) => surface.kind !== SURFACE_KIND.MCP);
   out.line('');
   out.line(`${surfaces.length} execution surfaces.`);
-  // Both are zero on a machine nobody has governed, which is the honest opening.
-  out.line(
-    `${counts.policies} ${counts.policies === 1 ? 'policy' : 'policies'}.  ${counts.records} record${counts.records === 1 ? '' : 's'}.`,
-  );
+  out.line('');
+  /* The gap, and the reason anybody keeps reading: what can reach outside this laptop
+     against how much of it anything is checking. Both are counts, never a score. */
+  const gap = measureGap(report, counts.policies);
+  for (const line of gapLines(gap)) {
+    out.line(gap.governed === 0 ? style.warn(line) : line);
+  }
+  // An unreadable rule set is never reported as no rules; the reader would act on that.
+  if (counts.unreadable !== undefined) {
+    out.note(`Rules exist but would not load: ${counts.unreadable}`);
+  }
   out.line('');
   // Padded on the plain text, so colour codes never throw the column off.
-  const NEXT_WIDTH = 16;
+  const NEXT_WIDTH = 24;
   for (const [command, what] of [
-    ['memnox doctor', 'what is risky and why'],
-    ['memnox protect', 'fix it, reversibly'],
+    ['memnox explain <name>', 'where any of these comes from'],
+    ['memnox protect', 'put the dangerous ones behind ask or deny'],
   ] as const) {
-    out.line(`  ${style.dim(command)}${' '.repeat(NEXT_WIDTH - command.length)}${what}`);
+    out.line(
+      `  ${style.dim(command)}${' '.repeat(Math.max(2, NEXT_WIDTH - command.length + 2))}${what}`,
+    );
   }
 }
 
@@ -491,4 +506,110 @@ async function renderUsage(
   } finally {
     store.close();
   }
+}
+
+/**
+ * The headline. A credential file is a fact; how many agents can read it is the line
+ * people screenshot. Values never appear — only the path, the structure and a count.
+ */
+function renderCredentials(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  if (report.credentials.length === 0) return;
+
+  const agents = report.agents.length;
+  out.line('');
+  out.line(style.bold('CREDENTIALS THESE AGENTS CAN READ'));
+  out.line('');
+
+  const width =
+    Math.max(...report.credentials.map((each) => each.path.length)) + PATH_GUTTER;
+  for (const credential of report.credentials) {
+    const reach = `${agents} agent${agents === 1 ? '' : 's'}`;
+    out.line(`  ${style.warn('!')}  ${credential.path.padEnd(width)}${reach}`);
+    if (credential.detail !== undefined) {
+      out.line(`     ${style.dim(credential.detail)}`);
+    }
+  }
+}
+
+/**
+ * The section that makes the CLI surface land: it turns a file into a verb. Everything
+ * here comes from the same verb tables enforcement reads, so what this promises is
+ * exactly what `protect` will gate.
+ */
+function renderAuthenticatedClis(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  if (report.authenticated.length === 0) return;
+
+  out.line('');
+  out.line(style.bold('WHAT THEY CAN DO WITH THEM') + style.dim('  (via shell)'));
+  out.line('');
+
+  const width = Math.max(...report.authenticated.map((each) => each.name.length)) + 2;
+  for (const cli of report.authenticated) {
+    const destructive =
+      cli.destructiveVerbs === 0
+        ? ''
+        : style.dim(` · ${cli.destructiveVerbs} destructive`);
+    out.line(`  ${cli.name.padEnd(width)}${cli.headline}${destructive}`);
+    if (cli.detail !== undefined)
+      out.line(`  ${''.padEnd(width)}${style.dim(cli.detail)}`);
+    // A guess from a name is printed as a guess, never asserted as a fact.
+    if (cli.productionLooking !== undefined) {
+      out.line(
+        `  ${''.padEnd(width)}${style.warn(`"${cli.productionLooking}" is named like production`)}`,
+      );
+    }
+  }
+}
+
+interface Gap {
+  total: number;
+  governed: number;
+}
+
+/** Every action a rule could be written about, so "governed" is counted not guessed. */
+export function reachingActions(report: DiscoveryReport): string[] {
+  const tools = report.surfaces
+    .flatMap((surface) => surface.tools ?? [])
+    .filter(
+      (tool) => tool.effect !== TOOL_EFFECT.READ && tool.effect !== TOOL_EFFECT.UNKNOWN,
+    )
+    .map((tool) => `mcp.${tool.name}`);
+
+  const cliActions = report.authenticated.flatMap((cli) => {
+    const table = verbTableFor(cli.name);
+    if (table === null) return [];
+    return externalStateVerbs(table).map((verb) => {
+      const head = verb.match.split(/\s+/)[0] ?? verb.match;
+      return `${cli.name}.${head}`;
+    });
+  });
+  return [...tools, ...cliActions];
+}
+
+/**
+ * The gap, counted rather than asserted. "Governed" means a rule actually matches the
+ * action; counting rule files instead would print a reassuring number about rules that
+ * cover none of this, which is the one lie the whole screen exists to avoid.
+ */
+export function measureGap(report: DiscoveryReport, policies: readonly Policy[]): Gap {
+  const actions = reachingActions(report);
+  const governed = actions.filter((action) =>
+    policies.some((policy) =>
+      (policy.match.actions ?? []).some((pattern) => matchesPattern(pattern, action)),
+    ),
+  );
+  return { total: actions.length, governed: governed.length };
+}
+
+export function gapLines(gap: Gap): string[] {
+  const noun = gap.total === 1 ? 'capability' : 'capabilities';
+  const verb = gap.governed === 1 ? 'is' : 'are';
+  return [
+    `${gap.total} ${noun} can change something outside this laptop.`,
+    gap.governed === 0
+      ? 'None of them is governed by a policy.'
+      : `${gap.governed} of them ${verb} governed by a policy.`,
+  ];
 }

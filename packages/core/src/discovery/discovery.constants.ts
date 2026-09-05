@@ -142,6 +142,17 @@ export const KNOWN_TOOLS: readonly { name: string; paths: readonly string[] }[] 
     paths: ['/usr/local/bin/terraform', '/opt/homebrew/bin/terraform'],
   },
   { name: 'psql', paths: ['/usr/local/bin/psql', '/opt/homebrew/bin/psql'] },
+  { name: 'mysql', paths: ['/usr/local/bin/mysql', '/opt/homebrew/bin/mysql'] },
+  { name: 'mongosh', paths: ['/usr/local/bin/mongosh', '/opt/homebrew/bin/mongosh'] },
+  { name: 'gh', paths: ['/usr/local/bin/gh', '/opt/homebrew/bin/gh', '/usr/bin/gh'] },
+  { name: 'az', paths: ['/usr/local/bin/az', '/opt/homebrew/bin/az'] },
+  { name: 'vercel', paths: ['/usr/local/bin/vercel', '/opt/homebrew/bin/vercel'] },
+  { name: 'railway', paths: ['/usr/local/bin/railway', '/opt/homebrew/bin/railway'] },
+  { name: 'fly', paths: ['/usr/local/bin/fly', '/opt/homebrew/bin/fly'] },
+  { name: 'heroku', paths: ['/usr/local/bin/heroku', '/opt/homebrew/bin/heroku'] },
+  { name: 'netlify', paths: ['/usr/local/bin/netlify', '/opt/homebrew/bin/netlify'] },
+  { name: 'npm', paths: ['/usr/local/bin/npm', '/opt/homebrew/bin/npm'] },
+  { name: 'stripe', paths: ['/usr/local/bin/stripe', '/opt/homebrew/bin/stripe'] },
 ];
 
 /**

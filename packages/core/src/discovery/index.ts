@@ -25,3 +25,4 @@ export * from './wrap';
 export * from './alerts';
 export * from './share-card';
 export * from './health';
+export * from './credentials';

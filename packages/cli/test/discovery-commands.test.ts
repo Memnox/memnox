@@ -33,7 +33,9 @@ describe('memnox (scan)', () => {
     expect(out.text).toContain('AI AGENTS');
     expect(out.text).toContain('claude-code');
     expect(out.text).toContain('.aws/credentials');
-    expect(out.text).toContain('memnox doctor');
+    // The gap is the reason anybody keeps reading, so it is the closing line.
+    expect(out.text).toContain('can change something outside this laptop');
+    expect(out.text).toContain('memnox protect');
   });
 
   /* Bare `memnox` runs discovery, so commander hands an unrecognised word here as an

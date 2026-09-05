@@ -14,6 +14,12 @@ import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
 import { toMcpTool, type Surface } from './surface';
 import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
 import {
+  authenticatedClis,
+  findCredentials,
+  type AuthenticatedCli,
+  type CredentialFinding,
+} from './credentials';
+import {
   databasesIn,
   detectTools,
   networkReach,
@@ -64,6 +70,10 @@ export interface DiscoveryReport {
   tools: DiscoveredTool[];
   /** What the environment says about reaching the network. Never measured by dialling. */
   egress: NetworkProbe;
+  /** Credential files an agent here can read. Names and structure, never values. */
+  credentials: CredentialFinding[];
+  /** A binary plus a credential it can use: the pair is the finding. */
+  authenticated: AuthenticatedCli[];
 }
 
 export interface DiscoveryOptions {
@@ -119,6 +129,16 @@ export async function discover(
   }
   const egress = probeNetwork({ env: options.env ?? {}, present });
 
+  const tools = await detectTools(reader);
+  const credentials = await findCredentials(reader);
+  /* A binary alone is unremarkable and a credential alone is unremarkable; the pair is
+     what turns "~/.aws/credentials exists" into "can modify infrastructure". */
+  const authenticated = authenticatedClis(
+    tools.map((tool) => tool.name),
+    credentials,
+    Object.keys(options.env ?? {}),
+  );
+
   const refs: AgentRef[] = agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
 
@@ -127,10 +147,12 @@ export async function discover(
     surfaces,
     resources: attributeResources(resources, reachability, refs),
     reachability,
-    read: [...read, ...egress.read],
+    read: [...read, ...egress.read, ...credentials.map((each) => each.path)],
     probed,
-    tools: await detectTools(reader),
+    tools,
     egress,
+    credentials,
+    authenticated,
   };
 }
 

@@ -486,3 +486,141 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 **Two rules that override the schedule:**
 1. A milestone ships only when its demo works on a real, non-team machine.
 2. Any task that puts a model on the enforcement path is rejected in review, whatever the deadline.
+
+---
+
+# PART C — THE WOW FUNCTIONALITIES
+
+Narrower on purpose: only the features whose job is to produce a reaction, plus the
+authenticated-CLI and browser surfaces Parts A and B under-covered.
+
+## C.0 The rule for every WOW
+
+A WOW screen ships only if all six hold:
+
+1. **It is their machine.** Real config, real credentials by name, real agents. No fixtures.
+2. **It shows a gap.** Something believed against something true. Counts, never scores.
+3. **It is one screen.** Fits a terminal without scrolling. Screenshot-able.
+4. **It names the next verb.** `memnox protect`, `memnox why` — never a bare warning.
+5. **No model produced it.** Discovery, classification and decisions are deterministic.
+6. **No secret value appears, anywhere, ever.** Names, counts, structure and fingerprints
+   only. This is the one that is not a matter of taste: a screenshot somebody pastes into
+   Slack is the failure mode, and it is unrecoverable.
+
+The emotional sequence is fixed: **exposure → interception → explanation → foresight.**
+
+### Four things the spec left open, decided here
+
+**An unknown verb is `unknown`, and unknown is not a denial.** A verb table covers what
+somebody wrote down. `aws some-new-service frobnicate` matches nothing, and the honest
+class is `unknown` — reported in the scan, never silently treated as safe *or* as
+destructive. Blocking every unrecognised subcommand would break the first real week;
+allowing it silently would be the lie. It is allowed and it is counted.
+
+**A verb table is a security control, so it is code review, not a data drop.** These
+files decide what gets asked about. A pull request that quietly moves `iam delete-*`
+from destructive to read is an attack, and "it is only data" is exactly why it would
+land. Every table carries a `checksum` the loader verifies against what shipped, and a
+changed table is a review that names the classes that moved.
+
+**`--verify` makes network calls with the reader's credentials, so it is off, always
+asked for, and never remembered.** `aws sts get-caller-identity` is read-only, but it
+is still Memnox using somebody's production token. It has no config key: if you want
+it you type it, every time.
+
+**"Prod-looking" is a guess and is printed as one.** A context named `prod-eu-1` is
+reported as *named like production*, never as production. The distinction survives all
+the way into the rule text, because a person deciding whether to allow a deploy needs
+to know whether we matched a name or read a fact.
+
+## C.1 WOW 1 — `npx memnox`
+
+Credentials are the headline, not tool counts. The section that makes it land is **what
+those credentials let an agent do**: `~/.aws/credentials` is a file, "can modify infra
+in 2 accounts" is the sentence somebody repeats to a colleague.
+
+The closing two lines are the gap: *N capabilities can change something outside this
+laptop. M of them are governed.*
+
+| ID | Goal | Accept | Size |
+|---|---|---|---|
+| OSS-1.16 | Credential-file detector: names and structural detail only | No secret value in output (asserted); fixture homes for 10 tools | M |
+| OSS-1.17 | Authenticated-CLI detector: binary × credential source → headline verb | Fixture tests; `--verify` off by default and never persisted | M |
+| OSS-1.18 | `.env` name heuristics (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) → key-like count | Table tests; values never read into the report | S |
+| OSS-1.19 | Browser-automation detector: driver present, persistent profile, saved-login count | Chromium profile fixture | M |
+| OSS-1.20 | Closing-gap footer computed from inventory × policy | Numbers match `policy test` on fixtures | S |
+| OSS-1.21 | First-run layout, and `--share` with counts only | Reviewed for leakage | S |
+
+## C.2 WOW 2 — `memnox explain <thing>`
+
+`explain vercel` prints the credential, the projects it is linked to, the verb table,
+and the rule that governs it. The verb table shown is the same one enforcement reads,
+so what `explain` promises is exactly what `protect` will gate.
+
+| ID | Goal | Size |
+|---|---|---|
+| OSS-2.8 | `explain <cli>`: credential, projects/contexts, verb table, governing rule | M |
+| OSS-2.9 | Question grammar accepts CLI verbs (`deploy`, `apply`, `merge`, `publish`) | S |
+
+## C.3 WOW 3 — `memnox protect`
+
+The line that removes the fear is **"the CLIs keep working"**: denying the credential
+*file* while allowing the *CLI* is a distinction most developers have never seen drawn,
+and it is the whole reason this is adoptable.
+
+| ID | Goal | Size |
+|---|---|---|
+| OSS-3.13 | Verb tables as data under `packages/core/verbs/<cli>.toml`, checksum-verified | L |
+| OSS-3.14 | `protect --from-scan` generates CLI rules from the verb tables | M |
+| OSS-3.15 | `protect --for <cli or server>` targeted flow | S |
+
+## C.4 The verb tables
+
+One TOML per CLI. `match` is an argv pattern; classes are the existing tool classes plus
+`production` and `secrets` as annotations.
+
+Seed set: `aws`, `gcloud`, `az`, `gh`, `kubectl`, `terraform`, `docker`, `vercel`,
+`railway`, `fly`, `heroku`, `netlify`, `psql`, `mysql`, `mongosh`, `npm`, `stripe`,
+`git`, `playwright`.
+
+Adding a CLI is a data PR **with a review**, per C.0.
+
+## C.5 WOW 4 — Runtime interception
+
+| ID | Goal | Size |
+|---|---|---|
+| OSS-5.12 | Interceptor resolves binary → verb table → classes, ahead of the generic classifier | M |
+| OSS-5.13 | SQL statement sniffing for `-c`/`-e` and heredocs on DB clients | M |
+| OSS-5.14 | Browser gate: launcher shim, host ask-per-session, navigations recorded where available | L |
+| OSS-5.15 | Model-readable DENY format with the alternative from the verb table | S |
+
+The DENY an agent receives is written to be read by a model — and therefore is data the
+model will act on. It names the policy and one alternative, and it carries no instruction
+the agent could be steered by beyond that.
+
+## C.6 WOW 5 — `why` and `timeline`
+
+| ID | Goal | Size |
+|---|---|---|
+| OSS-6.8 | `why` evidence for git: branch protection read through `gh` when logged in, cached, read-only | S |
+| OSS-6.9 | Timeline renders CLI events with the verb-table note (`preview`, `production`) | S |
+
+## C.7 WOW 6 — `memnox watch`
+
+| ID | Goal | Size |
+|---|---|---|
+| OSS-7.13 | Watch credential directories, so a new login is an event | S |
+
+## C.8 Cloud additions
+
+| ID | Goal | Size |
+|---|---|---|
+| CLD-2.7 | Roll up CLI and credential reach per agent | M |
+| CLD-5.9 | `who` resolves CLI credential paths as graph edges | M |
+| CLD-9.7 | `what-if` accepts credential grants, expanded into verbs by the tables | S |
+
+## C.9 The one line
+
+> **Memnox shows you what your AI agents can actually do on your machine — every
+> credential, every CLI, every tool — and lets you put the dangerous ones behind ask or
+> deny in two minutes.**

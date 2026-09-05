@@ -38,8 +38,9 @@ describe('the interceptor runtime', () => {
   it('allows anything no rule covers, and still names what it was', async () => {
     const outcome = await ruleOnCommand('git', ['status'], { log });
     expect(outcome.allowed).toBe(true);
+    // From the verb table, so what `memnox scan` promised is what happens here.
     expect(outcome.action).toBe('git.status');
-    expect(outcome.class).toBe('normal');
+    expect(outcome.class).toBe('read');
   });
 
   it('denies what a rule denies, and names a way forward', async () => {
@@ -50,8 +51,8 @@ describe('the interceptor runtime', () => {
     expect(outcome.allowed).toBe(false);
     expect(outcome.message).toContain('history is shared');
     expect(outcome.message).toContain('Instead: git.push a branch');
-    // The reason names what the command actually was, not just the rule.
-    expect(outcome.message).toContain('force push rewrites history');
+    // The reason comes from the verb table, so it names what the command actually costs.
+    expect(outcome.message).toContain('rewrites history somebody may have pulled');
   });
 
   it('holds an ASK and proceeds when a person allows it', async () => {

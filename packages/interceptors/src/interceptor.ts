@@ -1,6 +1,7 @@
 import { basename, delimiter, dirname, join } from 'node:path';
 import {
   classifyBinary,
+  classOf,
   COMMAND_CLASS,
   DECISION_EFFECT,
   describeHold,
@@ -9,6 +10,7 @@ import {
   MEMNOX_HOME,
   type BinaryVerdict,
   type HoldService,
+  verbTableFor,
   type LocalGate,
 } from '@memnox/core';
 
@@ -78,12 +80,10 @@ export async function ruleOnCommand(
   args: readonly string[],
   deps: InterceptDeps,
 ): Promise<InterceptOutcome> {
-  const classified = classifyBinary(binary, args);
-  const verdict: BinaryVerdict = classified ?? {
-    action: 'shell.execute',
-    class: COMMAND_CLASS.NORMAL,
-    because: binary,
-  };
+  /* The verb table first, so what `memnox scan` promised about this CLI is exactly
+     what happens here. The generic classifier is the fallback for binaries nobody has
+     written a table for. */
+  const verdict = verdictFor(binary, args);
   const argsDigest = digest(args.join(' '));
 
   const base: InterceptOutcome = {
@@ -171,4 +171,29 @@ export function resolveReal(
     if (exists(candidate)) return candidate;
   }
   return null;
+}
+
+/**
+ * A table entry beats the generic classifier, and an uncovered command is `unknown`
+ * rather than safe: it is allowed, and the scan says how many there were.
+ */
+export function verdictFor(binary: string, args: readonly string[]): BinaryVerdict {
+  const table = verbTableFor(binary);
+  if (table !== null) {
+    const verb = classOf(table, args);
+    const head = verb.match.split(/\s+/)[0] ?? verb.match;
+    return {
+      action: `${binary}.${head === '**' ? 'run' : head}`,
+      class: verb.class as BinaryVerdict['class'],
+      because: verb.note ?? `${binary} ${verb.match}`,
+      ...(args[0] === undefined || args[0].startsWith('-') ? {} : { target: args[0] }),
+    };
+  }
+  return (
+    classifyBinary(binary, args) ?? {
+      action: 'shell.execute',
+      class: COMMAND_CLASS.NORMAL,
+      because: binary,
+    }
+  );
 }

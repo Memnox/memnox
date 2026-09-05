@@ -24,3 +24,4 @@ export * from './event/index';
 export * from './domain/digest';
 export * from './intercept/index';
 export * from './daemon/index';
+export * from './verbs/index';

@@ -50,6 +50,8 @@ const REPORT = {
   probed: ['github: npx -y gh-mcp'],
   tools: [{ name: 'git', detectedFrom: '/usr/bin/git' }],
   egress: { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] },
+  credentials: [],
+  authenticated: [],
 } as unknown as DiscoveryReport;
 
 const TAKEN_AT = '2026-09-05T00:00:00.000Z';
