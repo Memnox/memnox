@@ -49,8 +49,10 @@ organization intended is not on this disk, so it is not answered here.
 A narrowing never trips `--fail-on`.
 
 ### `memnox watch`
-Rescans on an interval and reports what arrived: new servers, new write tools,
-credentials that became reachable, and agents that updated themselves.
+Reports what arrived: new servers, new write tools, credentials that became
+reachable, and agents that updated themselves. It wakes when an agent's
+configuration changes, so a server added mid-watch shows up in seconds; the
+`--interval` is the backstop, not the mechanism.
 
 ## Rules
 
@@ -64,13 +66,57 @@ Proposes reversible steps by default and prints the undo before it runs anything
 | `--observe` / `--enforce` | set the mode |
 | `--apply-native` | also write the rules into Claude Code's own permissions |
 | `--revert-native` | take ours back out, leaving theirs |
+| `--for <name>` | write rules for one CLI or MCP server only |
+| `--from-usage <window>` | draft ask rules for what was granted and never used |
+| `--interceptors` | install the PATH wrappers for every CLI this machine has |
+| `--hooks` | install `pre-push` and `pre-commit` in this repository |
+| `--os-guard` | write the kernel sandbox profile from your filesystem rules |
+| `--interactive` / `--yes` | walk the domains, or take the recommendation |
+
+`--interceptors` wraps only binaries that are actually installed: a shim for an
+absent `aws` would answer `command -v aws` and send every script that checks for
+it down the wrong branch. `--os-guard` is a second line under them, so a denied
+path stays unreadable even to a binary that never saw a wrapper — and any pattern
+the kernel cannot express as a literal subpath is printed rather than dropped.
+
+### `memnox policy check [file]`
+Reads every rule file this machine would load and says what is in force, what
+moved and what will not parse. Without a file it checks the whole registry.
+
+| Flag | What it does |
+|---|---|
+| `--prune` | forget registered paths that are no longer on the disk |
+
+Exits non-zero when a file is broken, so a CI step can run it.
 
 ### `memnox policy test "<action>"`
 Dry run. Prints the effect, the reason, the rule and the alternative. Exits non-zero
 on anything that is not an allow, so it works in a hook.
 
+### `memnox freeze [subject]`
+Stops external-state actions for a while. Every freeze carries an expiry: one
+that outlives its incident is worse than none, because the next one gets
+ignored.
+
+| Flag | What it does |
+|---|---|
+| `--for <window>` | how long, e.g. `2h`. Required unless a default applies |
+| `--reason <text>` | what the refusal will say |
+| `--lift` | end it early; it stays in the record rather than vanishing |
+
 ### `memnox config`
 `get`, `set` and `list`. Settings: `mode`, `retentionDays`, `failOpen`, `telemetry`.
+
+## Calls waiting for a person
+
+### `memnox approvals`
+Calls held for somebody to answer. A hold written to disk is what lets a second
+terminal — and later a platform lead in Slack — release something the first
+terminal is still waiting on.
+
+### `memnox approve <id>` / `memnox deny <id>`
+Answers one. First answer wins; a second is told what already happened rather
+than shown a failure.
 
 ## Running an agent
 
@@ -80,7 +126,18 @@ restores byte for byte. `--dry-run` changes nothing.
 
 ### `memnox run -- <command>`
 Starts an agent with the interceptor directory first on `PATH`, `SHELL` pointed at the
-governed shell, and a session id. Hands back the agent's own exit code.
+governed shell, and a session id. Hands back the agent's own exit code. When
+`protect --os-guard` has written a profile, the agent starts inside it.
+
+| Flag | What it does |
+|---|---|
+| `--shell <path>` | the shell the agent should use |
+| `--transcript` | keep a local copy of what the agent printed |
+| `--no-guard` | start outside the kernel sandbox even when a profile exists |
+
+The governed shell obeys the shell contract: `$SHELL -c "<line>"` is what an
+agent's Bash tool calls, and every command in that line is ruled on separately,
+so `gh pr merge && vercel deploy` is two rulings rather than one opaque string.
 
 ### `memnox daemon`
 Holds the rules in one process so an interceptor pays a connect instead of a file
@@ -100,6 +157,16 @@ read. Optional: an interceptor that cannot reach it evaluates in process instead
 The last thing that did not simply proceed. `--allowed` for the last allow,
 `--evidence` for the digests and the outcome. Read back from the row, never
 re-evaluated against today's rules.
+
+### `memnox collisions`
+Two agents in one file, and two agents building one thing. `--since <when>` to
+narrow the window.
+
+### `memnox verify <bundle>`
+Checks an exported bundle against its signature. Reports `valid`, `unsigned`,
+`tampered` (the events do not match the digest) or `forged` (the signature does
+not check out) — content first, so an edited bundle is never reported as merely
+unsigned.
 
 ### `memnox purge`
 Drops history past `retentionDays`. `--dry-run` says what would go.
