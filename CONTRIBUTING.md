@@ -124,7 +124,10 @@ A user-visible change also needs a changeset:
 pnpm changeset
 ```
 
-Releases are cut by merging the version PR that opens, never by a push to `main`.
+Changesets open a version PR; the release is cut by merging it, never by a push to
+`main` on its own. `pnpm version` bumps the manifests and syncs `CLI_VERSION` with
+them, so never edit that constant by hand — `memnox --version` reading a number the
+package was not published under is a bug this project has already shipped once.
 
 ## Reporting something that should not be public
 

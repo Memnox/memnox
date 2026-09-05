@@ -17,7 +17,7 @@
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "deadcode": "knip",
     "changeset": "changeset",
-    "version": "changeset version",
+    "version": "changeset version && node scripts/sync-cli-version.mjs",
     "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
