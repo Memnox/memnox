@@ -38,59 +38,55 @@ export function registerLoginCommand(
   program
     .command('login')
     .description('Connect this machine to a workspace, so it gets your rules')
-    .requiredOption('-w, --workspace <id>', 'the workspace to enrol into')
+    /* No workspace to name: this machine has no credential yet, so a workspace
+       it claimed would be one nothing here could check. Whoever approves is
+       signed in to exactly one, and that is where it lands. */
     .option('--url <base>', 'the control plane', DEFAULT_BASE_URL)
     .option('--enforce', 'start in enforce rather than observe')
     .option('--no-open', 'print the URL instead of opening a browser')
-    .action(
-      async (options: {
-        workspace: string;
-        url: string;
-        enforce?: boolean;
-        open: boolean;
-      }) => {
-        const { out, style } = context;
-        const enrolment = {
-          baseUrl: options.url,
-          workspaceId: options.workspace,
-          ...(options.enforce === true ? { mode: 'enforce' } : {}),
-        };
+    .action(async (options: { url: string; enforce?: boolean; open: boolean }) => {
+      const { out, style } = context;
+      const enrolment = {
+        baseUrl: options.url,
+        ...(options.enforce === true ? { mode: 'enforce' } : {}),
+      };
 
-        const keys = machineKeypair();
-        const offer = await request(enrolment, keys.publicKey);
-        const url = approvalUrl(options.url, offer.userCode);
+      const keys = machineKeypair();
+      const offer = await request(enrolment, keys.publicKey);
+      const url = approvalUrl(options.url, offer.userCode);
 
-        out.line('');
-        out.line(`Log in to ${style.bold(options.url)}`);
-        out.line('');
-        out.line(`  Your code is  ${style.bold(offer.userCode)}`);
-        out.line('');
-        out.line('Approve at:');
-        out.line(`  ${url}`);
-        out.line('');
+      out.line('');
+      out.line(`Log in to ${style.bold(options.url)}`);
+      out.line('');
+      out.line(`  Your code is  ${style.bold(offer.userCode)}`);
+      out.line('');
+      out.line('Approve at:');
+      out.line(`  ${url}`);
+      out.line('');
 
-        // Nobody is at the keyboard on a CI runner, and waiting for a keypress
-        // there would hang the build rather than enrol the machine.
-        if (options.open && process.stdin.isTTY === true) {
-          await pressEnter();
-          (seams.open ?? openBrowser)(url);
-        }
+      // Nobody is at the keyboard on a CI runner, and waiting for a keypress
+      // there would hang the build rather than enrol the machine.
+      if (options.open && process.stdin.isTTY === true) {
+        await pressEnter();
+        (seams.open ?? openBrowser)(url);
+      }
 
-        out.note('Waiting for approval…');
-        const collected = await waitForApproval(options.url, offer, seams);
+      out.note('Waiting for approval…');
+      const collected = await waitForApproval(options.url, offer, seams);
 
-        const account = accountFrom(enrolment, keys, collected, new Date().toISOString());
-        await writeAccount(home(), account);
+      const account = accountFrom(enrolment, keys, collected, new Date().toISOString());
+      await writeAccount(home(), account);
 
-        out.line('');
-        out.line(`${style.ok('Enrolled.')} This machine is ${collected.machineId}.`);
-        out.line(`  mode        ${collected.mode}`);
-        out.line(`  credential  ${accountPathFor(home())}`);
-        out.line('');
-        out.note('It now pulls your workspace rules. Nothing else leaves this machine.');
-        out.note('Take it back off with "memnox logout".');
-      },
-    );
+      out.line('');
+      out.line(`${style.ok('Enrolled.')} This machine is ${collected.machineId}.`);
+      // Printed because nobody asked for it: a wrong answer has to be visible.
+      out.line(`  workspace   ${collected.workspaceId}`);
+      out.line(`  mode        ${collected.mode}`);
+      out.line(`  credential  ${accountPathFor(home())}`);
+      out.line('');
+      out.note('It now pulls your workspace rules. Nothing else leaves this machine.');
+      out.note('Take it back off with "memnox logout".');
+    });
 
   program
     .command('logout')
@@ -119,7 +115,7 @@ export function registerLoginCommand(
           return;
         }
         context.out.line('Not logged in. This machine talks to nothing.');
-        context.out.note('Connect it with "memnox login --workspace <id>".');
+        context.out.note('Connect it with "memnox login".');
         return;
       }
       if (options.json === true) {
@@ -142,7 +138,7 @@ export function registerLoginCommand(
 }
 
 async function request(
-  enrolment: { baseUrl: string; workspaceId: string; mode?: string },
+  enrolment: { baseUrl: string; mode?: string },
   publicKey: string,
 ): ReturnType<typeof requestCode> {
   try {

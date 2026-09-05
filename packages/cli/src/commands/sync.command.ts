@@ -1,16 +1,17 @@
 import { homedir } from 'node:os';
-import { readFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { readAccount } from '../sync/account';
-import { orgPolicyPath, PULL_OUTCOME, pullBundle, type PullResult } from '../sync/bundle';
-import { CloudUnreachable } from '../sync/client';
+import { PULL_OUTCOME, type PullResult } from '../sync/bundle';
+import { onePass, type Pass } from '../sync/heartbeat';
+import { PUSH_OUTCOME, type PushResult } from '../sync/push';
 
 /**
- * Pulling the workspace's rules, and saying where this machine stands.
+ * One pass, now: pull the rules, send what happened, say this machine is alive.
  *
- * Run by the daemon on its heartbeat; this command is what a person reaches for
- * when they want it now, or want to know why the rules look old.
+ * The daemon runs the same pass on its heartbeat. This command is what a person
+ * reaches for when they want it immediately, or want to know why the rules look
+ * older than the ones somebody just published.
  */
 export function registerSyncCommand(
   program: Command,
@@ -19,46 +20,44 @@ export function registerSyncCommand(
 ): void {
   const sync = program
     .command('sync')
-    .description('Pull the rules this workspace publishes');
+    .description('Pull the rules this workspace publishes, and send what happened');
 
   sync
     .command('now', { isDefault: true })
-    .description('Pull them now rather than waiting for the next heartbeat')
+    .description('Do a pass now rather than waiting for the next heartbeat')
     .option('--json', 'machine-readable output')
     .action(async (options: { json?: boolean }) => {
-      const account = await readAccount(home());
-      if (account === null) {
-        context.out.line('Not logged in, so there is nothing to pull.');
-        context.out.note('Connect this machine with "memnox login --workspace <id>".');
+      if ((await readAccount(home())) === null) {
+        context.out.line('Not logged in, so there is nothing to sync.');
+        context.out.note('Connect this machine with "memnox login".');
         return;
       }
 
-      let result: PullResult;
-      try {
-        result = await pullBundle(home(), account, await heldHash(home()));
-      } catch (err) {
-        if (!(err instanceof CloudUnreachable)) throw err;
-        /* Not an error to report as one: a machine that cannot reach its
-           control plane carries on enforcing what it last agreed to. */
-        context.out.line(
-          'Could not reach the control plane. The rules on disk still apply.',
-        );
-        return;
-      }
-
+      const pass = await onePass(home());
       if (options.json === true) {
-        context.out.json(result);
+        context.out.json(pass);
         return;
       }
-      report(context, result);
+      report(context, pass);
     });
 }
 
-function report(context: CliContext, result: PullResult): void {
+function report(context: CliContext, pass: Pass): void {
+  if (pass.unreachable === true) {
+    /* Not an error to report as one: a machine that cannot reach its control
+       plane carries on enforcing what it last agreed to. */
+    context.out.line('Could not reach the control plane. The rules on disk still apply.');
+    return;
+  }
+  if (pass.pull !== undefined) reportPull(context, pass.pull);
+  if (pass.push !== undefined) reportPush(context, pass.push);
+}
+
+function reportPull(context: CliContext, result: PullResult): void {
   const { out, style } = context;
   switch (result.outcome) {
     case PULL_OUTCOME.UNCHANGED:
-      out.line('Already up to date.');
+      out.line('Rules already up to date.');
       return;
     case PULL_OUTCOME.APPLIED:
       out.line(
@@ -83,20 +82,31 @@ function report(context: CliContext, result: PullResult): void {
         style.warn('The subscription has lapsed, so the rules are frozen as they are.'),
       );
       out.note(
-        'Nothing has been loosened; this machine enforces exactly what it last agreed to.',
+        'Nothing has been loosened; this machine enforces what it last agreed to.',
       );
       return;
   }
 }
 
-/** The hash of what is already on disk, so an unchanged bundle costs one 304. */
-async function heldHash(home: string): Promise<string | undefined> {
-  try {
-    const document = JSON.parse(await readFile(orgPolicyPath(home), 'utf8')) as {
-      bundleHash?: string;
-    };
-    return document.bundleHash;
-  } catch {
-    return undefined; // Nothing pulled yet.
+function reportPush(context: CliContext, result: PushResult): void {
+  const { out, style } = context;
+  switch (result.outcome) {
+    case PUSH_OUTCOME.NOTHING:
+      out.line('Nothing new to send.');
+      return;
+    case PUSH_OUTCOME.SENT:
+      out.line(
+        `Sent ${result.sent} action(s)${
+          result.duplicates === 0 ? '' : `, ${result.duplicates} already known`
+        }.`,
+      );
+      return;
+    case PUSH_OUTCOME.REVOKED:
+      out.line(style.warn('This machine has been revoked, so nothing was sent.'));
+      return;
+    case PUSH_OUTCOME.REFUSED:
+      out.line(style.warn('The control plane would not take that batch.'));
+      out.note(`${result.because ?? 'no reason given'} — it stays on this machine.`);
+      return;
   }
 }

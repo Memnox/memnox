@@ -25,6 +25,8 @@ interface Collected {
   machineId: string;
   token: string;
   mode: string;
+  /** Where it landed. Decided by whoever approved, not asked for here. */
+  workspaceId: string;
 }
 
 /** What the control plane says while nobody has answered yet. */
@@ -40,7 +42,6 @@ export class EnrolmentRefused extends Error {}
 
 interface EnrolOptions {
   baseUrl: string;
-  workspaceId: string;
   /** Sent once so a person can see which machine they are approving. */
   host?: string;
   mode?: string;
@@ -64,7 +65,6 @@ export async function requestCode(
     path: '/v1/device/codes',
     method: 'POST',
     body: {
-      workspaceId: options.workspaceId,
       hostname: options.host ?? hostname(),
       publicKey,
       runtimeVersion: CLI_VERSION,
@@ -73,7 +73,7 @@ export async function requestCode(
   });
   if (answer.status !== 200 && answer.status !== 201) {
     throw new EnrolmentRefused(
-      `the control plane refused the request (${answer.status}). Check the workspace id.`,
+      `the control plane refused the request (${answer.status}).`,
     );
   }
   const offer = answer.body;
@@ -150,7 +150,7 @@ export function accountFrom(
   return {
     version: 1,
     baseUrl: options.baseUrl,
-    workspaceId: options.workspaceId,
+    workspaceId: collected.workspaceId,
     machineId: collected.machineId,
     token: collected.token,
     privateKey: keys.privateKey,

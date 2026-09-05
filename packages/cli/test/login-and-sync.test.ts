@@ -55,9 +55,9 @@ describe('the account file', () => {
     await writeAccount(
       home,
       accountFrom(
-        { baseUrl: 'https://api.example', workspaceId: 'ws_1' },
+        { baseUrl: 'https://api.example' },
         keys,
-        { machineId: 'mch_1', token: 'mch_secret', mode: 'observe' },
+        { machineId: 'mch_1', token: 'mch_secret', mode: 'observe', workspaceId: 'ws_1' },
         '2026-09-05T12:00:00.000Z',
       ),
     );
@@ -80,9 +80,9 @@ describe('the account file', () => {
     await writeAccount(
       home,
       accountFrom(
-        { baseUrl: 'https://api.example', workspaceId: 'ws_1' },
+        { baseUrl: 'https://api.example' },
         machineKeypair(),
-        { machineId: 'mch_1', token: 't', mode: 'observe' },
+        { machineId: 'mch_1', token: 't', mode: 'observe', workspaceId: 'ws_1' },
         '2026-09-05T12:00:00.000Z',
       ),
     );

@@ -27,6 +27,17 @@ interface CloudRequest {
   /** The machine credential, where the route wants one. */
   token?: string;
   body?: unknown;
+  /**
+   * Sent verbatim, for a request whose bytes are signed.
+   *
+   * The control plane verifies the raw body it received, so serialising twice
+   * would sign one string and send another and the signature would never
+   * verify. When this is set, `body` is ignored.
+   */
+  rawBody?: string;
+  /** Ed25519 over `rawBody`, base64. Sent with `machineId` or not at all. */
+  signature?: string;
+  machineId?: string;
   /** Sent as `If-None-Match`, so an unchanged bundle costs one round trip. */
   ifNoneMatch?: string;
   timeoutMs?: number;
@@ -50,14 +61,24 @@ export async function callCloud<T>(request: CloudRequest): Promise<CloudResponse
   if (request.ifNoneMatch !== undefined) {
     headers['if-none-match'] = `"${request.ifNoneMatch}"`;
   }
-  if (request.body !== undefined) headers['content-type'] = 'application/json';
+  const payload =
+    request.rawBody ??
+    (request.body === undefined ? undefined : JSON.stringify(request.body));
+  if (payload !== undefined) headers['content-type'] = 'application/json';
+
+  /* Both or neither: the control plane refuses a lone one rather than falling
+     back to the credential the request also carries. */
+  if (request.machineId !== undefined && request.signature !== undefined) {
+    headers['x-memnox-machine'] = request.machineId;
+    headers['x-memnox-signature'] = request.signature;
+  }
 
   try {
     const response = await fetch(new URL(request.path, request.baseUrl), {
       method: request.method ?? 'GET',
       headers,
       signal: controller.signal,
-      ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
+      ...(payload === undefined ? {} : { body: payload }),
     });
 
     const etag = response.headers.get('etag');
