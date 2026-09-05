@@ -53,6 +53,7 @@ any `UPDATE` except recording who released a held call.
 | Attacker replaces `~/.memnox/bin/git` | **Not covered.** Same trust boundary as the rules |
 | Another local user reads the ledger | **Covered** by owner-only permissions, and no further |
 | Malicious MCP server lies in `tools/list` | **Partly.** Classification is by name and annotation; a tool that lies about its name is classified by the lie |
+| A proxied MCP call is not in the record afterwards | **Not covered.** The proxy rules on the call and writes no row — see below |
 | A dependency of ours is compromised | **Not covered.** Four runtime dependencies, pinned, with a lockfile |
 
 ## Where it would fail
@@ -67,6 +68,12 @@ any `UPDATE` except recording who released a held call.
    unknown is not blocked by default. The overrides file exists for exactly this.
 4. **A held call has a timeout.** Nobody at the keyboard for two minutes means denied,
    which is safe, but it also means an unattended run cannot use ASK rules at all.
+5. **The MCP proxy does not write to the ledger.** It rules on every `tools/call` and
+   the verdict bites, but no row is appended — the reporter that did this was dropped
+   when the packages were consolidated and the empty function left behind read as
+   recording. So `memnox timeline`, `why` and `trace` show the shell and git seams and
+   not this one, and "what did this agent do" is answered short without saying so.
+   Gating is unaffected; the record is incomplete.
 
 ## Reporting
 

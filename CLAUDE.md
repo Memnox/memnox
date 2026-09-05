@@ -5,6 +5,17 @@
 > Companion to `memnox-functional-spec.md`. Section numbers like *spec §2.4* point there.
 > Stack choices are **[proposed]** — Memnox already ships on npm (`npx memnox`), so the plan assumes TypeScript/Node throughout to keep one language across OSS and cloud.
 
+**What this plan is built toward.** `VISION.md` is the vision all three repositories share,
+written as sixty-five pains rather than as an architecture, over one sentence: **Memnox solves
+the gap between what AI agents can do, what they actually do, and what your organization intended
+them to do.** Cite a pain by number when a milestone is answering to one (`2.1` what an agent can
+reach, `2.61` to `2.64` recovery, `2.65` two agents in one repository); the phase index in its
+appendix maps each `§NN` to the pains it closes and runs to `§12`.
+
+**This copy is the original.** `memnox-cloud/VISION.md` and `memnox-client/VISION.md` are verbatim
+copies of it, because all three repositories are version controlled and the directory above them is
+not. Copy it across whole when it changes, so a diff between the three stays empty.
+
 ---
 
 ## 0. How to read this plan

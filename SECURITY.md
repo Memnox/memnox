@@ -28,15 +28,15 @@ Anything that breaks one of the runtime's guarantees:
 
 | Guarantee | A report is in scope if it shows |
 |---|---|
-| Policy is authoritative | an action executes that a matching policy blocks |
-| Decisions are deterministic | identical input produces different decisions |
-| Escalation is one-way | an advisor loosens a decision instead of tightening it |
-| Identity is fail-closed | an unknown, revoked, or suspended token is honoured |
-| Consent is bound | an approval is reused for a different action than it was granted for |
-| Audit is tamper-evident | the chain verifies after a record is altered or removed |
+| Policy is authoritative | an action runs that a matching rule denies |
+| Decisions are deterministic | identical input produces different verdicts |
+| A held call stays held | an `ask` proceeds without somebody answering it |
+| A secret value never leaves the process that read it | a credential value reaching a report, a snapshot, a ledger row, or any output |
+| The ledger is append-only | a recorded event altered or removed without the database refusing it |
+| Removal is complete | something Memnox installed surviving `memnox uninstall` |
 
-Bypasses of the MCP firewall (a `tools/call` reaching the wrapped server after a
-deny) are in scope.
+A `tools/call` reaching the wrapped server after the MCP proxy denied it is in
+scope, as is a shell line that reaches a binary after the seam denied it.
 
 ## What does not count
 
@@ -44,10 +44,13 @@ deny) are in scope.
   that allows something dangerous is a configuration issue.
 - **`--default-effect allow`.** Allowing unmatched actions is opt-in behaviour and
   documented as such.
-- **Break-glass overrides.** `approvals override` is an intentional admin escape
-  hatch. It requires the admin token and a reason, and is audited as critical.
-- Findings that require an attacker who already holds the admin token or write
-  access to the policy file.
+- **Anything that needs write access to the rules or to `~/.memnox`.** Whoever can
+  edit your rule file can edit your shell profile. `docs/threat-model.md` states
+  that boundary rather than leaving it to be found.
+- **`PATH` being advisory.** An agent calling `/usr/bin/git` by absolute path never
+  meets an interceptor. That is a stated limit, and the OS guard, the git hooks and
+  the MCP proxy each close part of it. A report showing one of *those* bypassed is
+  in scope.
 
 ## Supported versions
 

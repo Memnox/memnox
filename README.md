@@ -117,6 +117,7 @@ Node 20 or newer, on macOS or Linux. On Windows, run it inside WSL —
 - [Event schema](docs/event-schema.md) — the frozen v1 row
 - [Threat model](docs/threat-model.md) — including where it would fail
 - [FAQ](docs/faq.md) — starting with "does it call an LLM?" (no)
+- [Architecture](ARCHITECTURE.md) — how the code is put together
 
 ## What it deliberately does not do
 
@@ -129,8 +130,12 @@ and it has no opinion about yours.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md). Every change ships with a test, and
-`pnpm typecheck && pnpm test && pnpm deadcode` has to pass.
+[ARCHITECTURE.md](ARCHITECTURE.md) is the map: four packages, one direction of
+dependency, and one path every decision travels down. It ends with a table of where
+to make each kind of change.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) is how a change lands. Every change ships with a
+test, and `pnpm format && pnpm typecheck && pnpm test && pnpm deadcode` has to pass.
 
 ## Licence
 

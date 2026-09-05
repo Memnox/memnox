@@ -11,3 +11,6 @@ disagree, the code is right and the page is a bug.
 - [Threat model](threat-model.md) — what this defends against, and what it does not
 - [FAQ](faq.md)
 - [ADRs](adr/) — decisions with a date on them
+
+Building on it rather than using it: [ARCHITECTURE.md](../ARCHITECTURE.md) for the
+shape of the code, [CONTRIBUTING.md](../CONTRIBUTING.md) for how a change lands.
