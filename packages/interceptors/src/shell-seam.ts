@@ -4,13 +4,6 @@ import type { HookAuthorizer, HookVerdict } from './hook-authorizer';
 
 export const SHELL_ACTION = 'shell.execute';
 
-/** Declared, and shown wherever coverage is reported. */
-export const SHELL_BLIND_SPOTS: readonly string[] = [
-  'anything the command does once it is allowed to start',
-  'a shell started without this wrapper in front of it',
-  'a command built at runtime inside the shell it starts',
-];
-
 export interface ShellOutcome {
   /** The command to run, present only when it may proceed. */
   run?: readonly string[];

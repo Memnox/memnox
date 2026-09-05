@@ -4,9 +4,3 @@ export interface Logger {
   warn(message: string): void;
   error(message: string): void;
 }
-
-export const SILENT_LOGGER: Logger = {
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-};

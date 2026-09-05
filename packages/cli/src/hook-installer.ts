@@ -11,7 +11,7 @@ import { HOOK_EVENT_NAME, TOOL_ACTIONS } from '@memnox/interceptors';
 export const MEMNOX_HOOK_MARKER = 'Memnox is ruling on this action';
 
 /** Seconds. A gate on every tool call cannot be allowed to hang the agent. */
-export const HOOK_TIMEOUT_SECONDS = 10;
+const HOOK_TIMEOUT_SECONDS = 10;
 
 /** Built from the map itself, so the matcher and the actions cannot drift apart. */
 export const HOOK_MATCHER = Object.keys(TOOL_ACTIONS).join('|');

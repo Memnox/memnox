@@ -31,7 +31,10 @@ describe('the network probe', () => {
   });
 
   it('collects the hosts a proxy already exempts, because that is the real hole', () => {
-    const result = probe({ HTTP_PROXY: 'http://p:3128', NO_PROXY: 'localhost, .internal' });
+    const result = probe({
+      HTTP_PROXY: 'http://p:3128',
+      NO_PROXY: 'localhost, .internal',
+    });
     expect(result.noProxy).toEqual(['localhost', '.internal']);
   });
 
@@ -49,6 +52,8 @@ describe('the network probe', () => {
 
   it('never dials out — the probe is a pure function of what it was given', () => {
     // A second identical call must produce an identical answer, with no IO between.
-    expect(probe({ ALL_PROXY: 'socks5://x' })).toEqual(probe({ ALL_PROXY: 'socks5://x' }));
+    expect(probe({ ALL_PROXY: 'socks5://x' })).toEqual(
+      probe({ ALL_PROXY: 'socks5://x' }),
+    );
   });
 });

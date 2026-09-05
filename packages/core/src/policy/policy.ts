@@ -51,8 +51,6 @@ export const POLICY_MODE = {
 
 export type PolicyMode = (typeof POLICY_MODE)[keyof typeof POLICY_MODE];
 
-export const DEFAULT_POLICY_MODE: PolicyMode = POLICY_MODE.ENFORCE;
-
 export interface PolicyDecision {
   effect: DecisionEffect;
   reason?: string;

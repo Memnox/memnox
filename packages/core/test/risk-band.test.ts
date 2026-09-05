@@ -33,7 +33,9 @@ describe('the risk band', () => {
 
   it('is critical when a tool can destroy, and says which rule said so', () => {
     const band = bandFor(
-      report({ surfaces: [surface([{ name: 'drop_db', effect: 'destructive' }])] as never }),
+      report({
+        surfaces: [surface([{ name: 'drop_db', effect: 'destructive' }])] as never,
+      }),
     );
     expect(band.level).toBe('critical');
     expect(band.fired.map((rule) => rule.rule)).toContain(RISK_RULE.DESTRUCTIVE_TOOL);
@@ -54,7 +56,9 @@ describe('the risk band', () => {
   it('raises a write tool when a credential sits beside it', () => {
     const withCredential = bandFor(
       report({
-        surfaces: [surface([{ name: 'create_pr', effect: 'write' }], ['GITHUB_TOKEN'])] as never,
+        surfaces: [
+          surface([{ name: 'create_pr', effect: 'write' }], ['GITHUB_TOKEN']),
+        ] as never,
       }),
     );
     expect(withCredential.fired.map((r) => r.rule)).toContain(
@@ -77,7 +81,13 @@ describe('the risk band', () => {
   });
 
   it('flags egress only when there is something that could use it', () => {
-    const unknown = { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] };
+    const unknown = {
+      outbound: 'unknown',
+      proxyVars: [],
+      noProxy: [],
+      sandbox: [],
+      read: [],
+    };
     expect(bandFor(report({ egress: unknown as never })).fired).toEqual([]);
 
     const withTools = bandFor(

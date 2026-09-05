@@ -1,6 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "packages/cli": {
+      "ignoreDependencies": [
+        "@memnox/proxy"
+      ]
+    }
+  },
   "ignore": [
-    "examples/**"
+    "packages/*/test/*-harness.ts"
   ]
 }

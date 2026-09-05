@@ -78,10 +78,11 @@ export function registerDoctorCommand(
         out.line('');
       }
 
-      // A decomposition of this list, granting nothing and ranking against nobody.
+      // Counts, never a total: a number nobody can argue with is a number nobody acts on.
+      const { counts } = report;
       out.line(
-        `Risk ${report.score.total}, from ${report.findings.length} finding(s) above. ` +
-          'It grants nothing and compares this machine to no other.',
+        `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ` +
+          `${counts.low} low. Nothing here compares this machine to another.`,
       );
     });
 }

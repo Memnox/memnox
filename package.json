@@ -10,11 +10,9 @@
   },
   "scripts": {
     "build": "pnpm -r --filter \"./packages/**\" build",
-    "release:local": "./scripts/publish-local.sh",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "deadcode": "knip",

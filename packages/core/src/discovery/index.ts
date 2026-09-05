@@ -19,3 +19,4 @@ export * from './trace';
 export * from './network';
 export * from './risk';
 export * from './classify';
+export * from './inventory';

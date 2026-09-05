@@ -22,13 +22,3 @@ export const MODE_STRENGTH: Record<EnforcementMode, number> = {
   [ENFORCEMENT_MODE.ADVISE]: 2,
   [ENFORCEMENT_MODE.ENFORCE]: 3,
 };
-
-export const ENFORCEMENT_REASON = {
-  DISABLED: 'governance disabled for this environment',
-  /** Prefix; the shadow verdict's own reason follows. */
-  OBSERVED: 'observed only',
-  ADVISED: 'advised only',
-} as const;
-
-/** Audited action name for a change to the enforcement mode itself. */
-export const ENFORCEMENT_SET_ACTION = 'governance.enforcement';

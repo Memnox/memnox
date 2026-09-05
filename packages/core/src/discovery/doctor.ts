@@ -26,12 +26,6 @@ import {
  * A decomposition of this machine's findings and nothing else. It grants nothing, it
  * changes no permission, and it is never a rank against anybody else's machine.
  */
-export interface RiskScore {
-  total: number;
-  /** The list underneath the number, so the number can be argued with. */
-  bySeverity: Record<FindingSeverity, number>;
-}
-
 /** Withholding by path closes a file. It closes nothing for a database or a network. */
 const CLOSABLE_BY_PATH: readonly string[] = [
   RESOURCE_KIND.FILE,
@@ -40,27 +34,13 @@ const CLOSABLE_BY_PATH: readonly string[] = [
   RESOURCE_KIND.SOCKET,
 ];
 
-const SEVERITY_WEIGHT: Record<FindingSeverity, number> = {
-  [FINDING_SEVERITY.LOW]: 1,
-  [FINDING_SEVERITY.MEDIUM]: 3,
-  [FINDING_SEVERITY.HIGH]: 8,
-  [FINDING_SEVERITY.CRITICAL]: 20,
+/** Ordering only. Weights that summed into a total were how a score got built. */
+const SEVERITY_ORDER: Record<FindingSeverity, number> = {
+  [FINDING_SEVERITY.LOW]: 0,
+  [FINDING_SEVERITY.MEDIUM]: 1,
+  [FINDING_SEVERITY.HIGH]: 2,
+  [FINDING_SEVERITY.CRITICAL]: 3,
 };
-
-export function scoreFindings(findings: readonly Finding[]): RiskScore {
-  const bySeverity: Record<FindingSeverity, number> = {
-    [FINDING_SEVERITY.LOW]: 0,
-    [FINDING_SEVERITY.MEDIUM]: 0,
-    [FINDING_SEVERITY.HIGH]: 0,
-    [FINDING_SEVERITY.CRITICAL]: 0,
-  };
-  let total = 0;
-  for (const finding of findings) {
-    bySeverity[finding.severity] += 1;
-    total += SEVERITY_WEIGHT[finding.severity];
-  }
-  return { total, bySeverity };
-}
 
 export interface DoctorInput {
   resources: readonly Resource[];
@@ -72,7 +52,30 @@ export interface DoctorInput {
 
 export interface DoctorReport {
   findings: Finding[];
-  score: RiskScore;
+  /** How many of each severity. A total would be a score, which is unarguable. */
+  counts: SeverityCounts;
+}
+
+export type SeverityCounts = Record<FindingSeverity, number>;
+
+/** Counted, never summed: three mediums are three mediums, not one high. */
+export function countBySeverity(findings: readonly Finding[]): SeverityCounts {
+  const counts: SeverityCounts = {
+    [FINDING_SEVERITY.LOW]: 0,
+    [FINDING_SEVERITY.MEDIUM]: 0,
+    [FINDING_SEVERITY.HIGH]: 0,
+    [FINDING_SEVERITY.CRITICAL]: 0,
+  };
+  for (const finding of findings) counts[finding.severity] += 1;
+  return counts;
+}
+
+/** Worst severity present, for ordering only. Absent means nothing was found. */
+function worstOf(findings: readonly Finding[]): number {
+  return findings.reduce(
+    (worst, finding) => Math.max(worst, SEVERITY_ORDER[finding.severity]),
+    -1,
+  );
 }
 
 /**
@@ -165,7 +168,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
   }
 
   const ranked = rankFindings(findings);
-  return { findings: ranked, score: scoreFindings(ranked) };
+  return { findings: ranked, counts: countBySeverity(ranked) };
 }
 
 interface CombinedCapability {
@@ -417,12 +420,15 @@ export function rankAgents(
     };
   });
 
-  return standings.sort(
-    (a, b) =>
-      scoreFindings(findings.filter((f) => f.agentIds.includes(b.agentId))).total -
-        scoreFindings(findings.filter((f) => f.agentIds.includes(a.agentId))).total ||
-      a.agentId.localeCompare(b.agentId),
-  );
+  // Worst finding first, then how many of it. Never a total, which nobody can argue with.
+  const forAgent = (id: string): Finding[] =>
+    findings.filter((finding) => finding.agentIds.includes(id));
+  return standings.sort((a, b) => {
+    const worst = worstOf(forAgent(b.agentId)) - worstOf(forAgent(a.agentId));
+    if (worst !== 0) return worst;
+    const many = forAgent(b.agentId).length - forAgent(a.agentId).length;
+    return many !== 0 ? many : a.agentId.localeCompare(b.agentId);
+  });
 }
 
 function tally(findings: readonly Finding[]): Record<FindingSeverity, number> {

@@ -60,9 +60,6 @@ export const EGRESS_DEFAULT_PORT = 8888;
 /** A body larger than this is not read, and is never treated as though it had been. */
 export const EGRESS_MAX_BODY_BYTES = 1_000_000;
 
-export const DOCKER_SEAM_SOCKET = '/tmp/memnox-docker.sock';
-export const DOCKER_REAL_SOCKET = '/var/run/docker.sock';
-
 /**
  * The operating system's cap on a unix socket path. Over it, `listen` can report
  * success while binding nothing, which would leave the seam claiming coverage it

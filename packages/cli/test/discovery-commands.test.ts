@@ -167,7 +167,7 @@ describe('memnox (scan)', () => {
 });
 
 describe('memnox doctor', () => {
-  it('ranks findings, names the evidence, and says the score grants nothing', async () => {
+  it('ranks findings, names the evidence, and counts rather than totals', async () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
@@ -177,9 +177,7 @@ describe('memnox doctor', () => {
 
     expect(out.text).toContain('CRITICAL');
     expect(out.text).toContain(`${HOME}/.aws/credentials`);
-    expect(out.text).toContain(
-      'It grants nothing and compares this machine to no other.',
-    );
+    expect(out.text).toContain('Nothing here compares this machine to another.');
   });
 
   it('says nothing rather than inventing a finding on a clean machine', async () => {

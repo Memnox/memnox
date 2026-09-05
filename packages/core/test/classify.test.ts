@@ -71,7 +71,10 @@ describe('classifyTool', () => {
   });
 
   it('prefers a published annotation over the name', () => {
-    const result = classifyTool({ name: 'delete_nothing', annotations: { readOnlyHint: true } });
+    const result = classifyTool({
+      name: 'delete_nothing',
+      annotations: { readOnlyHint: true },
+    });
     expect(result.class).toBe(TOOL_CLASS.READ);
     expect(result.from).toBe('annotation');
   });

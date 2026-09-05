@@ -6,30 +6,39 @@ on:
   pull_request:
 
 jobs:
+  # The plan's OSS-0.5: both platforms people actually run agents on, both supported
+  # Node lines. A shim that works on Ubuntu and not macOS is the bug this catches.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run format:check
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:coverage
-      - run: npm run deadcode
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm run test
+      - run: pnpm run deadcode
 
   # Catches a broken manifest at PR time rather than at tag time.
   publish-dry-run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --workspaces --dry-run
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm -r publish --dry-run --no-git-checks

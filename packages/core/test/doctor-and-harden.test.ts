@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discover } from '../src/discovery/discover';
-import { rankAgents, runDoctor, scoreFindings } from '../src/discovery/doctor';
+import { countBySeverity, rankAgents, runDoctor } from '../src/discovery/doctor';
 import {
   applyHardening,
   compareFindings,
@@ -46,12 +46,13 @@ describe('the doctor', () => {
     expect(findings.every((finding) => finding.evidence.length > 0)).toBe(true);
   });
 
-  it('scores by decomposing the list, so the number can be argued with', async () => {
-    const { findings, score } = await report();
+  it('counts by severity rather than totalling, so the answer stays arguable', async () => {
+    const { findings, counts } = await report();
 
-    expect(score.bySeverity[FINDING_SEVERITY.CRITICAL]).toBe(1);
-    const recomputed = scoreFindings(findings);
-    expect(recomputed).toEqual(score);
+    expect(counts[FINDING_SEVERITY.CRITICAL]).toBe(1);
+    expect(countBySeverity(findings)).toEqual(counts);
+    // Three mediums must never read as one high.
+    expect(Object.keys(counts)).not.toContain('total');
   });
 
   it('gives every credential finding one change that closes it', async () => {

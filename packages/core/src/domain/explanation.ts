@@ -11,9 +11,6 @@ export const EXPLANATION_EVIDENCE = {
   SCOPE: 'scope',
 } as const;
 
-export type ExplanationEvidenceKind =
-  (typeof EXPLANATION_EVIDENCE)[keyof typeof EXPLANATION_EVIDENCE];
-
 export type ExplanationEvidence =
   | { kind: 'rule'; rule: RuleRef }
   | { kind: 'request'; field: string; value: string }
@@ -32,11 +29,6 @@ export interface ExplanationLine {
 export interface Explanation {
   decisionId: string;
   lines: ExplanationLine[];
-}
-
-export interface ExplanationStore {
-  save(explanation: Explanation): Promise<void>;
-  findByDecision(decisionId: string): Promise<Explanation | null>;
 }
 
 /** Five lines, not a reasoning dump: source, resource, authority, rule, outcome. */

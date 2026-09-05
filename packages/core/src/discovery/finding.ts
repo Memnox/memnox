@@ -77,6 +77,3 @@ export function severityOfResource(resource: Resource): FindingSeverity {
 export function agentIdsOf(refs: readonly AgentRef[]): string[] {
   return refs.map((ref) => ref.id);
 }
-
-export const DEFAULT_HARDEN_MODE: HardenMode = HARDEN_MODE.ADVISE;
-export const DEFAULT_HARDEN_TARGET: HardenTarget = HARDEN_TARGET.POLICY;

@@ -94,13 +94,3 @@ export function compareDeclaredScope(
   }
   return { match: sawDeclaration ? SCOPE_MATCH.IN_SCOPE : SCOPE_MATCH.UNDECLARED };
 }
-
-export function taskRefOf(task: Task): TaskRef {
-  return { id: task.id, statement: task.statement };
-}
-
-export interface TaskStore {
-  save(task: Task): Promise<void>;
-  findBySession(sessionId: string): Promise<Task | null>;
-  findById(id: string): Promise<Task | null>;
-}

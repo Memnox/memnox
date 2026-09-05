@@ -89,7 +89,9 @@ export function parseOverrides(raw: string): {
       overrides[tool] = value;
       continue;
     }
-    rejected.push(`${tool}: ${String(value)} is not one of ${Object.values(TOOL_CLASS).join(', ')}`);
+    rejected.push(
+      `${tool}: ${String(value)} is not one of ${Object.values(TOOL_CLASS).join(', ')}`,
+    );
   }
   return { overrides, rejected };
 }

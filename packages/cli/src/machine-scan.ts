@@ -77,18 +77,15 @@ export async function scanMachine(
 }
 
 /**
- * The rules in force on this machine, or why they could not be read. A registered file
- * belongs to somebody else's repository and can go stale, and a report that quietly
- * treated a broken rule set as an empty one would say "no rule covers this" about a
- * machine that is governed.
+ * The rules in force here, or why they would not load. A report that treated a broken
+ * rule set as an empty one would say "no rule covers this" about a governed machine.
  */
 interface LocalRules {
   policies: Policy[];
-  /** Set when the set would not load. The caller says so rather than reporting zero. */
   unreadable?: string;
 }
 
-export async function loadLocalRules(seams: ScanSeams): Promise<LocalRules> {
+async function loadLocalRules(seams: ScanSeams): Promise<LocalRules> {
   try {
     return { policies: await loadPolicyFiles(await seams.policyFiles()) };
   } catch (err) {

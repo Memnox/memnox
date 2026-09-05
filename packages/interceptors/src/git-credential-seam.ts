@@ -4,23 +4,6 @@ import type { HookAuthorizer } from './hook-authorizer';
 
 export const GIT_CREDENTIAL_ACTION = 'git.credential';
 
-/**
- * The seam that always exists. An agent that cannot be wrapped can still be starved:
- * this one never supplies a credential — it only declines to let the next helper do so.
- */
-export const GIT_BLIND_SPOTS: readonly string[] = [
-  'a credential already cached by another helper',
-  'anything git does once a credential is handed over',
-  'a remote reached without git, such as a raw HTTPS fetch',
-];
-
-export interface GitCredentialRequest {
-  protocol?: string;
-  host?: string;
-  path?: string;
-  username?: string;
-}
-
 export interface GitCredentialOutcome {
   /**
    * What to write on stdout. Empty means "no opinion", and git asks the next helper;
