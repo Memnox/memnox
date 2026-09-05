@@ -21,9 +21,9 @@ export const SESSION_VAR = 'MEMNOX_SESSION';
 
 /**
  * Everything the child needs to be governed, set as environment rather than asked of
- * the agent: PATH so the interceptors are found first, SHELL so its `Bash` tool goes through
- * one, the proxy variables so egress is observable, and a session id so one piece of
- * work reads as one timeline.
+ * the agent: PATH so the interceptors are found first, SHELL so its `Bash` tool goes
+ * through one, the shell we displaced so that wrapper has something to hand off to, and
+ * a session id so one piece of work reads as one timeline.
  */
 export function environmentFor(
   base: NodeJS.ProcessEnv,
