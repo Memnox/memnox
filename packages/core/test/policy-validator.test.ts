@@ -30,18 +30,35 @@ describe('validatePolicyDocument', () => {
     expect(() => validatePolicyDocument(invalid)).toThrow(PolicyValidationError);
   });
 
-  it('requires approvers when the effect is require_approval', () => {
-    const invalid = {
+  it('accepts an ask with no approvers, which holds for whoever is at the terminal', () => {
+    const document = {
       version: 1,
       policies: [
         {
           name: 'x',
           match: { actions: ['a'] },
-          decision: { effect: 'ask' },
+          decision: { effect: 'ask', reason: 'a person decides' },
         },
       ],
     };
-    expect(() => validatePolicyDocument(invalid)).toThrow(/approvers/);
+    // Naming who may answer needs an identity this machine does not have.
+    expect(() => validatePolicyDocument(document)).not.toThrow();
+  });
+
+  it('still accepts an ask that does name approvers', () => {
+    const document = {
+      version: 1,
+      policies: [
+        {
+          name: 'x',
+          match: { actions: ['a'] },
+          decision: { effect: 'ask', reason: 'r', approvers: ['platform'] },
+        },
+      ],
+    };
+    expect(validatePolicyDocument(document).policies[0]?.decision.approvers).toEqual([
+      'platform',
+    ]);
   });
 
   it('rejects duplicate policy names and lists every issue at once', () => {

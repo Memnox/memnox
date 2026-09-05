@@ -1,4 +1,6 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
+import { extname } from 'node:path';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { parse, stringify } from 'yaml';
 import type { Policy, PolicyDocument } from '../policy/index';
 import {
@@ -7,7 +9,19 @@ import {
   validatePolicyDocument,
 } from '../policy/index';
 
-/** Reads and validates a YAML policy file. Throws PolicyValidationError with every issue. */
+/**
+ * TOML is the format the build plan specifies and what new files are written in. YAML
+ * is still read, because a rule file somebody already has must not stop working on an
+ * upgrade — the shape both produce is identical, so only the parser differs.
+ */
+export function parsePolicySource(raw: string, filePath: string): unknown {
+  return extname(filePath).toLowerCase() === '.toml' ? parseToml(raw) : parse(raw);
+}
+
+/** The extension a new policy file gets. */
+export const POLICY_FILE_EXTENSION = '.toml';
+
+/** Reads and validates a policy file. Throws PolicyValidationError with every issue. */
 export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> {
   let raw: string;
   try {
@@ -16,13 +30,14 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
     // A bare ENOENT in a crash loop tells an operator nothing actionable.
     if (isMissingFile(err)) {
       throw new Error(
-        `No policy file at ${filePath} — create one with "memnox init --file ${filePath}", ` +
-          'or start without --policies to run on advisors alone.',
+        `No policy file at ${filePath}. Write one with "memnox protect --apply".`,
       );
     }
     throw err;
   }
-  const document = named(filePath, () => validatePolicyDocument(parse(raw)));
+  const document = named(filePath, () =>
+    validatePolicyDocument(parsePolicySource(raw, filePath)),
+  );
   if (document.project === undefined) return document.policies;
   // Rules inherit their file's project so the engine can keep one repo's rules
   // from deciding another project's actions.
@@ -133,7 +148,7 @@ export async function readPolicyDocumentFile(
     if (isMissingFile(err)) return null;
     throw err;
   }
-  return validatePolicyDocument(parse(raw));
+  return validatePolicyDocument(parsePolicySource(raw, filePath));
 }
 
 /** Temp file and rename, so a crash mid-write cannot truncate the rule set. */
@@ -141,11 +156,16 @@ export async function writePolicyDocumentFile(
   filePath: string,
   document: PolicyDocument,
 ): Promise<void> {
-  const serialized = stringify({
+  const shape = {
     version: POLICY_DOCUMENT_VERSION,
     ...(document.project === undefined ? {} : { project: document.project }),
     policies: document.policies,
-  });
+  };
+  // Written in the format the file already is, so a save never changes somebody's format.
+  const serialized =
+    extname(filePath).toLowerCase() === POLICY_FILE_EXTENSION
+      ? stringifyToml(shape)
+      : stringify(shape);
   const temporary = `${filePath}.tmp`;
   await writeFile(temporary, serialized, 'utf8');
   await rename(temporary, filePath);

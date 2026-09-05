@@ -1,29 +1,32 @@
 # Policies
 
-Rules are plain YAML, so they stay reviewable and diffable. Every field you leave out
+Rules are plain TOML, so they stay reviewable and diffable. Every field you leave out
 matches everything; every field you set narrows.
 
-> The build plan specifies TOML for this file (OSS-3.1). The parser is YAML today and
-> the format has not been converted. That divergence is deliberate and open — see the
-> note at the bottom.
+A file ending `.yaml` is still read, so a rule set you already have keeps working. New
+files are written as `.toml`, and a save never changes the format of a file you wrote.
 
 ## A rule
 
-```yaml
-version: 1
-policies:
-  - name: no-force-push-to-main
-    description: A force push rewrites history somebody else may have pulled.
-    match:
-      actions: ["git.push"]
-      targets: ["*main*"]
-    decision:
-      effect: deny
-      reason: main is shared, and a force push loses somebody's work.
-      alternative:
-        action: git.push
-        resource: a branch
-        note: Push a branch and open a PR.
+```toml
+version = 1
+
+[[policies]]
+name = "no-force-push-to-main"
+description = "A force push rewrites history somebody else may have pulled."
+
+[policies.match]
+actions = ["git.push"]
+targets = ["*main*"]
+
+[policies.decision]
+effect = "deny"
+reason = "main is shared, and a force push loses somebody's work."
+
+[policies.decision.alternative]
+action = "git.push"
+resource = "a branch"
+note = "Push a branch and open a PR."
 ```
 
 ## The three effects
@@ -63,10 +66,10 @@ had loosened something and had not would be governed by something nobody can see
 
 ## Schedules
 
-```yaml
-    match:
-      actions: ["deploy.*"]
-      when: "Fri 16:00-23:59"
+```toml
+[policies.match]
+actions = ["deploy.*"]
+when = "Fri 16:00-23:59"
 ```
 
 Evaluated in local time, against a moment passed in rather than a clock read, so a
@@ -81,9 +84,8 @@ memnox policy test "git push --force"
 Prints the effect, the reason, the rule and the alternative, and exits non-zero on
 anything that is not an allow.
 
-## On the format
+## Who may answer an `ask`
 
-The plan calls for TOML. The current parser reads YAML and reports every problem with
-a line number. Converting is a real change — a new dependency, and every existing rule
-file rewritten — so it is being decided rather than done quietly. Until then this page
-describes YAML, which is what the code reads.
+Nobody, by name. An `ask` holds the call for whoever is at the terminal, because
+naming an approver needs an identity this machine does not have. `approvers` is
+accepted and recorded, and routing it to a named person is the cloud's half.

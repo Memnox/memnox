@@ -87,11 +87,9 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
     `${path}.decision.approvers`,
     issues,
   );
-  if (effect === DECISION_EFFECT.ASK && (!approvers || approvers.length === 0)) {
-    issues.push(
-      `${path}.decision.approvers is required when effect is "${DECISION_EFFECT.ASK}"`,
-    );
-  }
+  /* An ask with no approvers holds the call for whoever is at the terminal, which is
+     what the open half can actually do. Naming who may answer needs an identity this
+     machine does not have, so it is optional here rather than required. */
 
   return {
     name,

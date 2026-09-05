@@ -38,4 +38,4 @@ Named in `docs/threat-model.md` rather than left to be discovered. The largest: 
 is advisory, so an agent invoking an absolute path never meets an interceptor. The OS
 guard, the git hooks and the MCP proxy each close part of that.
 
-Windows is WSL-only (ADR 0001). Policy files are YAML, where the plan specifies TOML.
+Windows is WSL-only (ADR 0001).

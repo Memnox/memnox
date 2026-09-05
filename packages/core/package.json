@@ -46,6 +46,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "smol-toml": "^1.8.0",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
