@@ -157,16 +157,21 @@ async function reportServer(
   out.line('');
   out.line(`  ${change.detail}`);
   out.line('');
-  // A broken rule set is not an empty one, and reporting it as one would be a lie.
   out.line(
-    coverage.unreadable !== undefined
-      ? style.warn('  The rules on this machine would not load, so coverage is unknown.')
-      : coverage.covered.length === 0
-        ? '  No rule covers any of them.'
-        : `  ${coverage.covered.length} of ${tools.length} covered by a rule.`,
+    coverage.covered.length === 0
+      ? '  No rule covers any of them.'
+      : `  ${coverage.covered.length} of ${tools.length} covered by a rule.`,
   );
-  if (coverage.unreadable !== undefined) {
-    out.line(`  ${style.dim('run "memnox validate" to see which file')}`);
+  /* A file that would not load might have covered these, so the count above is a floor
+     rather than a total. Saying which is the difference between a number and a guess. */
+  if (coverage.unreadable.length > 0) {
+    const broken = coverage.unreadable.length;
+    out.line(
+      style.warn(
+        `  ${broken} rule file${broken === 1 ? '' : 's'} would not load, so that is a floor.`,
+      ),
+    );
+    out.line(`  ${style.dim('run "memnox policy check" to see which')}`);
   }
   if (change.grantedBy !== undefined) {
     out.line('');

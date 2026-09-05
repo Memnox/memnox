@@ -369,9 +369,15 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
   for (const line of gapLines(gap)) {
     out.line(gap.governed === 0 ? style.warn(line) : line);
   }
-  // An unreadable rule set is never reported as no rules; the reader would act on that.
-  if (counts.unreadable !== undefined) {
-    out.note(`Rules exist but would not load: ${counts.unreadable}`);
+  /* An unreadable file is never reported as no rules, and never as the whole rule set
+     either: the other repositories on this disk are still in force. Each broken file is
+     named with a count, and the command that prints what is wrong with it. */
+  for (const broken of counts.unreadable) {
+    const problems = broken.issues.length;
+    out.note(
+      `${broken.file} would not load — ${problems} problem${problems === 1 ? '' : 's'}, so its rules are not in force.`,
+    );
+    out.note(`  see them with "memnox policy check ${broken.file}"`);
   }
   out.line('');
   // Padded on the plain text, so colour codes never throw the column off.

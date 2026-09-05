@@ -6,6 +6,15 @@ import type { Policy, PolicyDocument, PolicyMode } from './policy';
 import { POLICY_DOCUMENT_VERSION, POLICY_MODE } from './policy';
 
 const VALID_EFFECTS: readonly string[] = Object.values(DECISION_EFFECT);
+
+/* What earlier versions of this file called the three effects. A rule somebody wrote
+   before a rename is not a puzzle to solve: the error says what to write instead. */
+const RENAMED_EFFECTS = new Map<string, DecisionEffect>([
+  ['block', DECISION_EFFECT.DENY],
+  ['withhold', DECISION_EFFECT.DENY],
+  ['require_approval', DECISION_EFFECT.ASK],
+  ['escalate', DECISION_EFFECT.ASK],
+]);
 const VALID_MODES: readonly string[] = Object.values(POLICY_MODE);
 
 export class PolicyValidationError extends Error {
@@ -78,7 +87,13 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
 
   const rawEffect = decision['effect'];
   if (typeof rawEffect !== 'string' || !VALID_EFFECTS.includes(rawEffect)) {
-    issues.push(`${path}.decision.effect must be one of: ${VALID_EFFECTS.join(', ')}`);
+    const renamed =
+      typeof rawEffect === 'string' ? RENAMED_EFFECTS.get(rawEffect) : undefined;
+    issues.push(
+      renamed === undefined
+        ? `${path}.decision.effect must be one of: ${VALID_EFFECTS.join(', ')}`
+        : `${path}.decision.effect: "${rawEffect}" is now "${renamed}"`,
+    );
     return null;
   }
   const effect = rawEffect as DecisionEffect;

@@ -26,3 +26,20 @@ export async function registerPolicyFile(
   await writeFile(path, `${JSON.stringify({ files }, null, 2)}\n`, 'utf8');
   return files;
 }
+
+/**
+ * Drops paths from the list. Never automatic: a checkout on an unmounted drive reads
+ * exactly like a deleted one, and quietly forgetting somebody's rules is how a machine
+ * ends up ungoverned without anybody deciding it should be.
+ */
+export async function forgetPolicyFiles(
+  homeDir: string,
+  drop: readonly string[],
+): Promise<string[]> {
+  const gone = new Set(drop);
+  const path = policyRegistryPath(homeDir);
+  const files = (await readPolicyRegistry(path)).filter((file) => !gone.has(file));
+  await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
+  await writeFile(path, `${JSON.stringify({ files }, null, 2)}\n`, 'utf8');
+  return files;
+}

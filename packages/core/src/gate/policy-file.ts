@@ -170,3 +170,55 @@ export async function writePolicyDocumentFile(
   await writeFile(temporary, serialized, 'utf8');
   await rename(temporary, filePath);
 }
+
+/** One file that is there, will not load, and everything wrong with it. */
+export interface UnreadablePolicyFile {
+  file: string;
+  issues: string[];
+}
+
+/** A file that loaded, and how many of the rules in force came from it. */
+export interface LoadedPolicyFile {
+  file: string;
+  rules: number;
+}
+
+export interface PolicySet {
+  /** The rules actually in force, from the files that loaded. */
+  policies: Policy[];
+  loaded: LoadedPolicyFile[];
+  unreadable: UnreadablePolicyFile[];
+  /** Registered by a checkout that has since moved or been deleted. */
+  missing: string[];
+}
+
+/**
+ * Every registered file, loaded one at a time. One repository's stale file must not
+ * blank every other repository's rules on a report: a reader told "nothing governs
+ * this" about a governed machine acts on it. The gate keeps `loadPolicyFiles`, which
+ * still throws — refusing to start is right where the answer decides whether a call
+ * proceeds, and wrong where it only describes.
+ */
+export async function loadPolicySet(filePaths: readonly string[]): Promise<PolicySet> {
+  const set: PolicySet = { policies: [], loaded: [], unreadable: [], missing: [] };
+  for (const filePath of filePaths) {
+    try {
+      const policies = await loadPoliciesFromFile(filePath);
+      set.policies.push(...policies);
+      set.loaded.push({ file: filePath, rules: policies.length });
+    } catch (err) {
+      if (isMissingPolicyFile(err)) {
+        set.missing.push(filePath);
+        continue;
+      }
+      set.unreadable.push({
+        file: filePath,
+        issues:
+          err instanceof PolicyValidationError
+            ? err.issues
+            : [err instanceof Error ? err.message : String(err)],
+      });
+    }
+  }
+  return set;
+}

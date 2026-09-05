@@ -13,8 +13,8 @@ import {
   type McpLister,
   type SnapshotStore,
 } from '@memnox/core';
-import { loadPolicyFiles, readPolicyRegistry } from '@memnox/core';
-import { matchesPattern, type Policy } from '@memnox/core';
+import { loadPolicySet, readPolicyRegistry } from '@memnox/core';
+import { matchesPattern, type Policy, type UnreadablePolicyFile } from '@memnox/core';
 
 /** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
 const MEMNOX_HOME = '.memnox';
@@ -82,23 +82,18 @@ export async function scanMachine(
  */
 interface LocalRules {
   policies: Policy[];
-  unreadable?: string;
+  unreadable: UnreadablePolicyFile[];
 }
 
 async function loadLocalRules(seams: ScanSeams): Promise<LocalRules> {
-  try {
-    return { policies: await loadPolicyFiles(await seams.policyFiles()) };
-  } catch (err) {
-    return {
-      policies: [],
-      unreadable: err instanceof Error ? err.message : String(err),
-    };
-  }
+  const set = await loadPolicySet(await seams.policyFiles());
+  return { policies: set.policies, unreadable: set.unreadable };
 }
 
 interface RuleCoverage {
   covered: string[];
-  unreadable?: string;
+  /** Files that would not load, so a coverage count reads as a floor and not a total. */
+  unreadable: UnreadablePolicyFile[];
 }
 
 /**
@@ -116,10 +111,7 @@ export async function rulesCovering(
     const action = `${MCP_ACTION_PREFIX}.${name}`;
     if (rules.policies.some((policy) => reaches(policy, action))) covered.add(name);
   }
-  return {
-    covered: [...covered],
-    ...(rules.unreadable === undefined ? {} : { unreadable: rules.unreadable }),
-  };
+  return { covered: [...covered], unreadable: rules.unreadable };
 }
 
 function reaches(policy: Policy, action: string): boolean {

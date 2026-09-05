@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { policyRegistryPath, registerPolicyFile } from '../src/policy-registry';
+import {
+  forgetPolicyFiles,
+  policyRegistryPath,
+  registerPolicyFile,
+} from '../src/policy-registry';
 
 describe('policy registry', () => {
   let home: string;
@@ -46,6 +50,15 @@ describe('policy registry', () => {
       home,
       '/repos/web/../web/memnox.policies.yaml',
     );
+
+    expect(files).toEqual(['/repos/web/memnox.policies.yaml']);
+  });
+
+  it('forgets only the paths it was handed', async () => {
+    await registerPolicyFile(home, '/repos/web/memnox.policies.yaml');
+    await registerPolicyFile(home, '/repos/gone/memnox.policies.yaml');
+
+    const files = await forgetPolicyFiles(home, ['/repos/gone/memnox.policies.yaml']);
 
     expect(files).toEqual(['/repos/web/memnox.policies.yaml']);
   });
