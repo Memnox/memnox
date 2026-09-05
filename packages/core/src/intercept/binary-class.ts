@@ -4,6 +4,8 @@
  * and nothing to be fooled by: quoting tricks live in shell strings, not in argv.
  */
 
+import { verbTableNames } from '../verbs/tables';
+
 export const COMMAND_CLASS = {
   NORMAL: 'normal',
   DESTRUCTIVE: 'destructive',
@@ -215,6 +217,15 @@ const CLASSIFIERS: Readonly<Record<string, Classifier>> = {
 
 export function interceptedBinaries(): readonly string[] {
   return Object.keys(CLASSIFIERS);
+}
+
+/**
+ * Every binary this runtime has an opinion about: the generic classifiers plus every
+ * CLI with a verb table. `protect --for gh` writes rules named `gh.pr-merge`, and a
+ * rule with nothing on PATH to intercept is a rule that cannot fire.
+ */
+export function interceptableBinaries(): readonly string[] {
+  return [...new Set([...Object.keys(CLASSIFIERS), ...verbTableNames()])];
 }
 
 export function isIntercepted(binary: string): boolean {

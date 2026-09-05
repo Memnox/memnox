@@ -2,10 +2,7 @@ import { classifyBinary, COMMAND_CLASS } from './binary-class';
 import { inspectSql, isDatabaseClient, nonLocalHost, SQL_RISK, statementIn } from './sql';
 import { actionForCommand, classOf, verbAction, verbTableFor } from '../verbs/index';
 import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
-import {
-  normalizeShellCommand,
-  type OpaqueReason,
-} from '../domain/shell-normalizer';
+import { normalizeShellCommand, type OpaqueReason } from '../domain/shell-normalizer';
 
 /**
  * One command line, one action name. Every surface that has an opinion about a command

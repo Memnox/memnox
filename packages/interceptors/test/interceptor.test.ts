@@ -1,7 +1,7 @@
-import { mkdtemp, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, HOLD_ANSWER, HoldService, LocalGate } from '@memnox/core';
 import {
   installInterceptors,
@@ -166,5 +166,57 @@ describe('installing the interceptors', () => {
 
   it('says nothing was removed when nothing was installed', async () => {
     expect(await removeInterceptors(await home())).toEqual([]);
+  });
+});
+
+describe('which binaries get a wrapper', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'memnox-install-'));
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  /* A shim for an absent `aws` answers `command -v aws`, and every script that checks
+     for it takes the wrong branch. A governance tool that breaks a build gets removed. */
+  it('wraps only what this machine actually has', async () => {
+    const report = await installInterceptors(home, 'memnox-intercept', {
+      path: '/usr/bin',
+      exists: (candidate) => candidate === '/usr/bin/git' || candidate === '/usr/bin/gh',
+    });
+
+    expect(report.installed.sort()).toEqual(['gh', 'git']);
+    expect(report.absent).toContain('aws');
+  });
+
+  /* `protect --for gh` writes rules named `gh.pr-merge`. Wrapping only the generic
+     classifiers left every one of those rules with nothing to fire on. */
+  it('covers the CLIs the verb tables name, not just the generic ones', async () => {
+    const report = await installInterceptors(home, 'memnox-intercept', {
+      path: '/usr/bin',
+      exists: () => true,
+    });
+
+    for (const binary of ['gh', 'docker', 'kubectl', 'psql', 'vercel', 'aws']) {
+      expect(report.installed).toContain(binary);
+    }
+  });
+
+  it('never counts its own shims as the real binary', async () => {
+    await installInterceptors(home, 'memnox-intercept', {
+      path: '/usr/bin',
+      exists: (candidate) => candidate === '/usr/bin/git',
+    });
+
+    // Second run with our directory on PATH: git is still the only real one.
+    const again = await installInterceptors(home, 'memnox-intercept', {
+      path: `${interceptorDirFor(home)}:/usr/bin`,
+      exists: (candidate) => candidate === '/usr/bin/git',
+    });
+
+    expect(again.installed).toEqual(['git']);
   });
 });

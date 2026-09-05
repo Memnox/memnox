@@ -53,7 +53,9 @@ export class ShellSeam {
     const line = command.join(' ');
     /* The whole line is still ruled on: a `shell.execute` rule matching `*rm -rf /*`
        has to keep firing, and it is the only thing that can see a pipeline as a whole. */
-    let verdict = await this.deps.authorizer.authorize(this.requestFor(SHELL_ACTION, line));
+    let verdict = await this.deps.authorizer.authorize(
+      this.requestFor(SHELL_ACTION, line),
+    );
 
     for (const resolved of resolveShellLine(line, this.deps.env ?? {}).actions) {
       if (resolved.action === SHELL_ACTION) continue;

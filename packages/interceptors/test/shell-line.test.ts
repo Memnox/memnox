@@ -138,7 +138,10 @@ describe('the shell handed the command on', () => {
       FALLBACK_SHELL,
     );
     expect(
-      realShell({ MEMNOX_REAL_SHELL: '/bin/zsh', SHELL: '/x/memnox-shell' }, 'memnox-shell'),
+      realShell(
+        { MEMNOX_REAL_SHELL: '/bin/zsh', SHELL: '/x/memnox-shell' },
+        'memnox-shell',
+      ),
     ).toBe('/bin/zsh');
   });
 

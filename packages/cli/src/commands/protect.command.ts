@@ -440,6 +440,15 @@ async function runInterceptors(context: CliContext): Promise<void> {
 
   out.line(`Installed ${report.installed.length} interceptor(s) in ${report.directory}`);
   out.line(`  ${report.installed.join(', ')}`);
+  /* Named rather than silently skipped: a rule written for a CLI this machine does not
+     have is not broken, and somebody installing it later needs to know to re-run this. */
+  if (report.absent.length > 0) {
+    out.line('');
+    out.line(
+      `  ${style.dim(`not on this machine, so not wrapped: ${report.absent.join(', ')}`)}`,
+    );
+    out.line(`  ${style.dim('install one of those later and run this again')}`);
+  }
   out.line('');
   out.line('They only bite when that directory comes first on PATH:');
   out.line(`  ${style.bold('memnox run -- <your agent>')}   sets it for that agent`);
