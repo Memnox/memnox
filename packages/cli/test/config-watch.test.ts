@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { watch } from 'node:fs';
@@ -32,13 +32,25 @@ describe('waking on a change', () => {
 
   /* The whole point: an MCP server added mid-watch is reported in seconds rather than
      on the next minute boundary, which is how long somebody would otherwise be told
-     nothing had changed. */
+     nothing had changed.
+
+     Stubbed for the same reason the next test is. Against a real directory this raced
+     the watcher's own arming — a write that landed first was never reported, the wait
+     ran to its 60s interval, and the suite failed on a busy machine roughly one run in
+     ten. What is asserted here is the contract: a change resolves the wait, and it
+     resolves it nowhere near the interval. */
   it('returns long before the interval when a config file arrives', async () => {
-    const watcher = watchConfigPaths([join(dir, '.claude')]);
+    let fire: (() => void) | null = null;
+    const watcher = watchConfigPaths(['/watched'], {
+      watch: ((_path: string, _options: unknown, onChange: () => void) => {
+        fire = onChange;
+        return { close: () => {} };
+      }) as unknown as typeof watch,
+    });
     const started = Date.now();
 
     const waiting = watcher.next(60_000);
-    await writeFile(join(dir, '.claude', 'settings.json'), '{}', 'utf8');
+    (fire as unknown as () => void)();
     const changed = await waiting;
     watcher.close();
 
