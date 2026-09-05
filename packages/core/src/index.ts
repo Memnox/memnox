@@ -20,3 +20,4 @@ export * from './gate/index';
 export * from './domain/action-identity';
 export * from './config/index';
 export * from './render/index';
+export * from './domain/question';

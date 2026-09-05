@@ -1,7 +1,10 @@
 import type { Command } from 'commander';
 import {
   CHANGE_DIRECTION,
+  changesFailing,
   compareSnapshots,
+  failOnValues,
+  isFailOn,
   summarizeChanges,
   type EnvironmentChange,
 } from '@memnox/core';
@@ -25,37 +28,81 @@ export function registerDiffCommand(
     .command('diff')
     .description('What changed in this environment since the last scan')
     .option('--since <when>', 'compare against the last scan at or before this ISO time')
+    .option('--from <when>', 'the earlier side of the comparison, as an ISO time')
+    .option('--to <when>', 'the later side of the comparison, as an ISO time')
+    .option(
+      '--fail-on <gate>',
+      `exit non-zero when something widened: ${failOnValues().join(' | ')}`,
+    )
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
     )
-    .action(async (options: { since?: string; json?: boolean; probe: boolean }) => {
-      const seams = buildSeams(cwd());
-      const before = await seams.snapshots.latest(options.since);
-      const { snapshot } = await scanMachine(seams, { probe: options.probe });
+    .action(
+      async (options: {
+        since?: string;
+        from?: string;
+        to?: string;
+        failOn?: string;
+        json?: boolean;
+        probe: boolean;
+      }) => {
+        if (options.failOn !== undefined && !isFailOn(options.failOn)) {
+          throw new Error(
+            `--fail-on takes one of: ${failOnValues().join(', ')}. Got "${options.failOn}".`,
+          );
+        }
+        const seams = buildSeams(cwd());
+        const before = await seams.snapshots.latest(options.from ?? options.since);
+        /* An explicit --to compares two kept scans; without it the later side is this
+         machine right now, which is what somebody at a terminal means by "since". */
+        const { snapshot } =
+          options.to === undefined
+            ? await scanMachine(seams, { probe: options.probe })
+            : { snapshot: await seams.snapshots.latest(options.to) };
 
-      if (before === null) {
-        if (options.json === true) {
-          context.out.line(JSON.stringify({ changes: [], baseline: null }, null, 2));
+        if (snapshot === null) {
+          throw new Error(`No scan was kept at or before ${options.to ?? 'now'}.`);
+        }
+
+        if (before === null) {
+          if (options.json === true) {
+            context.out.line(JSON.stringify({ changes: [], baseline: null }, null, 2));
+            return;
+          }
+          // A first run has nothing to compare against, and inventing one would be worse.
+          context.out.line(
+            'No earlier scan to compare against — this one is the baseline.',
+          );
+          context.out.line(
+            context.style.dim('Run "memnox diff" again after something changes.'),
+          );
           return;
         }
-        // A first run has nothing to compare against, and inventing one would be worse.
-        context.out.line(
-          'No earlier scan to compare against — this one is the baseline.',
-        );
-        context.out.line(
-          context.style.dim('Run "memnox diff" again after something changes.'),
-        );
-        return;
-      }
 
-      const changes = compareSnapshots(before, snapshot);
-      if (options.json === true) {
-        context.out.line(JSON.stringify({ baseline: before.takenAt, changes }, null, 2));
-        return;
-      }
-      render(context, before.takenAt, changes);
-    });
+        const changes = compareSnapshots(before, snapshot);
+        const failing =
+          options.failOn === undefined ? [] : changesFailing(changes, options.failOn);
+
+        if (options.json === true) {
+          context.out.line(
+            JSON.stringify({ baseline: before.takenAt, changes, failing }, null, 2),
+          );
+        } else {
+          render(context, before.takenAt, changes);
+        }
+
+        if (failing.length > 0) {
+          context.out.note(
+            `${failing.length} change(s) matched --fail-on ${options.failOn}:`,
+          );
+          for (const change of failing) {
+            context.out.note(`  ${change.subject} ${change.name} — ${change.detail}`);
+          }
+          process.exitCode = 1;
+        }
+      },
+    );
 }
 
 function render(
