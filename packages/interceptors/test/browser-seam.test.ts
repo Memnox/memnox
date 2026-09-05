@@ -4,7 +4,9 @@ import {
   DECISION_EFFECT,
   HOLD_ANSWER,
   HoldService,
+  isBrowserLauncher,
   LocalGate,
+  urlArgumentIn,
   type HoldAnswer,
 } from '@memnox/core';
 import { BROWSER_ACTION, BrowserSeam } from '../src/browser-seam';
@@ -94,5 +96,26 @@ describe('driving a browser', () => {
   it('allows everything when no rules are configured', async () => {
     const seam = new BrowserSeam();
     expect((await seam.navigate('https://acme.com')).allowed).toBe(true);
+  });
+});
+
+describe('which launchers stand behind the gate', () => {
+  /* A browser driver arrives at a site carrying the person's own session cookie, so
+     what it reaches is every account they are signed into, not a page. */
+  it('knows the drivers worth standing in front of', () => {
+    expect(isBrowserLauncher('chromedriver')).toBe(true);
+    expect(isBrowserLauncher('chromium')).toBe(true);
+    expect(isBrowserLauncher('git')).toBe(false);
+  });
+
+  it('finds the destination among a launcher’s own flags', () => {
+    expect(
+      urlArgumentIn(['--headless', '--no-sandbox', 'https://admin.example.com/users']),
+    ).toBe('https://admin.example.com/users');
+  });
+
+  // A launcher started with no URL is a browser somebody will drive by hand.
+  it('has nothing to rule on when no destination was named', () => {
+    expect(urlArgumentIn(['--headless'])).toBeNull();
   });
 });

@@ -5,6 +5,7 @@
  */
 
 import { verbTableNames } from '../verbs/tables';
+import { BROWSER_LAUNCHERS } from '../discovery/browser';
 
 export const COMMAND_CLASS = {
   NORMAL: 'normal',
@@ -225,7 +226,9 @@ export function interceptedBinaries(): readonly string[] {
  * rule with nothing on PATH to intercept is a rule that cannot fire.
  */
 export function interceptableBinaries(): readonly string[] {
-  return [...new Set([...Object.keys(CLASSIFIERS), ...verbTableNames()])];
+  return [
+    ...new Set([...Object.keys(CLASSIFIERS), ...verbTableNames(), ...BROWSER_LAUNCHERS]),
+  ];
 }
 
 export function isIntercepted(binary: string): boolean {

@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { isBrowserLauncher, urlArgumentIn } from '@memnox/core';
 import { invokedFor, realPath, resolveReal, ruleOnCommand } from './interceptor';
+import { BrowserSeam } from './browser-seam';
 import { loadHookGate } from './hook-gate-loader';
 import { readHookConfig } from './hook-config';
 import { log } from './seam-runtime';
@@ -38,6 +40,25 @@ async function main(): Promise<void> {
   if (!outcome.allowed) {
     process.stderr.write(`${outcome.message ?? 'denied'}\n`);
     process.exit(1);
+  }
+
+  /* A launcher is ruled on again by where it is going. The host is the thing worth
+     asking about: the driver arrives carrying the person's own signed-in session. */
+  if (isBrowserLauncher(binary)) {
+    const url = urlArgumentIn(args);
+    if (url !== null) {
+      const seam = new BrowserSeam({
+        ...(gate === null ? {} : { gate }),
+        ...(process.env['MEMNOX_SESSION'] === undefined
+          ? {}
+          : { sessionId: process.env['MEMNOX_SESSION'] }),
+      });
+      const visit = await seam.navigate(url);
+      if (!visit.allowed) {
+        process.stderr.write(`${visit.message ?? 'denied'}\n`);
+        process.exit(1);
+      }
+    }
   }
 
   const path = realPath(process.env['PATH'] ?? '', home);

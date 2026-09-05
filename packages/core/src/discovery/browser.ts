@@ -130,3 +130,28 @@ export function navigationHost(url: string): string | null {
     return null;
   }
 }
+
+/**
+ * The launchers worth standing in front of. A browser driver arrives at a site with the
+ * person's own session cookie, so what it reaches is not "a page" — it is every account
+ * they are signed into. These get an interceptor wherever the machine has them.
+ */
+export const BROWSER_LAUNCHERS: readonly string[] = [
+  'chromium',
+  'chromedriver',
+  'geckodriver',
+  'google-chrome',
+  'msedgedriver',
+];
+
+export function isBrowserLauncher(binary: string): boolean {
+  return BROWSER_LAUNCHERS.includes(binary);
+}
+
+/** The first argument that is a URL. A launcher takes one; the rest are its own flags. */
+export function urlArgumentIn(args: readonly string[]): string | null {
+  for (const arg of args) {
+    if (/^https?:\/\//i.test(arg)) return arg;
+  }
+  return null;
+}
