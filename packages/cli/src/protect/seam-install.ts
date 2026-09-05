@@ -13,14 +13,12 @@ import {
 import {
   installGitHooks,
   installInterceptors,
+  INTERCEPT_BINARY,
   interceptorDirFor,
 } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import { guardProfilePath, landlockRulesetPath } from '../memnox-paths';
 import { resolvePolicyFile } from '../policy-path';
-
-/** The binary every wrapper execs. Shipped by the CLI package, so it is beside us. */
-const INTERCEPT_BINARY = 'memnox-intercept';
 
 /**
  * PATH is the whole mechanism, and we deliberately do not edit anybody's shell

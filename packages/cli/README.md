@@ -26,6 +26,11 @@ The `memnox` binary plus the five seam binaries, because npm exposes the bins of
 the package you installed and not those of its dependencies. Without them,
 `memnox mcp wrap` would point every MCP server at a binary you do not have.
 
+This is the only package that declares them. `@memnox/proxy` and
+`@memnox/interceptors` hold the source and export it as a subpath; declaring the
+same five names there as well would link each of them twice for anybody who
+installed both.
+
 | Binary | From |
 |---|---|
 | `memnox` | this package |
