@@ -11,11 +11,11 @@
   ],
   "license": "Apache-2.0",
   "author": "Memnox",
-  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/tool-hook#readme",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/interceptors#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Memnox/memnox.git",
-    "directory": "packages/tool-hook"
+    "directory": "packages/interceptors"
   },
   "bugs": {
     "url": "https://github.com/Memnox/memnox/issues"

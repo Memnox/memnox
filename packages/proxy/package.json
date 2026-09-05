@@ -11,11 +11,11 @@
   ],
   "license": "Apache-2.0",
   "author": "Memnox",
-  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/mcp-firewall#readme",
+  "homepage": "https://github.com/Memnox/memnox/tree/main/packages/proxy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Memnox/memnox.git",
-    "directory": "packages/mcp-firewall"
+    "directory": "packages/proxy"
   },
   "bugs": {
     "url": "https://github.com/Memnox/memnox/issues"

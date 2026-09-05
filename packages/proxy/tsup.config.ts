@@ -8,7 +8,8 @@ export default defineConfig([
     clean: true,
   },
   {
-    entry: ['src/cli.ts', 'src/gateway-cli.ts'],
+    // One binary: the remote gateway this once listed was never written.
+    entry: ['src/cli.ts'],
     format: ['esm'],
     banner: { js: '#!/usr/bin/env node' },
   },

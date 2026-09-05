@@ -1,13 +1,19 @@
 # Review is required on everything; these paths are the ones an auditor samples.
-*                                   @moise10r
+*                                    @moise10r
 
-# The decision path and its guarantees.
-/packages/core/                     @moise10r
-/packages/policy-engine/            @moise10r
-/packages/runtime/src/auth.ts       @moise10r
-/packages/runtime/src/stores/       @moise10r
+# The decision path: what a rule means, and what a verdict is allowed to be.
+/packages/core/src/policy/           @moise10r
+/packages/core/src/gate/             @moise10r
+/packages/core/src/verbs/            @moise10r
+
+# The ledger, which is the record everything else is argued from.
+/packages/core/src/event/            @moise10r
+
+# The seams an agent's actions pass through before they happen.
+/packages/interceptors/src/          @moise10r
+/packages/proxy/src/                 @moise10r
 
 # Security posture and the claims made about it.
-/SECURITY.md                        @moise10r
-/.github/workflows/                 @moise10r
-/packages/core/src/domain/control-mapping.ts  @moise10r
+/SECURITY.md                         @moise10r
+/docs/threat-model.md                @moise10r
+/.github/workflows/                  @moise10r
