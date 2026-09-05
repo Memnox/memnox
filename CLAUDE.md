@@ -544,12 +544,12 @@ laptop. M of them are governed.*
 
 | ID | Goal | Accept | Size |
 |---|---|---|---|
-| OSS-1.16 | Credential-file detector: names and structural detail only | No secret value in output (asserted); fixture homes for 10 tools | M |
-| OSS-1.17 | Authenticated-CLI detector: binary × credential source → headline verb | Fixture tests; `--verify` off by default and never persisted | M |
-| OSS-1.18 | `.env` name heuristics (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) → key-like count | Table tests; values never read into the report | S |
-| OSS-1.19 | Browser-automation detector: driver present, persistent profile, saved-login count | Chromium profile fixture | M |
-| OSS-1.20 | Closing-gap footer computed from inventory × policy | Numbers match `policy test` on fixtures | S |
-| OSS-1.21 | First-run layout, and `--share` with counts only | Reviewed for leakage | S |
+| OSS-1.16 | Credential-file detector: names and structural detail only | **Built.** 21 credential kinds, structure only; a test asserts no value survives. | M |
+| OSS-1.17 | Authenticated-CLI detector: binary × credential source → headline verb | **Built.** Binary × credential → headline verb, from the verb tables. | M |
+| OSS-1.18 | `.env` name heuristics (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`) → key-like count | **Built.** Counts variables and credential-like names, including `DATABASE_URL`. | S |
+| OSS-1.19 | Browser-automation detector: driver present, persistent profile, saved-login count | **Built.** Driver plus persistent profile; the login store is never opened. | M |
+| OSS-1.20 | Closing-gap footer computed from inventory × policy | **Built.** Counted by matching rules against actions, never by counting rule files. | S |
+| OSS-1.21 | First-run layout, and `--share` with counts only | **Built.** Credentials lead; `--share` carries counts only. | S |
 
 ## C.2 WOW 2 — `memnox explain <thing>`
 
@@ -559,8 +559,8 @@ so what `explain` promises is exactly what `protect` will gate.
 
 | ID | Goal | Size |
 |---|---|---|
-| OSS-2.8 | `explain <cli>`: credential, projects/contexts, verb table, governing rule | M |
-| OSS-2.9 | Question grammar accepts CLI verbs (`deploy`, `apply`, `merge`, `publish`) | S |
+| OSS-2.8 | `explain <cli>`: credential, projects/contexts, verb table, governing rule | **Built.** Shows the same table enforcement reads. |
+| OSS-2.9 | Question grammar accepts CLI verbs (`deploy`, `apply`, `merge`, `publish`) | **Built.** `apply` and `publish` added. |
 
 ## C.3 WOW 3 — `memnox protect`
 
@@ -570,9 +570,9 @@ and it is the whole reason this is adoptable.
 
 | ID | Goal | Size |
 |---|---|---|
-| OSS-3.13 | Verb tables as data under `packages/core/verbs/<cli>.toml`, checksum-verified | L |
-| OSS-3.14 | `protect --from-scan` generates CLI rules from the verb tables | M |
-| OSS-3.15 | `protect --for <cli or server>` targeted flow | S |
+| OSS-3.13 | Verb tables as data under `packages/core/verbs/<cli>.toml`, checksum-verified | **Built.** 19 tables, compiled in rather than read from a writable path. |
+| OSS-3.14 | `protect --from-scan` generates CLI rules from the verb tables | **Built.** `protect --yes` writes a baseline; `--for` writes one CLI. |
+| OSS-3.15 | `protect --for <cli or server>` targeted flow | **Built.** Denies the credential file and keeps the CLI working. |
 
 ## C.4 The verb tables
 
@@ -589,10 +589,10 @@ Adding a CLI is a data PR **with a review**, per C.0.
 
 | ID | Goal | Size |
 |---|---|---|
-| OSS-5.12 | Interceptor resolves binary → verb table → classes, ahead of the generic classifier | M |
-| OSS-5.13 | SQL statement sniffing for `-c`/`-e` and heredocs on DB clients | M |
-| OSS-5.14 | Browser gate: launcher shim, host ask-per-session, navigations recorded where available | L |
-| OSS-5.15 | Model-readable DENY format with the alternative from the verb table | S |
+| OSS-5.12 | Interceptor resolves binary → verb table → classes, ahead of the generic classifier | **Built.** One resolver in core, shared by every surface. |
+| OSS-5.13 | SQL statement sniffing for `-c`/`-e` and heredocs on DB clients | **Built.** Literals and comments scrubbed first; unbounded is its own action. |
+| OSS-5.14 | Browser gate: launcher shim, host ask-per-session, navigations recorded where available | **Built.** One ask per host per session. |
+| OSS-5.15 | Model-readable DENY format with the alternative from the verb table | **Built.** The alternative comes from the table, never invented at refusal time. |
 
 The DENY an agent receives is written to be read by a model — and therefore is data the
 model will act on. It names the policy and one alternative, and it carries no instruction
@@ -602,14 +602,14 @@ the agent could be steered by beyond that.
 
 | ID | Goal | Size |
 |---|---|---|
-| OSS-6.8 | `why` evidence for git: branch protection read through `gh` when logged in, cached, read-only | S |
-| OSS-6.9 | Timeline renders CLI events with the verb-table note (`preview`, `production`) | S |
+| OSS-6.8 | `why` evidence for git: branch protection read through `gh` when logged in, cached, read-only | **Built.** Read-only `gh api`, cached, and never reports zero for unknown. |
+| OSS-6.9 | Timeline renders CLI events with the verb-table note (`preview`, `production`) | **Built.** |
 
 ## C.7 WOW 6 — `memnox watch`
 
 | ID | Goal | Size |
 |---|---|---|
-| OSS-7.13 | Watch credential directories, so a new login is an event | S |
+| OSS-7.13 | Watch credential directories, so a new login is an event | **Built.** A login is an event. |
 
 ## C.8 Cloud additions
 
