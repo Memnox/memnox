@@ -1,4 +1,11 @@
-import { DECISION_EFFECT } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  describeHold,
+  digest,
+  isAllowed as holdAllowed,
+  type HoldRequest,
+  type HoldService,
+} from '@memnox/core';
 import { isAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
 import { parseMessage, serializeMessage, type JsonRpcMessage } from './json-rpc';
@@ -28,6 +35,11 @@ export interface FirewallSessionDeps {
   record?: (call: McpCallRecord) => void;
   /** Which server this session wraps, so a result names where it came from. */
   server?: string;
+  /** Holds an ASK for a person. Absent means an ASK is a denial, and says so. */
+  hold?: HoldService;
+  /** Groups held calls, and scopes an "allow for this session" grant. */
+  sessionId?: string;
+  agent?: string;
 }
 
 type MessageId = string | number;
@@ -67,7 +79,9 @@ export class FirewallSession {
     if (message.method !== METHOD_TOOLS_CALL) return this.forward(message);
 
     const call = readToolCall(message.params);
-    const verdict = await this.verdictFor(call);
+    let verdict = await this.verdictFor(call);
+    if (verdict.effect === DECISION_EFFECT.ASK)
+      verdict = await this.askPerson(call, verdict);
     if (isAllowed(verdict)) {
       if (id !== null) {
         this.openCalls.set(id, {
@@ -84,6 +98,40 @@ export class FirewallSession {
     this.deps.channel.toClient(
       serializeMessage(denial(message.id, verdict.reason, verdict.alternative)),
     );
+  }
+
+  /**
+   * The call waits here, which is the whole point: the agent is blocked on a pipe and
+   * a person answers before anything reaches the wrapped server.
+   */
+  private async askPerson(call: ToolCall, verdict: CallVerdict): Promise<CallVerdict> {
+    const hold = this.deps.hold;
+    const request: HoldRequest = {
+      sessionId: this.deps.sessionId ?? 'ses_local',
+      agent: this.deps.agent ?? 'an agent',
+      operation: call.name,
+      fingerprint: digest(`${call.name}:${JSON.stringify(call.arguments ?? {})}`),
+      reason: verdict.reason,
+      ...(this.deps.server === undefined ? {} : { target: this.deps.server }),
+    };
+
+    if (hold === undefined) {
+      return {
+        ...verdict,
+        effect: DECISION_EFFECT.DENY,
+        reason: `${verdict.reason} (nobody could be asked, so it was denied)`,
+      };
+    }
+
+    const result = await hold.hold(request);
+    if (holdAllowed(result)) {
+      return { ...verdict, effect: DECISION_EFFECT.ALLOW, reason: 'a person allowed it' };
+    }
+    return {
+      ...verdict,
+      effect: DECISION_EFFECT.DENY,
+      reason: describeHold(result, request),
+    };
   }
 
   fromServer(line: string): void {
@@ -193,7 +241,7 @@ function denial(
     jsonrpc: '2.0',
     id,
     result: {
-      content: [{ type: 'text', text: `Withheld by Memnox: ${reason}${instead}` }],
+      content: [{ type: 'text', text: `Denied by Memnox: ${reason}${instead}` }],
       isError: true,
     },
   };

@@ -128,7 +128,7 @@ describe('FirewallSession — gating tools/call', () => {
     expect(reply.id).toBe(7);
     expect(reply.result?.['isError']).toBe(true);
     expect(JSON.stringify(reply.result)).toContain(
-      'Withheld by Memnox: writes to production',
+      'Denied by Memnox: writes to production',
     );
   });
 
