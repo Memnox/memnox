@@ -39,8 +39,45 @@ describe('the batch a machine sends', () => {
     expect(draftFrom(event()).dedupKey).toBe('evt_1');
   });
 
-  it('names the surface it came from, so the log can be narrowed to it', () => {
-    expect(draftFrom(event()).kind).toBe('runtime.shell');
+  /* The kind the control plane's activity projection reads. Naming the surface
+     instead landed every row in the log and projected none of them: stored, and
+     invisible to everything that reads them. */
+  it('names the kind the projection builds a timeline from', () => {
+    expect(draftFrom(event()).kind).toBe('agent.action.recorded');
+  });
+
+  // `decisions` and `results` are keyed on the action, not on what it touched.
+  it('carries the action id as the subject the other tables key on', () => {
+    expect(draftFrom(event()).subjectId).toBe('evt_1');
+  });
+
+  it('uses the field names the projection reads, not its own', () => {
+    const payload = draftFrom(event({ target: 'main' })).payload as Record<
+      string,
+      unknown
+    >;
+
+    expect(payload['resourceRef']).toBe('main');
+    expect(payload['classes']).toEqual(['write']);
+    expect(payload['effect']).toBe('deny');
+  });
+
+  // A refused action never ran; a result row for it would say it completed.
+  it('sends no outcome for something that never ran', () => {
+    const payload = draftFrom(event()).payload as Record<string, unknown>;
+
+    expect(payload['exitCode']).toBeUndefined();
+  });
+
+  it('sends the outcome when there was one', () => {
+    const payload = draftFrom(event({ exitCode: 1, durationMs: 20 })).payload as Record<
+      string,
+      unknown
+    >;
+
+    expect(payload['exitCode']).toBe(1);
+    expect(payload['errored']).toBe(true);
+    expect(payload['startedAt']).toBe(Date.parse('2026-09-05T12:00:00.000Z') - 20);
   });
 
   it('sends epoch milliseconds, which is what the ingest door reads', () => {

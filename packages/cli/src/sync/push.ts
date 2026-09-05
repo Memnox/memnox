@@ -85,19 +85,53 @@ export function signBody(privateKey: string, body: string): string {
   return signBytes(null, Buffer.from(body, 'utf8'), privateKey).toString('base64');
 }
 
-/** The wire shape the ingest door reads. A digest, never the arguments. */
+/**
+ * The wire shape the ingest door reads. A digest, never the arguments.
+ *
+ * One action, one event. The control plane's activity projection reads this
+ * kind and writes what was attempted, what was decided and what happened from
+ * it — the three tables a timeline is built from. Naming the surface instead,
+ * as this once did, landed every row in the log and projected none of them:
+ * the events were stored and nothing that reads them ever saw one.
+ *
+ * The payload's field names are the projection's, not this schema's. That is
+ * the seam, and it is spelled out here rather than left to match by luck.
+ */
 export function draftFrom(event: MemnoxEvent): Record<string, unknown> {
+  const ranFor = event.durationMs;
   return {
-    kind: `runtime.${event.surface}`,
+    kind: ACTION_RECORDED,
     // Stable across a resend, which is what lets the control plane deduplicate.
     dedupKey: event.id,
+    // The action's own id: `decisions` and `results` are keyed on it.
+    subjectId: event.id,
     actorType: event.actorType,
     occurredAt: Date.parse(event.at),
     agentSessionId: event.sessionId,
-    ...(event.target === undefined ? {} : { subjectId: event.target }),
-    payload: event,
+    payload: {
+      surface: event.surface,
+      operation: event.operation,
+      classes: [event.class],
+      effect: event.effect,
+      finalEffect: event.effect,
+      reason: event.reason,
+      ...(event.target === undefined ? {} : { resourceRef: event.target }),
+      ...(event.argsDigest === undefined ? {} : { argsDigest: event.argsDigest }),
+      ...(event.rule === undefined ? {} : { ruleId: event.rule.name }),
+      ...(event.policyHash === undefined ? {} : { policyHash: event.policyHash }),
+      ...(event.alternative === undefined
+        ? {}
+        : { alternative: event.alternative.action }),
+      ...(event.exitCode === undefined
+        ? {}
+        : { exitCode: event.exitCode, errored: event.exitCode !== 0 }),
+      ...(ranFor === undefined ? {} : { startedAt: Date.parse(event.at) - ranFor }),
+    },
   };
 }
+
+/** The control plane's name for a whole action reported after the fact. */
+const ACTION_RECORDED = 'agent.action.recorded';
 
 interface PushSeams {
   now?: () => Date;
