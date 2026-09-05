@@ -26,6 +26,7 @@ const report = (over: Partial<DiscoveryReport> = {}): DiscoveryReport =>
     tools: [],
     egress: { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] },
     credentials: [],
+    browsers: [],
     authenticated: [
       {
         name: 'gh',

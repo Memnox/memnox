@@ -1,6 +1,16 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { DECISION_EFFECT, SqliteEventStore, type MemnoxEvent } from '@memnox/core';
+import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import {
+  codeownersFor,
+  DECISION_EFFECT,
+  describeEvidence,
+  readProtection,
+  SqliteEventStore,
+  type MemnoxEvent,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 
 const LABEL_WIDTH = 14;
@@ -123,10 +133,59 @@ export function registerWhyCommand(
             return;
           }
           render(context, event);
-          if (options.evidence === true) renderEvidence(context, event);
+          if (options.evidence === true) {
+            renderEvidence(context, event);
+            await renderRepoEvidence(context, event);
+          }
         } finally {
           store.close();
         }
       },
     );
+}
+
+const run = promisify(execFile);
+
+/**
+ * What the repository already says, read through a CLI the reader is logged into. It
+ * is a fact somebody else set, so it stands beside the rule rather than behind it —
+ * and it is read-only: `gh api` with no `-X`, and a file off the disk.
+ */
+async function renderRepoEvidence(
+  context: CliContext,
+  event: MemnoxEvent,
+): Promise<void> {
+  if (!event.operation.startsWith('git') && !event.operation.startsWith('gh')) return;
+
+  const lines: string[] = [];
+  const at = new Date().toISOString();
+
+  try {
+    const { stdout } = await run(
+      'gh',
+      ['api', 'repos/{owner}/{repo}/branches/main/protection'],
+      {
+        timeout: 3000,
+      },
+    );
+    const evidence = readProtection(stdout, 'gh api, just now', at);
+    if (evidence !== null) lines.push(...describeEvidence(evidence));
+  } catch {
+    // Not logged in, no remote, or the branch is unprotected. Silence, not a guess.
+  }
+
+  const target = event.target;
+  if (target !== undefined) {
+    try {
+      const owners = codeownersFor(await readFile('.github/CODEOWNERS', 'utf8'), target);
+      if (owners !== null) lines.push(`CODEOWNERS: ${owners}`);
+    } catch {
+      // No CODEOWNERS file, which is the ordinary case.
+    }
+  }
+
+  if (lines.length === 0) return;
+  context.out.line('  Evidence from this repository');
+  for (const line of lines) context.out.line(`    ${line}`);
+  context.out.line('');
 }

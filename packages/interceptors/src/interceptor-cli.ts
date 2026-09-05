@@ -28,6 +28,7 @@ async function main(): Promise<void> {
 
   const outcome = await ruleOnCommand(binary, args, {
     ...(gate === null ? {} : { gate }),
+    env: process.env,
     ...(process.env['MEMNOX_SESSION'] === undefined
       ? {}
       : { sessionId: process.env['MEMNOX_SESSION'] }),

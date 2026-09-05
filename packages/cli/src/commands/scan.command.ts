@@ -4,6 +4,7 @@ import {
   DECISION_EFFECT,
   findUnusedGrants,
   inventoryOf,
+  describeBrowser,
   externalStateVerbs,
   matchesPattern,
   renderFields,
@@ -311,6 +312,7 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
 
   renderCredentials(context, report);
   renderAuthenticatedClis(context, report);
+  renderBrowsers(context, report);
 
   const reachable = report.resources.filter(
     (resource) =>
@@ -610,4 +612,27 @@ export function gapLines(gap: Gap): string[] {
       ? 'None of them is governed by a policy.'
       : `${gap.governed} of them ${verb} governed by a policy.`,
   ];
+}
+
+/**
+ * The quietest credential on the machine. No file called `credentials`, no token in an
+ * env var — just every site somebody is still signed into, reachable by anything that
+ * can drive the browser.
+ */
+function renderBrowsers(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  const carrying = report.browsers.filter((each) => each.persistentProfile !== undefined);
+  if (report.browsers.length === 0) return;
+
+  out.line('');
+  out.line(style.bold('BROWSER AUTOMATION'));
+  out.line('');
+  for (const browser of report.browsers) {
+    const mark = browser.persistentProfile === undefined ? ' ' : style.warn('!');
+    out.line(`  ${mark}  ${describeBrowser(browser)}`);
+    out.line(`     ${style.dim(browser.detectedFrom)}`);
+  }
+  if (carrying.length > 0) {
+    out.note('A saved profile carries your logins; nothing here opened it.');
+  }
 }

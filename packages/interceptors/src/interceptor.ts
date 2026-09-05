@@ -1,8 +1,5 @@
 import { basename, delimiter, dirname, join } from 'node:path';
 import {
-  classifyBinary,
-  classOf,
-  COMMAND_CLASS,
   DECISION_EFFECT,
   describeHold,
   digest,
@@ -10,8 +7,7 @@ import {
   MEMNOX_HOME,
   type BinaryVerdict,
   type HoldService,
-  verbAction,
-  verbTableFor,
+  resolveAction,
   type LocalGate,
 } from '@memnox/core';
 
@@ -50,6 +46,8 @@ export interface InterceptOutcome {
 
 export interface InterceptDeps {
   gate?: LocalGate;
+  /** Read for a database host only; nothing else here looks at the environment. */
+  env?: NodeJS.ProcessEnv;
   hold?: HoldService;
   sessionId?: string;
   agent?: string;
@@ -84,7 +82,7 @@ export async function ruleOnCommand(
   /* The verb table first, so what `memnox scan` promised about this CLI is exactly
      what happens here. The generic classifier is the fallback for binaries nobody has
      written a table for. */
-  const verdict = verdictFor(binary, args);
+  const verdict = verdictFor(binary, args, deps.env ?? {});
   const argsDigest = digest(args.join(' '));
 
   const base: InterceptOutcome = {
@@ -174,26 +172,17 @@ export function resolveReal(
   return null;
 }
 
-/**
- * A table entry beats the generic classifier, and an uncovered command is `unknown`
- * rather than safe: it is allowed, and the scan says how many there were.
- */
-export function verdictFor(binary: string, args: readonly string[]): BinaryVerdict {
-  const table = verbTableFor(binary);
-  if (table !== null) {
-    const verb = classOf(table, args);
-    return {
-      action: verbAction(binary, verb),
-      class: verb.class as BinaryVerdict['class'],
-      because: verb.note ?? `${binary} ${verb.match}`,
-      ...(args[0] === undefined || args[0].startsWith('-') ? {} : { target: args[0] }),
-    };
-  }
-  return (
-    classifyBinary(binary, args) ?? {
-      action: 'shell.execute',
-      class: COMMAND_CLASS.NORMAL,
-      because: binary,
-    }
-  );
+/** The one resolver in core, so every surface agrees on what a command line is. */
+export function verdictFor(
+  binary: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = {},
+): BinaryVerdict {
+  const resolved = resolveAction(binary, args, env);
+  return {
+    action: resolved.action,
+    class: resolved.class as BinaryVerdict['class'],
+    because: resolved.because,
+    ...(resolved.target === undefined ? {} : { target: resolved.target }),
+  };
 }

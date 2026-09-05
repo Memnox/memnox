@@ -1,7 +1,9 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
+  classOf,
   DECISION_EFFECT,
+  verbTableFor,
   loadOrCreateConfig,
   SqliteEventStore,
   type DecisionEffect,
@@ -46,7 +48,9 @@ function line(context: CliContext, event: MemnoxEvent): string {
     event.exitCode === undefined || event.exitCode === 0
       ? ''
       : style.dim(` exit ${event.exitCode}`);
-  return `  ${time}  ${mark}${style.effect(event.effect, event.effect.padEnd(5))}  ${what}${outcome}`;
+  // "preview" and "production" are the words that make a deploy line readable.
+  const note = verbNote(event.operation);
+  return `  ${time}  ${mark}${style.effect(event.effect, event.effect.padEnd(5))}  ${what}${note}${outcome}`;
 }
 
 function render(context: CliContext, events: readonly MemnoxEvent[]): void {
@@ -165,4 +169,15 @@ export function registerPurgeCommand(
         store.close();
       }
     });
+}
+
+/** The verb table's own note, so a timeline says which kind of deploy it was. */
+function verbNote(operation: string): string {
+  const [cli, rest] = operation.split('.', 2);
+  if (cli === undefined || rest === undefined) return '';
+  const table = verbTableFor(cli);
+  if (table === null) return '';
+
+  const verb = classOf(table, rest.split('-'));
+  return verb.note === undefined ? '' : `  (${verb.note})`;
 }

@@ -10,6 +10,7 @@ import {
   type EnvironmentSnapshot,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import type { CredentialFinding, DiscoveryReport } from '@memnox/core';
 import {
   defaultScanSeams,
   rulesCovering,
@@ -70,15 +71,29 @@ export function registerWatchCommand(
         }
 
         let baseline = await seams.snapshots.latest();
+        let previous: DiscoveryReport | null = null;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
           if (cycle > 0) await sleep(interval * MILLISECONDS);
-          const { snapshot } = await scanMachine(seams, { probe: options.probe });
+          const { report: scanned, snapshot } = await scanMachine(seams, {
+            probe: options.probe,
+          });
           const changes = baseline === null ? [] : compareSnapshots(baseline, snapshot);
+          /* A login is a capability arriving, and it leaves no trace in an agent's
+             config — so the credential directories are watched in their own right. */
+          const logins = baseline === null ? [] : newCredentials(previous, scanned);
+          previous = scanned;
           /* An agent that updated itself is reported even when nothing else moved:
              nobody granted the difference, which is what makes it worth saying. */
           const updates = baseline === null ? [] : agentUpdates(baseline, snapshot);
           baseline = snapshot;
-          if (changes.length === 0 && updates.length === 0) continue;
+          if (changes.length === 0 && updates.length === 0 && logins.length === 0)
+            continue;
+          for (const login of logins) {
+            context.out.line(
+              `  ${context.style.warn('!')} ${login.kind} logged in — ${login.path}`,
+            );
+            context.out.line(`      ${context.style.dim('memnox protect --for <cli>')}`);
+          }
           await report(context, seams, snapshot, changes, updates, options.json === true);
         }
       },
@@ -165,4 +180,14 @@ function reportPlainly(context: CliContext, change: EnvironmentChange): void {
   const widens = change.direction === CHANGE_DIRECTION.WIDENS;
   const mark = widens ? style.warn('+') : '-';
   out.line(`${mark} ${change.name} «${change.subject}»  ${change.detail}`);
+}
+
+/** Credentials present now that were not there last cycle. A login is an event. */
+function newCredentials(
+  before: DiscoveryReport | null,
+  after: DiscoveryReport,
+): CredentialFinding[] {
+  if (before === null) return [];
+  const had = new Set(before.credentials.map((each) => each.path));
+  return after.credentials.filter((each) => !had.has(each.path));
 }

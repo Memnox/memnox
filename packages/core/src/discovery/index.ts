@@ -26,3 +26,5 @@ export * from './alerts';
 export * from './share-card';
 export * from './health';
 export * from './credentials';
+export * from './browser';
+export * from './repo-evidence';

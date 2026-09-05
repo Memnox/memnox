@@ -13,6 +13,7 @@ import {
 import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
 import { toMcpTool, type Surface } from './surface';
 import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
+import { findBrowserAutomation, type BrowserFinding } from './browser';
 import {
   authenticatedClis,
   findCredentials,
@@ -74,6 +75,8 @@ export interface DiscoveryReport {
   credentials: CredentialFinding[];
   /** A binary plus a credential it can use: the pair is the finding. */
   authenticated: AuthenticatedCli[];
+  /** Browser drivers, and whether they carry a profile that holds your logins. */
+  browsers: BrowserFinding[];
 }
 
 export interface DiscoveryOptions {
@@ -133,6 +136,7 @@ export async function discover(
   const credentials = await findCredentials(reader);
   /* A binary alone is unremarkable and a credential alone is unremarkable; the pair is
      what turns "~/.aws/credentials exists" into "can modify infrastructure". */
+  const browsers = await findBrowserAutomation(reader, options.projectDirs ?? []);
   const authenticated = authenticatedClis(
     tools.map((tool) => tool.name),
     credentials,
@@ -153,6 +157,7 @@ export async function discover(
     egress,
     credentials,
     authenticated,
+    browsers,
   };
 }
 

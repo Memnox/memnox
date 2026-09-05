@@ -1,12 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
-import {
-  actionForCommand,
-  classifyBinary,
-  DECISION_EFFECT,
-  LocalGate,
-  verbTableFor,
-} from '@memnox/core';
+import { DECISION_EFFECT, LocalGate, resolveAction } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
 
@@ -45,25 +39,15 @@ function requestFor(
      order is what a verb pattern matches against. */
   const argv = splitCommand(input);
   const binary = argv[0] ?? input;
-  const args = argv.slice(1);
+  const resolved = resolveAction(binary, argv.slice(1), process.env);
 
-  // The verb table first, exactly as the interceptor resolves it.
-  const table = verbTableFor(binary);
-  if (table !== null) {
-    return {
-      action: actionForCommand(binary, table, args),
-      ...(options.target === undefined ? {} : { target: options.target }),
-    };
-  }
-
-  const classified = classifyBinary(binary, args);
   return {
-    action: classified === null ? 'shell.execute' : classified.action,
+    action: resolved.action,
     ...(options.target !== undefined
       ? { target: options.target }
-      : classified?.target === undefined
+      : resolved.target === undefined
         ? {}
-        : { target: classified.target }),
+        : { target: resolved.target }),
   };
 }
 

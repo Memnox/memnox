@@ -51,6 +51,7 @@ const REPORT = {
   tools: [{ name: 'git', detectedFrom: '/usr/bin/git' }],
   egress: { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] },
   credentials: [],
+  browsers: [],
   authenticated: [],
 } as unknown as DiscoveryReport;
 

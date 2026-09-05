@@ -13,11 +13,14 @@ export const QUESTION_VERB = {
   MERGE: 'merge',
   PUSH: 'push',
   SEND: 'send',
+  /** Infrastructure, which people ask about in the CLI's own words. */
+  APPLY: 'apply',
+  PUBLISH: 'publish',
 } as const;
 
 export type QuestionVerb = (typeof QUESTION_VERB)[keyof typeof QUESTION_VERB];
 
-/** Every word that means one of the seven verbs. A word absent here is not guessed. */
+/** Every word that means one of the verbs above. A word absent here is not guessed. */
 const SYNONYMS: Readonly<Record<string, QuestionVerb>> = {
   read: QUESTION_VERB.READ,
   reads: QUESTION_VERB.READ,
@@ -60,6 +63,14 @@ const SYNONYMS: Readonly<Record<string, QuestionVerb>> = {
   message: QUESTION_VERB.SEND,
   post: QUESTION_VERB.SEND,
   notify: QUESTION_VERB.SEND,
+
+  apply: QUESTION_VERB.APPLY,
+  applies: QUESTION_VERB.APPLY,
+  provision: QUESTION_VERB.APPLY,
+  terraform: QUESTION_VERB.APPLY,
+
+  publish: QUESTION_VERB.PUBLISH,
+  publishes: QUESTION_VERB.PUBLISH,
 };
 
 /** Words that carry no meaning here and are dropped before matching. */
@@ -100,7 +111,7 @@ export interface QuestionParse {
 
 export const QUESTION_SHAPE = 'can <agent> <verb> <resource>';
 
-/** The seven verbs, for a usage line that names them rather than describing them. */
+/** The verbs, for a usage line that names them rather than describing them. */
 export function questionVerbs(): readonly QuestionVerb[] {
   return Object.values(QUESTION_VERB);
 }
@@ -158,6 +169,8 @@ export function actionForVerb(verb: QuestionVerb): string {
     [QUESTION_VERB.MERGE]: 'git.merge',
     [QUESTION_VERB.PUSH]: 'git.push',
     [QUESTION_VERB.SEND]: 'message.send',
+    [QUESTION_VERB.APPLY]: 'terraform.apply',
+    [QUESTION_VERB.PUBLISH]: 'npm.publish',
   };
   return namespaces[verb];
 }

@@ -11,7 +11,7 @@ priority work in the project.
 Use GitHub's private vulnerability reporting on this repository
 (**Security → Report a vulnerability**). It is the fastest path and keeps the
 report private until a fix ships. If that is unavailable to you, email
-`security@memnox.dev`.
+`support@memnox.com`.
 
 Please include:
 
