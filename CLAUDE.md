@@ -685,7 +685,7 @@ The honest split. "Runtime" means it works on one laptop with no account.
 | 9 | Granted-vs-used *(built)*, plus **a draft policy generated from it** | fleet-wide, one click |
 | 10 | Collision detection *(built)* — **but no command reaches it** | across people, not just sessions |
 
-Six gaps, all in the runtime, all useful alone:
+Six gaps, all in the runtime, all useful alone — **all now built**:
 
 1. **Pending approvals** — a hold another terminal can release. `memnox approvals`, `memnox approve <id>`, `memnox deny <id>`.
 2. **Freeze** — an overlay with an expiry. `memnox freeze <service> --for 2h`, `memnox freeze --lift`. The engine already takes state labels and a rule already carries a `state` field; nothing feeds them.
@@ -693,6 +693,15 @@ Six gaps, all in the runtime, all useful alone:
 4. **Approved agents** — a list in config; anything absent is `unregistered`.
 5. **Signed export** — Ed25519 over the event bundle, and `memnox verify` to check one.
 6. **`memnox collisions`** and **`protect --from-usage`** — the two things already computed and unreachable.
+
+Two more followed from them, and are built:
+
+7. **Approved agents** — `approvedAgents` in the config. Three states, not two: an
+   empty list is *undecided*, never "everything is approved", because flagging every
+   agent on a machine nobody has configured is noise, and noise is how a real shadow
+   agent gets missed.
+8. **Policy version** — `doctor --wiring` prints the content hash of the rule set in
+   force, which is what makes "four laptops are on v3" answerable without diffing files.
 
 ## D.3 The rule that keeps this honest
 
