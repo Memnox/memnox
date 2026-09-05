@@ -1767,9 +1767,89 @@ The difference between "it says the tests passed" and "the tests passed".
 
 ---
 
+### 2.65 Three Agents, One Repository, and Nobody Told Anybody
+
+**Pain**
+
+Cursor is writing a feature in `src/billing`. Claude Code, in the next terminal, is
+refactoring the directory layout and moves the file out from under it. A third agent runs
+the test suite against a tree that is now half of each. Nothing crashed and nothing was
+denied — every one of the three did exactly what it was asked. The developer finds out at
+`git status`, and the afternoon goes on untangling it.
+
+This is [2.16](#216-two-agents-are-doing-conflicting-things) after the fact. 2.16 says
+*that happened*; this one is about it not happening.
+
+**Why existing tools fail**
+
+Git locks nothing until a commit, and none of this was committed. An editor's file lock is
+about two humans in one buffer, not two processes with their own working assumptions. Each
+agent's own sandbox makes the problem worse, not better: three isolated views of one
+directory is exactly how you get three answers.
+
+Nothing in the stack knows that an agent has *taken* a piece of the tree, because until
+now nothing was watching what an agent touched at the moment it touched it. Memnox already
+is.
+
+**Memnox**
+
+A lease on a path, taken at the first write and held for the session:
+
+```bash
+memnox lock --list
+memnox lock src/billing --for 30m     # take one by hand
+memnox lock --release <id>
+```
+
+```
+[Memnox] claude-code wants to write src/billing/invoice.ts
+
+  HELD    cursor has src/billing since 4 min ago (ses_9f21, 26m left)
+
+  what it is doing
+    wrote  src/billing/invoice.ts, src/billing/plan.ts
+    ran    npm test -- billing
+
+  [w] wait for it   [t] take it anyway, recorded   [d] don't
+```
+
+**What the user gets**
+
+Two agents in one repository stop being a coin flip. The second one waits, or is told who
+holds it and what they have been doing, which is the sentence that ends the argument.
+
+**The four things that decide whether this is usable**
+
+1. **It locks paths, not meaning.** A "semantic lock on a module" is a nice phrase and an
+   undecidable problem. What can be enforced deterministically is a path prefix, and a
+   path prefix is what a refactor collides on anyway. Anything cleverer is a guess, and a
+   guess that blocks work is a feature people turn off.
+2. **A lock never blocks a read.** Two agents reading one directory is normal and always
+   was. Only a write takes a lease, and only a write waits on one.
+3. **Every lease expires, and the owner's death releases it.** A lock that outlives its
+   session is worse than no lock, because the next one gets forced and then all of them
+   do. A lease carries an expiry, and a lease whose process is gone is reclaimed rather
+   than waited on. Same rule as a freeze: `stateFactsInForce` takes the moment as an
+   argument and nothing here reads a clock behind the caller's back.
+4. **Waiting is bounded, and taking it anyway is a row.** An agent's tool call has its own
+   timeout, so a wait that outlasts it is a hang dressed as a queue. The wait has a
+   ceiling, after which it is a refusal that names the holder. `[t]` exists because the
+   holder is sometimes an agent that died three hours ago in a way nothing detected — and
+   `[t]` is recorded, with who and why, or it is just a slower allow.
+
+**Where this stops being local**
+
+One laptop running Cursor and Claude Code is the common case and needs no account. Two
+laptops on one repository is a different problem: the lease has to live somewhere both can
+see, and that is the cloud half. The runtime builds the broker and the file-backed lease
+so it is useful alone; the cloud makes the lease shared, which is the part a team pays for.
+
+
+---
+
 ## 3. The Pains I Would Prioritize
 
-> Not all 64 pains should become features.
+> Not all 65 pains should become features.
 
 | Priority | User Pain | Memnox Answer | Who Feels It |
 | --- | --- | --- | --- |
@@ -1791,6 +1871,7 @@ The difference between "it says the tests passed" and "the tests passed".
 | 🔥 16 | It ruined my working tree overnight | `memnox rewind` | Developer |
 | 🔥 17 | Decide before the loop, not during it | `memnox check` | Developer |
 | 🔥 18 | What did that command actually print? | `memnox trace` | Developer |
+| 🔥 19 | Two agents overwrote each other | `memnox lock` | Team |
 
 ---
 
@@ -1958,6 +2039,7 @@ watching what people actually lose:
 | 10 | What-If | "Before giving my agent more power, I can see what that actually enables." |
 | 11 | `memnox rewind` | "It wrecked the branch and I got it back in one command." — The one that changes behaviour: people start letting agents run unsupervised. |
 | 12 | The justified refusal | "It blocked it, and then showed me the Slack message that said to." |
+| 13 | `memnox lock` | "The second agent waited instead of trampling the first." — Two agents in one repository stop being a coin flip. |
 
 **WOW 9 — Organizational Answer**
 
@@ -2179,7 +2261,7 @@ Everything ultimately reduces to four questions:
 
 ## 10. The OSS Wedge
 
-For the open-source product, **do not** try to implement all 64 pains. The initial product should focus on the local developer's immediate problem:
+For the open-source product, **do not** try to implement all 65 pains. The initial product should focus on the local developer's immediate problem:
 
 ```
                  AI AGENT
@@ -2340,6 +2422,7 @@ citations resolve: a phase is the engineering that closes a group of the pains a
 | `§09` Policy candidates | the bridge from what was observed to what is enforced | 2.8, 2.41, 2.50 |
 | `§10` Cloud | identity, the fleet, approvals, chains, evidence, autonomy | 2.15, 2.17, 2.21, 2.23, 2.32, 2.37, 2.42, 2.43, 2.44, 2.45, 2.47, 2.52, 2.53, 2.54, 2.59 |
 | `§11` Recovery | milestones, rewind, pre-flight, the raw stream behind one action | 2.61, 2.62, 2.63, 2.64 |
+| `§12` Coordination | leases on paths, the broker, waiting and taking | 2.16, 2.17, 2.65 |
 
 **Why this order.** Discovery first, because a count read off the reader's own disk is the
 only honest aggregate at minute zero. The model before the sources, which is why §07, §08

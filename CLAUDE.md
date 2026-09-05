@@ -64,7 +64,9 @@ M8  Hardening + OSS go-live                     C8  Gap analysis + authority ove
                                                 C11 Cloud go-live
 ```
 
-OSS is strictly sequential (each milestone is the demo for the next). Cloud C0 can start once M6's event schema is frozen; C1 onward needs a working OSS runtime to sync from.
+M9 and M10 hang off M5–M7 rather than extending the chain: recovery needs the interception seam, and leases need sessions.
+
+OSS is strictly sequential through M8 (each milestone is the demo for the next). Cloud C0 can start once M6's event schema is frozen; C1 onward needs a working OSS runtime to sync from.
 
 ### 0.5 Code conventions
 
@@ -319,6 +321,51 @@ is already on disk — and the cloud fills the rows that need an account. Shippi
 reader in the open half would mean a token on every laptop and a demo instead of a
 product.
 
+
+---
+
+## M10 — Leases and the broker (≈ 1.5 weeks) — vision 2.65
+
+**Milestone demo:** Cursor and Claude Code run in one repository. The second one to write
+`src/billing` is told who holds it and what they have been doing, waits, and proceeds when
+the first session ends. `memnox lock --list` shows both from a third terminal.
+
+### What already exists to build on
+
+| Piece | Where | What it gives you |
+|---|---|---|
+| Path evaluation at the moment of a write | `interceptors` `ruleOnCommand`, `ShellSeam` | The seam a lease is taken at. No new interception. |
+| A hold something else can release | `core/gate/pending.ts` | `[w] wait` is the same shape as an approval waiting on another terminal. |
+| An expiring, moment-argument overlay | `core/policy/overlay.ts` | Copy the expiry discipline exactly; do not invent a second one. |
+| Sessions and collision detection | `core/ledger/collision.ts`, `memnox collisions` | The after-the-fact half. A lease is the same subject, prevented. |
+| The ledger | `interceptors/record.ts` | `[t] take it anyway` is a row, and `why` reads it. |
+
+| ID | Goal | Deliver | Accept | Depends | Size |
+|---|---|---|---|---|---|
+| OSS-10.1 | Lease type | `core/coordination/lease.ts`: `{id, path, sessionId, agent, takenAt, expiresAt, pid}`; expiry required, moment passed in | Round-trip; `inForce` matches the overlay tests | — | S |
+| OSS-10.2 | Lease store | File-backed under `~/.memnox/leases/`, 0600, one file per lease; atomic create so two processes cannot both win | Concurrency test: 5 processes, one winner | 10.1 | L |
+| OSS-10.3 | Overlap rule | Prefix containment on normalized absolute paths; `src/billing` covers `src/billing/invoice.ts` and not `src/billing-legacy` | Table tests, including the sibling-prefix trap | 10.1 | M |
+| OSS-10.4 | Reads never wait | Only write-class and destructive actions take or wait on a lease | Conformance row per class | 10.3, 5.11 | S |
+| OSS-10.5 | Reclaim a dead owner | A lease whose pid is gone is reclaimable rather than waited on | Kill a holder, next writer proceeds | 10.2 | M |
+| OSS-10.6 | Take at the seam | The interceptor takes a lease on the paths a command writes, once per session | One session writing ten files takes one lease, not ten | 10.2, 5.1 | M |
+| OSS-10.7 | The held prompt | Names the holder, how long, and what it has done — read from the ledger, not guessed | Matches the vision block | 10.6, 6.5 | M |
+| OSS-10.8 | Wait, take, refuse | `[w]` bounded wait, `[t]` recorded override, `[d]` refuse; timeout is a refusal naming the holder | Race test: two writers, first wins, second waits then proceeds | 10.7, 9.9 | L |
+| OSS-10.9 | `memnox lock` | `--list`, `<path> --for <window>`, `--release <id>`; a third terminal sees both | Manual two-agent run | 10.2 | M |
+| OSS-10.10 | Release on session end | Session end releases its leases; `memnox uninstall` leaves none behind | No lease survives its session in the fixture | 10.2, 7.2 | S |
+
+**The rule that keeps this honest.** This is the first thing here that blocks work for a
+reason that is not safety. A policy deny is wrong occasionally and the cost is an argument;
+a wrong lease is wrong silently and the cost is somebody's afternoon. So: **it locks paths
+and never meaning, it never blocks a read, every lease expires, and a wait is always
+bounded.** A lease that could hang an agent forever is worse than the collision it prevents.
+
+### The cloud half
+
+One laptop running two agents needs no account and is the common case. Two laptops on one
+repository needs the lease somewhere both can see — `CLD-4.7 shared leases`, riding the
+same enrolment and heartbeat as C1/C4. That is the part a team pays for; the broker below
+it has to be useful before anybody does.
+
 ---
 
 # PART B — CLOSED-SOURCE CLOUD
@@ -398,6 +445,7 @@ product.
 | CLD-4.4 | Web: approvals inbox | List, detail (event, evidence), approve/deny | Page live | 4.2 | M |
 | CLD-4.5 | OSS: remote resolution | Runtime long-polls / receives push; first resolution wins; local prompt shows "waiting for platform" | Race test local vs remote | 4.2, OSS-4.6 | M |
 | CLD-4.6 | `authorized_by` enrichment | Set on the event from the approval | Visible in `why` and timeline | 4.5 | S |
+| CLD-4.7 | Shared leases | Runtime posts `lease.taken` / `lease.released`; cloud holds the table; a second laptop sees the first one's lease before it writes | Two runtimes, one repository: the second waits | 4.2, OSS-10.2 | L |
 
 ---
 
@@ -699,6 +747,7 @@ on their own laptop is a feature that already works and later gets a fleet.
 | 8 | Credential exposure alerts | security | invisible |
 | 9 | Least-privilege from actual usage | platform | guesswork |
 | 10 | Agent collisions on shared repos | eng lead | found in review |
+| 11 | Stopping the collision instead of reporting it | eng lead | rerun the agent and hope |
 
 **If only three ship first: 1, 3 and 6** — approvals, shared policy, and the timeline.
 Each is something a team lead is already doing badly by hand.
@@ -723,7 +772,8 @@ The honest split. "Runtime" means it works on one laptop with no account.
 | 7 | A **signed, verifiable export** — the compliance line item is unsellable without it | retention, bundles per period |
 | 8 | Credential watching and alerts *(built)* | escalation and the weekly digest |
 | 9 | Granted-vs-used *(built)*, plus **a draft policy generated from it** | fleet-wide, one click |
-| 10 | Collision detection *(built)* — **but no command reaches it** | across people, not just sessions |
+| 10 | Collision detection *(built)* — `memnox collisions` | across people, not just sessions |
+| 11 | **Leases on paths and the broker that hands them out** (M10) | one lease table across every laptop on the repository |
 
 Six gaps, all in the runtime, all useful alone — **all now built**:
 
