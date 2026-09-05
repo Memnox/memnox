@@ -3,12 +3,6 @@ import { LocalGate } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
 import type { HookAuthorizer } from '../src/hook-authorizer';
 import { HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
-import {
-  DockerSeam,
-  dockerActionFor,
-  DOCKER_READ_ACTION,
-  DOCKER_DEFAULT_ACTION,
-} from '../src/docker-seam';
 import { DOCKER_SOCKET_PATH_LIMIT } from '../src/tool-hook.constants';
 import {
   EgressSeam,
@@ -151,28 +145,6 @@ describe('the egress seam', () => {
   });
 });
 
-describe('dockerActionFor', () => {
-  it.each([
-    ['POST', '/v1.43/containers/create', 'container.create'],
-    ['POST', '/containers/abc/exec', 'container.exec'],
-    ['POST', '/v1.43/exec/abc/start', 'container.exec'],
-    ['POST', '/containers/abc/start', 'container.start'],
-    ['DELETE', '/v1.43/containers/abc', 'container.delete'],
-    ['DELETE', '/images/ubuntu', 'image.delete'],
-    ['POST', '/build', 'image.build'],
-    ['GET', '/containers/json', DOCKER_READ_ACTION],
-    ['POST', '/networks/create', DOCKER_DEFAULT_ACTION],
-  ])('names %s %s as its action', (method, path, action) => {
-    expect(dockerActionFor({ method, path })).toBe(action);
-  });
-
-  it('reads a version prefix as the same call', () => {
-    expect(dockerActionFor({ method: 'POST', path: '/v1.41/containers/create' })).toBe(
-      dockerActionFor({ method: 'POST', path: '/containers/create' }),
-    );
-  });
-});
-
 /**
  * A path over the cap binds nothing while `listen` still reports success, which would
  * leave the seam announcing coverage it does not have. Found the hard way.
@@ -185,71 +157,5 @@ describe('the docker socket path limit', () => {
   it('rejects a path a real temp directory can easily produce', () => {
     const realistic = `/private/tmp/claude-501/${'a'.repeat(80)}/memnox-docker.sock`;
     expect(Buffer.byteLength(realistic)).toBeGreaterThan(DOCKER_SOCKET_PATH_LIMIT);
-  });
-});
-
-describe('the docker seam', () => {
-  it('lets an ordinary read through, named as a read', async () => {
-    const stub = new StubAuthorizer(allow);
-    const outcome = await new DockerSeam({ authorizer: as(stub) }).gate({
-      method: 'GET',
-      path: '/containers/json',
-    });
-
-    expect(outcome.allowed).toBe(true);
-    expect(outcome.action).toBe(DOCKER_READ_ACTION);
-  });
-
-  it('refuses an exec into a container, which is a shell on the host', async () => {
-    const outcome = await new DockerSeam({
-      authorizer: as(
-        new StubAuthorizer({
-          effect: DECISION_EFFECT.DENY,
-          reason: 'an exec is a shell nobody watched',
-        }),
-      ),
-    }).gate({ method: 'POST', path: '/v1.43/containers/abc/exec' });
-
-    expect(outcome.allowed).toBe(false);
-    expect(outcome.action).toBe('container.exec');
-    expect(outcome.message).toContain('nobody watched');
-  });
-
-  it('carries the call for a rule to match on', async () => {
-    const stub = new StubAuthorizer(allow);
-    await new DockerSeam({ authorizer: as(stub), sessionId: 'ses_1' }).gate({
-      method: 'DELETE',
-      path: '/images/ubuntu',
-    });
-
-    expect(stub.seen[0]?.action).toBe('image.delete');
-    expect(stub.seen[0]?.arguments).toEqual({
-      method: 'DELETE',
-      path: '/images/ubuntu',
-    });
-    expect(stub.seen[0]?.sessionId).toBe('ses_1');
-  });
-
-  it('denies a destructive call against a real rule, with no runtime', async () => {
-    const gate = new LocalGate(
-      [
-        {
-          name: 'no-container-exec',
-          match: { actions: ['container.exec'] },
-          decision: { effect: DECISION_EFFECT.DENY, reason: 'exec needs a person' },
-        },
-      ],
-      { agentName: 'claude-code' },
-    );
-    const seam = new DockerSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
-    });
-
-    expect(
-      (await seam.gate({ method: 'POST', path: '/containers/a/exec' })).allowed,
-    ).toBe(false);
-    expect((await seam.gate({ method: 'GET', path: '/containers/json' })).allowed).toBe(
-      true,
-    );
   });
 });

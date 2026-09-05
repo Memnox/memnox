@@ -1,6 +1,5 @@
 import type { DecisionEffect } from '../constants/decision.constants';
 import type { EnforcementMode } from '../constants/enforcement.constants';
-import type { ExecutionStatus } from '../constants/execution.constants';
 import type { RiskLevel } from '../constants/risk.constants';
 import type { TaskRef } from './task';
 
@@ -94,14 +93,6 @@ export interface ActionEvent {
   /** Who was asked, recorded because today's rules answer a different question. */
   approvers?: string[];
   reason: string;
-  /** Only on execution.outcome events; carried verbatim so a decision joins its effect. */
-  decisionEventId?: string;
-  executionStatus?: ExecutionStatus;
-  rolledBack?: boolean;
-  /** The compensating action itself failed, so the resulting state is unknown. */
-  rollbackFailed?: boolean;
-  /** The agent claimed success on something not allowed — its claim, not a measurement. */
-  defiedVerdict?: true;
 }
 
 export interface AuditQuery {

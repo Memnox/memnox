@@ -31,7 +31,7 @@ interface HookInstallReport {
 function resolveHookCommand(): string {
   const require = createRequire(import.meta.url);
   try {
-    return `${quote(process.execPath)} ${quote(require.resolve('@memnox/tool-hook/cli'))}`;
+    return `${quote(process.execPath)} ${quote(require.resolve('@memnox/interceptors/cli'))}`;
   } catch (err) {
     throw new Error(
       `could not locate the Memnox tool hook — run "npm run build" in the runtime, or reinstall memnox (${String(err)})`,
