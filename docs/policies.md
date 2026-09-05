@@ -16,7 +16,7 @@ name = "no-force-push-to-main"
 description = "A force push rewrites history somebody else may have pulled."
 
 [policies.match]
-actions = ["git.push"]
+actions = ["git.push*"]
 targets = ["*main*"]
 
 [policies.decision]
@@ -56,6 +56,25 @@ denied — it is never invented.
 | `environments` | `production`, `staging`, whatever you name |
 
 Patterns take `*`.
+
+### The action is the verb *and its flags*
+
+`git push --force` is `git.push-force`, not `git.push`. They are separate on purpose:
+a rule about force-pushing must not deny every push, or the gate stops being used. The
+cost is that a rule meant to cover the family has to say so — `git.push*` catches
+`git.push`, `git.push-force` and `git.push-f`, which is why the example above is
+written that way.
+
+`memnox policy test "<the command you mean>"` prints the action it resolved to. Use it
+before you rely on a rule; guessing the name is how a rule ends up matching nothing.
+
+### The target is the last thing on the line
+
+What a command is aimed at sits last in CLI grammar, and that is what `targets` sees:
+`main` in `git push origin main`, `s3://bucket/key` in `aws s3 rm s3://bucket/key`,
+`api-7` in `kubectl delete pod api-7`. A command with nothing after its verb — `git
+push`, `git status` — has no target at all, and a rule scoped with `targets` will not
+match it.
 
 ## Layers
 

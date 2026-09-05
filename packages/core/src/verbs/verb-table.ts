@@ -88,6 +88,37 @@ function matchesPattern(pattern: string, argv: readonly string[]): boolean {
   return true;
 }
 
+/**
+ * How many argv slots a pattern's own words consume, so a caller can tell the verb
+ * apart from what it was aimed at. Flags consume none: they may appear anywhere.
+ */
+function consumedBy(pattern: string, argv: readonly string[]): number {
+  let index = 0;
+  for (const word of pattern.split(/\s+/).filter((each) => each !== '')) {
+    if (word === '**') break;
+    if (word.startsWith('-')) continue;
+    if (index >= argv.length) break;
+    index += 1;
+  }
+  return index;
+}
+
+/**
+ * What the command was aimed at: the last positional argument the verb did not eat.
+ *
+ * The last, not the first, because that is where CLI grammar puts the object —
+ * `git push origin main`, `aws s3 rm s3://bucket/key`, `kubectl delete pod api-7`.
+ * Taking the first returned the subcommand itself, so `target` was `push` on every
+ * push and no rule scoped with `targets` could ever match. Last is also what survives
+ * a flag carrying a value, since that value sits before the object rather than after.
+ */
+export function targetIn(verb: Verb, argv: readonly string[]): string | undefined {
+  const positional = argv
+    .slice(consumedBy(verb.match, argv))
+    .filter((argument) => !argument.startsWith('-'));
+  return positional[positional.length - 1];
+}
+
 /** Null when nothing in the table covers this command — which is `unknown`, not safe. */
 export function matchVerb(table: VerbTable, argv: readonly string[]): VerbMatch | null {
   const candidates = table.verbs

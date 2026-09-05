@@ -64,10 +64,10 @@ memnox run -- claude           # start the agent behind the gate
 A refusal always names a way forward:
 
 ```
-DENY  git.push origin main
+DENY  git.push-force origin main
   reason      main is shared, and a force push loses somebody's work
   rule        no-force-push-to-main  (project layer)
-  declared in memnox.policies.yaml:12
+  declared in memnox.policies.toml:12
 
   Instead:  git.push a branch
             Push a branch and open a PR.

@@ -1,6 +1,12 @@
 import { classifyBinary, COMMAND_CLASS } from './binary-class';
 import { inspectSql, isDatabaseClient, nonLocalHost, SQL_RISK, statementIn } from './sql';
-import { actionForCommand, classOf, verbAction, verbTableFor } from '../verbs/index';
+import {
+  actionForCommand,
+  classOf,
+  targetIn,
+  verbAction,
+  verbTableFor,
+} from '../verbs/index';
 import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
 import { normalizeShellCommand, type OpaqueReason } from '../domain/shell-normalizer';
 
@@ -50,7 +56,7 @@ export function resolveAction(
   const table = verbTableFor(binary);
   if (table !== null) {
     const verb = classOf(table, args);
-    const target = args.find((arg) => !arg.startsWith('-'));
+    const target = targetIn(verb, args);
     return {
       action: actionForCommand(binary, table, args),
       class: verb.class,
