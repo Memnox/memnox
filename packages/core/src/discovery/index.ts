@@ -23,3 +23,4 @@ export * from './inventory';
 export * from './fail-on';
 export * from './wrap';
 export * from './alerts';
+export * from './share-card';

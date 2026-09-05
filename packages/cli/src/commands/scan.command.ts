@@ -6,6 +6,8 @@ import {
   inventoryOf,
   matchesPattern,
   renderFields,
+  renderShareCard,
+  shareCardFor,
   rollUpUsage,
   SqliteEventStore,
   reviewServers,
@@ -88,6 +90,7 @@ export function registerScanCommand(
     .option('--mcp <server>', 'review one MCP server before you trust it')
     .option('--usage <window>', 'what was granted against what was used, e.g. 7d')
     .option('--save', 'keep this scan, so a later "memnox diff" has a baseline')
+    .option('--share', 'a card of counts only, safe to paste anywhere')
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
@@ -102,6 +105,7 @@ export function registerScanCommand(
           mcp?: string;
           save?: boolean;
           usage?: string;
+          share?: boolean;
         },
       ) => {
         if (unrecognized.length > 0) {
@@ -112,6 +116,13 @@ export function registerScanCommand(
           probe: options.probe,
           save: options.save === true,
         });
+        if (options.share === true) {
+          const card = shareCardFor(inventoryOf(report, snapshot.takenAt));
+          context.out.line(
+            options.json === true ? JSON.stringify(card, null, 2) : renderShareCard(card),
+          );
+          return;
+        }
         if (options.usage !== undefined) {
           await renderUsage(context, report, options.usage, options.json === true);
           return;

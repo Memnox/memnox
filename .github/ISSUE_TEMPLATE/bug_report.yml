@@ -1,36 +1,34 @@
 name: Bug report
-description: A decision, command, or adapter behaved differently than documented.
+description: Something Memnox did that it should not have, or did not do that it should
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        If this is a way to make an action bypass a policy, **stop** and follow
-        [SECURITY.md](../blob/main/SECURITY.md) instead — do not file it publicly.
+        Before anything else: **do not paste a path, a credential name, or the
+        contents of a policy file that names one.** `memnox doctor` output is safe to
+        share only after you have read it.
 
   - type: textarea
-    id: expected
+    id: what
     attributes:
-      label: What you expected
-      description: The decision or output you expected, and why.
+      label: What happened
+      description: What you ran, and what it did instead of what you expected.
+      placeholder: |
+        I ran: memnox protect --apply
+        I expected: ...
+        It did: ...
     validations:
       required: true
 
   - type: textarea
-    id: actual
+    id: doctor
     attributes:
-      label: What happened instead
-    validations:
-      required: true
-
-  - type: textarea
-    id: reproduce
-    attributes:
-      label: Reproduction
+      label: memnox doctor
       description: >
-        The smallest policy file and command that shows it. Decisions are
-        deterministic, so a policy plus an action request is usually enough.
-      render: shell
+        Paste the output of `memnox doctor`. It names findings and agents, never
+        secret values — but read it before pasting.
+      render: text
     validations:
       required: true
 
@@ -38,17 +36,24 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `memnox --version`, or the commit SHA.
+      description: The output of `memnox --version`.
     validations:
       required: true
 
   - type: dropdown
-    id: storage
+    id: platform
     attributes:
-      label: Storage backend
+      label: Platform
       options:
-        - Local files (default)
-        - Postgres
-        - Postgres + Redis
+        - macOS
+        - Linux
+        - WSL
+        - Other
     validations:
       required: true
+
+  - type: textarea
+    id: anything
+    attributes:
+      label: Anything else
+      description: The agent you were running, the rule involved, whatever helps.

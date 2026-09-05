@@ -1,37 +1,27 @@
 name: Feature request
-description: Propose a capability for the runtime.
+description: Something Memnox should be able to answer and cannot
 labels: [enhancement]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Memnox **governs** agents — it understands code, and never writes or
-        reviews it. Code generation, PR review, reviewer suggestion, and
-        execution sandboxes are permanently out of scope.
-
   - type: textarea
-    id: problem
+    id: situation
     attributes:
-      label: The problem
-      description: What can an agent do today that you cannot govern?
-    validations:
-      required: true
-
-  - type: textarea
-    id: proposal
-    attributes:
-      label: Proposed behaviour
+      label: The situation
       description: >
-        What should the runtime decide, and on what input? If this is new
-        escalation logic, it should fit the `ActionAdvisor` shape — deterministic,
-        tightening only, and failing to "no escalation".
+        What is happening in your week that Memnox does not help with? Describe the
+        problem rather than the feature — the feature is usually not the interesting part.
     validations:
       required: true
 
-  - type: checkboxes
-    id: constraints
+  - type: textarea
+    id: today
     attributes:
-      label: Constraints
-      options:
-        - label: This keeps the decision path deterministic (no LLM, network, clock, or randomness)
-        - label: This does not require Memnox to author or review code
+      label: What you do today
+      description: How you handle it now, and why that is not good enough.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What you imagine
+      description: A command, a flag, an output — however rough.
