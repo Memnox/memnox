@@ -15,9 +15,11 @@ export interface LocalGateOptions {
   /** Supplied by the caller so a verdict stays reproducible on replay. */
   now?: Date;
   /**
-   * What is in force, distributed into the process rather than queried from it. A
-   * gate that cannot see a freeze allows through the one action the freeze was for.
+   * What is in force, handed in rather than queried. A gate that cannot see a freeze
+   * allows through the one action the freeze was declared for, which is the failure
+   * that makes the next freeze get ignored.
    */
+  stateFacts?: readonly string[];
 }
 
 export interface LocalVerdict {
@@ -63,10 +65,12 @@ export class LocalGate {
 
   evaluate(request: ActionRequest): LocalVerdict {
     const at = this.options.now ?? new Date();
-    const moment = at.toISOString();
     const evaluation = this.engine.evaluate(request, {
       agentName: this.options.agentName,
       now: at,
+      ...(this.options.stateFacts === undefined
+        ? {}
+        : { state: this.options.stateFacts }),
     });
     return {
       effect: evaluation.effect,

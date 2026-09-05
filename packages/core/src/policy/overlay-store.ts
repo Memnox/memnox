@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { MEMNOX_HOME, type Overlay } from '@memnox/core';
+import { MEMNOX_HOME } from '../config/config';
+import type { Overlay } from './overlay';
 
 const OVERLAY_FILE = 'overlays.json';
 

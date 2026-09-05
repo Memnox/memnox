@@ -5,6 +5,7 @@ import { registerScanCommand } from './commands/scan.command';
 import { registerDiffCommand } from './commands/diff.command';
 import { registerWatchCommand } from './commands/watch.command';
 import { registerRewindCommand } from './commands/rewind.command';
+import { registerCheckCommand } from './commands/check.command';
 import { registerExplainCommand } from './commands/explain.command';
 import { registerConfigCommand } from './commands/config.command';
 import { registerDoctorCommand } from './commands/doctor.command';
@@ -49,6 +50,7 @@ export function buildProgram(context: CliContext): Command {
   registerPolicyCommand(program, context);
   registerWatchCommand(program, context);
   registerRewindCommand(program, context);
+  registerCheckCommand(program, context);
   registerDoctorCommand(program, context);
   registerConfigCommand(program, context);
 

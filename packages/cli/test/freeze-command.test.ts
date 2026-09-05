@@ -8,7 +8,7 @@ import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { plainStyle } from '../src/style';
 import { minutesFrom, registerFreezeCommand } from '../src/commands/freeze.command';
-import { readOverlays } from '../src/overlay-store';
+import { readOverlays } from '@memnox/core';
 
 const NOW = new Date('2026-09-05T10:00:00.000Z');
 const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-freeze-'));

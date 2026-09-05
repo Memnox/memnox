@@ -5,10 +5,11 @@ import {
   describeOverlay,
   freezeFor,
   inForce,
+  readOverlays,
   validateOverlay,
+  writeOverlays,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { readOverlays, writeOverlays } from '../overlay-store';
 
 /** `2h`, `30m`, or a bare number of minutes. */
 export function minutesFrom(raw: string): number {

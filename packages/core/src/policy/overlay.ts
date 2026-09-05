@@ -108,3 +108,14 @@ export function freezeFor(
     source,
   };
 }
+
+/**
+ * The labels a gate should be built with, read off the overlays as of a moment. Named
+ * for what a caller is asking: not "which overlays exist" but "what is true right now".
+ */
+export function stateFactsInForce(
+  overlays: readonly Overlay[],
+  moment: string,
+): string[] {
+  return stateLabelsOf(overlays, moment);
+}
