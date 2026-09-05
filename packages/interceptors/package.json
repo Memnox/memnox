@@ -57,6 +57,6 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/core": "0.6.1"
+    "@memnox/core": "workspace:*"
   }
 }

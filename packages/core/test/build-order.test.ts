@@ -4,27 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 /** tsup reads a dependency's `.d.ts` from its dist, so build order has to be real. */
 const WORKSPACE_PREFIX = '@memnox/';
-const CLI_PACKAGE = 'memnox';
 
 const repoPath = (relative: string): string =>
   fileURLToPath(new URL(`../../../${relative}`, import.meta.url));
 
 const readJson = (relative: string): Record<string, unknown> =>
   JSON.parse(readFileSync(repoPath(relative), 'utf8')) as Record<string, unknown>;
-
-function buildScriptOrder(): string[] {
-  const root = readJson('package.json');
-  const scripts = root['scripts'] as Record<string, string | undefined>;
-  const build = scripts['build'];
-  if (build === undefined) throw new Error('root package.json has no build script');
-
-  const names: string[] = [];
-  for (const match of build.matchAll(/-w\s+(\S+)/g)) {
-    const name = match[1];
-    if (name !== undefined) names.push(name);
-  }
-  return names;
-}
 
 function workspaceDependencies(): Map<string, string[]> {
   const graph = new Map<string, string[]>();
@@ -36,41 +21,54 @@ function workspaceDependencies(): Map<string, string[]> {
       ...((pkg['dependencies'] as Record<string, string>) ?? {}),
       ...((pkg['devDependencies'] as Record<string, string>) ?? {}),
     };
-    const internal = Object.keys(declared).filter(
-      (name) => name.startsWith(WORKSPACE_PREFIX) || name === CLI_PACKAGE,
+    graph.set(
+      pkg['name'] as string,
+      Object.keys(declared).filter((name) => name.startsWith(WORKSPACE_PREFIX)),
     );
-    graph.set(pkg['name'] as string, internal);
   }
   return graph;
 }
 
-describe('root build script', () => {
-  it('builds every workspace package exactly once', () => {
-    const order = buildScriptOrder();
-    const packages = [...workspaceDependencies().keys()];
-
-    expect([...order].sort()).toEqual([...packages].sort());
-    expect(new Set(order).size).toBe(order.length);
+describe('the workspace', () => {
+  it('builds recursively, so pnpm orders the graph rather than a hand-written list', () => {
+    const scripts = readJson('package.json')['scripts'] as Record<string, string>;
+    expect(scripts['build']).toContain('pnpm -r');
   });
 
-  it('builds each package after everything it imports', () => {
-    const order = buildScriptOrder();
-    const graph = workspaceDependencies();
-    const position = new Map(order.map((name, index) => [name, index]));
-
-    const tooLate: string[] = [];
-    for (const [name, dependencies] of graph) {
-      for (const dependency of dependencies) {
-        if (!position.has(dependency)) continue;
-        const dependencyIndex = position.get(dependency);
-        const packageIndex = position.get(name);
-        if (dependencyIndex === undefined || packageIndex === undefined) continue;
-        if (dependencyIndex > packageIndex) {
-          tooLate.push(`${name} is built before its dependency ${dependency}`);
+  it('declares every internal dependency with the workspace protocol', () => {
+    const offenders: string[] = [];
+    for (const dir of readdirSync(repoPath('packages'))) {
+      const manifest = `packages/${dir}/package.json`;
+      if (!existsSync(repoPath(manifest))) continue;
+      const pkg = readJson(manifest);
+      const deps = (pkg['dependencies'] as Record<string, string>) ?? {};
+      for (const [name, range] of Object.entries(deps)) {
+        if (name.startsWith(WORKSPACE_PREFIX) && !range.startsWith('workspace:')) {
+          offenders.push(`${pkg['name'] as string} pins ${name} at ${range}`);
         }
       }
     }
+    expect(offenders).toEqual([]);
+  });
 
-    expect(tooLate).toEqual([]);
+  /** A cycle is the one thing pnpm's topological sort cannot resolve for us. */
+  it('has no dependency cycle', () => {
+    const graph = workspaceDependencies();
+    const state = new Map<string, 'open' | 'done'>();
+    const cycles: string[] = [];
+
+    const walk = (name: string, trail: string[]): void => {
+      if (state.get(name) === 'done') return;
+      if (state.get(name) === 'open') {
+        cycles.push([...trail, name].join(' -> '));
+        return;
+      }
+      state.set(name, 'open');
+      for (const next of graph.get(name) ?? []) walk(next, [...trail, name]);
+      state.set(name, 'done');
+    };
+
+    for (const name of graph.keys()) walk(name, []);
+    expect(cycles).toEqual([]);
   });
 });

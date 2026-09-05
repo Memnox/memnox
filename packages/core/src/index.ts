@@ -18,3 +18,5 @@ export * from './policy/index';
 export * from './ledger/index';
 export * from './gate/index';
 export * from './domain/action-identity';
+export * from './config/index';
+export * from './render/index';

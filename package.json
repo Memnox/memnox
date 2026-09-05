@@ -8,11 +8,8 @@
   "engines": {
     "node": ">=20"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "build": "npm run build -w @memnox/core -w @memnox/proxy -w @memnox/interceptors -w memnox",
+    "build": "pnpm -r --filter \"./packages/**\" build",
     "release:local": "./scripts/publish-local.sh",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -20,7 +17,10 @@
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
-    "deadcode": "knip"
+    "deadcode": "knip",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
@@ -29,6 +29,8 @@
     "prettier": "^3.3.0",
     "tsup": "^8.1.0",
     "typescript": "^5.5.0",
-    "vitest": "^4.1.10"
-  }
+    "vitest": "^4.1.10",
+    "@changesets/cli": "^2.27.0"
+  },
+  "packageManager": "pnpm@11.5.0"
 }

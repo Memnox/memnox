@@ -40,9 +40,9 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@memnox/core": "0.6.1",
-    "@memnox/proxy": "0.6.1",
-    "@memnox/interceptors": "0.6.1",
+    "@memnox/core": "workspace:*",
+    "@memnox/proxy": "workspace:*",
+    "@memnox/interceptors": "workspace:*",
     "commander": "^12.1.0",
     "yaml": "^2.4.0"
   }
