@@ -81,6 +81,10 @@ replay gives the same answer.
 memnox policy test "git push --force"
 ```
 
+The command line is classified exactly as an interceptor classifies it, so a rule
+about `git.push` matches what you actually type. A namespaced action works too, which
+is how the git hooks call it.
+
 Prints the effect, the reason, the rule and the alternative, and exits non-zero on
 anything that is not an allow.
 

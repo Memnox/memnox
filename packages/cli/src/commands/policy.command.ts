@@ -7,10 +7,10 @@ import {
   normalizeShellCommand,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { DEFAULT_POLICY_FILE } from '../defaults';
+import { resolvePolicyFile } from '../policy-path';
 
 interface TestOptions {
-  file: string;
+  file?: string;
   agent: string;
   target?: string;
 }
@@ -53,16 +53,17 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
   policy
     .command('test <action>')
     .description('Evaluate one action against the rules, changing nothing')
-    .option('-f, --file <path>', 'policy file', DEFAULT_POLICY_FILE)
+    .option('-f, --file <path>', 'policy file (default: whichever exists)')
     .option('-a, --agent <name>', 'agent the rules are matched against', 'agent')
     .option('-t, --target <target>', 'what the action operates on')
     .action(async (action: string, options: TestOptions) => {
-      if (!existsSync(options.file)) {
+      const file = resolvePolicyFile(options.file);
+      if (!existsSync(file)) {
         throw new Error(
-          `No rules at ${options.file}. Write some first:  memnox protect --from-scan`,
+          `No rules at ${file}. Write some first:  memnox protect --interactive`,
         );
       }
-      const gate = await LocalGate.fromFiles([options.file], {
+      const gate = await LocalGate.fromFiles([file], {
         agentName: options.agent,
       });
       const verdict = gate.evaluate(requestFor(action, options));

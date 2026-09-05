@@ -7,12 +7,6 @@ import type { Policy } from './policy';
  * is enforced even when it does not. Both, or a bypass is a gap.
  */
 
-export const NATIVE_TARGET = {
-  CLAUDE_CODE: 'claude-code',
-} as const;
-
-export type NativeTarget = (typeof NATIVE_TARGET)[keyof typeof NATIVE_TARGET];
-
 export interface ClaudeCodePermissions {
   allow: string[];
   ask: string[];

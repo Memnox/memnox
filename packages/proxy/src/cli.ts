@@ -1,30 +1,23 @@
 import { parseFirewallArgs } from './firewall-args';
 import { McpFirewall } from './firewall';
-import {
-  ENV_AGENT_TOKEN,
-  ENV_FAIL_OPEN,
-  ENV_POLICIES,
-  ENV_RUNTIME_URL,
-  ENV_TOOLS_ALLOW,
-  ENV_TOOLS_DENY,
-} from './firewall.constants';
+import { ENV_POLICIES, ENV_TOOLS_ALLOW, ENV_TOOLS_DENY } from './firewall.constants';
 import { loadLocalGate, localGateEnvironment } from './local-gate-loader';
 
-const USAGE = `Usage: memnox-mcp-firewall --name <server-name> -- <server command...>
+const USAGE = `Usage: memnox-mcp-proxy --name <server-name> -- <server command...>
 
-Wraps a stdio MCP server; every tools/call is checked against the Memnox runtime.
+Wraps a stdio MCP server. Every tools/call is ruled on in this process before it
+reaches the server, so a call's arguments never leave the machine.
+
+Normally you do not run this by hand — "memnox mcp wrap" points your agent's config
+at it, and "memnox mcp unwrap" puts the config back.
 
 Environment:
-  ${ENV_RUNTIME_URL}          Memnox runtime base URL
-  ${ENV_AGENT_TOKEN}  agent token for the runtime
+  ${ENV_POLICIES}     policy files, comma-separated
   ${ENV_TOOLS_ALLOW}  regex — only matching tools are exposed
   ${ENV_TOOLS_DENY}   regex — matching tools are hidden and denied
-  ${ENV_FAIL_OPEN}    "true" to forward calls when the runtime is unreachable
-  ${ENV_POLICIES}       policy files evaluated in-process, comma-separated —
-                        the only place a call's arguments are ever read
 
 Example:
-  MEMNOX_AGENT_TOKEN=mnx_... memnox-mcp-firewall --name github -- npx -y @modelcontextprotocol/server-github`;
+  memnox-mcp-proxy --name github -- npx -y @modelcontextprotocol/server-github`;
 
 async function main(): Promise<void> {
   const args = parseFirewallArgs(process.argv.slice(2));

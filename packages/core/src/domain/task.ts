@@ -7,27 +7,6 @@ export interface DeclaredScope {
   resourceKinds?: readonly string[];
 }
 
-export const TASK_DECLARED_BY = {
-  HUMAN: 'human',
-  AGENT: 'agent',
-  WORKFLOW: 'workflow',
-} as const;
-
-export type TaskDeclaredBy = (typeof TASK_DECLARED_BY)[keyof typeof TASK_DECLARED_BY];
-
-/** Intent as data. Declared by the client, never inferred on the decision path. */
-export interface Task {
-  id: string;
-  sessionId: string;
-  subjectId: string;
-  /** What the person actually asked for: "fix the failing auth tests". */
-  statement: string;
-  declaredScope: DeclaredScope;
-  declaredBy: TaskDeclaredBy;
-  startedAt: string;
-  endedAt?: string;
-}
-
 export interface TaskRef {
   id: string;
   statement: string;

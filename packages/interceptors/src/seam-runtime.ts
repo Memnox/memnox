@@ -19,7 +19,6 @@ export async function buildAuthorizer(): Promise<HookAuthorizer> {
 
   return new HookAuthorizer({
     ...(gate === null ? {} : { gate }),
-    failOpen: config.failOpen,
     log,
   });
 }

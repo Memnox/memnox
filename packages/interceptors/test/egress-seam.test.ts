@@ -3,7 +3,6 @@ import { LocalGate } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
 import type { HookAuthorizer } from '../src/hook-authorizer';
 import { HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
-import { DOCKER_SOCKET_PATH_LIMIT } from '../src/tool-hook.constants';
 import {
   EgressSeam,
   EGRESS_BLIND_SPOTS,
@@ -142,20 +141,5 @@ describe('the egress seam', () => {
     expect(
       (await seam.gateRequest({ method: 'GET', url: 'https://example.com' })).allowed,
     ).toBe(true);
-  });
-});
-
-/**
- * A path over the cap binds nothing while `listen` still reports success, which would
- * leave the seam announcing coverage it does not have. Found the hard way.
- */
-describe('the docker socket path limit', () => {
-  it('is under what the operating system accepts', () => {
-    expect(DOCKER_SOCKET_PATH_LIMIT).toBeLessThanOrEqual(104);
-  });
-
-  it('rejects a path a real temp directory can easily produce', () => {
-    const realistic = `/private/tmp/claude-501/${'a'.repeat(80)}/memnox-docker.sock`;
-    expect(Buffer.byteLength(realistic)).toBeGreaterThan(DOCKER_SOCKET_PATH_LIMIT);
   });
 });

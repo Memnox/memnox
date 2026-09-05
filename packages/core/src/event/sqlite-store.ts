@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
-import { matches, type EventQuery, type EventSink, type MemnoxEvent } from './event';
+import type { EventQuery, EventSink, MemnoxEvent } from './event';
 
 export const DATABASE_FILE = 'memnox.db';
 
@@ -335,6 +335,3 @@ export class SqliteEventStore implements EventSink {
     this.db.close();
   }
 }
-
-/** Exposed so a caller can filter in memory against exactly the store's rules. */
-export const eventMatches = matches;

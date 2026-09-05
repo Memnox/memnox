@@ -20,6 +20,12 @@ The default command — `npx memnox` runs it.
 What is reachable that should not be, ranked, each with the one change that closes it.
 `--by-agent` decomposes per agent. Counts by severity, never a total.
 
+`--wiring` answers a different question: is Memnox actually gating anything, or only
+installed? It checks the config mode, the rules, the interceptors, whether they are
+ahead of the real binaries on `PATH`, whether your MCP servers are routed through the
+proxy, the daemon and the ledger. Every line that is not `ok` names the command that
+fixes it.
+
 ### `memnox explain <subject>`
 A tool name gives its provenance: which server, which config, which agents reach it,
 how long it has been there. A sentence asks a question:

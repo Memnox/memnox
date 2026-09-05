@@ -131,21 +131,6 @@ export interface EventQuery {
   limit?: number;
 }
 
-/** In memory, for a surface running before the store exists and for tests. */
-export class MemoryEventSink implements EventSink {
-  private readonly rows: MemnoxEvent[] = [];
-
-  async append(event: MemnoxEvent): Promise<void> {
-    this.rows.push(event);
-  }
-
-  async query(filter: EventQuery): Promise<MemnoxEvent[]> {
-    const matched = this.rows.filter((row) => matches(row, filter));
-    matched.sort((a, b) => a.at.localeCompare(b.at));
-    return filter.limit === undefined ? matched : matched.slice(-filter.limit);
-  }
-}
-
 export function matches(row: MemnoxEvent, filter: EventQuery): boolean {
   if (filter.sessionId !== undefined && row.sessionId !== filter.sessionId) return false;
   if (filter.agent !== undefined && row.agent !== filter.agent) return false;

@@ -34,7 +34,7 @@ import {
 } from '@memnox/core';
 import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
-import { DEFAULT_POLICY_FILE } from '../defaults';
+import { resolvePolicyFile } from '../policy-path';
 
 /** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
 const MEMNOX_HOME = '.memnox';
@@ -301,12 +301,11 @@ async function runNative(context: CliContext, reverting: boolean): Promise<void>
     return;
   }
 
-  if (!existsSync(DEFAULT_POLICY_FILE)) {
-    throw new Error(`No rules at ${DEFAULT_POLICY_FILE} to write.`);
+  const rules = resolvePolicyFile();
+  if (!existsSync(rules)) {
+    throw new Error(`No rules at ${rules} to write. Try "memnox protect --interactive".`);
   }
-  const translation = toClaudeCodePermissions(
-    await loadPoliciesFromFile(DEFAULT_POLICY_FILE),
-  );
+  const translation = toClaudeCodePermissions(await loadPoliciesFromFile(rules));
   await writeFile(
     path,
     `${JSON.stringify(applyNative(settings, translation), null, 2)}\n`,

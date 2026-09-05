@@ -157,8 +157,3 @@ export function resolveReal(
   }
   return null;
 }
-
-/** The parent of a resolved binary, for a message that tells somebody where to look. */
-export function directoryOf(resolved: string): string {
-  return dirname(resolved);
-}

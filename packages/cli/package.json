@@ -44,6 +44,7 @@
     "@memnox/proxy": "workspace:*",
     "@memnox/interceptors": "workspace:*",
     "commander": "^12.1.0",
-    "yaml": "^2.4.0"
+    "yaml": "^2.4.0",
+    "smol-toml": "^1.4.2"
   }
 }

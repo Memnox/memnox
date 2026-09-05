@@ -11,7 +11,6 @@ export * from './domain/task';
 export * from './domain/decision';
 export * from './domain/explanation';
 export * from './domain/risk-assessment';
-export * from './ports/logger';
 export * from './domain/egress-inspector';
 export * from './discovery/index';
 export * from './policy/index';

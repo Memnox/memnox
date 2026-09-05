@@ -170,13 +170,3 @@ export async function writePolicyDocumentFile(
   await writeFile(temporary, serialized, 'utf8');
   await rename(temporary, filePath);
 }
-
-export async function writePoliciesToFile(
-  filePath: string,
-  policies: readonly Policy[],
-): Promise<void> {
-  await writePolicyDocumentFile(filePath, {
-    version: POLICY_DOCUMENT_VERSION,
-    policies: [...policies],
-  });
-}

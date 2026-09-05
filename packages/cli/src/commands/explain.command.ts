@@ -14,7 +14,7 @@ import {
   type ParsedQuestion,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { DEFAULT_POLICY_FILE } from '../defaults';
+import { resolvePolicyFile } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 
 const LABEL_WIDTH = 12;
@@ -148,8 +148,8 @@ export function registerExplainCommand(
     .command('explain <subject>')
     .description('Where a capability came from, or whether an agent could do a thing')
     .option('--json', 'machine-readable output')
-    .option('-f, --file <path>', 'policy file', DEFAULT_POLICY_FILE)
-    .action(async (subject: string, options: { json?: boolean; file: string }) => {
+    .option('-f, --file <path>', 'policy file (default: whichever exists)')
+    .action(async (subject: string, options: { json?: boolean; file?: string }) => {
       const seams = buildSeams(cwd());
       const { report, snapshot } = await scanMachine(seams, { probe: false });
 
@@ -161,7 +161,7 @@ export function registerExplainCommand(
         const answer = await answerQuestion(
           question,
           inventoryOf(report, snapshot.takenAt),
-          options.file,
+          resolvePolicyFile(options.file),
         );
         if (options.json === true) {
           context.out.line(JSON.stringify({ question, ...answer }, null, 2));

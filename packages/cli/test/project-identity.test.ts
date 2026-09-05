@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_POLICY_FILE } from '../src/defaults';
+import { POLICY_FILES } from '../src/policy-path';
+
+const DEFAULT_POLICY_FILE = POLICY_FILES[1];
 import { findPolicyFile, resolveProjectId } from '../src/project-identity';
 
 const policyFile = (project?: string): string =>

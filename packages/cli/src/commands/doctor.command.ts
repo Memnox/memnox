@@ -1,15 +1,20 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
+  CHECK,
+  checkInstallation,
   discover,
   NodeMachineReader,
   rankAgents,
   runDoctor,
+  summarizeHealth,
   type AgentStanding,
   type Finding,
+  type HealthCheck,
   type MachineReader,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { gatherHealth } from '../health-probe';
 
 const SEVERITY_WIDTH = 10;
 
@@ -30,10 +35,25 @@ export function registerDoctorCommand(
     )
     .option('--json', 'emit the findings as JSON')
     .option(
+      '--wiring',
+      'whether Memnox is actually gating anything, rather than only installed',
+    )
+    .option(
       '--by-agent',
       'the same findings per agent on this machine, never a rating of the products',
     )
-    .action(async (options: { json?: boolean; byAgent?: boolean }) => {
+    .action(async (options: { json?: boolean; byAgent?: boolean; wiring?: boolean }) => {
+      if (options.wiring === true) {
+        const checks = checkInstallation(await gatherHealth(homedir(), cwd()));
+        if (options.json === true) {
+          context.out.line(
+            JSON.stringify({ ...summarizeHealth(checks), checks }, null, 2),
+          );
+          return;
+        }
+        renderWiring(context, checks);
+        return;
+      }
       const reader: MachineReader = buildReader();
       // The same ground `memnox` covers: a finding it showed and doctor cannot
       // rank is a credential the reader was told about and never offered a fix for.
@@ -133,4 +153,33 @@ function renderByAgent(context: CliContext, standings: readonly AgentStanding[])
 
 function severity(style: CliContext['style'], finding: Finding): string {
   return style.risk(finding.severity, finding.severity.toUpperCase());
+}
+
+const CHECK_WIDTH = 14;
+
+/**
+ * Installed and governing nothing is the state this exists to catch. Every line says
+ * what is true, and every line that is not "ok" says the command that changes it.
+ */
+function renderWiring(context: CliContext, checks: readonly HealthCheck[]): void {
+  const { out, style } = context;
+  const { state, headline } = summarizeHealth(checks);
+
+  out.line('');
+  out.line(state === CHECK.OK ? style.ok(headline) : style.warn(headline));
+  out.line('');
+
+  for (const check of checks) {
+    const mark =
+      check.state === CHECK.OK
+        ? style.ok('ok  ')
+        : check.state === CHECK.INERT
+          ? style.warn('idle')
+          : style.warn('!   ');
+    out.line(`  ${mark}  ${check.name.padEnd(CHECK_WIDTH)}${check.detail}`);
+    if (check.fix !== undefined && check.state !== CHECK.OK) {
+      out.line(`        ${''.padEnd(CHECK_WIDTH)}${style.dim(`→ ${check.fix}`)}`);
+    }
+  }
+  out.line('');
 }

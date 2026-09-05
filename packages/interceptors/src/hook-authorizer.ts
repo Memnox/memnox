@@ -7,7 +7,6 @@ import {
 } from '@memnox/core';
 import type { LocalGate } from '@memnox/core';
 import { EGRESS_ACTIONS } from './tool-hook.constants';
-import { FRAME_TOOL_CALL } from './tool-hook.constants';
 
 export interface HookVerdict {
   effect: DecisionEffect;

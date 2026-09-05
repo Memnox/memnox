@@ -35,7 +35,21 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
     because:
       'almost no task needs the key itself, and a leaked one is somebody’s weekend',
     actions: ['filesystem.read'],
-    targets: ['**/.ssh/**', '**/.aws/**', '**/.env', '**/.env.*'],
+    /* Both the directory and what is inside it: a rule that only covered the contents
+       answers "no rule matched" to somebody asking about `~/.aws`, which reads as
+       permission. */
+    targets: [
+      '**/.ssh',
+      '**/.ssh/**',
+      '**/.aws',
+      '**/.aws/**',
+      '**/.gcloud',
+      '**/.gcloud/**',
+      '**/.kube',
+      '**/.kube/**',
+      '**/.env',
+      '**/.env.*',
+    ],
   },
   {
     domain: POLICY_DOMAIN.SHELL,

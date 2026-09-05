@@ -24,3 +24,4 @@ export * from './fail-on';
 export * from './wrap';
 export * from './alerts';
 export * from './share-card';
+export * from './health';
