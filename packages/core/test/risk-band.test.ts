@@ -14,6 +14,7 @@ function report(overrides: Partial<DiscoveryReport> = {}): DiscoveryReport {
     egress: { outbound: 'restricted', proxyVars: [], noProxy: [], sandbox: [], read: [] },
     credentials: [],
     browsers: [],
+    envFiles: [],
     authenticated: [],
     ...overrides,
   };

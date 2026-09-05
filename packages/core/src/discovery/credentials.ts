@@ -98,6 +98,30 @@ const SPECS: readonly CredentialSpec[] = [
   { kind: 'Git credentials', paths: ['.git-credentials'] },
 ];
 
+/** The `.env` names people actually use, in the directories they actually work in. */
+const ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production'];
+
+/**
+ * Counted, never read out. A `.env` is the credential file most likely to hold
+ * something live, and the honest summary is how many variables it holds and how many
+ * are named like a key — the values stay in the file.
+ */
+export async function findEnvFiles(
+  reader: MachineReader,
+  projectDirs: readonly string[],
+): Promise<EnvFinding[]> {
+  const found: EnvFinding[] = [];
+  for (const dir of projectDirs) {
+    for (const name of ENV_FILES) {
+      const path = `${dir}/${name}`;
+      const contents = await reader.read(path);
+      if (contents === null) continue;
+      found.push(readEnvFile(path, contents));
+    }
+  }
+  return found;
+}
+
 export async function findCredentials(
   reader: MachineReader,
 ): Promise<CredentialFinding[]> {
@@ -124,7 +148,27 @@ export async function findCredentials(
 }
 
 /** Names that look like a key. The heuristic is on the name; the value is never read. */
-const KEY_LIKE = /_(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API|DSN)S?$/i;
+const KEY_LIKE = /_(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API|DSN|URI)S?$/i;
+
+/**
+ * Names that are a credential whatever they end in. `DATABASE_URL` carries a password
+ * in the middle of it, and a suffix rule alone would let the most common one through.
+ */
+const KNOWN_CREDENTIAL_NAMES = new Set([
+  'DATABASE_URL',
+  'MONGODB_URI',
+  'REDIS_URL',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SESSION_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'NPM_TOKEN',
+  'VERCEL_TOKEN',
+]);
+
+function looksLikeCredential(name: string): boolean {
+  return KNOWN_CREDENTIAL_NAMES.has(name.toUpperCase()) || KEY_LIKE.test(name);
+}
 
 export interface EnvFinding {
   path: string;
@@ -144,7 +188,7 @@ export function readEnvFile(path: string, contents: string): EnvFinding {
   return {
     path,
     variables: names.length,
-    keyLike: names.filter((name) => KEY_LIKE.test(name)).length,
+    keyLike: names.filter(looksLikeCredential).length,
   };
 }
 

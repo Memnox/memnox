@@ -18,7 +18,9 @@ import {
   authenticatedClis,
   findCredentials,
   type AuthenticatedCli,
+  findEnvFiles,
   type CredentialFinding,
+  type EnvFinding,
 } from './credentials';
 import {
   databasesIn,
@@ -77,6 +79,8 @@ export interface DiscoveryReport {
   authenticated: AuthenticatedCli[];
   /** Browser drivers, and whether they carry a profile that holds your logins. */
   browsers: BrowserFinding[];
+  /** `.env` files in the directories worked in: counts of variables and key-like names. */
+  envFiles: EnvFinding[];
 }
 
 export interface DiscoveryOptions {
@@ -137,6 +141,7 @@ export async function discover(
   /* A binary alone is unremarkable and a credential alone is unremarkable; the pair is
      what turns "~/.aws/credentials exists" into "can modify infrastructure". */
   const browsers = await findBrowserAutomation(reader, options.projectDirs ?? []);
+  const envFiles = await findEnvFiles(reader, options.projectDirs ?? []);
   const authenticated = authenticatedClis(
     tools.map((tool) => tool.name),
     credentials,
@@ -158,6 +163,7 @@ export async function discover(
     credentials,
     authenticated,
     browsers,
+    envFiles,
   };
 }
 

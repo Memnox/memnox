@@ -99,7 +99,14 @@ describe('.env files', () => {
     );
 
     expect(found.variables).toBe(5);
-    expect(found.keyLike).toBe(2);
+    /* DATABASE_URL, STRIPE_SECRET_KEY and API_TOKEN. The first ends in `_URL`, which
+       no suffix rule would catch, and it carries a password in the middle of it. */
+    expect(found.keyLike).toBe(3);
+  });
+
+  it('catches a credential whose name no suffix rule would match', () => {
+    expect(readEnvFile('.env', 'DATABASE_URL=postgres://u:pw@h/db\n').keyLike).toBe(1);
+    expect(readEnvFile('.env', 'API_URL=https://api.example\n').keyLike).toBe(0);
   });
 
   it('reads names only, so no value can reach the report', () => {

@@ -52,6 +52,7 @@ const REPORT = {
   egress: { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] },
   credentials: [],
   browsers: [],
+  envFiles: [],
   authenticated: [],
 } as unknown as DiscoveryReport;
 

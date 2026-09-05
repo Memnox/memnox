@@ -524,14 +524,32 @@ function renderCredentials(context: CliContext, report: DiscoveryReport): void {
   out.line(style.bold('CREDENTIALS THESE AGENTS CAN READ'));
   out.line('');
 
+  // Every path in this block sets the column, or the shortest list wins and the rest run on.
   const width =
-    Math.max(...report.credentials.map((each) => each.path.length)) + PATH_GUTTER;
+    Math.max(
+      ...report.credentials.map((each) => each.path.length),
+      ...report.envFiles.map((each) => each.path.length),
+    ) + PATH_GUTTER;
   for (const credential of report.credentials) {
     const reach = `${agents} agent${agents === 1 ? '' : 's'}`;
     out.line(`  ${style.warn('!')}  ${credential.path.padEnd(width)}${reach}`);
     if (credential.detail !== undefined) {
       out.line(`     ${style.dim(credential.detail)}`);
     }
+  }
+
+  // Counted, never read out: the variable names decide, and the values stay put.
+  for (const env of report.envFiles) {
+    const keys =
+      env.keyLike === 0
+        ? ''
+        : env.keyLike === 1
+          ? ', 1 looks like a credential'
+          : `, ${env.keyLike} look like credentials`;
+    out.line(
+      `  ${style.warn('!')}  ${env.path.padEnd(width)}${agents} agent${agents === 1 ? '' : 's'}`,
+    );
+    out.line(`     ${style.dim(`${env.variables} variables${keys}`)}`);
   }
 }
 
