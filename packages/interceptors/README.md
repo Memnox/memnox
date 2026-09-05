@@ -1,78 +1,54 @@
-# @memnox/tool-hook
+# @memnox/interceptors
 
-The seam that holds an agent's **own** tools.
+The seams an agent's own actions pass through before they happen. The MCP proxy
+governs what an agent reaches *through a server*; this governs what it does
+directly — running a shell command, pushing a branch, opening a URL, handing over
+a credential — which is most of what a coding agent does.
 
-`@memnox/mcp-firewall` governs what an agent reaches through an MCP server. This
-governs what it does directly — reading a file, writing one, running a shell
-command, fetching a URL — which is most of what a coding agent does. It runs as a
-`PreToolUse` hook: the host writes the pending tool call on stdin, and the hook
-answers before the tool runs.
+A verdict nobody is obliged to ask for is advice. These are the seams that make an
+agent which was never written to consult anything ask anyway.
 
-A verdict nobody is obliged to ask for is advice. This is the seam that makes an
-agent that was never written to consult anything ask anyway.
+## The five seams
 
-## Using it
+| Seam | Binary | What it sits in front of |
+|---|---|---|
+| shell | `memnox-shell` | `$SHELL -c "<line>"`, which is what an agent's Bash tool calls |
+| command | `memnox-intercept` | one PATH wrapper per binary — `git`, `aws`, `kubectl`, `docker`… |
+| git credential | `memnox-git-credential` | git asking for a password, before it is handed over |
+| egress | `memnox-egress` | an HTTP request or CONNECT, by destination |
+| tool hook | (in process) | a `PreToolUse` hook, for hosts that offer one |
 
-```
-memnox hooks install     # registers it in ~/.claude/settings.json
-memnox hooks status      # what it sees, and what it cannot
-memnox hooks uninstall   # removes only ours; every other hook is left alone
-```
+Each answers from the same local gate and the same rule files everything else
+reads. A seam that could not reach the gate evaluates in process rather than
+failing open silently.
 
-`memnox setup` installs it too. Pass `--no-hooks` to skip that.
+## How the PATH wrappers work
 
-## What it rules on
+`installInterceptors` writes one two-line shell script per binary into
+`~/.memnox/bin`, each one `exec`ing `memnox-intercept` with the name it was
+invoked as. Only binaries the machine actually has get a wrapper: a shim for an
+absent `aws` would answer `command -v aws` and send every script that checks for
+it down the wrong branch.
 
-| Tool | Action |
-|---|---|
-| `Read`, `Glob`, `Grep` | `filesystem.read` |
-| `Write`, `Edit`, `NotebookEdit` | `file.write` |
-| `Bash` | `shell.execute` |
-| `WebFetch`, `WebSearch` | `http.request` |
-| `Task` | `agent.spawn` |
+`memnox run -- <agent>` puts that directory first on the agent's `PATH`. It is
+never written into a shell profile — the line to add is printed, and the whole
+directory is removed by `memnox uninstall`.
 
-The action names what the tool does to the resource, never what kind of file it
-guesses the resource is: `Edit` writes to a file, and whether that file is code is
-an inference this seam does not make.
+## What a seam is allowed to do
 
-Anything else is left to the host's own permission flow.
+- **Hand stdio over untouched.** Anything the agent reads or writes must look
+  exactly as it would have without the wrapper, and the real exit code comes back.
+- **Record what happened.** `record.ts` writes the row behind `why`, `timeline`,
+  `trace` and `collisions`. Best effort and silent on failure: a ledger that stops
+  the command is a tool somebody uninstalls.
+- **Explain a refusal.** Every deny names the rule and, where the rule has one,
+  what to use instead. An agent told only "no" abandons the task.
 
-## The three answers
+## What they cannot see
 
-- **allow** — nothing is written, and the host's ordinary permission flow runs.
-  The seam never answers `allow` to the host, because that would skip a prompt the
-  person would otherwise have seen. It can hold an action back or hand it to
-  somebody; it cannot widen authority.
-- **withhold** — `permissionDecision: "deny"`, carrying the rule's alternative.
-  An agent told only no abandons the task; one told what to use instead finishes it.
-- **escalate** — `permissionDecision: "ask"`. Locally the approver is the person at
-  the keyboard, and the reason names the `memnox approvals resolve` command.
+`PATH` is advisory. An agent invoking `/usr/bin/git` by absolute path never meets
+a wrapper — which is why the git hooks, the OS guard and the MCP proxy each close
+a different part of the same gap. `EGRESS_BLIND_SPOTS` in `egress-seam.ts` says
+the same thing about the tunnel: the destination is gated, the body is not.
 
-## Where it gets its rules
-
-The environment first, then what `memnox setup` wrote to `~/.memnox`:
-
-| | |
-|---|---|
-| `MEMNOX_POLICIES` | policy files evaluated in-process, comma-separated |
-| `MEMNOX_URL`, `MEMNOX_AGENT_TOKEN` | the runtime, which alone resolves an alternative and raises an approval |
-| `MEMNOX_AGENT_NAME` | the name local rules match on `agents:` |
-| `MEMNOX_HOOK_FAIL_OPEN` | `"true"` to allow when the runtime is unreachable. Default: fail closed |
-
-An agent launched from a desktop icon inherits no shell, so a seam that only read
-the environment would install cleanly and then govern nothing. Falling back to disk
-is what makes `memnox setup` enough.
-
-Local rules are evaluated first and see the tool's arguments; they never leave this
-machine. A local refusal never becomes a network request. When both gates answer,
-the stricter one wins.
-
-## Blind to
-
-- the model's reasoning
-- anything a shell command does after it is allowed to start
-- MCP tool calls, which the MCP proxy seam holds instead
-- any call it cannot answer within its timeout, which the agent then runs ungoverned
-
-A governed agent with an unwatched side channel is worse than an ungoverned one,
-because somebody believes it. `memnox hooks status` prints this list.
+Apache-2.0.

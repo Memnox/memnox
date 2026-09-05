@@ -1,50 +1,49 @@
 # @memnox/core
 
-The vocabulary every other package speaks: domain types, the constants that name
-their values, and the ports infrastructure implements.
+Everything the other three packages reason with: the domain types, the rule
+engine, the ledger, and the adapters that read a real machine. Nothing here
+knows about a terminal, a process tree, or an MCP session.
 
-**Zero dependencies.** Not "few" — zero. Everything here is a type, a pure
-function, or an interface, so the trust-critical layer carries no supply chain of
-its own and can be reasoned about on its own terms.
+Published because the CLI depends on it. Its API is not stable before 1.0.
 
 ## What lives here
 
-| Area | Contents |
+| Folder | Holds |
 |---|---|
-| Constants | `DECISION_EFFECT`, `RISK_LEVEL`, `AGENT_KIND`, `AGENT_STATUS`, `APPROVAL_STATUS`, `ROLE`, `SOURCE_AUTHORITY`, `TAINT_*` |
-| Domain | `ActionRequest`, `ActionEvent`, `Decision`, `AgentIdentity`, `Approval`, `Advisory`, `RiskAssessment` |
-| Pure logic | `evaluateConsent`, `compareDeclaredScope`, `buildExplanation`, `chainAuditEvent`, `AuditChainVerifier`, `canonicalJson`, `authorityOf`, `roleSatisfies` |
-| Ports | `IdentityStore`, `ApprovalStore`, `AuditLog`, `DecisionStore`, `LockService`, `RateLimiter`, `Logger`, `TextCodec` |
+| `constants/` | the value sets everything else names — `DECISION_EFFECT`, `ENFORCEMENT_MODE`, `RISK_LEVEL`, `ACTION_CLASS` |
+| `domain/` | pure types and pure logic: an action, a decision, an explanation, shell normalization, canonical JSON, digests |
+| `policy/` | the rule file, the matcher, the engine, layering, overlays, validation |
+| `discovery/` | what is on a machine and what it reaches: agents, MCP servers, credentials, browsers, the doctor, the gap |
+| `gate/` | the local gate an interceptor asks — evaluate, hold, prompt, resolve |
+| `event/` | the frozen v1 event and the append-only SQLite ledger behind it |
+| `ledger/` | what a ledger of events adds up to: usage, unused grants, collisions |
+| `verbs/` | the per-CLI verb tables that decide what `git push` or `aws s3 rm` counts as |
+| `recovery/` | milestones and the pre-flight check `memnox check` runs |
+| `intercept/` | how a command line is resolved and classified before it runs |
+| `config/`, `daemon/`, `render/` | the config file, the daemon's wire protocol, and pure string builders |
 
-## Enum-like constants
+## Two rules this package keeps
 
-There are no TypeScript `enum`s. Values are `as const` objects with a derived
-union type, so they survive JSON round-trips and stay comparable across a process
-boundary:
+**Deterministic, all of it.** No model is consulted anywhere in here — not in
+discovery, not in classification, not in a verdict. A rule table and a matcher
+produce every answer, so the same input always produces the same output and a
+prompt cannot talk one around.
 
-```ts
-import { DECISION_EFFECT, type DecisionEffect } from '@memnox/core';
+**A secret value never becomes a field.** Discovery reports a path, a kind and a
+count; the ledger stores a digest of arguments and never the arguments. The event
+schema refuses a digest field long enough to be a payload.
 
-DECISION_EFFECT.BLOCK; // 'block'
-function handle(effect: DecisionEffect): void {}
-```
+## Layering
 
-## Two pieces worth knowing
+`domain/` and `constants/` import nothing but each other. `policy/`, `gate/` and
+`discovery/` build on them and define the ports they need. The `Node*` classes
+(`NodeMachineReader`, `NodeSnapshotStore`, `NodeMcpLister`, `SqliteEventStore`)
+are the adapters that touch a real disk, and they are the only things in here
+that do.
 
-**`canonicalJson`** — deterministic serialisation with sorted keys. The audit
-chain hashes its output, so two runtimes that saw the same event must produce
-byte-identical input to the hash. Ordinary `JSON.stringify` does not guarantee
-that.
+## Dependencies
 
-**`evaluateConsent`** — answers *"does this approval authorise this exact
-action?"* from the record alone: granted, denied, expired, or not-applicable. It
-takes `now` as an argument rather than reading the clock, so replaying an old
-decision reproduces the original verdict. Finalising an approval (writing to a
-store, appending audit) belongs to `ApprovalService` in `@memnox/runtime` — this
-function only judges.
+`better-sqlite3` for the ledger, `yaml` and `smol-toml` for reading rule files.
+Nothing else, and nothing that reaches a network.
 
-## Adding to core
-
-A type belongs here when more than one package needs it. A function belongs here
-when it is pure, deterministic, and has no dependency. Anything that touches a
-store, a socket, or the clock belongs in the layer above.
+Apache-2.0.
