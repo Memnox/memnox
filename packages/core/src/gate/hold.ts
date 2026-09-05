@@ -10,6 +10,11 @@ export const HOLD_ANSWER = {
   /** Every identical call for the rest of this session. */
   SESSION: 'session',
   DENY: 'deny',
+  /**
+   * The command was wrong, not the rule. The person fixes it and the agent's loop
+   * survives — which is the difference between a gate people keep and one they remove.
+   */
+  EDIT: 'edit',
 } as const;
 
 export type HoldAnswer = (typeof HOLD_ANSWER)[keyof typeof HOLD_ANSWER];
@@ -17,6 +22,8 @@ export type HoldAnswer = (typeof HOLD_ANSWER)[keyof typeof HOLD_ANSWER];
 export const HOLD_OUTCOME = {
   ALLOWED: 'allowed',
   DENIED: 'denied',
+  /** The command was wrong. What replaces it is ruled on from the start, never trusted. */
+  EDITED: 'edited',
   /** Nobody answered in time. Denied, and said differently so it reads differently. */
   TIMED_OUT: 'timed-out',
   /** No terminal to ask at. Denied, because a firewall fails closed. */
@@ -36,12 +43,22 @@ export interface HoldRequest {
   /** Identical calls share this, which is what "for this session" grants against. */
   fingerprint: string;
   reason: string;
+  /** What produced the verdict, rendered by the caller. Shown, never summarised. */
+  evidence?: readonly string[];
+  /** The command as typed, when there is one. `[e]` edits this and nothing else. */
+  command?: string;
+}
+
+export interface HoldAsked {
+  answer: HoldAnswer;
+  /** What the person typed instead, for HOLD_ANSWER.EDIT. */
+  command?: string;
 }
 
 /** Where the question is actually asked. Injected, so tests need no terminal. */
 export interface HoldPrompt {
   /** Null when there is nobody to ask — no TTY, or a non-interactive run. */
-  ask(request: HoldRequest, timeoutMs: number): Promise<HoldAnswer | null>;
+  ask(request: HoldRequest, timeoutMs: number): Promise<HoldAsked | null>;
 }
 
 export interface HoldResult {
@@ -49,6 +66,8 @@ export interface HoldResult {
   answer?: HoldAnswer;
   /** Set when a session grant answered this without asking anybody. */
   fromSessionGrant?: true;
+  /** The replacement command, when a person edited it. Never run without ruling on it. */
+  edited?: string;
 }
 
 export function isAllowed(result: HoldResult): boolean {
@@ -84,18 +103,28 @@ export class HoldService {
       };
     }
 
-    let answer: HoldAnswer | null;
+    let asked: HoldAsked | null;
     try {
-      answer = await this.prompt.ask(request, this.timeoutMs);
+      asked = await this.prompt.ask(request, this.timeoutMs);
     } catch {
       /* A prompt that threw is a prompt nobody saw. Failing closed is the only safe
          reading, and it is reported as unattended rather than as somebody's denial. */
       return { outcome: HOLD_OUTCOME.UNATTENDED };
     }
 
-    if (answer === null) return { outcome: HOLD_OUTCOME.UNATTENDED };
+    if (asked === null) return { outcome: HOLD_OUTCOME.UNATTENDED };
+    const answer = asked.answer;
     if (answer === HOLD_ANSWER.DENY) {
       return { outcome: HOLD_OUTCOME.DENIED, answer };
+    }
+    /* An edit is not an approval of anything: the replacement goes back through the
+       rules from the start, or "[e]" would be the way around every one of them. */
+    if (answer === HOLD_ANSWER.EDIT) {
+      const edited = asked.command?.trim() ?? '';
+      if (edited === '' || edited === request.command) {
+        return { outcome: HOLD_OUTCOME.DENIED, answer: HOLD_ANSWER.DENY };
+      }
+      return { outcome: HOLD_OUTCOME.EDITED, answer, edited };
     }
     if (answer === HOLD_ANSWER.SESSION) {
       const grants = this.granted.get(request.sessionId) ?? new Set<string>();
@@ -119,6 +148,9 @@ export function describeHold(result: HoldResult, request: HoldRequest): string {
       : `${request.operation} ${request.target}`;
   if (result.outcome === HOLD_OUTCOME.DENIED) {
     return `A person denied ${what}.`;
+  }
+  if (result.outcome === HOLD_OUTCOME.EDITED) {
+    return `A person replaced that command with: ${result.edited ?? ''}`;
   }
   if (result.outcome === HOLD_OUTCOME.TIMED_OUT) {
     return `Nobody answered in time, so ${what} did not run. Ask again when someone is at the keyboard.`;

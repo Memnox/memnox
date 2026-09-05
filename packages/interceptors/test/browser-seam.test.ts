@@ -25,7 +25,7 @@ function gate(effect: string): LocalGate {
 }
 
 const answering = (answer: HoldAnswer | null): HoldService =>
-  new HoldService({ ask: async () => answer });
+  new HoldService({ ask: async () => (answer === null ? null : { answer }) });
 
 describe('driving a browser', () => {
   it('says nothing about your own dev server', async () => {
@@ -46,7 +46,7 @@ describe('driving a browser', () => {
   });
 
   it('asks once per host, then lets the rest of the session through', async () => {
-    const ask = vi.fn(async () => HOLD_ANSWER.ONCE);
+    const ask = vi.fn(async () => ({ answer: HOLD_ANSWER.ONCE }));
     const seam = new BrowserSeam({
       gate: gate(DECISION_EFFECT.ASK),
       hold: new HoldService({ ask }),
@@ -62,7 +62,7 @@ describe('driving a browser', () => {
   });
 
   it('still asks about a different host', async () => {
-    const ask = vi.fn(async () => HOLD_ANSWER.ONCE);
+    const ask = vi.fn(async () => ({ answer: HOLD_ANSWER.ONCE }));
     const seam = new BrowserSeam({
       gate: gate(DECISION_EFFECT.ASK),
       hold: new HoldService({ ask }),

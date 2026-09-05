@@ -23,12 +23,12 @@ const REQUEST: HoldRequest = {
 };
 
 const answering = (answer: HoldAnswer | null): HoldPrompt => ({
-  ask: async () => answer,
+  ask: async () => (answer === null ? null : { answer }),
 });
 
 describe('holding a call for a person', () => {
   it('allows once, and asks again next time', async () => {
-    const prompt = { ask: vi.fn(async () => HOLD_ANSWER.ONCE) };
+    const prompt = { ask: vi.fn(async () => ({ answer: HOLD_ANSWER.ONCE })) };
     const service = new HoldService(prompt);
 
     expect(isAllowed(await service.hold(REQUEST))).toBe(true);
@@ -37,7 +37,7 @@ describe('holding a call for a person', () => {
   });
 
   it('allows for the session without asking a second time', async () => {
-    const prompt = { ask: vi.fn(async () => HOLD_ANSWER.SESSION) };
+    const prompt = { ask: vi.fn(async () => ({ answer: HOLD_ANSWER.SESSION })) };
     const service = new HoldService(prompt);
 
     await service.hold(REQUEST);
@@ -127,7 +127,43 @@ describe('the terminal prompt', () => {
     input.write(`${typed}
 `);
 
-    expect(await asking).toBe(expected);
+    expect(await asking).toEqual({ answer: expected });
+  });
+
+  /* An edit is not an approval: it goes back through the rules from the start, or "[e]"
+     would be the way around every one of them. */
+  it('reads an edit as a replacement command, and never as a yes', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const prompt = new TtyHoldPrompt({ open: () => ({ input, output }) });
+
+    const asking = prompt.ask(
+      { ...REQUEST, command: 'railway volume delete pg-prod' },
+      5000,
+    );
+    input.write('e\n');
+    await new Promise((resolve) => setImmediate(resolve));
+    input.write('railway volume delete pg-staging\n');
+
+    expect(await asking).toEqual({
+      answer: HOLD_ANSWER.EDIT,
+      command: 'railway volume delete pg-staging',
+    });
+  });
+
+  // Offered only when there is a command to edit; a tool call has no line to fix.
+  it('offers the edit only when there is a command', () => {
+    expect(questionFor(REQUEST)).not.toContain('[e]');
+    expect(questionFor({ ...REQUEST, command: 'git push --force' })).toContain('[e]');
+  });
+
+  it('shows the evidence that produced the verdict', () => {
+    const shown = questionFor({
+      ...REQUEST,
+      evidence: ['    state  freeze:payments — troubleshooting (1h left, moise)'],
+    });
+
+    expect(shown).toContain('freeze:payments');
   });
 
   it('gives up rather than holding the agent forever', async () => {

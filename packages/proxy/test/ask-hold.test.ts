@@ -42,7 +42,7 @@ const CALL = JSON.stringify({
 });
 
 const prompting = (answer: HoldAnswer | null): HoldPrompt => ({
-  ask: async () => answer,
+  ask: async () => (answer === null ? null : { answer }),
 });
 
 describe('an ASK holds the call', () => {
@@ -69,7 +69,7 @@ describe('an ASK holds the call', () => {
   });
 
   it('asks once for a session grant, then lets the next identical call straight through', async () => {
-    const ask = vi.fn(async () => HOLD_ANSWER.SESSION);
+    const ask = vi.fn(async () => ({ answer: HOLD_ANSWER.SESSION }));
     const hold = new HoldService({ ask });
     const { instance, toServer } = session(hold);
 

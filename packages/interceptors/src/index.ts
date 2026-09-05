@@ -11,3 +11,4 @@ export * from './interceptor-install';
 export * from './git-hooks';
 export * from './daemon-client';
 export * from './browser-seam';
+export * from './record';

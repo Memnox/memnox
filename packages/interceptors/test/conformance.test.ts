@@ -70,7 +70,7 @@ describe('the conformance matrix', () => {
         const outcome = await ruleOnCommand(binary as string, args, {
           gate: gateFor(action, effect, ENFORCEMENT_MODE.ENFORCE),
           // A person is present and says yes, so ASK resolves to allowed.
-          hold: new HoldService({ ask: async () => HOLD_ANSWER.ONCE }),
+          hold: new HoldService({ ask: async () => ({ answer: HOLD_ANSWER.ONCE }) }),
           log: () => {},
         });
 

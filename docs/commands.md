@@ -79,6 +79,15 @@ it down the wrong branch. `--os-guard` is a second line under them, so a denied
 path stays unreadable even to a binary that never saw a wrapper — and any pattern
 the kernel cannot express as a literal subpath is printed rather than dropped.
 
+### `memnox check "<intent>"`
+Decides before the loop starts rather than interrupting it half an hour in. The same
+engine, the same rules and the same state, run against the actions an intent resolves
+to, with nothing executed. Exits non-zero when something would stop.
+
+A command line is resolved exactly. A phrase resolves to every action it could mean —
+"deploy payments" is railway, vercel and kubectl until somebody says which — and what
+it was read as is printed, so a wrong reading is visible rather than mysterious.
+
 ### `memnox policy check [file]`
 Reads every rule file this machine would load and says what is in force, what
 moved and what will not parse. Without a file it checks the whole registry.
@@ -157,6 +166,28 @@ read. Optional: an interceptor that cannot reach it evaluates in process instead
 The last thing that did not simply proceed. `--allowed` for the last allow,
 `--evidence` for the digests and the outcome. Read back from the row, never
 re-evaluated against today's rules.
+
+### `memnox rewind`
+Puts the working tree back to before an agent touched it. A milestone is a tree object
+under `refs/memnox/` — never a commit, never a branch, never the stash — and a rewind
+takes its own milestone first, so what it replaced is still reachable.
+
+| Flag | What it does |
+|---|---|
+| `--list` | the milestones there are |
+| `--to <id>` | a particular one, rather than the last |
+| `--take` | keep the tree as it is now, restoring nothing |
+| `--note <text>` | what this milestone is, for the listing |
+| `--forget [keep]` | drop all but the newest few; the newest is never dropped |
+
+It moves files and nothing else, it leaves ignored files alone, and it refuses outright
+mid-merge or mid-rebase — a restore there would write over the state that says how to
+finish. `memnox run` takes one automatically unless you pass `--no-milestone`.
+
+### `memnox trace <id>`
+One action end to end: the command, the rule that governed it, the exit code, the
+duration and the argument digest. When the session kept a transcript, the tail of what
+it printed. An id prefix is enough.
 
 ### `memnox collisions`
 Two agents in one file, and two agents building one thing. `--since <when>` to

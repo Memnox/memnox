@@ -57,7 +57,7 @@ describe('the interceptor runtime', () => {
   });
 
   it('holds an ASK and proceeds when a person allows it', async () => {
-    const hold = new HoldService({ ask: async () => HOLD_ANSWER.ONCE });
+    const hold = new HoldService({ ask: async () => ({ answer: HOLD_ANSWER.ONCE }) });
     const outcome = await ruleOnCommand('rm', ['-rf', 'build'], {
       gate: gate(DECISION_EFFECT.ASK, 'filesystem.delete'),
       hold,
