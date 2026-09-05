@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
-import { DECISION_EFFECT, LocalGate, normalizeShellCommand } from '@memnox/core';
+import {
+  classifyBinary,
+  DECISION_EFFECT,
+  LocalGate,
+  normalizeShellCommand,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { DEFAULT_POLICY_FILE } from '../defaults';
 
@@ -10,15 +15,35 @@ interface TestOptions {
   target?: string;
 }
 
-/** A shell line is the shape people test with; the first segment is the action. */
+/**
+ * A command line is classified exactly as an interceptor would classify it, or a rule
+ * about `git.push` would not match somebody typing `git push --force` — which is the
+ * only form anybody actually tests with.
+ */
 function requestFor(
-  action: string,
+  input: string,
   options: TestOptions,
 ): Parameters<LocalGate['evaluate']>[0] {
-  const segment = normalizeShellCommand(action).segments[0];
+  // Already a namespaced action, e.g. from a git hook.
+  if (!input.includes(' ') && input.includes('.')) {
+    return {
+      action: input,
+      ...(options.target === undefined ? {} : { target: options.target }),
+    };
+  }
+
+  const segment = normalizeShellCommand(input).segments[0] ?? input;
+  const argv = segment.split(/\s+/).filter((word) => word !== '');
+  const binary = argv[0] ?? input;
+  const classified = classifyBinary(binary, argv.slice(1));
+
   return {
-    action: segment ?? action,
-    ...(options.target === undefined ? {} : { target: options.target }),
+    action: classified === null ? 'shell.execute' : classified.action,
+    ...(options.target !== undefined
+      ? { target: options.target }
+      : classified?.target === undefined
+        ? {}
+        : { target: classified.target }),
   };
 }
 

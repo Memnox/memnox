@@ -21,8 +21,16 @@ import {
   loadPoliciesFromFile,
   revertNative,
   saveConfig,
+  DECISION_EFFECT,
+  DOMAIN_CHOICES,
+  policiesFrom,
+  recommendedAnswers,
   toClaudeCodePermissions,
+  writePolicyDocumentFile,
+  type DecisionEffect,
+  type PolicyDomain,
   type NativeSettings,
+  POLICY_FILE_EXTENSION,
 } from '@memnox/core';
 import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
@@ -85,6 +93,7 @@ export function registerProtectCommand(
   context: CliContext,
   buildSeams: HardenSeamsFactory = defaultSeams,
   cwd: () => string = () => process.cwd(),
+  ask: DomainAsker = promptOnTerminal,
 ): void {
   program
     .command('protect')
@@ -95,6 +104,8 @@ export function registerProtectCommand(
       '--revert [id]',
       'undo one applied step, or every one this machine applied when no id is given',
     )
+    .option('--interactive', 'walk the five domains and write the rules you choose')
+    .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
     .option('--enforce', 'apply verdicts')
     .option('--apply-native', 'also write these rules into Claude Code’s own permissions')
@@ -103,6 +114,8 @@ export function registerProtectCommand(
       async (options: {
         apply?: boolean;
         revert?: boolean | string;
+        interactive?: boolean;
+        yes?: boolean;
         observe?: boolean;
         enforce?: boolean;
         applyNative?: boolean;
@@ -125,6 +138,10 @@ export function registerProtectCommand(
               'Verdicts now bite. "memnox protect --observe" puts it back.',
             );
           }
+          return;
+        }
+        if (options.interactive === true || options.yes === true) {
+          await runInteractive(context, options.yes === true, ask);
           return;
         }
         if (options.applyNative === true || options.revertNative === true) {
@@ -306,4 +323,70 @@ async function runNative(context: CliContext, reverting: boolean): Promise<void>
     context.out.note(`  not written: ${each.policy} — ${each.because}`);
   }
   context.out.note('Undo with "memnox protect --revert-native".');
+}
+
+/** The question, asked wherever the caller says. Injected, so tests need no terminal. */
+type DomainAsker = (
+  question: string,
+  because: string,
+  recommended: DecisionEffect,
+) => Promise<DecisionEffect>;
+
+const KEYS: Readonly<Record<string, DecisionEffect>> = {
+  a: DECISION_EFFECT.ALLOW,
+  k: DECISION_EFFECT.ASK,
+  d: DECISION_EFFECT.DENY,
+};
+
+const promptOnTerminal: DomainAsker = async (question, because, recommended) => {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(
+      `\n  ${question}\n  ${because}\n  [a]llow  as[k]  [d]eny  (enter = ${recommended})  > `,
+    );
+    const key = answer.trim().toLowerCase().charAt(0);
+    // Enter takes the recommendation, because that is what most people mean by it.
+    return key === '' ? recommended : (KEYS[key] ?? recommended);
+  } finally {
+    rl.close();
+  }
+};
+
+/**
+ * Five questions, then a file they can read. The output is the point: a wizard whose
+ * result you cannot open and edit is one you have to run again to change your mind.
+ */
+async function runInteractive(
+  context: CliContext,
+  takeRecommended: boolean,
+  ask: DomainAsker,
+): Promise<void> {
+  const { out, style } = context;
+  const answers = takeRecommended
+    ? recommendedAnswers()
+    : new Map<PolicyDomain, DecisionEffect>();
+
+  if (!takeRecommended) {
+    out.line(style.bold('What should the agents on this machine be allowed to do?'));
+    for (const choice of DOMAIN_CHOICES) {
+      answers.set(
+        choice.domain,
+        await ask(choice.question, choice.because, choice.recommended),
+      );
+    }
+  }
+
+  const policies = policiesFrom(answers);
+  const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
+  await writePolicyDocumentFile(path, { version: 1, policies });
+  await registerPolicyFile(homedir(), path);
+
+  out.line('');
+  for (const [domain, effect] of answers) {
+    out.line(`  ${domain.padEnd(12)}${effect}`);
+  }
+  out.line('');
+  out.line(`Wrote ${policies.length} rule(s) to ${path}.`);
+  out.note('Open it — it is yours to edit. Test one with "memnox policy test".');
 }

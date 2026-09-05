@@ -7,3 +7,4 @@ export * from './policy-engine';
 export * from './policy-version';
 export * from './layers';
 export * from './native';
+export * from './domains';
