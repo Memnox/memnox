@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -19,7 +18,6 @@ import { matchesPattern, type Policy, type UnreadablePolicyFile } from '@memnox/
 /** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
 const MEMNOX_HOME = '.memnox';
 const REGISTRY_FILE = 'policies.json';
-const STATE_FACTS_FILE = 'state-facts.json';
 /** The action an MCP tool call is named by, which is what a rule has to match. */
 const MCP_ACTION_PREFIX = 'mcp';
 

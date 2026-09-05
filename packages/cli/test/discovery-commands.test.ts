@@ -4,14 +4,7 @@ import { registerScanCommand } from '../src/commands/scan.command';
 import { registerDoctorCommand } from '../src/commands/doctor.command';
 import { registerProtectCommand } from '../src/commands/protect.command';
 import { runCommand } from './cli-harness';
-import {
-  fakeSeams,
-  FakeMachine,
-  HOME,
-  PROJECT,
-  StubLister,
-  noTools,
-} from './machine-harness';
+import { fakeSeams, FakeMachine, HOME, PROJECT, StubLister } from './machine-harness';
 
 const MACHINE = {
   [`${HOME}/.claude.json`]: JSON.stringify({

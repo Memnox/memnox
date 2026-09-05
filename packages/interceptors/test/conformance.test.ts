@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  classifyBinary,
-  COMMAND_CLASS,
   DECISION_EFFECT,
   ENFORCEMENT_MODE,
   HOLD_ANSWER,

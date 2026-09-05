@@ -9,8 +9,8 @@ import {
   registerRunCommand,
   sandboxed,
   SESSION_VAR,
-  transcriptPathFor,
 } from '../src/commands/run.command';
+import { transcriptPathFor } from '../src/memnox-paths';
 
 const HOME = '/home/dev';
 
@@ -45,7 +45,10 @@ describe('the environment memnox run builds', () => {
 describe('memnox run', () => {
   async function run(args: string[], start: ReturnType<typeof vi.fn>) {
     const out = new RecordedOutput();
-    const program = new Command();
+    /* A usage error otherwise exits the process and prints to the real stderr, so the
+       assertion below could only say "something happened" and the suite wrote to the
+       terminal while passing. exitOverride turns it into the message a user reads. */
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
     registerRunCommand(program, new CliContext(out, plainStyle), {
       start: start as never,
       home: () => HOME,
@@ -83,7 +86,7 @@ describe('memnox run', () => {
         ['run'],
         vi.fn(async () => 0),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/missing required argument 'command'/);
   });
 });
 

@@ -24,7 +24,7 @@ export function registerApprovalsCommand(
       const pending = await new PendingApprovals(home()).list(moment);
 
       if (options.json === true) {
-        context.out.line(JSON.stringify(pending, null, 2));
+        context.out.json(pending);
         return;
       }
       if (pending.length === 0) {

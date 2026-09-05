@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { SqliteEventStore, type MemnoxEvent } from '@memnox/core';
+import type { MemnoxEvent } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { transcriptPathFor } from './run.command';
+import { withEvents } from '../event-store';
+import { transcriptPathFor } from '../memnox-paths';
 
 /** Enough to see what happened, short enough to read without paging. */
 const TRANSCRIPT_LINES = 12;
@@ -23,8 +24,7 @@ export function registerTraceCommand(
     .description('One action end to end: the rule, the outcome, and what it printed')
     .option('--json', 'machine-readable output')
     .action(async (id: string, options: { json?: boolean }) => {
-      const store = SqliteEventStore.forHome(home());
-      try {
+      await withEvents(home(), async (store) => {
         const rows = await store.query({ limit: 5000 });
         const event = rows.find((row) => row.id === id || row.id.startsWith(id));
         if (event === undefined) {
@@ -33,14 +33,12 @@ export function registerTraceCommand(
           );
         }
         if (options.json === true) {
-          context.out.line(JSON.stringify(event, null, 2));
+          context.out.json(event);
           return;
         }
         render(context, event);
         await renderStreams(context, event, home());
-      } finally {
-        store.close();
-      }
+      });
     });
 }
 

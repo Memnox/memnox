@@ -67,7 +67,7 @@ export function registerDiffCommand(
 
         if (before === null) {
           if (options.json === true) {
-            context.out.line(JSON.stringify({ changes: [], baseline: null }, null, 2));
+            context.out.json({ changes: [], baseline: null });
             return;
           }
           // A first run has nothing to compare against, and inventing one would be worse.
@@ -85,9 +85,7 @@ export function registerDiffCommand(
           options.failOn === undefined ? [] : changesFailing(changes, options.failOn);
 
         if (options.json === true) {
-          context.out.line(
-            JSON.stringify({ baseline: before.takenAt, changes, failing }, null, 2),
-          );
+          context.out.json({ baseline: before.takenAt, changes, failing });
         } else {
           render(context, before.takenAt, changes);
         }

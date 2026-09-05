@@ -7,7 +7,8 @@ import { stateLabelsOf } from '@memnox/core';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { plainStyle } from '../src/style';
-import { minutesFrom, registerFreezeCommand } from '../src/commands/freeze.command';
+import { registerFreezeCommand } from '../src/commands/freeze.command';
+import { minutesFrom } from '../src/duration';
 import { readOverlays } from '@memnox/core';
 
 const NOW = new Date('2026-09-05T10:00:00.000Z');
@@ -28,10 +29,10 @@ async function run(args: string[], dir: string, at = NOW): Promise<RecordedOutpu
 
 describe('memnox freeze', () => {
   it('reads the durations people type', () => {
-    expect(minutesFrom('2h')).toBe(120);
-    expect(minutesFrom('30m')).toBe(30);
-    expect(minutesFrom('45')).toBe(45);
-    expect(() => minutesFrom('a while')).toThrow(/30m, 2h/);
+    expect(minutesFrom('2h', '--for')).toBe(120);
+    expect(minutesFrom('30m', '--for')).toBe(30);
+    expect(minutesFrom('45', '--for')).toBe(45);
+    expect(() => minutesFrom('a while', '--for')).toThrow(/30m, 2h/);
   });
 
   it('sets one, and says when it lifts itself', async () => {

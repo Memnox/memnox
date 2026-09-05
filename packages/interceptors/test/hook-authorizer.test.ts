@@ -1,7 +1,7 @@
-import { DECISION_EFFECT, type ActionRequest, type Decision } from '@memnox/core';
+import { DECISION_EFFECT, type ActionRequest } from '@memnox/core';
 import { LocalGate } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
-import { HookAuthorizer, HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
+import { HookAuthorizer } from '../src/hook-authorizer';
 
 const read: ActionRequest = {
   action: 'filesystem.read',

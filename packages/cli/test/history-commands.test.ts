@@ -11,8 +11,8 @@ import { registerWhyCommand } from '../src/commands/why.command';
 import {
   registerPurgeCommand,
   registerTimelineCommand,
-  since,
 } from '../src/commands/timeline.command';
+import { since } from '../src/duration';
 
 const NOW = new Date('2026-09-05T12:00:00.000Z');
 

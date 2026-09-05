@@ -2,7 +2,6 @@ import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.cons
 import {
   DEFAULT_ENFORCEMENT_MODE,
   ENFORCEMENT_MODE,
-  MODE_STRENGTH,
   type EnforcementMode,
 } from '../constants/enforcement.constants';
 

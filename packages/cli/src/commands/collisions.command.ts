@@ -1,12 +1,9 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import {
-  concurrentWork,
-  overlappingWork,
-  SqliteEventStore,
-  type WorkObservation,
-} from '@memnox/core';
+import { concurrentWork, overlappingWork, type WorkObservation } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { DAY_MS, windowDays } from '../duration';
+import { withEvents } from '../event-store';
 
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -26,16 +23,11 @@ export function registerCollisionsCommand(
     .option('--days <n>', 'how far back to look', String(DEFAULT_WINDOW_DAYS))
     .option('--json', 'machine-readable output')
     .action(async (options: { days: string; json?: boolean }) => {
-      const days = Number(options.days);
-      if (!Number.isFinite(days) || days <= 0) {
-        throw new Error('--days takes a positive number of days.');
-      }
-
+      const days = windowDays(options.days, '--days');
       const moment = now().toISOString();
-      const since = new Date(now().getTime() - days * 86_400_000).toISOString();
-      const store = SqliteEventStore.forHome(home());
+      const since = new Date(now().getTime() - days * DAY_MS).toISOString();
 
-      try {
+      await withEvents(home(), async (store) => {
         const events = await store.query({ since });
         // Only what actually touched something: a refused attempt is not shared work.
         const observations: WorkObservation[] = events
@@ -56,7 +48,7 @@ export function registerCollisionsCommand(
         });
 
         if (options.json === true) {
-          context.out.line(JSON.stringify({ concurrent, overlapping }, null, 2));
+          context.out.json({ concurrent, overlapping });
           return;
         }
 
@@ -98,8 +90,6 @@ export function registerCollisionsCommand(
         out.line('');
         // Refereeing this would be a claim about somebody's work that nothing here can make.
         out.note('Reported, not refereed — which one should stop is your call.');
-      } finally {
-        store.close();
-      }
+      });
     });
 }

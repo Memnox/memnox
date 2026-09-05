@@ -1,6 +1,3 @@
-import type { DecisionEffect } from '../constants/decision.constants';
-import type { EnforcementMode } from '../constants/enforcement.constants';
-import type { RiskLevel } from '../constants/risk.constants';
 import type { TaskRef } from './task';
 
 /** The core primitive: every AI action becomes an event Memnox can rule on and prove. */

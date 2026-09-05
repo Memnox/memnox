@@ -28,3 +28,4 @@ export * from './health';
 export * from './credentials';
 export * from './browser';
 export * from './repo-evidence';
+export * from './gap';

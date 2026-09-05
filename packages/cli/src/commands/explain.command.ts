@@ -20,14 +20,9 @@ import {
   type VerbTable,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { row } from '../cli-output';
 import { resolvePolicyFile } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
-
-const LABEL_WIDTH = 14;
-
-function row(context: CliContext, label: string, value: string): void {
-  context.out.line(`  ${label.padEnd(LABEL_WIDTH)}${value}`);
-}
 
 /** Every field is read off a scan, so the chain is evidence rather than a guess. */
 function renderTrace(context: CliContext, trace: CapabilityTrace): void {
@@ -35,18 +30,18 @@ function renderTrace(context: CliContext, trace: CapabilityTrace): void {
   out.line('');
   out.line(style.bold(trace.tool));
   out.line('');
-  row(context, 'server', trace.server);
-  row(context, 'declared', trace.grantedBy);
-  row(context, 'class', `${trace.effect} — ${classifyActionClass(trace.tool).class}`);
+  row(context.out, 'server', trace.server);
+  row(context.out, 'declared', trace.grantedBy);
+  row(context.out, 'class', `${trace.effect} — ${classifyActionClass(trace.tool).class}`);
   row(
-    context,
+    context.out,
     'reached by',
     trace.reachedBy.length === 0
       ? 'no agent here launches it'
       : trace.reachedBy.join(', '),
   );
   row(
-    context,
+    context.out,
     'first seen',
     trace.firstSeen ?? 'at least as long as the kept scans go back',
   );
@@ -135,9 +130,9 @@ function renderAnswer(
   out.line('');
   out.line(style.bold(`can ${question.agent} ${question.verb} ${question.resource}?`));
   out.line('');
-  row(context, 'Technically', answer.technically);
-  row(context, 'Runtime', answer.runtime);
-  row(context, 'Policy', answer.policy);
+  row(context.out, 'Technically', answer.technically);
+  row(context.out, 'Runtime', answer.runtime);
+  row(context.out, 'Policy', answer.policy);
   out.line('');
   // The fourth row is the cloud's, and an empty row is better than an invented one.
   out.note(
@@ -178,7 +173,7 @@ export function registerExplainCommand(
           resolvePolicyFile(options.file),
         );
         if (options.json === true) {
-          context.out.line(JSON.stringify({ question, ...answer }, null, 2));
+          context.out.json({ question, ...answer });
           return;
         }
         renderAnswer(context, question, answer);
@@ -199,7 +194,7 @@ export function registerExplainCommand(
       }
 
       if (options.json === true) {
-        context.out.line(JSON.stringify(trace, null, 2));
+        context.out.json(trace);
         return;
       }
       renderTrace(context, trace);
@@ -219,7 +214,7 @@ function renderCli(
 ): void {
   const table = verbTableFor(cli.name) as VerbTable;
   if (asJson) {
-    context.out.line(JSON.stringify({ cli, verbs: table.verbs }, null, 2));
+    context.out.json({ cli, verbs: table.verbs });
     return;
   }
 
@@ -229,12 +224,20 @@ function renderCli(
   out.line('');
 
   const agents = report.agents.map((agent) => agent.kind);
-  row(context, 'Reachable by', agents.length === 0 ? 'no agent here' : agents.join(', '));
-  row(context, 'Credential', cli.via);
-  if (cli.detail !== undefined) row(context, '', cli.detail);
+  row(
+    context.out,
+    'Reachable by',
+    agents.length === 0 ? 'no agent here' : agents.join(', '),
+  );
+  row(context.out, 'Credential', cli.via);
+  if (cli.detail !== undefined) row(context.out, '', cli.detail);
   if (cli.productionLooking !== undefined) {
     // A guess from a name stays a guess all the way into the screen.
-    row(context, '', style.warn(`"${cli.productionLooking}" is named like production`));
+    row(
+      context.out,
+      '',
+      style.warn(`"${cli.productionLooking}" is named like production`),
+    );
   }
   out.line('');
   out.line('  Can');

@@ -2,7 +2,6 @@ import {
   EFFECT_INFERENCE,
   TOOL_EFFECT,
   type EffectInference,
-  type ToolEffect,
 } from './discovery.constants';
 import { inferToolEffect, nameSegments, type McpToolDeclaration } from './surface';
 

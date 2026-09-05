@@ -8,16 +8,11 @@ import {
   DECISION_EFFECT,
   describeEvidence,
   readProtection,
-  SqliteEventStore,
   type MemnoxEvent,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-
-const LABEL_WIDTH = 14;
-
-function row(context: CliContext, label: string, value: string): void {
-  context.out.line(`  ${label.padEnd(LABEL_WIDTH)}${value}`);
-}
+import { row } from '../cli-output';
+import { withEvents } from '../event-store';
 
 /**
  * Read back from the row, never recomputed. Re-evaluating today's rules against
@@ -33,33 +28,33 @@ function render(context: CliContext, event: MemnoxEvent): void {
     }`,
   );
   out.line('');
-  row(context, 'when', event.at);
-  row(context, 'agent', `${event.agent} (${event.actorType})`);
-  row(context, 'surface', event.surface);
-  row(context, 'class', event.class);
-  row(context, 'reason', event.reason);
+  row(context.out, 'when', event.at);
+  row(context.out, 'agent', `${event.agent} (${event.actorType})`);
+  row(context.out, 'surface', event.surface);
+  row(context.out, 'class', event.class);
+  row(context.out, 'reason', event.reason);
 
   const rule = event.rule;
   if (rule === undefined) {
-    row(context, 'rule', 'none matched — the default for this mode applied');
+    row(context.out, 'rule', 'none matched — the default for this mode applied');
   } else {
     const at = rule.line === undefined ? rule.file : `${rule.file}:${rule.line}`;
-    row(context, 'rule', `${rule.name}  (${rule.layer} layer)`);
-    row(context, 'declared in', at);
+    row(context.out, 'rule', `${rule.name}  (${rule.layer} layer)`);
+    row(context.out, 'declared in', at);
   }
 
   if (event.policyHash !== undefined) {
-    row(context, 'ruleset', `${event.policyHash} — the rules in force at the time`);
+    row(context.out, 'ruleset', `${event.policyHash} — the rules in force at the time`);
   }
   if (event.mode !== 'enforce' && event.shadowEffect !== undefined) {
     row(
-      context,
+      context.out,
       'would have',
       `${event.shadowEffect.toUpperCase()} in enforce; the mode was ${event.mode}`,
     );
   }
   if (event.authorizedBy !== undefined) {
-    row(context, 'released by', event.authorizedBy);
+    row(context.out, 'released by', event.authorizedBy);
   }
 
   const alternative = event.alternative;
@@ -78,14 +73,19 @@ function render(context: CliContext, event: MemnoxEvent): void {
 function renderEvidence(context: CliContext, event: MemnoxEvent): void {
   const { out } = context;
   out.line('  Evidence');
-  row(context, '  event', event.id);
+  row(context.out, '  event', event.id);
   if (event.argsDigest !== undefined) {
     // The digest, never the arguments: this is the line that keeps the ledger dull.
-    row(context, '  arguments', `${event.argsDigest} (a hash; the payload never left)`);
+    row(
+      context.out,
+      '  arguments',
+      `${event.argsDigest} (a hash; the payload never left)`,
+    );
   }
-  if (event.exitCode !== undefined) row(context, '  exit code', String(event.exitCode));
-  if (event.durationMs !== undefined) row(context, '  took', `${event.durationMs}ms`);
-  if (event.execution !== undefined) row(context, '  execution', event.execution);
+  if (event.exitCode !== undefined)
+    row(context.out, '  exit code', String(event.exitCode));
+  if (event.durationMs !== undefined) row(context.out, '  took', `${event.durationMs}ms`);
+  if (event.execution !== undefined) row(context.out, '  execution', event.execution);
   out.line('');
 }
 
@@ -105,8 +105,7 @@ export function registerWhyCommand(
         id: string | undefined,
         options: { allowed?: boolean; evidence?: boolean; json?: boolean },
       ) => {
-        const store = SqliteEventStore.forHome(home());
-        try {
+        await withEvents(home(), async (store) => {
           const effects =
             options.allowed === true
               ? [DECISION_EFFECT.ALLOW]
@@ -129,7 +128,7 @@ export function registerWhyCommand(
           }
 
           if (options.json === true) {
-            context.out.line(JSON.stringify(event, null, 2));
+            context.out.json(event);
             return;
           }
           render(context, event);
@@ -137,9 +136,7 @@ export function registerWhyCommand(
             renderEvidence(context, event);
             await renderRepoEvidence(context, event);
           }
-        } finally {
-          store.close();
-        }
+        });
       },
     );
 }

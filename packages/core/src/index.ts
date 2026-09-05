@@ -10,7 +10,6 @@ export * from './domain/canonical-json';
 export * from './domain/task';
 export * from './domain/decision';
 export * from './domain/explanation';
-export * from './domain/risk-assessment';
 export * from './domain/egress-inspector';
 export * from './discovery/index';
 export * from './policy/index';

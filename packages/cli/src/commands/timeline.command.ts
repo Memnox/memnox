@@ -8,12 +8,13 @@ import {
   generateKeys,
   verbTableFor,
   loadOrCreateConfig,
-  SqliteEventStore,
   type DecisionEffect,
   type EventQuery,
   type MemnoxEvent,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { DAY_MS, since } from '../duration';
+import { withEvents } from '../event-store';
 
 const DEFAULT_LIMIT = 200;
 
@@ -24,22 +25,6 @@ const ONLY: Readonly<Record<string, DecisionEffect[]>> = {
   deny: [DECISION_EFFECT.DENY],
   blocked: [DECISION_EFFECT.DENY, DECISION_EFFECT.ASK],
 };
-
-/** Relative times, because nobody types an ISO timestamp at a terminal. */
-export function since(value: string, now: Date): string {
-  const match = /^(\d+)([smhd])$/.exec(value.trim());
-  if (match === null) {
-    const parsed = Date.parse(value);
-    if (Number.isNaN(parsed)) {
-      throw new Error(`--since takes 30m, 2h, 7d or an ISO timestamp. Got "${value}".`);
-    }
-    return new Date(parsed).toISOString();
-  }
-  const size = Number(match[1]);
-  const unit = match[2] as 's' | 'm' | 'h' | 'd';
-  const ms = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[unit];
-  return new Date(now.getTime() - size * ms).toISOString();
-}
 
 function line(context: CliContext, event: MemnoxEvent): string {
   const { style } = context;
@@ -113,8 +98,7 @@ export function registerTimelineCommand(
             `--only takes one of: ${Object.keys(ONLY).join(', ')}. Got "${options.only}".`,
           );
         }
-        const store = SqliteEventStore.forHome(home());
-        try {
+        await withEvents(home(), async (store) => {
           const filter: EventQuery = { limit: Number(options.limit) };
           if (options.session !== undefined) filter.sessionId = options.session;
           if (options.agent !== undefined) filter.agent = options.agent;
@@ -128,17 +112,16 @@ export function registerTimelineCommand(
             return;
           }
           if (options.export === 'jsonl') {
+            // One row per line, never indented: jsonl is read by a tool, not a person.
             for (const event of events) context.out.line(JSON.stringify(event));
             return;
           }
           if (options.export === 'json') {
-            context.out.line(JSON.stringify(events, null, 2));
+            context.out.json(events);
             return;
           }
           render(context, events);
-        } finally {
-          store.close();
-        }
+        });
       },
     );
 }
@@ -162,9 +145,8 @@ export function registerPurgeCommand(
         throw new Error('--days takes a whole number of days above zero.');
       }
 
-      const cutoff = new Date(now().getTime() - days * 86_400_000).toISOString();
-      const store = SqliteEventStore.forHome(home());
-      try {
+      const cutoff = new Date(now().getTime() - days * DAY_MS).toISOString();
+      await withEvents(home(), async (store) => {
         if (options.dryRun === true) {
           const doomed = await store.query({ until: cutoff });
           context.out.line(
@@ -174,9 +156,7 @@ export function registerPurgeCommand(
         }
         const dropped = await store.pruneBefore(cutoff);
         context.out.line(`${dropped} event(s) older than ${days} days dropped.`);
-      } finally {
-        store.close();
-      }
+      });
     });
 }
 

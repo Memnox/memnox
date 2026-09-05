@@ -2,8 +2,6 @@ import type { AgentRef } from './agent';
 import type { Resource } from './resource';
 import {
   FINDING_SEVERITY,
-  HARDEN_MODE,
-  HARDEN_TARGET,
   SENSITIVITY,
   SEVERITY_ORDER,
   type FindingSeverity,

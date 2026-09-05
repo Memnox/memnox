@@ -20,10 +20,10 @@ import {
   findUnusedGrants,
   matchesPattern,
   rollUpUsage,
-  SqliteEventStore,
   TOOL_EFFECT,
   loadOrCreateConfig,
   loadPoliciesFromFile,
+  MEMNOX_HOME,
   revertNative,
   saveConfig,
   DECISION_EFFECT,
@@ -54,10 +54,10 @@ import {
 } from '@memnox/interceptors';
 import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
+import { DAY_MS, windowDays } from '../duration';
+import { withEvents } from '../event-store';
+import { guardProfilePath, landlockRulesetPath } from '../memnox-paths';
 import { resolvePolicyFile } from '../policy-path';
-
-/** Everything Memnox writes lives here, so nothing lands in a reviewed repository. */
-const MEMNOX_HOME = '.memnox';
 
 interface HardenSeams {
   reader: MachineReader;
@@ -177,7 +177,7 @@ export function registerProtectCommand(
           return;
         }
         if (options.fromUsage !== undefined) {
-          await runFromUsage(context, options.fromUsage, buildSeams, cwd);
+          await runFromUsage(context, options.fromUsage, cwd);
           return;
         }
         if (options.for !== undefined) {
@@ -561,8 +561,6 @@ function ruleFor(
   } as unknown as Policy;
 }
 
-const DAY_MS = 86_400_000;
-
 /**
  * Least privilege from what actually happened, not from a questionnaire. Everything
  * reachable that nothing touched in the window becomes an ask — never a deny, because
@@ -572,20 +570,13 @@ const DAY_MS = 86_400_000;
 async function runFromUsage(
   context: CliContext,
   window: string,
-  buildSeams: HardenSeamsFactory,
   cwd: () => string,
 ): Promise<void> {
-  const match = /^(\d+)d?$/.exec(window.trim());
-  const days = match === null ? Number.NaN : Number(match[1]);
-  if (!Number.isInteger(days) || days <= 0) {
-    throw new Error(`--from-usage takes a number of days, like 30d. Got "${window}".`);
-  }
-
+  const days = windowDays(window, '--from-usage');
   const since = new Date(Date.now() - days * DAY_MS).toISOString();
-  const store = SqliteEventStore.forHome(homedir());
   const { out, style } = context;
 
-  try {
+  await withEvents(homedir(), async (store) => {
     const events = await store.query({ since });
     if (events.length === 0) {
       out.line(`Nothing was recorded in the last ${days} days.`);
@@ -597,8 +588,6 @@ async function runFromUsage(
       now: new Date().toISOString(),
       projectDirs: [cwd()],
     });
-    void buildSeams;
-
     const usage = rollUpUsage(
       events.map((event) => ({
         agentId: event.agent,
@@ -653,9 +642,7 @@ async function runFromUsage(
     out.line(`Wrote one ask rule to ${path}.`);
     // Ask, never deny: unused for a month is not the same as never needed.
     out.note('They are set to ask, not deny — the first real use will simply pause.');
-  } finally {
-    store.close();
-  }
+  });
 }
 
 /**
@@ -679,13 +666,6 @@ async function runHooks(context: CliContext, repoDir: string): Promise<void> {
   out.line('');
   out.line('A blocked push now stops even when the interceptors are not on PATH.');
   out.note('Undo with "memnox uninstall".');
-}
-
-const GUARD_DIR = 'guard';
-const GUARD_PROFILE = 'memnox.sb';
-
-function guardProfilePath(home: string): string {
-  return join(home, MEMNOX_HOME, GUARD_DIR, GUARD_PROFILE);
 }
 
 /**
@@ -723,7 +703,7 @@ async function runOsGuard(context: CliContext, repoDir: string): Promise<void> {
     );
   } else if (support.guard === OS_GUARD.LANDLOCK) {
     const ruleset = landlockRuleset(plan.policy);
-    const path = join(home, MEMNOX_HOME, GUARD_DIR, 'landlock.json');
+    const path = landlockRulesetPath(home);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await writeFile(path, `${JSON.stringify(ruleset, null, 2)}\n`, {
       encoding: 'utf8',

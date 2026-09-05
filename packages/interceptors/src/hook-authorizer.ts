@@ -1,10 +1,5 @@
 import type { ActionRequest, Alternative, DecisionEffect } from '@memnox/core';
-import {
-  DECISION_EFFECT,
-  describeEgress,
-  EFFECT_PRECEDENCE,
-  inspectEgress,
-} from '@memnox/core';
+import { DECISION_EFFECT, describeEgress, inspectEgress } from '@memnox/core';
 import type { LocalGate } from '@memnox/core';
 import { EGRESS_ACTIONS } from './tool-hook.constants';
 

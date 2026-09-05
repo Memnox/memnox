@@ -3,67 +3,31 @@ import type { Command } from 'commander';
 import {
   AGENT_APPROVAL,
   approvalOf,
-  DECISION_EFFECT,
   findUnusedGrants,
+  gapLines,
   inventoryOf,
   describeBrowser,
-  externalStateVerbs,
   matchesPattern,
+  measureGap,
   renderFields,
   renderShareCard,
-  shareCardFor,
-  rollUpUsage,
-  SqliteEventStore,
   reviewServers,
+  rollUpUsage,
+  shareCardFor,
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
   type DiscoveryReport,
   type McpTool,
-  verbAction,
-  verbTableFor,
-  type Policy,
   type ServerReview,
   type ToolEffect,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { DAY_MS, windowDays } from '../duration';
+import { withEvents } from '../event-store';
 import { readLocalCounts, type LocalCounts } from '../local-counts';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
-
-/** How far apart two words may be before a suggestion is noise rather than help. */
-const MAX_SUGGESTION_DISTANCE = 3;
-
-/** Names the word the user actually typed, and the nearest command if there is one. */
-function unknownCommand(program: Command, word: string): string {
-  const names = program.commands.map((command) => command.name());
-  const nearest = names
-    .map((name) => ({ name, distance: distance(word, name) }))
-    .filter((each) => each.distance <= MAX_SUGGESTION_DISTANCE)
-    .sort((a, b) => a.distance - b.distance)[0];
-  return (
-    `unknown command "${word}"` +
-    (nearest === undefined ? '' : ` — did you mean "${nearest.name}"?`) +
-    '\nRun "memnox --help" for the full list.'
-  );
-}
-
-/** Levenshtein, iterative: a typo is one or two edits away from what was meant. */
-function distance(a: string, b: string): number {
-  let previous = Array.from({ length: b.length + 1 }, (_unused, index) => index);
-  for (let i = 1; i <= a.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitution = (previous[j - 1] as number) + (a[i - 1] === b[j - 1] ? 0 : 1);
-      current[j] = Math.min(
-        (previous[j] as number) + 1,
-        (current[j - 1] as number) + 1,
-        substitution,
-      );
-    }
-    previous = current;
-  }
-  return previous[b.length] as number;
-}
+import { unknownCommand } from '../unknown-command';
 
 const LABEL_WIDTH = 24;
 /** Padding is computed from the longest path, so a long one never eats its own count. */
@@ -125,9 +89,8 @@ export function registerScanCommand(
         });
         if (options.share === true) {
           const card = shareCardFor(inventoryOf(report, snapshot.takenAt));
-          context.out.line(
-            options.json === true ? JSON.stringify(card, null, 2) : renderShareCard(card),
-          );
+          if (options.json === true) context.out.json(card);
+          else context.out.line(renderShareCard(card));
           return;
         }
         if (options.usage !== undefined) {
@@ -140,9 +103,7 @@ export function registerScanCommand(
         }
         if (options.json === true) {
           // The inventory, not the raw report: this is the shape that leaves the process.
-          context.out.line(
-            JSON.stringify(inventoryOf(report, snapshot.takenAt), null, 2),
-          );
+          context.out.json(inventoryOf(report, snapshot.takenAt));
           return;
         }
         if (options.tools === true) {
@@ -410,7 +371,7 @@ function renderServerReview(
     );
   }
   if (asJson) {
-    context.out.line(JSON.stringify(match, null, 2));
+    context.out.json(match);
     return;
   }
   context.out.line('');
@@ -445,17 +406,6 @@ function fieldsFor(review: ServerReview): { label: string; value: string }[] {
   ];
 }
 
-const DAY_MS = 86_400_000;
-
-function windowDays(raw: string): number {
-  const match = /^(\d+)d$/.exec(raw.trim());
-  const days = match === null ? Number(raw) : Number(match[1]);
-  if (!Number.isInteger(days) || days <= 0) {
-    throw new Error(`--usage takes a number of days, like 7d. Got "${raw}".`);
-  }
-  return days;
-}
-
 /**
  * Granted against used. The sentence nobody else can produce about a machine: this
  * agent can reach twenty things and touched three, and here are the seventeen.
@@ -466,11 +416,10 @@ async function renderUsage(
   window: string,
   asJson: boolean,
 ): Promise<void> {
-  const days = windowDays(window);
+  const days = windowDays(window, '--usage');
   const since = new Date(Date.now() - days * DAY_MS).toISOString();
-  const store = SqliteEventStore.forHome(homedir());
 
-  try {
+  await withEvents(homedir(), async (store) => {
     const events = await store.query({ since });
     const usage = rollUpUsage(
       events.map((event) => ({
@@ -494,7 +443,7 @@ async function renderUsage(
     const unused = findUnusedGrants(granted, usage, days, matchesPattern);
 
     if (asJson) {
-      context.out.line(JSON.stringify({ window: `${days}d`, usage, unused }, null, 2));
+      context.out.json({ window: `${days}d`, usage, unused });
       return;
     }
 
@@ -535,9 +484,7 @@ async function renderUsage(
     out.line(
       `  ${style.dim('memnox protect')}  propose rules for what is not being used`,
     );
-  } finally {
-    store.close();
-  }
+  });
 }
 
 /**
@@ -611,54 +558,6 @@ function renderAuthenticatedClis(context: CliContext, report: DiscoveryReport): 
       );
     }
   }
-}
-
-interface Gap {
-  total: number;
-  governed: number;
-}
-
-/** Every action a rule could be written about, so "governed" is counted not guessed. */
-export function reachingActions(report: DiscoveryReport): string[] {
-  const tools = report.surfaces
-    .flatMap((surface) => surface.tools ?? [])
-    .filter(
-      (tool) => tool.effect !== TOOL_EFFECT.READ && tool.effect !== TOOL_EFFECT.UNKNOWN,
-    )
-    .map((tool) => `mcp.${tool.name}`);
-
-  const cliActions = report.authenticated.flatMap((cli) => {
-    const table = verbTableFor(cli.name);
-    if (table === null) return [];
-    return externalStateVerbs(table).map((verb) => verbAction(cli.name, verb));
-  });
-  return [...tools, ...cliActions];
-}
-
-/**
- * The gap, counted rather than asserted. "Governed" means a rule actually matches the
- * action; counting rule files instead would print a reassuring number about rules that
- * cover none of this, which is the one lie the whole screen exists to avoid.
- */
-export function measureGap(report: DiscoveryReport, policies: readonly Policy[]): Gap {
-  const actions = reachingActions(report);
-  const governed = actions.filter((action) =>
-    policies.some((policy) =>
-      (policy.match.actions ?? []).some((pattern) => matchesPattern(pattern, action)),
-    ),
-  );
-  return { total: actions.length, governed: governed.length };
-}
-
-export function gapLines(gap: Gap): string[] {
-  const noun = gap.total === 1 ? 'capability' : 'capabilities';
-  const verb = gap.governed === 1 ? 'is' : 'are';
-  return [
-    `${gap.total} ${noun} can change something outside this laptop.`,
-    gap.governed === 0
-      ? 'None of them is governed by a policy.'
-      : `${gap.governed} of them ${verb} governed by a policy.`,
-  ];
 }
 
 /**

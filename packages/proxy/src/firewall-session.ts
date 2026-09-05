@@ -13,7 +13,6 @@ import {
   digestArguments,
   frameResult,
   recordResult,
-  resultText,
   type McpCallRecord,
 } from './result-guard';
 import { readToolCall, type ToolCall } from './tool-call';

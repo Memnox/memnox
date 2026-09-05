@@ -1,4 +1,4 @@
-import { basename, delimiter, dirname, join } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import {
   DECISION_EFFECT,
   describeHold,

@@ -43,7 +43,7 @@ export function registerCheckCommand(
     .option('-a, --agent <name>', 'agent the rules are matched against', 'agent')
     .action(async (intent: string, options: { agent: string }) => {
       const preflight = preflightFor(intent, process.env);
-      const { out, style } = context;
+      const { out } = context;
 
       if (preflight.unrecognized !== undefined) {
         out.line(preflight.unrecognized);

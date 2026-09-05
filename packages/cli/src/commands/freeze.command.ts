@@ -10,16 +10,7 @@ import {
   writeOverlays,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-
-/** `2h`, `30m`, or a bare number of minutes. */
-export function minutesFrom(raw: string): number {
-  const match = /^(\d+)\s*([mh])?$/.exec(raw.trim());
-  if (match === null) {
-    throw new Error(`--for takes 30m, 2h or a number of minutes. Got "${raw}".`);
-  }
-  const size = Number(match[1]);
-  return match[2] === 'h' ? size * 60 : size;
-}
+import { minutesFrom } from '../duration';
 
 /**
  * A rule that is true for a while. The point is that it ends on its own: a freeze
@@ -80,7 +71,7 @@ export function registerFreezeCommand(
         const overlay = freezeFor(
           subject,
           options.reason ?? 'frozen by hand',
-          minutesFrom(options.for),
+          minutesFrom(options.for, '--for'),
           moment,
           userInfo().username,
         );

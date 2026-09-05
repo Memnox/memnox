@@ -7,7 +7,6 @@ import { delimiter } from 'node:path';
 import type { Command } from 'commander';
 import {
   guardFor,
-  MEMNOX_HOME,
   MILESTONE_REASON,
   Milestones,
   OS_GUARD,
@@ -15,6 +14,7 @@ import {
 } from '@memnox/core';
 import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
+import { guardProfilePath, transcriptPathFor } from '../memnox-paths';
 import { NodeGit, NodeWorktree } from '../node-git';
 
 export const SESSION_VAR = 'MEMNOX_SESSION';
@@ -60,10 +60,6 @@ interface RunDeps {
   ) => Promise<number>;
   home?: () => string;
   newId?: () => string;
-}
-
-export function transcriptPathFor(home: string, sessionId: string): string {
-  return join(home, MEMNOX_HOME, 'transcripts', `${sessionId}.log`);
 }
 
 const defaultStart = (
@@ -187,7 +183,7 @@ export function sandboxed(
   const platform = seams.platform ?? process.platform;
   const kernel = seams.kernel ?? release();
   if (guardFor(platform, kernel).guard !== OS_GUARD.SEATBELT) return command;
-  const profile = join(home, MEMNOX_HOME, 'guard', 'memnox.sb');
+  const profile = guardProfilePath(home);
   if (!(seams.exists ?? existsSync)(profile)) return command;
   return sandboxCommand(profile, command);
 }

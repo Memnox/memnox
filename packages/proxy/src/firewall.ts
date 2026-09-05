@@ -5,7 +5,6 @@ import {
   UngovernedAuthorizer,
   type CallAuthorizer,
 } from './call-authorizer';
-import { MCP_PROXY_BLIND_SPOTS, MCP_PROXY_COVERS } from './firewall.constants';
 import { FirewallSession, type FirewallChannel } from './firewall-session';
 import { LineBuffer } from './json-rpc';
 import { ToolFilter } from './tool-filter';
@@ -53,8 +52,10 @@ export class McpFirewall {
       channel: this.buildChannel(),
       log: this.log,
       server: options.serverName,
-      // Every call and result reaches the ledger, with the arguments hashed.
-      record: (call) => {},
+      /* No ledger sink: the reporter this called was dropped when the packages
+         collapsed, and the empty function left behind read as recording. A proxied
+         call is therefore ruled on but not written, so `memnox timeline` shows the
+         shell and git seams and not this one. See docs/threat-model.md. */
     });
   }
 

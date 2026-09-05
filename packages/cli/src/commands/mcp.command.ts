@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import {
-  MEMNOX_HOME,
   PROXY_BINARY,
   planUnwrap,
   planWrap,
@@ -12,6 +11,7 @@ import {
   type ServerLaunch,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { backupPathFor } from '../memnox-paths';
 
 /** The configs a wrap touches. Each is optional; a machine has some subset. */
 const CONFIG_PATHS: readonly string[] = [
@@ -29,10 +29,6 @@ interface ConfigFile {
   config: Record<string, unknown>;
   key: string;
   servers: Record<string, ServerLaunch>;
-}
-
-function backupPathFor(home: string, path: string): string {
-  return join(home, MEMNOX_HOME, 'backup', path.replace(/[/\\ ]/g, '_'));
 }
 
 async function readConfigs(home: string): Promise<ConfigFile[]> {

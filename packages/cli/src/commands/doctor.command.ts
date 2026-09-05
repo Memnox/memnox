@@ -46,9 +46,7 @@ export function registerDoctorCommand(
       if (options.wiring === true) {
         const checks = checkInstallation(await gatherHealth(homedir(), cwd()));
         if (options.json === true) {
-          context.out.line(
-            JSON.stringify({ ...summarizeHealth(checks), checks }, null, 2),
-          );
+          context.out.json({ ...summarizeHealth(checks), checks });
           return;
         }
         renderWiring(context, checks);
@@ -70,7 +68,7 @@ export function registerDoctorCommand(
       const standings = rankAgents(report.findings, discovered.surfaces);
 
       if (options.json === true) {
-        context.out.line(JSON.stringify({ ...report, agents: standings }, null, 2));
+        context.out.json({ ...report, agents: standings });
         return;
       }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Policy } from '@memnox/core';
-import { gapLines, measureGap, reachingActions } from '../src/commands/scan.command';
-import type { DiscoveryReport } from '@memnox/core';
+import { gapLines, measureGap, reachingActions } from '../src/discovery/gap';
+import type { DiscoveryReport } from '../src/discovery/discover';
+import type { Policy } from '../src/policy/policy';
 
 const report = (over: Partial<DiscoveryReport> = {}): DiscoveryReport =>
   ({
