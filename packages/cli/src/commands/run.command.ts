@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, release } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { delimiter } from 'node:path';
 import type { Command } from 'commander';
-import { MEMNOX_HOME } from '@memnox/core';
+import { guardFor, MEMNOX_HOME, OS_GUARD, sandboxCommand } from '@memnox/core';
 import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 
@@ -108,8 +108,12 @@ export function registerRunCommand(
       '--transcript',
       'keep a local copy of what the agent printed, so a claim can be checked against the record',
     )
+    .option('--no-guard', 'start outside the kernel sandbox even when a profile exists')
     .action(
-      async (command: string[], options: { shell: string; transcript?: boolean }) => {
+      async (
+        command: string[],
+        options: { shell: string; transcript?: boolean; guard?: boolean },
+      ) => {
         const binary = command[0];
         if (binary === undefined) {
           throw new Error('Name the command to run:  memnox run -- claude');
@@ -122,13 +126,34 @@ export function registerRunCommand(
         context.out.note(`session ${sessionId}`);
         context.out.note(`interceptors on PATH from ${interceptorDirFor(home)}`);
 
+        /* The kernel guard, when one was written and this platform takes it. It is a
+           second line, not the gate: without it a binary that never saw a wrapper can
+           still read a denied file. */
+        const guarded = sandboxed(command, home, options.guard !== false);
+        if (guarded !== command) context.out.note('inside the sandbox profile');
+
         const transcript =
           options.transcript === true ? transcriptPathFor(home, sessionId) : undefined;
         if (transcript !== undefined) context.out.note(`transcript ${transcript}`);
 
         const start = deps.start ?? defaultStart;
-        const code = await start(binary, command.slice(1), env, transcript);
+        const [executable, ...args] = guarded;
+        const code = await start(executable ?? binary, args, env, transcript);
         process.exitCode = code;
       },
     );
+}
+
+/** Wraps the command in `sandbox-exec` when a profile is there and the platform takes it. */
+export function sandboxed(
+  command: readonly string[],
+  home: string,
+  wanted: boolean,
+  exists: (path: string) => boolean = existsSync,
+): readonly string[] {
+  if (!wanted) return command;
+  if (guardFor(process.platform, release()).guard !== OS_GUARD.SEATBELT) return command;
+  const profile = join(home, MEMNOX_HOME, 'guard', 'memnox.sb');
+  if (!exists(profile)) return command;
+  return sandboxCommand(profile, command);
 }

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir, release } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
 import {
   applyHardening,
@@ -40,9 +40,18 @@ import {
   verbAction,
   verbTableFor,
   verbTableNames,
+  guardFor,
+  guardPlanFrom,
+  landlockRuleset,
+  OS_GUARD,
+  seatbeltProfile,
   type Policy,
 } from '@memnox/core';
-import { installInterceptors, interceptorDirFor } from '@memnox/interceptors';
+import {
+  installGitHooks,
+  installInterceptors,
+  interceptorDirFor,
+} from '@memnox/interceptors';
 import { registerPolicyFile } from '../policy-registry';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
@@ -124,6 +133,8 @@ export function registerProtectCommand(
       '--from-usage <window>',
       'draft ask rules for what was granted and never used, e.g. 30d',
     )
+    .option('--hooks', 'install git pre-push and pre-commit hooks in this repository')
+    .option('--os-guard', 'write the kernel sandbox profile from your filesystem rules')
     .option('--interactive', 'walk the five domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
@@ -137,6 +148,8 @@ export function registerProtectCommand(
         for?: string;
         fromUsage?: string;
         interceptors?: boolean;
+        hooks?: boolean;
+        osGuard?: boolean;
         interactive?: boolean;
         yes?: boolean;
         observe?: boolean;
@@ -173,6 +186,14 @@ export function registerProtectCommand(
         }
         if (options.interceptors === true) {
           await runInterceptors(context);
+          return;
+        }
+        if (options.hooks === true) {
+          await runHooks(context, cwd());
+          return;
+        }
+        if (options.osGuard === true) {
+          await runOsGuard(context, cwd());
           return;
         }
         if (options.interactive === true || options.yes === true) {
@@ -634,5 +655,87 @@ async function runFromUsage(
     out.note('They are set to ask, not deny — the first real use will simply pause.');
   } finally {
     store.close();
+  }
+}
+
+/**
+ * Defence in depth, and the only gate that still holds when somebody runs a binary
+ * without the interceptor directory on PATH. A hook is a file in the repository's own
+ * `.git`, so it is installed per repository and never machine-wide.
+ */
+async function runHooks(context: CliContext, repoDir: string): Promise<void> {
+  const { out, style } = context;
+  const report = await installGitHooks(repoDir);
+
+  if (report.installed.length === 0 && report.skipped.length === 0) {
+    out.line(`No git repository at ${repoDir}, so there is nowhere to put a hook.`);
+    return;
+  }
+  for (const hook of report.installed) out.line(`${style.ok('installed')}  ${hook}`);
+  // A hook somebody else wrote is never overwritten; theirs is the one that matters.
+  for (const hook of report.skipped) {
+    out.line(`${style.warn('kept')}       ${hook} — yours, left alone`);
+  }
+  out.line('');
+  out.line('A blocked push now stops even when the interceptors are not on PATH.');
+  out.note('Undo with "memnox uninstall".');
+}
+
+const GUARD_DIR = 'guard';
+const GUARD_PROFILE = 'memnox.sb';
+
+export function guardProfilePath(home: string): string {
+  return join(home, MEMNOX_HOME, GUARD_DIR, GUARD_PROFILE);
+}
+
+/**
+ * The kernel as a second line under the interceptors: a denied path stays unreadable
+ * even to a binary that never saw a wrapper. What it cannot express is printed, because
+ * a guard quietly covering less than the rules do is worse than no guard at all.
+ */
+async function runOsGuard(context: CliContext, repoDir: string): Promise<void> {
+  const { out, style } = context;
+  const home = homedir();
+  const support = guardFor(process.platform, release());
+
+  const file = resolvePolicyFile();
+  if (!existsSync(file)) {
+    throw new Error(`No rules at ${file}. Write some first:  memnox protect --yes`);
+  }
+  const plan = guardPlanFrom(await loadPoliciesFromFile(file), home, [repoDir]);
+  const denied = plan.policy.denyRead.length + plan.policy.denyWrite.length;
+  if (denied === 0) {
+    out.line('No filesystem rule denies a path, so there is nothing to hand the kernel.');
+    return;
+  }
+
+  if (support.guard === OS_GUARD.SEATBELT) {
+    const path = guardProfilePath(home);
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await writeFile(path, seatbeltProfile(plan.policy), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    out.line(`Wrote a seatbelt profile covering ${denied} path(s) to ${path}`);
+    out.line('');
+    out.line(
+      `  ${style.bold('memnox run -- <your agent>')}   starts it inside the sandbox`,
+    );
+  } else if (support.guard === OS_GUARD.LANDLOCK) {
+    const ruleset = landlockRuleset(plan.policy);
+    const path = join(home, MEMNOX_HOME, GUARD_DIR, 'landlock.json');
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await writeFile(path, `${JSON.stringify(ruleset, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    out.line(`Wrote a Landlock ruleset covering ${denied} path(s) to ${path}`);
+  } else {
+    out.line(`No kernel guard here: ${support.because}`);
+    return;
+  }
+
+  for (const pattern of plan.skipped) {
+    out.note(`the kernel cannot express "${pattern}" — the interceptors still cover it`);
   }
 }

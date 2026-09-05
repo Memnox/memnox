@@ -134,3 +134,76 @@ export function sandboxCommand(
 ): string[] {
   return ['sandbox-exec', '-f', profilePath, ...command];
 }
+
+export interface GuardPlan {
+  policy: GuardPolicy;
+  /** Patterns the kernel cannot express, named rather than dropped. */
+  skipped: string[];
+}
+
+/**
+ * `**` is not a path. Seatbelt and Landlock both take literal subpaths, so a rule
+ * written as `**\/.ssh/**` becomes `$HOME/.ssh` — and a pattern with a wildcard left in
+ * the middle becomes nothing at all, and is named. A guard that quietly covered less
+ * than the rules do would be the worst of both.
+ */
+export function guardPathFor(pattern: string, home: string): string | null {
+  let path = pattern;
+  if (path.startsWith('**/')) path = `${home}/${path.slice(3)}`;
+  path = path.replace(/\/\*\*$/, '').replace(/\/\*$/, '');
+  if (path.includes('*') || path.includes('?')) return null;
+  return path;
+}
+
+/** What a rule has to say to be worth handing to the kernel. */
+const READ_ACTIONS = new Set(['filesystem.read']);
+const WRITE_ACTIONS = new Set(['filesystem.write', 'filesystem.delete']);
+
+/** The shape a rule already has, so nothing has to be flattened before asking. */
+interface GuardRule {
+  match: { actions?: readonly string[]; targets?: readonly string[] };
+  decision: { effect: string };
+}
+
+/**
+ * Only denials, and only the ones naming a path. The kernel is a second line under the
+ * interceptors, not a replacement: what it adds is that a binary which never saw a
+ * wrapper still cannot read the file.
+ */
+export function guardPlanFrom(
+  rules: readonly GuardRule[],
+  home: string,
+  workingRoots: readonly string[],
+): GuardPlan {
+  const denyRead = new Set<string>();
+  const denyWrite = new Set<string>();
+  const skipped: string[] = [];
+
+  for (const rule of rules) {
+    const targets = rule.match.targets;
+    if (rule.decision.effect !== 'deny' || targets === undefined) continue;
+    const actions = rule.match.actions ?? [];
+    const reads = actions.some((action) => READ_ACTIONS.has(action));
+    const writes = actions.some((action) => WRITE_ACTIONS.has(action));
+    if (!reads && !writes) continue;
+
+    for (const target of targets) {
+      const path = guardPathFor(target, home);
+      if (path === null) {
+        skipped.push(target);
+        continue;
+      }
+      if (reads) denyRead.add(path);
+      if (writes) denyWrite.add(path);
+    }
+  }
+
+  return {
+    policy: {
+      denyRead: [...denyRead].sort(),
+      denyWrite: [...denyWrite].sort(),
+      allowWrite: [...workingRoots],
+    },
+    skipped: [...new Set(skipped)].sort(),
+  };
+}
