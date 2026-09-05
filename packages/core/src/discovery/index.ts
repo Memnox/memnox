@@ -21,3 +21,4 @@ export * from './risk';
 export * from './classify';
 export * from './inventory';
 export * from './fail-on';
+export * from './wrap';

@@ -8,6 +8,7 @@ import { registerExplainCommand } from './commands/explain.command';
 import { registerConfigCommand } from './commands/config.command';
 import { registerDoctorCommand } from './commands/doctor.command';
 import { registerProtectCommand } from './commands/protect.command';
+import { registerMcpCommand } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -21,6 +22,7 @@ export function buildProgram(context: CliContext): Command {
   registerDiffCommand(program, context);
   registerExplainCommand(program, context);
   registerProtectCommand(program, context);
+  registerMcpCommand(program, context);
   registerPolicyCommand(program, context);
   registerWatchCommand(program, context);
   registerDoctorCommand(program, context);

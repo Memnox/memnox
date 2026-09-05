@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { changesFailing, failOnValues, isFailOn, FAIL_ON } from '../src/discovery/fail-on';
+import {
+  changesFailing,
+  failOnValues,
+  isFailOn,
+  FAIL_ON,
+} from '../src/discovery/fail-on';
 import type { EnvironmentChange } from '../src/discovery/snapshot';
 
 const change = (over: Partial<EnvironmentChange>): EnvironmentChange =>
@@ -11,8 +16,16 @@ const change = (over: Partial<EnvironmentChange>): EnvironmentChange =>
     ...over,
   }) as EnvironmentChange;
 
-const WIDENED_WRITE = change({ subject: 'tool', name: 'create_pr', detail: 'write tool added' });
-const WIDENED_READ = change({ subject: 'tool', name: 'get_issue', detail: 'read tool added' });
+const WIDENED_WRITE = change({
+  subject: 'tool',
+  name: 'create_pr',
+  detail: 'write tool added',
+});
+const WIDENED_READ = change({
+  subject: 'tool',
+  name: 'get_issue',
+  detail: 'read tool added',
+});
 const NEW_CREDENTIAL = change({
   subject: 'resource',
   name: 'AWS_SECRET_ACCESS_KEY',
@@ -52,10 +65,7 @@ describe('--fail-on', () => {
   });
 
   it('catches a credential that became visible, under "credential"', () => {
-    const failing = changesFailing(
-      [WIDENED_WRITE, NEW_CREDENTIAL],
-      FAIL_ON.CREDENTIAL,
-    );
+    const failing = changesFailing([WIDENED_WRITE, NEW_CREDENTIAL], FAIL_ON.CREDENTIAL);
     expect(failing.map((each) => each.name)).toEqual(['AWS_SECRET_ACCESS_KEY']);
   });
 
