@@ -8,6 +8,7 @@ import {
   environmentFor,
   registerRunCommand,
   SESSION_VAR,
+  transcriptPathFor,
 } from '../src/commands/run.command';
 
 const HOME = '/home/dev';
@@ -82,5 +83,39 @@ describe('memnox run', () => {
         vi.fn(async () => 0),
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('the transcript tap', () => {
+  async function run(args: string[], start: ReturnType<typeof vi.fn>) {
+    const out = new RecordedOutput();
+    const program = new Command();
+    registerRunCommand(program, new CliContext(out, plainStyle), {
+      start: start as never,
+      home: () => HOME,
+      newId: () => 'ses_test',
+    });
+    await program.parseAsync(args, { from: 'user' });
+    return out;
+  }
+
+  it('is off unless asked for, because it is a copy of what the agent said', async () => {
+    const start = vi.fn(async () => 0);
+    await run(['run', '--', 'claude'], start);
+    expect((start.mock.calls[0] as unknown as unknown[])[3]).toBeUndefined();
+  });
+
+  it('keeps it under the data directory, per session', async () => {
+    const start = vi.fn(async () => 0);
+    const out = await run(['run', '--transcript', '--', 'claude'], start);
+
+    const path = (start.mock.calls[0] as unknown as string[])[3];
+    expect(path).toBe(transcriptPathFor(HOME, 'ses_test'));
+    expect(path).toContain('.memnox/transcripts');
+    expect(out.notes.join('\n')).toContain('transcript');
+  });
+
+  it('names the session in the file, so a claim joins the actions it was made about', () => {
+    expect(transcriptPathFor(HOME, 'ses_abc')).toContain('ses_abc.log');
   });
 });
