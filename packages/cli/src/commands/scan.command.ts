@@ -1,8 +1,13 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
+  DECISION_EFFECT,
+  findUnusedGrants,
   inventoryOf,
+  matchesPattern,
   renderFields,
+  rollUpUsage,
+  SqliteEventStore,
   reviewServers,
   SENSITIVITY,
   SURFACE_KIND,
@@ -81,6 +86,7 @@ export function registerScanCommand(
     .option('--json', 'emit the report as JSON')
     .option('--tools', 'list every tool by what it does, server by server')
     .option('--mcp <server>', 'review one MCP server before you trust it')
+    .option('--usage <window>', 'what was granted against what was used, e.g. 7d')
     .option('--save', 'keep this scan, so a later "memnox diff" has a baseline')
     .option(
       '--no-probe',
@@ -95,6 +101,7 @@ export function registerScanCommand(
           probe: boolean;
           mcp?: string;
           save?: boolean;
+          usage?: string;
         },
       ) => {
         if (unrecognized.length > 0) {
@@ -105,6 +112,10 @@ export function registerScanCommand(
           probe: options.probe,
           save: options.save === true,
         });
+        if (options.usage !== undefined) {
+          await renderUsage(context, report, options.usage, options.json === true);
+          return;
+        }
         if (options.mcp !== undefined) {
           renderServerReview(context, report, options.mcp, options.json === true);
           return;
@@ -374,4 +385,99 @@ function fieldsFor(review: ServerReview): { label: string; value: string }[] {
     { label: 'filesystem', value: review.filesystem ? 'reaches it' : 'no' },
     { label: 'network', value: review.network ? 'reaches it' : 'no' },
   ];
+}
+
+const DAY_MS = 86_400_000;
+
+function windowDays(raw: string): number {
+  const match = /^(\d+)d$/.exec(raw.trim());
+  const days = match === null ? Number(raw) : Number(match[1]);
+  if (!Number.isInteger(days) || days <= 0) {
+    throw new Error(`--usage takes a number of days, like 7d. Got "${raw}".`);
+  }
+  return days;
+}
+
+/**
+ * Granted against used. The sentence nobody else can produce about a machine: this
+ * agent can reach twenty things and touched three, and here are the seventeen.
+ */
+async function renderUsage(
+  context: CliContext,
+  report: DiscoveryReport,
+  window: string,
+  asJson: boolean,
+): Promise<void> {
+  const days = windowDays(window);
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const store = SqliteEventStore.forHome(homedir());
+
+  try {
+    const events = await store.query({ since });
+    const usage = rollUpUsage(
+      events.map((event) => ({
+        agentId: event.agent,
+        action: event.operation,
+        resourceKind: event.surface,
+        resourceId: event.target ?? event.operation,
+        at: event.at,
+        effect: event.effect,
+      })),
+    );
+
+    // Every tool an agent here can reach is a grant, whether or not a rule names it.
+    const granted = report.surfaces.flatMap((surface) =>
+      (surface.tools ?? []).map((tool) => ({
+        agentId: surface.agentId,
+        action: `${tool.server}.${tool.name}`,
+        grantedVia: surface.detectedFrom,
+      })),
+    );
+    const unused = findUnusedGrants(granted, usage, days, matchesPattern);
+
+    if (asJson) {
+      context.out.line(JSON.stringify({ window: `${days}d`, usage, unused }, null, 2));
+      return;
+    }
+
+    const { out, style } = context;
+    out.line('');
+    out.line(style.bold(`GRANTED AGAINST USED — last ${days} days`));
+    out.line('');
+    if (events.length === 0) {
+      out.line('  Nothing was recorded in that window, so nothing can be called unused.');
+      out.note('Wrap an agent with "memnox mcp wrap" and use it for a few days first.');
+      return;
+    }
+
+    out.line(
+      `  ${granted.length} granted    ${usage.length} used    ${unused.length} never touched`,
+    );
+    if (unused.length === 0) return;
+
+    out.line('');
+    const external = unused.filter((grant) =>
+      report.surfaces.some((surface) =>
+        (surface.tools ?? []).some(
+          (tool) =>
+            `${tool.server}.${tool.name}` === grant.action &&
+            tool.effect !== TOOL_EFFECT.READ,
+        ),
+      ),
+    );
+    if (external.length > 0) {
+      out.line(
+        `  ${style.warn('!')} ${external.length} unused tool(s) can change external state:`,
+      );
+      for (const grant of external.slice(0, 10)) {
+        out.line(`      ${grant.action}  (${grant.grantedVia})`);
+      }
+    }
+    out.line('');
+    out.line(
+      `  ${style.dim('memnox protect')}  propose rules for what is not being used`,
+    );
+  } finally {
+    store.close();
+  }
 }
