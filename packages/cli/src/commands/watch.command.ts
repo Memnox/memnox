@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
   agentUpdates,
@@ -6,6 +7,7 @@ import {
   CHANGE_SUBJECT,
   compareSnapshots,
   describeUpdate,
+  watchablePaths,
   type EnvironmentChange,
   type EnvironmentSnapshot,
 } from '@memnox/core';
@@ -17,15 +19,25 @@ import {
   scanMachine,
   type ScanSeams,
 } from '../machine-scan';
+import { watchConfigPaths } from '../config-watch';
 
 const DEFAULT_INTERVAL_SECONDS = 60;
 const MILLISECONDS = 1_000;
 
-/** The wait, as an argument: a test that actually slept for a minute would not be run. */
-type Sleeper = (milliseconds: number) => Promise<void>;
+/**
+ * The wait between scans, as an argument: a test that actually slept for a minute would
+ * not be run. The real one returns early when an agent's configuration changes, so a
+ * server added mid-watch is reported in seconds rather than on the next minute.
+ */
+type Waiter = (milliseconds: number) => Promise<unknown>;
 
-const REAL_SLEEP: Sleeper = (milliseconds) =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds));
+const WATCHING_WAIT = (): { wait: Waiter; close: () => void } => {
+  const watcher = watchConfigPaths(watchablePaths(homedir()));
+  return {
+    wait: (milliseconds) => watcher.next(milliseconds),
+    close: () => watcher.close(),
+  };
+};
 
 /**
  * A forgotten permission stops being invisible risk and becomes something with a date
@@ -37,7 +49,7 @@ export function registerWatchCommand(
   context: CliContext,
   buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
   cwd: () => string = () => process.cwd(),
-  sleep: Sleeper = REAL_SLEEP,
+  waiter: () => { wait: Waiter; close: () => void } = WATCHING_WAIT,
 ): void {
   program
     .command('watch')
@@ -70,10 +82,12 @@ export function registerWatchCommand(
           throw new Error('--cycles must be a number');
         }
 
+        // The interval is the backstop, not the mechanism.
+        const between = waiter();
         let baseline = await seams.snapshots.latest();
         let previous: DiscoveryReport | null = null;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
-          if (cycle > 0) await sleep(interval * MILLISECONDS);
+          if (cycle > 0) await between.wait(interval * MILLISECONDS);
           const { report: scanned, snapshot } = await scanMachine(seams, {
             probe: options.probe,
           });
@@ -96,6 +110,7 @@ export function registerWatchCommand(
           }
           await report(context, seams, snapshot, changes, updates, options.json === true);
         }
+        between.close();
       },
     );
 }
