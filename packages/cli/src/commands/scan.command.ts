@@ -1,6 +1,8 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
+  AGENT_APPROVAL,
+  approvalOf,
   DECISION_EFFECT,
   findUnusedGrants,
   inventoryOf,
@@ -266,6 +268,22 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
       report.agents.map((agent) => agent.kind).join(', '),
   );
 
+  /* Nobody approved it, and until now nothing noticed. Only said when somebody has
+     actually decided: an empty list means undecided, not that everything is approved. */
+  const unregistered = report.agents
+    .map((agent) => agent.kind)
+    .filter(
+      (kind) => approvalOf(kind, counts.approvedAgents) === AGENT_APPROVAL.UNREGISTERED,
+    );
+  if (unregistered.length > 0) {
+    out.line(
+      ''.padEnd(LABEL_WIDTH) +
+        style.warn(
+          `${unregistered.join(', ')} — nobody approved ${unregistered.length === 1 ? 'this' : 'these'}`,
+        ),
+    );
+  }
+
   const servers = report.surfaces.filter((surface) => surface.kind === SURFACE_KIND.MCP);
   if (servers.length > 0) {
     const tools = servers.reduce(
@@ -339,6 +357,11 @@ function render(context: CliContext, report: DiscoveryReport, counts: LocalCount
   const surfaces = report.surfaces.filter((surface) => surface.kind !== SURFACE_KIND.MCP);
   out.line('');
   out.line(`${surfaces.length} execution surfaces.`);
+  if (counts.approvedAgents.length === 0 && report.agents.length > 0) {
+    out.note(
+      'No agent has been approved or refused here. Decide with "memnox config set approvedAgents".',
+    );
+  }
   out.line('');
   /* The gap, and the reason anybody keeps reading: what can reach outside this laptop
      against how much of it anything is checking. Both are counts, never a score. */

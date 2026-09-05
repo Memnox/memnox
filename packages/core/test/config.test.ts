@@ -53,6 +53,7 @@ describe('the config file', () => {
       retentionDays: 90,
       failOpen: true,
       telemetry: true,
+      approvedAgents: ['claude-code', 'cursor'],
     };
     expect(parseConfig(renderConfig(config))).toEqual(config);
   });

@@ -12,6 +12,7 @@ const HEALTHY: HealthFacts = {
   mode: 'enforce',
   rulesPath: 'memnox.policies.toml',
   ruleCount: 5,
+  policyVersion: 'a1b2c3',
   interceptorsInstalled: ['git', 'rm'],
   interceptorsExpected: ['git', 'rm'],
   interceptorDirFirstOnPath: true,

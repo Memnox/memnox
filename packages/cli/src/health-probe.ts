@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import {
   configPathFor,
+  versionPolicySet,
   interceptedBinaries,
   loadOrCreateConfig,
   loadPoliciesFromFile,
@@ -34,22 +35,30 @@ async function exists(path: string): Promise<boolean> {
 
 async function rules(
   dir: string,
-): Promise<Pick<HealthFacts, 'rulesPath' | 'rulesError' | 'ruleCount'>> {
+): Promise<
+  Pick<HealthFacts, 'rulesPath' | 'rulesError' | 'ruleCount' | 'policyVersion'>
+> {
   for (const name of RULE_FILES) {
     const path = join(dir, name);
     if (!(await exists(path))) continue;
     try {
-      return { rulesPath: name, ruleCount: (await loadPoliciesFromFile(path)).length };
+      const policies = await loadPoliciesFromFile(path);
+      return {
+        rulesPath: name,
+        ruleCount: policies.length,
+        policyVersion: versionPolicySet(policies).version,
+      };
     } catch (err) {
       // Never reported as "no rules": that is a different sentence entirely.
       return {
         rulesPath: name,
         ruleCount: 0,
+        policyVersion: 'unreadable',
         rulesError: err instanceof Error ? err.message.split('\n')[0] : String(err),
       };
     }
   }
-  return { rulesPath: null, ruleCount: 0 };
+  return { rulesPath: null, ruleCount: 0, policyVersion: 'none' };
 }
 
 /** Counts MCP servers, and how many are already pointed at the proxy. */

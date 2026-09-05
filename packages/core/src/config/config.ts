@@ -17,6 +17,13 @@ export interface MemnoxConfig {
   failOpen: boolean;
   /** Counts only, opt-in, never contents. Absent means never asked. */
   telemetry: boolean;
+  /**
+   * Agents somebody decided are allowed here. Anything else that acts is reported as
+   * unregistered — which is the whole of shadow-agent detection: nobody approved it,
+   * and until now nothing noticed. Empty means nobody has decided yet, which is
+   * reported as such rather than as "everything is approved".
+   */
+  approvedAgents: string[];
 }
 
 export const DEFAULT_CONFIG: MemnoxConfig = {
@@ -24,9 +31,16 @@ export const DEFAULT_CONFIG: MemnoxConfig = {
   retentionDays: 30,
   failOpen: false,
   telemetry: false,
+  approvedAgents: [],
 };
 
-const KEYS = ['mode', 'retentionDays', 'failOpen', 'telemetry'] as const;
+const KEYS = [
+  'mode',
+  'retentionDays',
+  'failOpen',
+  'telemetry',
+  'approvedAgents',
+] as const;
 export type ConfigKey = (typeof KEYS)[number];
 
 export function isConfigKey(value: string): value is ConfigKey {
@@ -65,8 +79,18 @@ export function parseConfig(raw: string): MemnoxConfig {
     }
     if (key === 'failOpen') config.failOpen = value === 'true';
     if (key === 'telemetry') config.telemetry = value === 'true';
+    if (key === 'approvedAgents') config.approvedAgents = splitList(value);
   }
   return config;
+}
+
+/** A comma-separated list, which is what a flat key/value file can honestly hold. */
+function splitList(value: string): string[] {
+  return value
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map((each) => each.trim().replace(/^["']|["']$/g, ''))
+    .filter((each) => each !== '');
 }
 
 /** Written with the comments a person reads before changing a mode by hand. */
@@ -85,6 +109,10 @@ export function renderConfig(config: MemnoxConfig): string {
     '',
     '# Counts only, never contents, and only if you turn it on.',
     `telemetry = ${config.telemetry}`,
+    '',
+    '# Agents you have decided are allowed here. Anything else that acts is reported',
+    '# as unregistered. Empty means nobody has decided yet, not that all are approved.',
+    `approvedAgents = "${config.approvedAgents.join(', ')}"`,
     '',
   ].join('\n');
 }
@@ -112,6 +140,7 @@ export function validateConfigValue(key: ConfigKey, value: string): ConfigParse 
     }
     return { value };
   }
+  if (key === 'approvedAgents') return { value };
   if (value !== 'true' && value !== 'false') {
     return { value, error: `${key} must be true or false` };
   }
@@ -126,9 +155,29 @@ export function applyConfigValue(
   if (key === 'mode') return { ...config, mode: value as EnforcementMode };
   if (key === 'retentionDays') return { ...config, retentionDays: Number(value) };
   if (key === 'failOpen') return { ...config, failOpen: value === 'true' };
+  if (key === 'approvedAgents') return { ...config, approvedAgents: splitList(value) };
   return { ...config, telemetry: value === 'true' };
 }
 
 export function readConfigValue(config: MemnoxConfig, key: ConfigKey): string {
-  return String(config[key]);
+  const value = config[key];
+  return Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+/**
+ * Three states, not two. "Nobody has decided" is different from "this agent is not
+ * approved", and reporting the first as the second would flag every agent on a machine
+ * where the list was simply never filled in.
+ */
+export const AGENT_APPROVAL = {
+  APPROVED: 'approved',
+  UNREGISTERED: 'unregistered',
+  UNDECIDED: 'undecided',
+} as const;
+
+export type AgentApproval = (typeof AGENT_APPROVAL)[keyof typeof AGENT_APPROVAL];
+
+export function approvalOf(agent: string, approved: readonly string[]): AgentApproval {
+  if (approved.length === 0) return AGENT_APPROVAL.UNDECIDED;
+  return approved.includes(agent) ? AGENT_APPROVAL.APPROVED : AGENT_APPROVAL.UNREGISTERED;
 }

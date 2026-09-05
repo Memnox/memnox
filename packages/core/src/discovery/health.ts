@@ -48,6 +48,8 @@ export interface HealthFacts {
   rulesPath: string | null;
   rulesError?: string;
   ruleCount: number;
+  /** Content hash of the rule set, so two machines can be compared without diffing. */
+  policyVersion: string;
   /** Binaries present in the interceptor directory. */
   interceptorsInstalled: string[];
   /** Binaries the classifier knows how to rule on. */
@@ -114,7 +116,8 @@ function rulesCheck(facts: HealthFacts): HealthCheck {
   return {
     name: CHECK_NAME.RULES,
     state: CHECK.OK,
-    detail: `${facts.ruleCount} rule(s) from ${facts.rulesPath}`,
+    // The version is what makes "4 laptops are on v3" answerable without diffing files.
+    detail: `${facts.ruleCount} rule(s) from ${facts.rulesPath} · v${facts.policyVersion}`,
   };
 }
 

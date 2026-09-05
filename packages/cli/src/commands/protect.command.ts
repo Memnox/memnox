@@ -17,6 +17,11 @@ import {
   type MachineReader,
   applyNative,
   ENFORCEMENT_MODE,
+  findUnusedGrants,
+  matchesPattern,
+  rollUpUsage,
+  SqliteEventStore,
+  TOOL_EFFECT,
   loadOrCreateConfig,
   loadPoliciesFromFile,
   revertNative,
@@ -115,6 +120,10 @@ export function registerProtectCommand(
       'install the PATH wrappers, so shell and git commands meet the rules too',
     )
     .option('--for <name>', 'write rules for one CLI or MCP server only')
+    .option(
+      '--from-usage <window>',
+      'draft ask rules for what was granted and never used, e.g. 30d',
+    )
     .option('--interactive', 'walk the five domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
@@ -126,6 +135,7 @@ export function registerProtectCommand(
         apply?: boolean;
         revert?: boolean | string;
         for?: string;
+        fromUsage?: string;
         interceptors?: boolean;
         interactive?: boolean;
         yes?: boolean;
@@ -151,6 +161,10 @@ export function registerProtectCommand(
               'Verdicts now bite. "memnox protect --observe" puts it back.',
             );
           }
+          return;
+        }
+        if (options.fromUsage !== undefined) {
+          await runFromUsage(context, options.fromUsage, buildSeams, cwd);
           return;
         }
         if (options.for !== undefined) {
@@ -515,4 +529,101 @@ function ruleFor(
       },
     },
   } as unknown as Policy;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Least privilege from what actually happened, not from a questionnaire. Everything
+ * reachable that nothing touched in the window becomes an ask — never a deny, because
+ * "unused for thirty days" is not the same as "never needed", and a rule that broke
+ * somebody's quarterly job would be the last rule they let this write.
+ */
+async function runFromUsage(
+  context: CliContext,
+  window: string,
+  buildSeams: HardenSeamsFactory,
+  cwd: () => string,
+): Promise<void> {
+  const match = /^(\d+)d?$/.exec(window.trim());
+  const days = match === null ? Number.NaN : Number(match[1]);
+  if (!Number.isInteger(days) || days <= 0) {
+    throw new Error(`--from-usage takes a number of days, like 30d. Got "${window}".`);
+  }
+
+  const since = new Date(Date.now() - days * DAY_MS).toISOString();
+  const store = SqliteEventStore.forHome(homedir());
+  const { out, style } = context;
+
+  try {
+    const events = await store.query({ since });
+    if (events.length === 0) {
+      out.line(`Nothing was recorded in the last ${days} days.`);
+      out.note('Nothing can be called unused until something has been used.');
+      return;
+    }
+
+    const report = await discover(new NodeMachineReader(homedir()), {
+      now: new Date().toISOString(),
+      projectDirs: [cwd()],
+    });
+    void buildSeams;
+
+    const usage = rollUpUsage(
+      events.map((event) => ({
+        agentId: event.agent,
+        action: event.operation,
+        resourceKind: event.surface,
+        resourceId: event.target ?? event.operation,
+        at: event.at,
+        effect: event.effect,
+      })),
+    );
+    const granted = report.surfaces.flatMap((surface) =>
+      (surface.tools ?? [])
+        .filter((tool) => tool.effect !== TOOL_EFFECT.READ)
+        .map((tool) => ({
+          agentId: surface.agentId,
+          action: `mcp.${tool.name}`,
+          grantedVia: surface.detectedFrom,
+        })),
+    );
+
+    const unused = findUnusedGrants(granted, usage, days, matchesPattern);
+    if (unused.length === 0) {
+      out.line(`Everything reachable was used in the last ${days} days.`);
+      return;
+    }
+
+    const actions = [...new Set(unused.map((grant) => grant.action))];
+    const rule = {
+      name: `unused-${days}d`,
+      description: `Reachable and untouched for ${days} days. Ask before the first use.`,
+      match: { actions },
+      decision: {
+        effect: DECISION_EFFECT.ASK,
+        reason: `nothing used this in ${days} days, so the first use is worth seeing`,
+        alternative: {
+          action: actions[0] as string,
+          note: 'approve it once, or delete this rule if it is wrong',
+        },
+      },
+    } as unknown as Policy;
+
+    const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
+    await writePolicyDocumentFile(path, { version: 1, policies: [rule] });
+    await registerPolicyFile(homedir(), path);
+
+    out.line('');
+    out.line(`${actions.length} capability(ies) were reachable and never used:`);
+    for (const action of actions.slice(0, 12)) out.line(`  ${action}`);
+    if (actions.length > 12)
+      out.line(`  ${style.dim(`… and ${actions.length - 12} more`)}`);
+    out.line('');
+    out.line(`Wrote one ask rule to ${path}.`);
+    // Ask, never deny: unused for a month is not the same as never needed.
+    out.note('They are set to ask, not deny — the first real use will simply pause.');
+  } finally {
+    store.close();
+  }
 }
