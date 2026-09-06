@@ -2,6 +2,10 @@ import { dirname, join } from 'node:path';
 import { DISCOVERED_AGENT_KIND, SURFACE_KIND } from '../discovery.constants';
 import { ConfigDetector, type ConfigDetectorSpec } from './config-detector';
 import type { AgentDetector } from './detector';
+import { CodexDetector } from './codex-detector';
+import { HermesDetector } from './hermes-detector';
+import { OpenClawDetector } from './openclaw-detector';
+import { RufloDetector } from './ruflo-detector';
 
 /**
  * A versioned, separately releasable set with the layout revision each was written
@@ -41,13 +45,6 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
     mcpConfigPath: '.cursor/mcp.json',
   },
   {
-    kind: DISCOVERED_AGENT_KIND.CODEX_CLI,
-    layoutVersion: '2026-08',
-    configPaths: ['.codex/config.toml', '.codex'],
-    clients: ['Codex CLI'],
-    inherentSurfaces: [SURFACE_KIND.SHELL, SURFACE_KIND.FILESYSTEM, SURFACE_KIND.GIT],
-  },
-  {
     kind: DISCOVERED_AGENT_KIND.CLINE,
     layoutVersion: '2026-08',
     configPaths: ['.cline/settings.json'],
@@ -65,9 +62,23 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
   },
 ];
 
-export const DEFAULT_DETECTORS: readonly AgentDetector[] = DETECTOR_SPECS.map(
-  (spec) => new ConfigDetector(spec),
-);
+/**
+ * Products whose config needs real parsing. Codex is TOML, Hermes is YAML, OpenClaw is
+ * JSON with comments, and Ruflo lives beside the work rather than in the home
+ * directory. The data-driven detector reads servers with a JSON parser, so against any
+ * of these it would find nothing and say nothing — which is worse than not trying.
+ */
+const PARSING_DETECTORS: readonly AgentDetector[] = [
+  new CodexDetector(),
+  new HermesDetector(),
+  new OpenClawDetector(),
+  new RufloDetector(),
+];
+
+export const DEFAULT_DETECTORS: readonly AgentDetector[] = [
+  ...DETECTOR_SPECS.map((spec) => new ConfigDetector(spec)),
+  ...PARSING_DETECTORS,
+];
 
 /**
  * The directories whose change means an agent's reach may have changed. Directories
@@ -81,9 +92,27 @@ export function watchablePaths(home: string): string[] {
       paths.add(relative.includes('/') ? dirname(join(home, relative)) : home);
     }
   }
+  /* A product with its own parser is not in the spec list, so its directory is added
+     here: a harness adds agents without touching any client config, and Codex's
+     config would otherwise be watched by nothing at all. */
+  for (const relative of PARSED_CONFIG_DIRS) paths.add(join(home, relative));
   return [...paths].sort();
 }
+
+/** Directories the parsing detectors read, watched so a new server or role is an event. */
+const PARSED_CONFIG_DIRS: readonly string[] = [
+  '.hermes',
+  '.openclaw',
+  '.claude-flow',
+  '.codex',
+];
 
 export * from './detector';
 export * from './config-detector';
 export * from './mcp-config';
+export * from './yaml-block';
+export * from './toml-tables';
+export * from './codex-detector';
+export * from './hermes-detector';
+export * from './openclaw-detector';
+export * from './ruflo-detector';

@@ -3,7 +3,7 @@ import { renderShareCard, shareCardFor } from '../src/discovery/share-card';
 import type { CapabilityInventory } from '../src/discovery/inventory';
 
 const INVENTORY = {
-  version: 1,
+  version: 2,
   takenAt: '2026-09-05T10:00:00.000Z',
   agents: [{ id: 'agt_1', kind: 'claude-code', configPaths: [], clients: [] }],
   mcpServers: [
@@ -53,6 +53,8 @@ const INVENTORY = {
     },
   ],
   network: { outbound: 'unknown', proxyVars: [], noProxy: [], sandbox: [], read: [] },
+  harnesses: [],
+  chains: [],
 } as unknown as CapabilityInventory;
 
 describe('the share card', () => {
@@ -65,7 +67,48 @@ describe('the share card', () => {
       sensitivePathsReachable: 1,
       credentialsReachable: 1,
       shellSurfaces: 1,
+      principals: 1,
+      combinedPaths: 0,
     });
+  });
+
+  it('counts the principals behind a harness, not the row it prints as', () => {
+    const swarm = {
+      ...INVENTORY,
+      agents: [
+        ...INVENTORY.agents,
+        { id: 'agt_ruflo', kind: 'ruflo', configPaths: [], clients: [] },
+      ],
+      harnesses: [
+        {
+          agentId: 'agt_ruflo',
+          kind: 'ruflo',
+          runtimes: [],
+          roles: ['planner', 'coder', 'deployer'],
+          hooks: [],
+          federated: false,
+          evidence: [],
+        },
+      ],
+      chains: [{ agentId: 'agt_ruflo', subject: 'customer', individuallyHarmless: true }],
+    } as unknown as CapabilityInventory;
+
+    const card = shareCardFor(swarm);
+
+    // Two rows, four principals: Claude Code plus the swarm's three roles.
+    expect(card.agents).toBe(2);
+    expect(card.principals).toBe(4);
+    expect(card.combinedPaths).toBe(1);
+    const rendered = renderShareCard(card);
+    expect(rendered).toContain('principals behind those agents');
+    // Still counts only: no role name, no tool, no server.
+    for (const leak of ['planner', 'coder', 'deployer', 'ruflo', 'customer']) {
+      expect(rendered).not.toContain(leak);
+    }
+  });
+
+  it('says nothing about principals when every agent is one', () => {
+    expect(renderShareCard(shareCardFor(INVENTORY))).not.toContain('principals');
   });
 
   it('counts communication as changing external state, because the data has left', () => {

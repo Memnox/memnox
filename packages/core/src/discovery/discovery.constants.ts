@@ -7,10 +7,28 @@ export const DISCOVERED_AGENT_KIND = {
   CLINE: 'cline',
   VS_CODE: 'vscode',
   GITHUB_ACTIONS: 'github-actions',
+  HERMES: 'hermes',
+  OPENCLAW: 'openclaw',
+  RUFLO: 'ruflo',
 } as const;
 
 export type DiscoveredAgentKind =
   (typeof DISCOVERED_AGENT_KIND)[keyof typeof DISCOVERED_AGENT_KIND];
+
+/**
+ * Kinds that run other agents rather than only themselves. The distinction matters
+ * because their reach is the union of what they host, and a roster that lists a
+ * harness as one row beside Claude Code understates it by however many it launches.
+ */
+export const HARNESS_KINDS: readonly DiscoveredAgentKind[] = [
+  DISCOVERED_AGENT_KIND.HERMES,
+  DISCOVERED_AGENT_KIND.OPENCLAW,
+  DISCOVERED_AGENT_KIND.RUFLO,
+];
+
+export function isHarnessKind(kind: string): boolean {
+  return HARNESS_KINDS.includes(kind as DiscoveredAgentKind);
+}
 
 /** What an agent can act through. Each is a seam Memnox can hold, or admit it cannot. */
 export const SURFACE_KIND = {
@@ -186,6 +204,8 @@ export const CHANGE_SUBJECT = {
   TOOL: 'tool',
   SURFACE: 'surface',
   RESOURCE: 'resource',
+  /** A role, a hook or a federation link under something that runs other agents. */
+  HARNESS: 'harness',
 } as const;
 
 export type ChangeSubject = (typeof CHANGE_SUBJECT)[keyof typeof CHANGE_SUBJECT];

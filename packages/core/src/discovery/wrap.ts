@@ -82,6 +82,44 @@ export function planUnwrap(servers: Readonly<Record<string, ServerLaunch>>): {
   return { restore, untouched };
 }
 
+/**
+ * Every place on a machine an MCP server can be declared, in one list.
+ *
+ * There were three of these: the detectors, `mcp wrap`, and the wiring check. They
+ * drifted, and the wiring check ended up reporting "none routed through the proxy" on
+ * a machine where six of eight were — because it had never heard of half the files.
+ * A path spelled in two places is a path that will disagree with itself.
+ */
+export interface McpConfigLocation {
+  /** Relative to the home directory, or to the directory the reader is standing in. */
+  relative: string;
+  scope: 'home' | 'project';
+  /** The product that writes it, for a line that names what is not covered. */
+  product: string;
+}
+
+export const MCP_CONFIG_LOCATIONS: readonly McpConfigLocation[] = [
+  { relative: '.claude.json', scope: 'home', product: 'Claude Code' },
+  {
+    relative: 'Library/Application Support/Claude/claude_desktop_config.json',
+    scope: 'home',
+    product: 'Claude Desktop',
+  },
+  {
+    relative: '.config/Claude/claude_desktop_config.json',
+    scope: 'home',
+    product: 'Claude Desktop',
+  },
+  { relative: '.cursor/mcp.json', scope: 'home', product: 'Cursor' },
+  { relative: '.cline/settings.json', scope: 'home', product: 'Cline' },
+  { relative: '.vscode/mcp.json', scope: 'home', product: 'VS Code' },
+  { relative: '.openclaw/openclaw.json', scope: 'home', product: 'OpenClaw' },
+  { relative: '.codex/config.toml', scope: 'home', product: 'Codex CLI' },
+  { relative: '.hermes/config.yaml', scope: 'home', product: 'Hermes' },
+  { relative: '.hermes/config.yml', scope: 'home', product: 'Hermes' },
+  { relative: '.mcp.json', scope: 'project', product: 'Ruflo' },
+];
+
 /** Where the servers live inside each client's config, since no two agree. */
 export const MCP_SERVER_KEYS = ['mcpServers', 'servers'] as const;
 

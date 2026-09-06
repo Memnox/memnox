@@ -3,6 +3,7 @@ import type { Reachability } from './reachability';
 import type { Resource } from './resource';
 import { RESOURCE_KIND, type ResourceKind } from './discovery.constants';
 import type { Surface } from './surface';
+import { describeCombined, type AgentChains } from './composition';
 import {
   agentIdsOf,
   rankFindings,
@@ -46,6 +47,8 @@ export interface DoctorInput {
   resources: readonly Resource[];
   reachability: readonly Reachability[];
   surfaces: readonly Surface[];
+  /** Tool chains from the scan. Absent when nothing asked the servers what they hold. */
+  chains?: readonly AgentChains[];
   /** Injected so a report is reproducible and a test is not a coin toss. */
   newId?: () => string;
 }
@@ -143,7 +146,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     });
   }
 
-  for (const combination of combinedCapabilities(input)) {
+  for (const combination of exportPaths(input)) {
     const id = newId();
     findings.push({
       id,
@@ -152,6 +155,35 @@ export function runDoctor(input: DoctorInput): DoctorReport {
       agentIds: [combination.agentId],
       evidence: combination.evidence.join(' + '),
     });
+  }
+
+  /* The same shape one level down, where the chain is named tools rather than the
+     disk. Only the ones no single step would be refused for: the destructive ones
+     already have a finding above, and printing them twice teaches nothing. */
+  for (const { agentId, capabilities } of input.chains ?? []) {
+    for (const chain of capabilities) {
+      if (!chain.individuallyHarmless) continue;
+      const id = newId();
+      const emit = chain.steps[chain.steps.length - 1];
+      findings.push({
+        id,
+        severity: FINDING_SEVERITY.HIGH,
+        title: `${agentId.replace('agt_', '')}: ${chain.consequence} — every tool in the path is ordinary on its own`,
+        agentIds: [agentId],
+        evidence: describeCombined(chain),
+        /* Asking on the step that leaves the machine breaks the chain and costs the
+           least: the reads either side of it are what the agent is there to do. */
+        ...(emit === undefined
+          ? {}
+          : {
+              remediation: askToolStep(
+                id,
+                [`${emit.server}.${emit.tool}`],
+                ASK_CHAIN_EXIT,
+              ),
+            }),
+      });
+    }
   }
 
   const unrestricted = input.reachability.filter((entry) => entry.viaShell);
@@ -171,7 +203,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
   return { findings: ranked, counts: countBySeverity(ranked) };
 }
 
-interface CombinedCapability {
+interface ExportPath {
   agentId: string;
   /** The three halves, named. A finding with no evidence is an opinion. */
   evidence: string[];
@@ -187,14 +219,16 @@ const OUTWARD_TOOL_VERBS: readonly string[] = [
 ];
 
 /**
- * Read a customer. Write a file. Send it somewhere. Each is ordinary, each is allowed,
- * and no evaluator looking at a single action will ever see the third one coming.
+ * Read a secret off the disk. Write a file. Send it somewhere. Each is ordinary, each
+ * is allowed, and no evaluator looking at a single action will ever see the third one
+ * coming. This is the disk-shaped half; `composition.ts` holds the tool-shaped one,
+ * where the whole chain is named tools on named servers.
  *
- * This is the half a local runtime can honestly answer: what one agent holds *at once*.
+ * This is what a local runtime can honestly answer: what one agent holds *at once*.
  * Whether it was ever done in that sequence is the joined ledger's question.
  */
-function combinedCapabilities(input: DoctorInput): CombinedCapability[] {
-  const combinations: CombinedCapability[] = [];
+function exportPaths(input: DoctorInput): ExportPath[] {
+  const combinations: ExportPath[] = [];
 
   for (const entry of input.reachability) {
     const sensitive = input.resources.find(
@@ -338,25 +372,54 @@ function denyReadStep(findingId: string, path: string, kind: ResourceKind): Hard
 }
 
 /** Ambiguous by nature: somebody may legitimately want the tool, so it asks first. */
-function askToolStep(findingId: string, tools: readonly string[]): HardenStep {
-  const file = `${POLICY_DIR}/ask-destructive-tools.yaml`;
+/**
+ * Why the rule exists travels with it, because the two callers ask for different
+ * reasons: one tool is destructive on its own, and the other is an ordinary tool that
+ * happens to be the step where data leaves. A rule that called the second one
+ * destructive would be wrong in the file somebody reads a year later.
+ */
+interface AskReason {
+  /** Slug for the rule and its file, so two reasons never overwrite each other. */
+  name: string;
+  description: string;
+  why: string;
+}
+
+const ASK_DESTRUCTIVE: AskReason = {
+  name: 'ask-destructive-tools',
+  description: 'destructive tool call',
+  why: 'A destructive tool call needs a person.',
+};
+
+const ASK_CHAIN_EXIT: AskReason = {
+  name: 'ask-tools-that-send-outward',
+  description: 'tool call that takes data off this machine',
+  why: 'Ordinary on its own, and the step where a read leaves the machine.',
+};
+
+function askToolStep(
+  findingId: string,
+  tools: readonly string[],
+  reason: AskReason = ASK_DESTRUCTIVE,
+): HardenStep {
+  const file = `${POLICY_DIR}/${reason.name}.yaml`;
   const contents = [
     'version: 1',
     'policies:',
-    '  - name: ask-destructive-tools',
+    `  - name: ${reason.name}`,
     '    match:',
     `      actions: [${tools.map((tool) => `"mcp.${tool}"`).join(', ')}]`,
     '    decision:',
     '      effect: ask',
     '      approvers: ["you"]',
-    '      reason: "A destructive tool call needs a person."',
+    `      reason: "${reason.why}"`,
     '',
   ].join('\n');
   return {
     id: `hs_${findingId}`,
     target: HARDEN_TARGET.POLICY,
     seam: SURFACE_KIND.MCP,
-    description: `ask before ${tools.length} destructive tool call(s)`,
+    description: `ask before ${tools.length} ${reason.description}${tools.length === 1 ? '' : 's'}`,
     apply: { path: file, contents, command: `memnox protect --apply hs_${findingId}` },
     revert: { path: file, command: `memnox protect --revert hs_${findingId}` },
     mode: HARDEN_MODE.ENFORCE,

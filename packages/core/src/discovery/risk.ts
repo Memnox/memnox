@@ -1,4 +1,5 @@
 import type { DiscoveryReport } from './discover';
+import { distinctTools } from './surface';
 import { OUTBOUND_STATE } from './network';
 import {
   FINDING_SEVERITY,
@@ -21,6 +22,7 @@ export const RISK_RULE = {
   SHELL_SURFACE: 'shell-surface',
   UNRESTRICTED_EGRESS: 'unrestricted-egress',
   WRITE_TOOL: 'write-tool',
+  COMBINED_CAPABILITY: 'combined-capability',
 } as const;
 
 export type RiskRule = (typeof RISK_RULE)[keyof typeof RISK_RULE];
@@ -54,7 +56,8 @@ function strongest(levels: readonly FindingSeverity[]): FindingSeverity {
 
 export function bandFor(report: DiscoveryReport): RiskBand {
   const fired: FiredRule[] = [];
-  const tools = report.surfaces.flatMap((surface) => surface.tools ?? []);
+  // Distinct: one server in five editors is not five times the risk.
+  const tools = distinctTools(report.surfaces);
 
   const destructive = tools.filter((tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE);
   if (destructive.length > 0) {
@@ -62,6 +65,20 @@ export function bandFor(report: DiscoveryReport): RiskBand {
       rule: RISK_RULE.DESTRUCTIVE_TOOL,
       because: `${destructive.length} tool(s) can destroy or exfiltrate`,
       contributes: FINDING_SEVERITY.CRITICAL,
+    });
+  }
+
+  /* A path a set of permitted tools opens that no single one of them opens. It sits
+     with the destructive rule because the consequence is the same and the review that
+     would have caught it does not exist: every step passes on its own. */
+  const chains = report.combined.flatMap((each) =>
+    each.capabilities.filter((capability) => capability.individuallyHarmless),
+  );
+  if (chains.length > 0) {
+    fired.push({
+      rule: RISK_RULE.COMBINED_CAPABILITY,
+      because: `${chains.length} path(s) a set of ordinary tools opens together`,
+      contributes: FINDING_SEVERITY.HIGH,
     });
   }
 

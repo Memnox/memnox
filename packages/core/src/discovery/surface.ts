@@ -26,6 +26,12 @@ export interface Surface {
    * never what it can do, so these exist to be asked over the protocol.
    */
   servers?: McpServerLaunch[];
+  /**
+   * Tools the host's own filter takes away before the agent sees them. Counted rather
+   * than dropped silently, because a client that already filters deserves the credit
+   * and the reader deserves to know the number is smaller for a reason.
+   */
+  filteredOut?: number;
 }
 
 /** Enough to start one MCP server and ask it what it holds. */
@@ -38,6 +44,80 @@ export interface McpServerLaunch {
    * a key, never the value behind it.
    */
   env?: string[];
+  /** An allow/deny list the host applies before the agent ever sees the tool. */
+  filter?: ToolFilter;
+  /** A server the config declares and has switched off. Present, and not reachable. */
+  disabled?: boolean;
+}
+
+/**
+ * Hermes writes `tools.include` / `tools.exclude`; OpenClaw writes `tools.allow` /
+ * `tools.deny`. They look like the same control and they resolve the pair differently,
+ * so the filter carries whose rules it is rather than one matcher guessing.
+ *
+ * Hermes, from its own source: a present `include` decides alone and `exclude` is not
+ * consulted at all, and `include: []` registers nothing. OpenClaw denies first. Reading
+ * one product's file with the other's precedence reports the wrong reachable set, which
+ * is the whole thing a scan exists to get right.
+ */
+export const FILTER_PRECEDENCE = {
+  /** A present include list decides alone. Hermes. */
+  INCLUDE_WINS: 'include-wins',
+  /** Deny is checked first, then any allow list. OpenClaw. */
+  EXCLUDE_WINS: 'exclude-wins',
+} as const;
+
+export type FilterPrecedence = (typeof FILTER_PRECEDENCE)[keyof typeof FILTER_PRECEDENCE];
+
+export interface ToolFilter {
+  /** Absent means no whitelist. Empty means a whitelist that admits nothing. */
+  include?: string[];
+  exclude: string[];
+  precedence: FilterPrecedence;
+}
+
+export function passesFilter(name: string, filter: ToolFilter | undefined): boolean {
+  if (filter === undefined) return true;
+
+  if (filter.precedence === FILTER_PRECEDENCE.INCLUDE_WINS) {
+    // A whitelist that is present answers on its own, empty included.
+    if (filter.include !== undefined) return matchesGlob(name, filter.include);
+    return !matchesGlob(name, filter.exclude);
+  }
+
+  if (matchesGlob(name, filter.exclude)) return false;
+  if (filter.include === undefined || filter.include.length === 0) return true;
+  return matchesGlob(name, filter.include);
+}
+
+/**
+ * Exact name first, then a case-sensitive glob — the semantics both products use.
+ * The policy matcher lowercases, which is right for a rule somebody typed and wrong
+ * for a tool name, where `readFile` and `readfile` are two different tools.
+ */
+function matchesGlob(name: string, patterns: readonly string[]): boolean {
+  if (patterns.includes(name)) return true;
+  return patterns.some(
+    (pattern) => /[*?[]/.test(pattern) && globExpression(pattern).test(name),
+  );
+}
+
+const globCache = new Map<string, RegExp>();
+
+function globExpression(pattern: string): RegExp {
+  const held = globCache.get(pattern);
+  if (held !== undefined) return held;
+  const source = pattern
+    .split('')
+    .map((char) => {
+      if (char === '*') return '.*';
+      if (char === '?') return '.';
+      return /[.+^${}()|[\]\\]/.test(char) ? `\\${char}` : char;
+    })
+    .join('');
+  const expression = new RegExp(`^${source}$`);
+  globCache.set(pattern, expression);
+  return expression;
 }
 
 /** The protocol's own annotation, when a server bothered to publish one. */
@@ -157,6 +237,26 @@ export function nameSegments(name: string): string[] {
     .split(/[^A-Za-z0-9]+/)
     .map((part) => part.toLowerCase())
     .filter((part) => part !== '');
+}
+
+/**
+ * One entry per tool, however many clients declare the server it lives on.
+ *
+ * The same `github` server is normally configured in several editors at once, and each
+ * client's surface carries its own copy of that server's tools. Summing the surfaces
+ * multiplies the count by the number of clients: four tools in five editors reported as
+ * twenty, which inflates the tool count, the destructive count, the risk band and the
+ * gap. A tool is a thing on a server, not a thing per client that reaches it.
+ */
+export function distinctTools(surfaces: readonly { tools?: McpTool[] }[]): McpTool[] {
+  const seen = new Map<string, McpTool>();
+  for (const surface of surfaces) {
+    for (const tool of surface.tools ?? []) {
+      const key = `${tool.server}\u0000${tool.name}`;
+      if (!seen.has(key)) seen.set(key, tool);
+    }
+  }
+  return [...seen.values()];
 }
 
 export function toMcpTool(server: string, declaration: McpToolDeclaration): McpTool {

@@ -1,5 +1,7 @@
 import { RESOURCE_KIND, SENSITIVITY } from './discovery.constants';
 import { classifyTool, type ToolClass, type ToolOverrides } from './classify';
+import { CHAIN_LINK } from './composition';
+import { distinctTools } from './surface';
 import type { DiscoveryReport } from './discover';
 import type { NetworkProbe } from './network';
 
@@ -7,8 +9,11 @@ import type { NetworkProbe } from './network';
  * The scan's answer in one flat shape: what can act here, and what each thing reaches.
  * `DiscoveryReport` is how the scan is assembled; this is what it means, and it is the
  * shape that leaves the process — so it carries names, counts and fingerprints only.
+ *
+ * Version 2 added harnesses and combined capability. Neither could be expressed in v1
+ * without lying about the count: a harness is one agent row and several principals.
  */
-export const INVENTORY_VERSION = 1;
+export const INVENTORY_VERSION = 2;
 
 export interface InventoryAgent {
   id: string;
@@ -61,6 +66,29 @@ export interface InventoryBinary {
   detectedFrom: string;
 }
 
+/** An agent that runs other agents: one row on the roster, several at the seam. */
+export interface InventoryHarness {
+  agentId: string;
+  kind: string;
+  /** Agent kinds it drives, as its own config named them. */
+  runtimes: string[];
+  /** Roles it defines on disk. Each is a separate principal. */
+  roles: string[];
+  /** Files it installed into another product's directory. */
+  hooks: string[];
+  federated: boolean;
+  evidence: string[];
+}
+
+/** A path a set of tools opens that none of them opens alone. */
+export interface InventoryChain {
+  agentId: string;
+  subject: string;
+  consequence: string;
+  steps: { link: string; server: string; tool: string }[];
+  individuallyHarmless: boolean;
+}
+
 export interface CapabilityInventory {
   version: number;
   takenAt: string;
@@ -73,6 +101,9 @@ export interface CapabilityInventory {
   git: InventoryBinary[];
   credentials: InventoryCredential[];
   network: NetworkProbe;
+  harnesses: InventoryHarness[];
+  /** Flat, so a consumer never has to walk a nesting to count the chains. */
+  chains: InventoryChain[];
 }
 
 const GIT_BINARIES = ['git', 'gh'];
@@ -86,31 +117,40 @@ export function inventoryOf(
     (surface.servers ?? []).map((server) => ({ surface, server })),
   );
 
-  const servers: InventoryServer[] = launches.map(({ surface, server }) => {
-    const tools = (surface.tools ?? []).filter((tool) => tool.server === server.name);
-    return {
+  /* One row per server, not per client that declares it: the same `github` server in
+     five editors is one server reached by five agents, and five rows would be counted
+     five times by everything downstream. */
+  const servers: InventoryServer[] = [];
+  const byName = new Map<string, InventoryServer>();
+  for (const { surface, server } of launches) {
+    const held = byName.get(server.name);
+    if (held !== undefined) {
+      if (!held.reachedBy.includes(surface.agentId)) held.reachedBy.push(surface.agentId);
+      continue;
+    }
+    const row: InventoryServer = {
       name: server.name,
       declaredIn: surface.detectedFrom,
       command: [server.command, ...server.args].join(' '),
       credentials: [...(server.env ?? [])],
-      reachedBy: launches
-        .filter((each) => each.server.name === server.name)
-        .map((each) => each.surface.agentId),
-      unprobed: tools.length === 0,
+      reachedBy: [surface.agentId],
+      unprobed: !report.surfaces.some((each) =>
+        (each.tools ?? []).some((tool) => tool.server === server.name),
+      ),
+    };
+    byName.set(server.name, row);
+    servers.push(row);
+  }
+
+  const tools: InventoryTool[] = distinctTools(report.surfaces).map((tool) => {
+    const classification = classifyTool({ name: tool.name }, overrides);
+    return {
+      server: tool.server,
+      name: tool.name,
+      class: classification.class,
+      from: classification.from,
     };
   });
-
-  const tools: InventoryTool[] = report.surfaces.flatMap((surface) =>
-    (surface.tools ?? []).map((tool) => {
-      const classification = classifyTool({ name: tool.name }, overrides);
-      return {
-        server: tool.server,
-        name: tool.name,
-        class: classification.class,
-        from: classification.from,
-      };
-    }),
-  );
 
   const filesystem: InventoryPath[] = report.resources
     .filter((resource) => resource.path !== undefined)
@@ -150,6 +190,24 @@ export function inventoryOf(
     git: report.tools.filter((tool) => GIT_BINARIES.includes(tool.name)),
     credentials,
     network: report.egress,
+    harnesses: report.harnesses.map((harness) => ({
+      agentId: harness.agentId,
+      kind: harness.kind,
+      runtimes: [...harness.runtimes],
+      roles: [...harness.roles],
+      hooks: [...harness.hooks],
+      federated: harness.federated,
+      evidence: [...harness.evidence],
+    })),
+    chains: report.combined.flatMap((each) =>
+      each.capabilities.map((capability) => ({
+        agentId: each.agentId,
+        subject: capability.subject,
+        consequence: capability.consequence,
+        steps: capability.steps.map((step) => ({ ...step })),
+        individuallyHarmless: capability.individuallyHarmless,
+      })),
+    ),
   };
 }
 
@@ -160,7 +218,7 @@ export function inventoryOf(
  */
 export const CAPABILITY_INVENTORY_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://memnox.dev/schema/capability-inventory-v1.json',
+  $id: 'https://memnox.dev/schema/capability-inventory-v2.json',
   title: 'CapabilityInventory',
   type: 'object',
   required: [
@@ -174,6 +232,8 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
     'git',
     'credentials',
     'network',
+    'harnesses',
+    'chains',
   ],
   additionalProperties: false,
   properties: {
@@ -285,6 +345,60 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
         noProxy: { type: 'array', items: { type: 'string' } },
         sandbox: { type: 'array', items: { type: 'string' } },
         read: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    harnesses: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: [
+          'agentId',
+          'kind',
+          'runtimes',
+          'roles',
+          'hooks',
+          'federated',
+          'evidence',
+        ],
+        additionalProperties: false,
+        properties: {
+          agentId: { type: 'string' },
+          kind: { type: 'string' },
+          runtimes: { type: 'array', items: { type: 'string' } },
+          roles: { type: 'array', items: { type: 'string' } },
+          hooks: { type: 'array', items: { type: 'string' } },
+          federated: { type: 'boolean' },
+          evidence: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    chains: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['agentId', 'subject', 'consequence', 'steps', 'individuallyHarmless'],
+        additionalProperties: false,
+        properties: {
+          agentId: { type: 'string' },
+          subject: { type: 'string' },
+          consequence: { type: 'string' },
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['link', 'server', 'tool'],
+              additionalProperties: false,
+              properties: {
+                link: {
+                  enum: [CHAIN_LINK.ACQUIRE, CHAIN_LINK.PACKAGE, CHAIN_LINK.EMIT],
+                },
+                server: { type: 'string' },
+                tool: { type: 'string' },
+              },
+            },
+          },
+          individuallyHarmless: { type: 'boolean' },
+        },
       },
     },
   },

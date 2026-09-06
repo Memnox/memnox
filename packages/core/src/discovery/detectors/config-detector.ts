@@ -3,7 +3,7 @@ import type { DiscoveredAgent } from '../agent';
 import type { DiscoveredAgentKind, SurfaceKind } from '../discovery.constants';
 import type { MachineReader } from '../ports';
 import type { Surface } from '../surface';
-import type { AgentDetector, DetectionResult } from './detector';
+import type { AgentDetector, DetectionContext, DetectionResult } from './detector';
 import { readMcpServers } from './mcp-config';
 
 export interface ConfigDetectorSpec {
@@ -32,7 +32,12 @@ export class ConfigDetector implements AgentDetector {
     this.layoutVersion = spec.layoutVersion;
   }
 
-  async detect(reader: MachineReader, now: string): Promise<DetectionResult | null> {
+  // Every one of these products reads only its home directory, so the context is unused.
+  async detect(
+    reader: MachineReader,
+    now: string,
+    _context?: DetectionContext,
+  ): Promise<DetectionResult | null> {
     const home = reader.homeDir();
     const found: string[] = [];
     for (const relative of this.spec.configPaths) {

@@ -1,6 +1,7 @@
 import { matchesPattern } from '../policy/pattern-matcher';
 import type { Policy } from '../policy/policy';
 import { TOOL_EFFECT } from './discovery.constants';
+import { distinctTools } from './surface';
 import type { DiscoveryReport } from './discover';
 import { externalStateVerbs, verbAction } from '../verbs/verb-table';
 import { verbTableFor } from '../verbs/tables';
@@ -12,8 +13,7 @@ export interface Gap {
 
 /** Every action a rule could be written about, so "governed" is counted not guessed. */
 export function reachingActions(report: DiscoveryReport): string[] {
-  const tools = report.surfaces
-    .flatMap((surface) => surface.tools ?? [])
+  const tools = distinctTools(report.surfaces)
     .filter(
       (tool) => tool.effect !== TOOL_EFFECT.READ && tool.effect !== TOOL_EFFECT.UNKNOWN,
     )

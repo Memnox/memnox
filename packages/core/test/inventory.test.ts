@@ -54,6 +54,8 @@ const REPORT = {
   browsers: [],
   envFiles: [],
   authenticated: [],
+  harnesses: [],
+  combined: [],
 } as unknown as DiscoveryReport;
 
 const TAKEN_AT = '2026-09-05T00:00:00.000Z';

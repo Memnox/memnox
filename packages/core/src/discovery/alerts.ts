@@ -15,6 +15,8 @@ export const ALERT = {
   NEW_WRITE_TOOL: 'new-write-tool',
   /** An agent updated and came back holding more than it held before. */
   AGENT_WIDENED: 'agent-widened',
+  /** Something that runs other agents gained another one, or reached another machine. */
+  HARNESS_WIDENED: 'harness-widened',
 } as const;
 
 export type AlertKind = (typeof ALERT)[keyof typeof ALERT];
@@ -53,6 +55,17 @@ export function alertsFor(changes: readonly EnvironmentChange[]): Alert[] {
         name: change.name,
         headline: `a new MCP server, ${change.name}, was added`,
         next: `memnox scan --mcp ${change.name}`,
+      });
+      continue;
+    }
+    /* A new role is a new principal, and it arrives without any config a client
+       reads changing, so nothing else on this list would ever fire for it. */
+    if (change.subject === CHANGE_SUBJECT.HARNESS) {
+      alerts.push({
+        kind: ALERT.HARNESS_WIDENED,
+        name: change.name,
+        headline: `${change.name} now runs more than it did: ${change.detail}`,
+        next: `memnox explain ${change.name}`,
       });
       continue;
     }

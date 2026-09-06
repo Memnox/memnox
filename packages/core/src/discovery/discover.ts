@@ -1,8 +1,10 @@
 import { join } from 'node:path';
 import type { DiscoveredAgent, AgentRef } from './agent';
 import { agentRefOf } from './agent';
-import type { AgentDetector } from './detectors/detector';
+import type { AgentDetector, DetectionContext } from './detectors/detector';
 import { DEFAULT_DETECTORS } from './detectors/index';
+import { harnessOf, type Harness } from './harness';
+import { chainsFor, type AgentChains } from './composition';
 import type { MachineReader, McpLister } from './ports';
 import {
   classifyResourceKind,
@@ -11,7 +13,7 @@ import {
   type Resource,
 } from './resource';
 import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
-import { toMcpTool, type Surface } from './surface';
+import { distinctTools, passesFilter, toMcpTool, type Surface } from './surface';
 import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
 import { findBrowserAutomation, type BrowserFinding } from './browser';
 import {
@@ -81,6 +83,16 @@ export interface DiscoveryReport {
   browsers: BrowserFinding[];
   /** `.env` files in the directories worked in: counts of variables and key-like names. */
   envFiles: EnvFinding[];
+  /**
+   * Agents that run other agents. One row on the roster and several principals at the
+   * seam, which is the difference between counting a swarm and counting its author.
+   */
+  harnesses: Harness[];
+  /**
+   * Paths no single tool opens and a set of them does. Per-agent, because a chain
+   * needs one principal able to walk all of it.
+   */
+  combined: AgentChains[];
 }
 
 export interface DiscoveryOptions {
@@ -115,12 +127,16 @@ export async function discover(
   const detectors = options.detectors ?? DEFAULT_DETECTORS;
   const agents: DiscoveredAgent[] = [];
   const surfaces: Surface[] = [];
+  const harnesses: Harness[] = [];
+  const context: DetectionContext = { projectDirs: options.projectDirs ?? [] };
 
   for (const detector of detectors) {
-    const found = await detector.detect(reader, options.now);
+    const found = await detector.detect(reader, options.now, context);
     if (found === null) continue;
     agents.push(found.agent);
     surfaces.push(...found.surfaces);
+    const harness = harnessOf(found.agent, found.hosted);
+    if (harness !== null) harnesses.push(harness);
   }
 
   const probed = await enumerateTools(surfaces, options.lister);
@@ -150,6 +166,10 @@ export async function discover(
 
   const refs: AgentRef[] = agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
+  const combined = chainsFor(
+    agents.map((agent) => agent.id),
+    surfaces,
+  );
 
   return {
     agents,
@@ -164,6 +184,8 @@ export async function discover(
     authenticated,
     browsers,
     envFiles,
+    harnesses,
+    combined,
   };
 }
 
@@ -182,16 +204,24 @@ async function enumerateTools(
      one after another cost five timeouts end to end, and a scan nobody waits for is a
      scan nobody runs. One server that hangs must not hold up the other four. */
   const work = surfaces.flatMap((surface) =>
-    (surface.servers ?? []).map(async (server) => {
-      try {
-        const declared = await lister.listTools(server.name, server.command, server.args);
-        return { surface, server, declared };
-      } catch {
-        /* A server that will not start is a gap in the report, never a crash. It is
+    // A server its own config disabled is declared and not running; starting it here
+    // would report reach the agent does not have.
+    (surface.servers ?? [])
+      .filter((server) => server.disabled !== true)
+      .map(async (server) => {
+        try {
+          const declared = await lister.listTools(
+            server.name,
+            server.command,
+            server.args,
+          );
+          return { surface, server, declared };
+        } catch {
+          /* A server that will not start is a gap in the report, never a crash. It is
            still named as present below, because zero tools means unknown. */
-        return { surface, server, declared: [] };
-      }
-    }),
+          return { surface, server, declared: [] };
+        }
+      }),
   );
 
   const probed: string[] = [];
@@ -199,7 +229,16 @@ async function enumerateTools(
     const { surface, server, declared } = outcome;
     probed.push(`${server.name}: ${[server.command, ...server.args].join(' ')}`);
     const tools = surface.tools ?? [];
-    for (const declaration of declared) tools.push(toMcpTool(server.name, declaration));
+    for (const declaration of declared) {
+      /* A host that already filters its own tools gets the credit: a tool its config
+         takes away is not reachable through it, and counting it anyway would overstate
+         the very product that did the right thing. The number it removed is kept. */
+      if (!passesFilter(declaration.name, server.filter)) {
+        surface.filteredOut = (surface.filteredOut ?? 0) + 1;
+        continue;
+      }
+      tools.push(toMcpTool(server.name, declaration));
+    }
     surface.tools = tools;
   }
   return probed;
@@ -279,10 +318,7 @@ export function summarize(report: DiscoveryReport): {
   tools: number;
   reachableSecrets: number;
 } {
-  const tools = report.surfaces.reduce(
-    (total, surface) => total + (surface.tools ?? []).length,
-    0,
-  );
+  const tools = distinctTools(report.surfaces).length;
   const reachableSecrets = report.resources.filter(
     (resource) =>
       resource.sensitivity !== SENSITIVITY.ORDINARY && resource.reachableBy.length > 0,

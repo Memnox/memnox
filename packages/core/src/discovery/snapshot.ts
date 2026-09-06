@@ -1,7 +1,9 @@
 import type { DiscoveryReport } from './discover';
+import type { Surface } from './surface';
 import {
   CHANGE_DIRECTION,
   CHANGE_SUBJECT,
+  EFFECT_INFERENCE,
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
@@ -32,6 +34,18 @@ export interface SnapshotAgent {
   version?: string;
   /** One entry per surface kind, so a widened surface is a comparison and not a guess. */
   surfaces: SnapshotSurface[];
+  /**
+   * Present only for a harness. A role that appeared overnight is the drift a
+   * per-agent roster cannot see, so the membership is kept rather than the count.
+   */
+  harness?: SnapshotHarness;
+}
+
+export interface SnapshotHarness {
+  runtimes: string[];
+  roles: string[];
+  hooks: string[];
+  federated: boolean;
 }
 
 export interface SnapshotSurface {
@@ -69,14 +83,30 @@ export function snapshotOf(
 ): EnvironmentSnapshot {
   return {
     takenAt,
-    agents: report.agents.map((agent) => ({
-      id: agent.id,
-      kind: agent.kind,
-      ...(agent.version === undefined ? {} : { version: agent.version }),
-      surfaces: report.surfaces
-        .filter((surface) => surface.agentId === agent.id)
-        .map((surface) => ({ kind: surface.kind, detectedFrom: surface.detectedFrom })),
-    })),
+    agents: report.agents.map((agent) => {
+      const harness = report.harnesses.find((each) => each.agentId === agent.id);
+      return {
+        id: agent.id,
+        kind: agent.kind,
+        ...(agent.version === undefined ? {} : { version: agent.version }),
+        surfaces: report.surfaces
+          .filter((surface) => surface.agentId === agent.id)
+          .map((surface) => ({
+            kind: surface.kind,
+            detectedFrom: surface.detectedFrom,
+          })),
+        ...(harness === undefined
+          ? {}
+          : {
+              harness: {
+                runtimes: [...harness.runtimes],
+                roles: [...harness.roles],
+                hooks: [...harness.hooks],
+                federated: harness.federated,
+              },
+            }),
+      };
+    }),
     servers: serversIn(report),
     resources: report.resources.map((resource) => ({
       id: resource.id,
@@ -120,6 +150,51 @@ function serversIn(report: DiscoveryReport): SnapshotServer[] {
 }
 
 /**
+ * The tools a probed scan found, put back onto the surfaces of an unprobed one.
+ *
+ * Only `scan` starts MCP servers; `doctor` and `protect` deliberately do not, and
+ * without this every finding that depends on knowing a tool exists is unreachable
+ * from those two commands however true it is. A snapshot is the record of the last
+ * time somebody did ask, so it is what they read instead of asking again.
+ */
+export function withToolsFrom(
+  surfaces: readonly Surface[],
+  snapshot: EnvironmentSnapshot | null,
+): Surface[] {
+  if (snapshot === null) return [...surfaces];
+  return surfaces.map((surface) => {
+    if ((surface.tools ?? []).length > 0) return surface;
+    const names = new Set((surface.servers ?? []).map((server) => server.name));
+    if (names.size === 0) return surface;
+    const tools = snapshot.servers
+      .filter(
+        (server) => names.has(server.name) && server.agentIds.includes(surface.agentId),
+      )
+      .flatMap((server) =>
+        server.tools.map((tool) => ({
+          server: server.name,
+          name: tool.name,
+          effect: tool.effect,
+          // Read back from a record rather than inferred here, and it says so.
+          inferredFrom: EFFECT_INFERENCE.PROBE,
+        })),
+      );
+    return tools.length === 0 ? surface : { ...surface, tools };
+  });
+}
+
+/** The newest snapshot that actually enumerated tools, or null when none ever did. */
+export function lastProbed(
+  history: readonly EnvironmentSnapshot[],
+): EnvironmentSnapshot | null {
+  for (let at = history.length - 1; at >= 0; at -= 1) {
+    const snapshot = history[at] as EnvironmentSnapshot;
+    if (snapshot.servers.some((server) => server.tools.length > 0)) return snapshot;
+  }
+  return null;
+}
+
+/**
  * One thing that moved between two scans. A change says which way it moved, because
  * a list that mixes a new credential with a removed one is a list nobody can act on.
  */
@@ -153,6 +228,7 @@ export function compareSnapshots(
     ...serverChanges(before, after, causes),
     ...resourceChanges(before, after, causes),
     ...surfaceChanges(before, after, causes),
+    ...harnessChanges(before, after),
   ];
 }
 
@@ -345,6 +421,63 @@ function surfaceChanges(
       direction: CHANGE_DIRECTION.NARROWS,
       detail: 'no longer installed',
     });
+  }
+  return changes;
+}
+
+/**
+ * A role, a hook file or a federation link arriving under something that runs other
+ * agents. Reported separately from a surface because the harness's own surfaces do not
+ * move when it gains a fifth role: the principal count does, and nothing else would say so.
+ */
+function harnessChanges(
+  before: EnvironmentSnapshot,
+  after: EnvironmentSnapshot,
+): EnvironmentChange[] {
+  const changes: EnvironmentChange[] = [];
+  const priorById = new Map(before.agents.map((agent) => [agent.id, agent]));
+
+  for (const agent of after.agents) {
+    const now = agent.harness;
+    if (now === undefined) continue;
+    const was = priorById.get(agent.id)?.harness;
+    // A harness that was not there before is already reported as a new agent.
+    if (was === undefined) continue;
+
+    for (const [what, arrived] of [
+      ['role', now.roles.filter((role) => !was.roles.includes(role))],
+      ['hook file', now.hooks.filter((hook) => !was.hooks.includes(hook))],
+      ['runtime', now.runtimes.filter((runtime) => !was.runtimes.includes(runtime))],
+    ] as const) {
+      if (arrived.length === 0) continue;
+      changes.push({
+        subject: CHANGE_SUBJECT.HARNESS,
+        name: agent.kind,
+        direction: CHANGE_DIRECTION.WIDENS,
+        detail: `${arrived.length} new ${what}${arrived.length === 1 ? '' : 's'}: ${arrived.join(', ')}`,
+        agents: [agent.id],
+      });
+    }
+
+    if (now.federated && !was.federated) {
+      changes.push({
+        subject: CHANGE_SUBJECT.HARNESS,
+        name: agent.kind,
+        direction: CHANGE_DIRECTION.WIDENS,
+        detail: 'now works with agents on other machines, which this scan cannot see',
+        agents: [agent.id],
+      });
+    }
+
+    const gone = was.roles.filter((role) => !now.roles.includes(role));
+    if (gone.length > 0) {
+      changes.push({
+        subject: CHANGE_SUBJECT.HARNESS,
+        name: agent.kind,
+        direction: CHANGE_DIRECTION.NARROWS,
+        detail: `${gone.length} role${gone.length === 1 ? '' : 's'} gone: ${gone.join(', ')}`,
+      });
+    }
   }
   return changes;
 }

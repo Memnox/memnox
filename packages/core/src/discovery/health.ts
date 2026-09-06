@@ -23,6 +23,16 @@ export const CHECK_NAME = {
   PROXY: 'proxy',
   DAEMON: 'daemon',
   LEDGER: 'ledger',
+  /**
+   * The four things that stop work without a rule saying so.
+   *
+   * A paused session, a spent allowance, a path another session holds and a question
+   * nobody has answered each look identical from inside an agent: it asked, and
+   * nothing happened. None of them is a policy decision, so none of them shows up in
+   * `why`, and without a line here the honest answer to "my agent stopped working"
+   * would be a shrug.
+   */
+  HOLDS: 'holds',
 } as const;
 
 export type CheckName = (typeof CHECK_NAME)[keyof typeof CHECK_NAME];
@@ -50,9 +60,22 @@ export interface HealthFacts {
   ruleCount: number;
   /** Content hash of the rule set, so two machines can be compared without diffing. */
   policyVersion: string;
+  /**
+   * Absolute paths of the rule files the seams actually load. A file you can test but
+   * nothing has registered is the worst state there is: `policy test` says DENY and
+   * every seam allows it, and until now nothing said so.
+   */
+  registeredFiles: string[];
   /** Binaries present in the interceptor directory. */
   interceptorsInstalled: string[];
-  /** Binaries the classifier knows how to rule on. */
+  /**
+   * Binaries this machine actually has that the classifier can rule on.
+   *
+   * Not every binary it knows about: `protect --interceptors` wraps only what is
+   * installed and says so, and reporting the rest as missing made `doctor` name a
+   * fault whose own suggested fix could never clear it — which sends somebody round
+   * the same two commands until they stop believing either.
+   */
   interceptorsExpected: string[];
   /** True when the interceptor directory is ahead of the real binaries on PATH. */
   interceptorDirFirstOnPath: boolean;
@@ -65,6 +88,63 @@ export interface HealthFacts {
   /** Null when the database will not open; otherwise how many rows it holds. */
   ledgerEvents: number | null;
   ledgerError?: string;
+  /** Sessions the breaker is holding. Each one runs nothing until somebody lifts it. */
+  pausedSessions: number;
+  /** Calls waiting for a person right now. */
+  waitingApprovals: number;
+  /** Paths held by a session on this machine. */
+  heldLeases: number;
+  /** Budgets with nothing left in the window. Every action they cover is refused. */
+  spentBudgets: string[];
+}
+
+/**
+ * What is being stopped for a reason that is not a rule.
+ *
+ * Deliberately one check rather than four: a person asking why their agent is stuck
+ * wants one line that names the cause, and four rows that are almost always "nothing
+ * held" would be four rows nobody reads.
+ */
+function holdsCheck(facts: HealthFacts): HealthCheck {
+  if (facts.pausedSessions > 0) {
+    return {
+      name: CHECK_NAME.HOLDS,
+      state: CHECK.BROKEN,
+      detail: `${facts.pausedSessions} session(s) paused — they run nothing until somebody lifts them`,
+      fix: 'memnox paused, then memnox resume <session> --by <you>',
+    };
+  }
+  if (facts.spentBudgets.length > 0) {
+    return {
+      name: CHECK_NAME.HOLDS,
+      state: CHECK.BROKEN,
+      /* Named as an allowance rather than a refusal: "not allowed" and "no allowance
+         left until the window resets" send somebody to different places. */
+      detail: `no allowance left on: ${facts.spentBudgets.join(', ')}`,
+      fix: 'memnox budget — raise the limit, or wait for the window',
+    };
+  }
+  if (facts.waitingApprovals > 0) {
+    return {
+      name: CHECK_NAME.HOLDS,
+      state: CHECK.INERT,
+      detail: `${facts.waitingApprovals} call(s) waiting for a person`,
+      fix: 'memnox approvals',
+    };
+  }
+  if (facts.heldLeases > 0) {
+    return {
+      name: CHECK_NAME.HOLDS,
+      state: CHECK.OK,
+      detail: `${facts.heldLeases} path(s) held by a session here`,
+      fix: 'memnox lock --list',
+    };
+  }
+  return {
+    name: CHECK_NAME.HOLDS,
+    state: CHECK.OK,
+    detail: 'nothing is paused, waiting or out of allowance',
+  };
 }
 
 function configCheck(facts: HealthFacts): HealthCheck {
@@ -111,6 +191,17 @@ function rulesCheck(facts: HealthFacts): HealthCheck {
       state: CHECK.INERT,
       detail: 'no rules, so every action is allowed',
       fix: 'memnox protect --interactive',
+    };
+  }
+  if (facts.registeredFiles.length === 0) {
+    /* The file is here and readable and no seam will ever open it. Reported as broken
+       rather than ok, because "3 rules" beside an ungoverned machine is the reassuring
+       number this whole check exists to refuse to print. */
+    return {
+      name: CHECK_NAME.RULES,
+      state: CHECK.BROKEN,
+      detail: `${facts.ruleCount} rule(s) in ${facts.rulesPath}, registered by nothing — the seams load none of them`,
+      fix: `memnox policy use ${facts.rulesPath}`,
     };
   }
   return {
@@ -258,6 +349,7 @@ export function checkInstallation(facts: HealthFacts): HealthCheck[] {
     proxyCheck(facts),
     daemonCheck(facts),
     ledgerCheck(facts),
+    holdsCheck(facts),
   ];
 }
 

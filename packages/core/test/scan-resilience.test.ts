@@ -27,27 +27,49 @@ function reader(): MachineReader {
 
 const PROBE_MS = 300;
 
-/** Answers after a delay, so the test measures wall clock rather than call count. */
-const slowLister = (delayMs: number): McpLister => ({
-  listTools: async (server) => {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    return [{ name: `${server}_get_thing` }];
-  },
-});
+/**
+ * A lister that reports how many calls were ever in flight at once.
+ *
+ * Parallelism used to be inferred from a stopwatch — five 300ms probes finishing in
+ * under 900ms. That measures the machine: under load a genuinely parallel scan misses
+ * the bound and the suite fails for a reason that has nothing to do with the code.
+ * Counting overlap asserts the property itself and cannot be wrong about it.
+ *
+ * The yield is a microtask rather than a timer, so nothing here waits on a clock: every
+ * call that was started together reaches it before any of them resumes. Started one at
+ * a time, each would finish before the next began and the peak would be one.
+ */
+function overlapping(): { lister: McpLister; peak: () => number } {
+  let inFlight = 0;
+  let peak = 0;
+
+  return {
+    lister: {
+      listTools: async (server) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await Promise.resolve();
+        inFlight -= 1;
+        return [{ name: `${server}_get_thing` }];
+      },
+    },
+    peak: () => peak,
+  };
+}
 
 describe('a scan of a real-sized machine', () => {
   it('probes servers in parallel, so five timeouts do not cost five timeouts', async () => {
-    const started = Date.now();
+    const { lister, peak } = overlapping();
+
     const report = await discover(reader(), {
       now: new Date().toISOString(),
-      lister: slowLister(PROBE_MS),
+      lister,
       env: {},
     });
-    const elapsed = Date.now() - started;
 
     expect(report.probed).toHaveLength(5);
-    // Serial would be 5 × PROBE_MS. Parallel is one, plus overhead.
-    expect(elapsed).toBeLessThan(PROBE_MS * 3);
+    // Serial would peak at one. Five at once is the whole point of the parallel probe.
+    expect(peak()).toBe(5);
   });
 
   it('finishes when one server hangs, and still reports the other four', async () => {

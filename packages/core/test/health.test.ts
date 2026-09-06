@@ -13,6 +13,7 @@ const HEALTHY: HealthFacts = {
   rulesPath: 'memnox.policies.toml',
   ruleCount: 5,
   policyVersion: 'a1b2c3',
+  registeredFiles: ['/work/api/memnox.policies.toml'],
   interceptorsInstalled: ['git', 'rm'],
   interceptorsExpected: ['git', 'rm'],
   interceptorDirFirstOnPath: true,
@@ -21,6 +22,10 @@ const HEALTHY: HealthFacts = {
   daemonSocket: true,
   daemonAnswered: true,
   ledgerEvents: 41,
+  pausedSessions: 0,
+  waitingApprovals: 0,
+  heldLeases: 0,
+  spentBudgets: [],
 };
 
 const check = (facts: Partial<HealthFacts>, name: string) =>
@@ -143,5 +148,77 @@ describe('the one sentence at the top', () => {
       interceptorDirFirstOnPath: false,
     });
     expect(summarizeHealth(checks).state).toBe(CHECK.BROKEN);
+  });
+});
+
+describe('rules that nothing loads', () => {
+  /* The state this whole check exists to refuse to print a clean number about: the
+     file is here, `policy test` answers from it, and no seam has ever opened it. */
+  it('is broken, not ok, when a readable rule file is registered by nothing', () => {
+    const checks = checkInstallation({ ...HEALTHY, registeredFiles: [] });
+    const rules = checks.find((each) => each.name === CHECK_NAME.RULES);
+
+    expect(rules?.state).toBe(CHECK.BROKEN);
+    expect(rules?.detail).toContain('registered by nothing');
+    expect(rules?.fix).toBe('memnox policy use memnox.policies.toml');
+  });
+
+  it('still reports no rules as inert rather than broken', () => {
+    const checks = checkInstallation({
+      ...HEALTHY,
+      rulesPath: null,
+      ruleCount: 0,
+      registeredFiles: [],
+    });
+
+    expect(checks.find((each) => each.name === CHECK_NAME.RULES)?.state).toBe(
+      CHECK.INERT,
+    );
+  });
+});
+
+describe('what is stopping work for a reason that is not a rule', () => {
+  /* A paused session, a spent allowance and an unanswered question all look identical
+     from inside an agent: it asked, and nothing happened. None is a policy decision,
+     so none appears in `why`, and without this the honest answer would be a shrug. */
+  it('says a paused session is why nothing is running', () => {
+    const held = check({ pausedSessions: 2 }, CHECK_NAME.HOLDS);
+    expect(held?.state).toBe(CHECK.BROKEN);
+    expect(held?.detail).toContain('2 session(s) paused');
+    expect(held?.fix).toContain('memnox resume');
+  });
+
+  it('names the budget that has nothing left, as an allowance and not a refusal', () => {
+    const held = check({ spentBudgets: ['production deploys'] }, CHECK_NAME.HOLDS);
+    expect(held?.state).toBe(CHECK.BROKEN);
+    expect(held?.detail).toContain('no allowance left');
+    expect(held?.detail).toContain('production deploys');
+  });
+
+  it('reports a question nobody has answered', () => {
+    const held = check({ waitingApprovals: 3 }, CHECK_NAME.HOLDS);
+    expect(held?.state).toBe(CHECK.INERT);
+    expect(held?.fix).toBe('memnox approvals');
+  });
+
+  /* A held path is ordinary rather than wrong, so it is reported without being
+     called a problem — a machine doing normal work must not read as broken. */
+  it('mentions a held path without calling it a fault', () => {
+    const held = check({ heldLeases: 1 }, CHECK_NAME.HOLDS);
+    expect(held?.state).toBe(CHECK.OK);
+    expect(held?.detail).toContain('1 path(s) held');
+  });
+
+  it('leads with the pause when several things are true at once', () => {
+    const held = check(
+      { pausedSessions: 1, spentBudgets: ['x'], waitingApprovals: 4 },
+      CHECK_NAME.HOLDS,
+    );
+    expect(held?.detail).toContain('paused');
+  });
+
+  it('says plainly that nothing is held on an ordinary machine', () => {
+    expect(check({}, CHECK_NAME.HOLDS)?.state).toBe(CHECK.OK);
+    expect(check({}, CHECK_NAME.HOLDS)?.detail).toContain('nothing is paused');
   });
 });

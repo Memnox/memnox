@@ -14,6 +14,10 @@ export interface ShareCard {
   sensitivePathsReachable: number;
   credentialsReachable: number;
   shellSurfaces: number;
+  /** Principals behind the agent rows: a harness is one row and several of these. */
+  principals: number;
+  /** Paths a set of ordinary tools opens together. A count, never the tools. */
+  combinedPaths: number;
 }
 
 export function shareCardFor(inventory: CapabilityInventory): ShareCard {
@@ -30,6 +34,14 @@ export function shareCardFor(inventory: CapabilityInventory): ShareCard {
       (entry) => entry.reachableBy.length > 0,
     ).length,
     shellSurfaces: inventory.shell.length,
+    principals:
+      inventory.agents.length -
+      inventory.harnesses.length +
+      inventory.harnesses.reduce(
+        (total, harness) => total + Math.max(1, harness.roles.length),
+        0,
+      ),
+    combinedPaths: inventory.chains.filter((chain) => chain.individuallyHarmless).length,
   };
 }
 
@@ -54,6 +66,12 @@ export function renderShareCard(card: ShareCard): string {
     row('credentials an agent can reach', String(card.credentialsReachable)),
     row('sensitive paths an agent can reach', String(card.sensitivePathsReachable)),
     row('agents holding a shell', String(card.shellSurfaces)),
+    ...(card.principals === card.agents
+      ? []
+      : [row('principals behind those agents', String(card.principals))]),
+    ...(card.combinedPaths === 0
+      ? []
+      : [row('paths ordinary tools open together', String(card.combinedPaths))]),
     '',
     '  Counts only — no paths, no names, nothing identifying.',
     '  Run it yourself:  npx memnox',
