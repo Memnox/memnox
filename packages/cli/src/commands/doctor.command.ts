@@ -1,17 +1,24 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import {
+  chainsFor,
   CHECK,
   checkInstallation,
   discover,
+  lastProbed,
+  MEMNOX_HOME,
   NodeMachineReader,
+  NodeSnapshotStore,
   rankAgents,
   runDoctor,
   summarizeHealth,
+  withToolsFrom,
   type AgentStanding,
   type Finding,
   type HealthCheck,
   type MachineReader,
+  type SnapshotStore,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { gatherHealth } from '../health-probe';
@@ -27,6 +34,8 @@ export function registerDoctorCommand(
   context: CliContext,
   buildReader: () => MachineReader = () => new NodeMachineReader(homedir()),
   cwd: () => string = () => process.cwd(),
+  buildSnapshots: () => SnapshotStore = () =>
+    new NodeSnapshotStore(join(homedir(), MEMNOX_HOME)),
 ): void {
   program
     .command('doctor')
@@ -59,13 +68,25 @@ export function registerDoctorCommand(
         now: new Date().toISOString(),
         projectDirs: [cwd()],
       });
+      /* Doctor never starts an MCP server, so the tools come from the last scan that
+         did. Without them every tool-shaped finding here is unreachable however true
+         it is, and the reader is told about a credential with no fix beside it. */
+      const surfaces = withToolsFrom(
+        discovered.surfaces,
+        lastProbed(await buildSnapshots().history()),
+      );
       const report = runDoctor({
         resources: discovered.resources,
         reachability: discovered.reachability,
-        surfaces: discovered.surfaces,
+        surfaces,
+        // From the hydrated surfaces, not the unprobed scan, or this is always empty.
+        chains: chainsFor(
+          discovered.agents.map((agent) => agent.id),
+          surfaces,
+        ),
       });
 
-      const standings = rankAgents(report.findings, discovered.surfaces);
+      const standings = rankAgents(report.findings, surfaces);
 
       if (options.json === true) {
         context.out.json({ ...report, agents: standings });
