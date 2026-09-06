@@ -4,37 +4,40 @@ import { dirname, join } from 'node:path';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import {
-  PROXY_BINARY,
+  CONFIG_FORMAT,
+  formatOf,
+  MCP_CONFIG_LOCATIONS,
   planUnwrap,
   planWrap,
+  PROXY_BINARY,
+  readTextServers,
+  rewriteTextServers,
   serversKeyOf,
+  type ConfigFormat,
   type ServerLaunch,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { backupPathFor } from '../memnox-paths';
 
-/** The configs a wrap touches. Each is optional; a machine has some subset. */
-const CONFIG_PATHS: readonly string[] = [
-  '.claude.json',
-  '.cursor/mcp.json',
-  '.cline/settings.json',
-  '.vscode/mcp.json',
-  'Library/Application Support/Claude/claude_desktop_config.json',
-  '.config/Claude/claude_desktop_config.json',
-];
-
 interface ConfigFile {
   path: string;
   raw: string;
-  config: Record<string, unknown>;
-  key: string;
+  format: ConfigFormat;
+  /** Only a JSON config carries these; a text one is edited in place instead. */
+  config?: Record<string, unknown>;
+  key?: string;
   servers: Record<string, ServerLaunch>;
+  /** Servers declared by URL. Named so a run can say what it skipped and why. */
+  urlOnly: string[];
 }
 
-async function readConfigs(home: string): Promise<ConfigFile[]> {
+async function readConfigs(home: string, project: string): Promise<ConfigFile[]> {
   const found: ConfigFile[] = [];
-  for (const relative of CONFIG_PATHS) {
-    const path = join(home, relative);
+  // One list, shared with the detectors and the wiring check, or they drift apart.
+  const paths = MCP_CONFIG_LOCATIONS.map((each) =>
+    join(each.scope === 'home' ? home : project, each.relative),
+  );
+  for (const path of paths) {
     let raw: string;
     try {
       raw = await readFile(path, 'utf8');
@@ -43,6 +46,15 @@ async function readConfigs(home: string): Promise<ConfigFile[]> {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw err;
     }
+
+    const format = formatOf(path);
+    if (format !== CONFIG_FORMAT.JSON) {
+      const { servers, urlOnly } = readTextServers(format, raw);
+      if (Object.keys(servers).length === 0 && urlOnly.length === 0) continue;
+      found.push({ path, raw, format, servers, urlOnly });
+      continue;
+    }
+
     let config: Record<string, unknown>;
     try {
       config = JSON.parse(raw) as Record<string, unknown>;
@@ -55,24 +67,41 @@ async function readConfigs(home: string): Promise<ConfigFile[]> {
     found.push({
       path,
       raw,
+      format,
       config,
       key,
       servers: config[key] as Record<string, ServerLaunch>,
+      urlOnly: [],
     });
   }
   return found;
 }
 
-/** Backup first, always. The failure that matters is an editor that will not start. */
+/**
+ * Backup first, always. The failure that matters is an editor that will not start.
+ *
+ * A JSON config is written whole; a TOML or YAML one has its two launch lines replaced
+ * and every other byte copied through, so comments and key order survive the round trip.
+ */
 async function writeConfig(
   home: string,
   file: ConfigFile,
   servers: Record<string, ServerLaunch>,
+  changed: Record<string, ServerLaunch>,
 ): Promise<void> {
   const backup = backupPathFor(home, file.path);
   await mkdir(dirname(backup), { recursive: true, mode: 0o700 });
   await copyFile(file.path, backup);
-  const next = { ...file.config, [file.key]: servers };
+
+  if (file.format !== CONFIG_FORMAT.JSON) {
+    await writeFile(
+      file.path,
+      rewriteTextServers(file.format, file.raw, changed),
+      'utf8',
+    );
+    return;
+  }
+  const next = { ...file.config, [file.key as string]: servers };
   await writeFile(file.path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
 }
 
@@ -100,6 +129,7 @@ export function registerMcpCommand(
   context: CliContext,
   home: () => string = homedir,
   resolveBinary: (binary: string) => boolean = defaultResolve,
+  project: () => string = () => process.cwd(),
 ): void {
   const mcp = program
     .command('mcp')
@@ -116,7 +146,7 @@ export function registerMcpCommand(
             'Install the CLI first (npm install -g memnox), then run this again.',
         );
       }
-      const configs = await readConfigs(home());
+      const configs = await readConfigs(home(), project());
       if (configs.length === 0) {
         context.out.line('No MCP config on this machine, so there is nothing to wrap.');
         return;
@@ -134,12 +164,22 @@ export function registerMcpCommand(
         for (const each of plan.wrap) {
           context.out.line(`  ${each.name}  ${each.before.command} → proxy`);
         }
+        // A URL upstream has no command line to repoint, and saying so beats silence.
+        for (const each of file.urlOnly) {
+          context.out.note(
+            `${file.path}: ${each} is declared by URL, so it is left alone`,
+          );
+        }
         wrapped += plan.wrap.length;
 
         if (options.dryRun === true) continue;
         const next = { ...file.servers };
-        for (const each of plan.wrap) next[each.name] = each.after;
-        await writeConfig(home(), file, next);
+        const changed: Record<string, ServerLaunch> = {};
+        for (const each of plan.wrap) {
+          next[each.name] = each.after;
+          changed[each.name] = each.after;
+        }
+        await writeConfig(home(), file, next, changed);
       }
 
       context.out.line('');
@@ -158,7 +198,7 @@ export function registerMcpCommand(
     .command('unwrap')
     .description('Put every MCP server back the way it was')
     .action(async () => {
-      const configs = await readConfigs(home());
+      const configs = await readConfigs(home(), project());
       let restored = 0;
 
       for (const file of configs) {
@@ -172,8 +212,12 @@ export function registerMcpCommand(
         restored += restore.length;
 
         const next = { ...file.servers };
-        for (const each of restore) next[each.name] = each.after;
-        await writeConfig(home(), file, next);
+        const changed: Record<string, ServerLaunch> = {};
+        for (const each of restore) {
+          next[each.name] = each.after;
+          changed[each.name] = each.after;
+        }
+        await writeConfig(home(), file, next, changed);
       }
 
       context.out.line('');

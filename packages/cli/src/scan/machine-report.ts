@@ -2,8 +2,12 @@ import {
   AGENT_APPROVAL,
   approvalOf,
   describeBrowser,
+  describeCombined,
+  describeHarness,
+  distinctTools,
   gapLines,
   measureGap,
+  principalCount,
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
@@ -51,12 +55,12 @@ export function renderMachine(
     );
   }
 
+  renderHarnesses(context, report);
+
   const servers = report.surfaces.filter((surface) => surface.kind === SURFACE_KIND.MCP);
   if (servers.length > 0) {
-    const tools = servers.reduce(
-      (total, surface) => total + (surface.tools ?? []).length,
-      0,
-    );
+    // Distinct: the same server in five editors is one server's worth of tools.
+    const tools = distinctTools(servers).length;
     out.line(
       style.bold('MCP CLIENTS'.padEnd(LABEL_WIDTH)) +
         servers.map((surface) => surface.agentId.replace('agt_', '')).join(', ') +
@@ -72,10 +76,25 @@ export function renderMachine(
       out.line(style.bold('MCP SERVERS'.padEnd(LABEL_WIDTH)) + named.join(', '));
     }
 
+    /* A host that filters its own tools was right to, and the smaller number needs a
+       reason beside it or it reads as a scan that missed something. */
+    const filtered = servers.reduce(
+      (total, surface) => total + (surface.filteredOut ?? 0),
+      0,
+    );
+    if (filtered > 0) {
+      out.line(
+        ''.padEnd(LABEL_WIDTH) +
+          style.dim(
+            `${filtered} more hidden by the host's own filter, so ${filtered === 1 ? 'it is' : 'they are'} not counted here`,
+          ),
+      );
+    }
+
     // The line that lands: a count of destructive tools nothing is checking.
-    const destructive = servers
-      .flatMap((surface) => surface.tools ?? [])
-      .filter((tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE);
+    const destructive = distinctTools(servers).filter(
+      (tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE,
+    );
     if (destructive.length > 0) {
       out.line(
         ''.padEnd(LABEL_WIDTH) +
@@ -98,6 +117,7 @@ export function renderMachine(
   renderCredentials(context, report);
   renderAuthenticatedClis(context, report);
   renderBrowsers(context, report);
+  renderCombined(context, report);
 
   const reachable = report.resources.filter(
     (resource) =>
@@ -253,4 +273,60 @@ function renderBrowsers(context: CliContext, report: DiscoveryReport): void {
   if (carrying.length > 0) {
     out.note('A saved profile carries your logins; nothing here opened it.');
   }
+}
+
+/**
+ * A harness is one row that launches several principals, so the roster says so. Nothing
+ * here replaces what Hermes, OpenClaw or Ruflo already enforce — each filters its own
+ * tools and each is right to. What none of them can see is the other two, the
+ * credentials on the disk underneath, and the shell all three share.
+ */
+function renderHarnesses(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  if (report.harnesses.length === 0) return;
+
+  const principals = report.harnesses.reduce(
+    (total, harness) => total + principalCount(harness),
+    0,
+  );
+  out.line(
+    style.bold('HARNESSES'.padEnd(LABEL_WIDTH)) +
+      report.harnesses.map((harness) => harness.kind).join(', ') +
+      style.dim(`  ${principals} principal${principals === 1 ? '' : 's'}`),
+  );
+  for (const harness of report.harnesses) {
+    out.line(`  ${style.dim(`${harness.kind}: ${describeHarness(harness)}`)}`);
+  }
+  // The far side of a federated link is another organization's machine, and no local
+  // scan can see it. Said plainly rather than left as an absence.
+  if (report.harnesses.some((harness) => harness.federated)) {
+    out.note(
+      'One of these works with agents on other machines; this scan sees only here.',
+    );
+  }
+}
+
+/**
+ * The section a per-call allow-list cannot produce. Every tool in a chain is ordinary,
+ * every one of them passes review on its own, and holding all of them is the path.
+ */
+function renderCombined(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  const chains = report.combined.filter((each) =>
+    each.capabilities.some((capability) => capability.individuallyHarmless),
+  );
+  if (chains.length === 0) return;
+
+  out.line('');
+  out.line(style.bold('COMBINED CAPABILITY') + style.dim('  (no single tool does this)'));
+  out.line('');
+  for (const { agentId, capabilities } of chains) {
+    const agent = agentId.replace('agt_', '');
+    for (const capability of capabilities) {
+      if (!capability.individuallyHarmless) continue;
+      out.line(`  ${style.warn('!')}  ${agent}: ${capability.consequence}`);
+      out.line(`     ${style.dim(describeCombined(capability))}`);
+    }
+  }
+  out.note('Each of these tools is ordinary. Holding all of them is the path.');
 }

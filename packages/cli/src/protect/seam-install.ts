@@ -18,12 +18,20 @@ import {
 } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import { guardProfilePath, landlockRulesetPath } from '../memnox-paths';
+import {
+  addToProfile,
+  blockFor,
+  pathLineFor,
+  profilesFor,
+  removeFromProfile,
+} from './shell-profile';
 import { resolvePolicyFile } from '../policy-path';
 
 /**
- * PATH is the whole mechanism, and we deliberately do not edit anybody's shell
- * profile: the directory is printed and `memnox run` sets it for the agent it starts.
- * A tool that silently rewrote your `.zshrc` is one you would not trust twice.
+ * PATH is the whole mechanism, and nothing here edits a shell profile on its own:
+ * `memnox run` sets it for the agent it starts, and `protect --path` writes the line
+ * only when somebody asks for it by name. A tool that silently rewrote your `.zshrc`
+ * is one you would not trust twice.
  */
 export async function runInterceptors(context: CliContext): Promise<void> {
   const home = homedir();
@@ -44,7 +52,12 @@ export async function runInterceptors(context: CliContext): Promise<void> {
   out.line('');
   out.line('They only bite when that directory comes first on PATH:');
   out.line(`  ${style.bold('memnox run -- <your agent>')}   sets it for that agent`);
-  out.line(`  ${style.dim(report.pathLine)}   sets it for your shell, if you want that`);
+  /* The second line is the only way to reach an editor opened from a dock icon: it
+     takes its environment from the login shell, never from a process we start. */
+  out.line(
+    `  ${style.bold('memnox protect --path')}          writes it into your shell profile`,
+  );
+  out.line(`  ${style.dim(report.pathLine)}   or paste that yourself`);
   out.line('');
   out.note(
     `Undo with "memnox uninstall". Nothing outside ${interceptorDirFor(home)} was touched.`,
@@ -124,4 +137,57 @@ export async function runOsGuard(context: CliContext, repoDir: string): Promise<
   for (const pattern of plan.skipped) {
     out.note(`the kernel cannot express "${pattern}" — the interceptors still cover it`);
   }
+}
+
+/**
+ * The interceptor directory on the login PATH, so a windowed editor's integrated
+ * terminal meets the wrappers too. Opt-in by name, fenced by markers, and removable.
+ */
+export async function runPathLine(
+  context: CliContext,
+  reverting: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const home = homedir();
+  const shell = env['SHELL'] ?? 'zsh';
+  const candidates = profilesFor(shell, home);
+  const { out, style } = context;
+
+  if (reverting) {
+    let removed = 0;
+    for (const path of candidates) {
+      const edit = await removeFromProfile(path);
+      if (edit.state === 'removed') {
+        out.line(`Took our line back out of ${path}.`);
+        removed += 1;
+      }
+    }
+    if (removed === 0)
+      out.line('No Memnox line in any profile here, so nothing changed.');
+    else
+      out.note('Open a new terminal, or restart your editor, for that to take effect.');
+    return;
+  }
+
+  /* The first profile that already exists, so we add to the file the shell actually
+     reads rather than creating a second one it will ignore. */
+  const target = (await firstExisting(candidates)) ?? (candidates[0] as string);
+  const edit = await addToProfile(target, blockFor(shell, home));
+
+  if (edit.state === 'unchanged') {
+    out.line(`${target} already has our line, so nothing changed.`);
+    return;
+  }
+  out.line(`Added the interceptor directory to PATH in ${target}:`);
+  out.line(`  ${style.dim(pathLineFor(shell, home))}`);
+  out.line('');
+  out.line('Open a new terminal, or restart your editor, for that to take effect.');
+  out.note(
+    'Undo with "memnox protect --revert-path". Nothing outside our markers is touched.',
+  );
+}
+
+async function firstExisting(paths: readonly string[]): Promise<string | null> {
+  for (const path of paths) if (existsSync(path)) return path;
+  return null;
 }

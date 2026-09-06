@@ -47,15 +47,15 @@ describe('waking on a change', () => {
         return { close: () => {} };
       }) as unknown as typeof watch,
     });
-    const started = Date.now();
-
     const waiting = watcher.next(60_000);
     (fire as unknown as () => void)();
     const changed = await waiting;
     watcher.close();
 
+    /* True means the change resolved the wait; the timeout path returns false. So the
+       boolean already says it did not sit out the interval, and a stopwatch beside it
+       would only add a way for a busy machine to fail the suite. */
     expect(changed).toBe(true);
-    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   /* Driven by a stub rather than the real filesystem: macOS coalesces and replays

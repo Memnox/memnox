@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
-import { readAccount } from '../sync/account';
+import { readAccount } from '@memnox/core';
 import { PULL_OUTCOME, type PullResult } from '../sync/bundle';
 import { onePass, type Pass } from '../sync/heartbeat';
 import { PUSH_OUTCOME, type PushResult } from '../sync/push';
@@ -51,6 +51,21 @@ function report(context: CliContext, pass: Pass): void {
   }
   if (pass.pull !== undefined) reportPull(context, pass.pull);
   if (pass.push !== undefined) reportPush(context, pass.push);
+  if (pass.census !== undefined) reportCensus(context, pass.census);
+}
+
+/** Said only when there was something to say: most passes have no new scan. */
+function reportCensus(context: CliContext, result: PushResult): void {
+  if (result.outcome === PUSH_OUTCOME.SENT) {
+    context.out.line(`Sent what ${result.sent} of this machine's capabilities are.`);
+    return;
+  }
+  if (result.outcome === PUSH_OUTCOME.REFUSED) {
+    context.out.line(context.style.warn('The control plane would not take the scan.'));
+    context.out.note(
+      `${result.because ?? 'no reason given'} — it stays on this machine.`,
+    );
+  }
 }
 
 function reportPull(context: CliContext, result: PullResult): void {

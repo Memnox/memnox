@@ -1,4 +1,5 @@
 import {
+  distinctTools,
   TOOL_EFFECT,
   type DiscoveryReport,
   type McpTool,
@@ -23,11 +24,10 @@ const EFFECT_COLUMN = 34;
  */
 export function renderTools(context: CliContext, report: DiscoveryReport): void {
   const { out, style } = context;
+  // Distinct first, or a server declared in five editors lists every tool five times.
   const servers = new Map<string, McpTool[]>();
-  for (const surface of report.surfaces) {
-    for (const tool of surface.tools ?? []) {
-      servers.set(tool.server, [...(servers.get(tool.server) ?? []), tool]);
-    }
+  for (const tool of distinctTools(report.surfaces)) {
+    servers.set(tool.server, [...(servers.get(tool.server) ?? []), tool]);
   }
   const credentials = credentialsByServer(report);
 

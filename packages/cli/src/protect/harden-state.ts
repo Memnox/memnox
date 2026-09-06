@@ -5,9 +5,11 @@ import {
   MEMNOX_HOME,
   NodeHardenWriter,
   NodeMachineReader,
+  NodeSnapshotStore,
   type HardenStep,
   type HardenWriter,
   type MachineReader,
+  type SnapshotStore,
 } from '@memnox/core';
 import { registerPolicyFile } from '../policy-registry';
 
@@ -18,6 +20,8 @@ import { registerPolicyFile } from '../policy-registry';
 export interface HardenSeams {
   reader: MachineReader;
   writer: HardenWriter;
+  /** The last scan that asked the servers what they hold. `protect` never asks. */
+  snapshots: SnapshotStore;
   /** Where applied steps are recorded, so a later revert knows what to undo. */
   statePath: string;
   /** A written rule the runtime never reads is not a rule; this is what makes it one. */
@@ -34,6 +38,7 @@ export function defaultSeams(): HardenSeams {
   return {
     reader: new NodeMachineReader(home),
     writer: new NodeHardenWriter(root),
+    snapshots: new NodeSnapshotStore(root),
     statePath: 'harden-state.json',
     registerPolicy: async (path) => {
       await registerPolicyFile(home, path);

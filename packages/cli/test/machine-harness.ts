@@ -26,8 +26,11 @@ export class FakeMachine implements MachineReader, HardenWriter {
   async read(path: string): Promise<string | null> {
     return this.files.get(path) ?? null;
   }
-  async list(): Promise<string[]> {
-    return [];
+  async list(path: string): Promise<string[]> {
+    const prefix = `${path}/`;
+    return [...this.files.keys()]
+      .filter((each) => each.startsWith(prefix))
+      .map((each) => each.slice(prefix.length));
   }
   homeDir(): string {
     return HOME;

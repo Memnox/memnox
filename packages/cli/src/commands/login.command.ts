@@ -3,12 +3,7 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { Flow } from '../flow';
-import {
-  forgetAccount,
-  readAccount,
-  writeAccount,
-  accountPathFor,
-} from '../sync/account';
+import { forgetAccount, readAccount, writeAccount, accountPathFor } from '@memnox/core';
 import { insecureBaseUrl } from '../sync/client';
 import {
   accountFrom,

@@ -2,13 +2,16 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
   applyHardening,
+  chainsFor,
   discover,
   ENFORCEMENT_MODE,
+  lastProbed,
   loadOrCreateConfig,
   planHardening,
   revertHardening,
   runDoctor,
   saveConfig,
+  withToolsFrom,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import {
@@ -24,7 +27,12 @@ import {
   type DomainAsker,
 } from '../protect/interactive-rules';
 import { runNative } from '../protect/native-permissions';
-import { runHooks, runInterceptors, runOsGuard } from '../protect/seam-install';
+import {
+  runHooks,
+  runInterceptors,
+  runOsGuard,
+  runPathLine,
+} from '../protect/seam-install';
 import { runForCli, runFromUsage } from '../protect/written-rules';
 
 /** An id nobody applied is a typo, and exiting zero on one hides it. */
@@ -66,8 +74,16 @@ export function registerProtectCommand(
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
     .option('--enforce', 'apply verdicts')
-    .option('--apply-native', 'also write these rules into Claude Code’s own permissions')
-    .option('--revert-native', 'take our rules back out of Claude Code')
+    .option(
+      '--apply-native',
+      'also write these rules into each agent’s own permission file',
+    )
+    .option('--revert-native', 'take our rules back out of those files')
+    .option(
+      '--path',
+      'put the interceptors on your login PATH, so a windowed editor meets them too',
+    )
+    .option('--revert-path', 'take that line back out of your shell profile')
     .action(
       async (options: {
         apply?: boolean;
@@ -83,6 +99,8 @@ export function registerProtectCommand(
         enforce?: boolean;
         applyNative?: boolean;
         revertNative?: boolean;
+        path?: boolean;
+        revertPath?: boolean;
       }) => {
         if (options.observe === true && options.enforce === true) {
           throw new Error('Pick one: --observe or --enforce, not both.');
@@ -125,6 +143,10 @@ export function registerProtectCommand(
         }
         if (options.interactive === true || options.yes === true) {
           await runInteractive(context, options.yes === true, ask);
+          return;
+        }
+        if (options.path === true || options.revertPath === true) {
+          await runPathLine(context, options.revertPath === true);
           return;
         }
         if (options.applyNative === true || options.revertNative === true) {
@@ -180,10 +202,19 @@ export function registerProtectCommand(
 
         // Same ground as doctor, or harden writes no rule for the credential it ranked.
         const discovered = await discover(seams.reader, { now, projectDirs: [cwd()] });
+        /* Nothing here starts an MCP server, so the tools come from the last scan
+           that did. Without them every tool-shaped finding is silently unreachable. */
+        const probed = lastProbed(await seams.snapshots.history());
+        const surfaces = withToolsFrom(discovered.surfaces, probed);
         const { findings } = runDoctor({
           resources: discovered.resources,
           reachability: discovered.reachability,
-          surfaces: discovered.surfaces,
+          surfaces,
+          // From the hydrated surfaces, not the unprobed scan, or this is always empty.
+          chains: chainsFor(
+            discovered.agents.map((agent) => agent.id),
+            surfaces,
+          ),
         });
         const proposed = findings.flatMap((finding) =>
           finding.remediation === undefined ? [] : [finding.remediation],

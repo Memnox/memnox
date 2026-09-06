@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import {
   DECISION_EFFECT,
+  loadPoliciesFromFile,
   loadPolicySet,
   LocalGate,
   MEMNOX_HOME,
@@ -12,7 +13,7 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { resolvePolicyFile } from '../policy-path';
-import { forgetPolicyFiles } from '../policy-registry';
+import { forgetPolicyFiles, registerPolicyFile } from '../policy-registry';
 
 const REGISTRY_FILE = 'policies.json';
 
@@ -72,6 +73,31 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     .option('--prune', 'forget registered files that are no longer on the disk')
     .action(async (file: string | undefined, options: { prune?: boolean }) => {
       await checkPolicyFiles(context, file, options.prune === true);
+    });
+
+  policy
+    .command('use [file]')
+    .description('Register a rule file, so the seams load it and not only "policy test"')
+    .action(async (file: string | undefined) => {
+      const path = resolve(resolvePolicyFile(file));
+      if (!existsSync(path)) {
+        throw new Error(
+          `No rule file at ${path}. Write one with "memnox protect --yes".`,
+        );
+      }
+      // Loaded before it is registered: a file that will not parse must never be
+      // added to the set every seam reads, or one bad edit ungoverns the machine.
+      const policies = await loadPoliciesFromFile(path);
+      const before = await readPolicyRegistry(
+        join(homedir(), MEMNOX_HOME, REGISTRY_FILE),
+      );
+      await registerPolicyFile(homedir(), path);
+      context.out.line(
+        before.includes(path)
+          ? `${path} was already registered; ${policies.length} rule(s) load at every seam.`
+          : `Registered ${path} — ${policies.length} rule(s) now load at every seam.`,
+      );
+      context.out.note('Check it with "memnox doctor --wiring".');
     });
 
   policy

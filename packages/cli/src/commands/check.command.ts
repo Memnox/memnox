@@ -9,7 +9,7 @@ import {
   loadPolicySet,
   MEMNOX_HOME,
   preflightFor,
-  readOverlays,
+  overlaysInForce,
   readPolicyRegistry,
   stateFactsInForce,
   type Preflight,
@@ -81,7 +81,7 @@ async function buildGate(agent: string, moment: string): Promise<LocalGate> {
   if (existsSync(here)) files.add(here);
 
   const set = await loadPolicySet([...files]);
-  const overlays = await readOverlays(home);
+  const overlays = await overlaysInForce(home);
   return new LocalGate(set.policies, {
     agentName: agent,
     stateFacts: stateFactsInForce(overlays, moment),

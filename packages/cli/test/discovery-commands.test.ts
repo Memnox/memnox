@@ -4,7 +4,14 @@ import { registerScanCommand } from '../src/commands/scan.command';
 import { registerDoctorCommand } from '../src/commands/doctor.command';
 import { registerProtectCommand } from '../src/commands/protect.command';
 import { runCommand } from './cli-harness';
-import { fakeSeams, FakeMachine, HOME, PROJECT, StubLister } from './machine-harness';
+import {
+  fakeSeams,
+  FakeMachine,
+  HOME,
+  MemorySnapshots,
+  PROJECT,
+  StubLister,
+} from './machine-harness';
 
 const MACHINE = {
   [`${HOME}/.claude.json`]: JSON.stringify({
@@ -191,15 +198,18 @@ describe('memnox doctor', () => {
 
 describe('memnox protect', () => {
   const registered: string[] = [];
-  const seams = (machine: FakeMachine) => () => ({
-    reader: machine,
-    writer: machine,
-    statePath: 'harden-state.json',
-    registerPolicy: async (path: string) => {
-      registered.push(path);
-    },
-    absolute: (path: string) => `/home/dev/.memnox/${path}`,
-  });
+  const seams =
+    (machine: FakeMachine, snapshots = new MemorySnapshots()) =>
+    () => ({
+      reader: machine,
+      writer: machine,
+      snapshots,
+      statePath: 'harden-state.json',
+      registerPolicy: async (path: string) => {
+        registered.push(path);
+      },
+      absolute: (path: string) => `/home/dev/.memnox/${path}`,
+    });
 
   it('proposes without changing anything, and prints the undo first', async () => {
     const machine = FakeMachine.from(MACHINE);

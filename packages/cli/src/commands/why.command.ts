@@ -8,6 +8,7 @@ import {
   DECISION_EFFECT,
   describeEvidence,
   readProtection,
+  readPullRequest,
   type MemnoxEvent,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
@@ -169,6 +170,20 @@ async function renderRepoEvidence(
     if (evidence !== null) lines.push(...describeEvidence(evidence));
   } catch {
     // Not logged in, no remote, or the branch is unprotected. Silence, not a guess.
+  }
+
+  try {
+    /* The same read-only path as the protection call: `gh pr view` with no mutation,
+       for the branch the reader is standing on. No PR is the ordinary case. */
+    const { stdout } = await run(
+      'gh',
+      ['pr', 'view', '--json', 'number,reviewDecision,statusCheckRollup'],
+      { timeout: 3000 },
+    );
+    const evidence = readPullRequest(stdout, 'gh pr view, just now', at);
+    if (evidence !== null) lines.push(...describeEvidence(evidence));
+  } catch {
+    // No pull request for this branch, or not logged in. Silence, not a guess.
   }
 
   const target = event.target;
