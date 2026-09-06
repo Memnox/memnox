@@ -97,6 +97,26 @@ export interface MemnoxEvent {
    */
   policyHash?: string;
 
+  /**
+   * The workspace bundle this machine was running when it decided.
+   *
+   * `policyHash` covers the whole stack as this machine assembled it, which is not a
+   * thing the control plane can name. Without this a verdict cannot be replayed
+   * against what the workspace had published at the time, and "was this machine even
+   * on the current rules" is unanswerable after the fact.
+   */
+  bundleHash?: string;
+
+  /**
+   * Ids of the conditions in force at the moment of the verdict.
+   *
+   * The engine computed a state version for every decision and nothing carried it to
+   * the ledger, so the field that exists to make a freeze visible afterwards was
+   * stamped and dropped. Recorded as ids rather than labels because the label is
+   * derivable from them and the id is what a condition is actually called.
+   */
+  conditionsInForce?: readonly string[];
+
   /** A hash of the arguments. The arguments themselves never reach a row. */
   argsDigest?: string;
 
@@ -108,6 +128,17 @@ export interface MemnoxEvent {
 
   /** Who released a held call, once somebody did. */
   authorizedBy?: string;
+
+  /**
+   * What this action cost, in dollars, when something reported it.
+   *
+   * Memnox prices nothing: an MCP call's model spend is knowable to the agent and to
+   * nobody else on this machine, so a number invented here would be the one figure a
+   * reader stops trusting the rest of the row over. Absent means nobody said, which is
+   * a different answer from zero and is why a dollar budget reads as unwatched rather
+   * than as under budget.
+   */
+  costUsd?: number;
 }
 
 /**

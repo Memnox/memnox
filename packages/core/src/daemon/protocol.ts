@@ -18,8 +18,11 @@ export const DAEMON_METHOD = {
   EVALUATE: 'evaluate',
   /** Ask a person, through whatever terminal the daemon owns. */
   HOLD: 'hold',
-  /** Record what happened, so a session is one timeline. */
+  /** Record what happened, so a session is one timeline — and so the breaker can
+   * count outcomes. Every signal it watches needs to know how the command ended. */
   RECORD: 'record',
+  /** Whether this session is held, asked before anything runs. */
+  STATUS: 'status',
   /** Liveness, for `memnox doctor`. */
   PING: 'ping',
 } as const;
@@ -36,6 +39,12 @@ export interface DaemonRequest {
   /** A digest. Arguments never travel, not even over a local socket. */
   argsDigest?: string;
   reason?: string;
+  /** On RECORD: how the command ended. The breaker's error and progress signals. */
+  exitCode?: number;
+  /** On RECORD: whether it fell outside the declared task. */
+  outOfScope?: boolean;
+  /** On RECORD: what it cost, when a surface can report one. Never estimated. */
+  costUsd?: number;
 }
 
 export interface DaemonResponse {
@@ -46,6 +55,8 @@ export interface DaemonResponse {
   alternative?: { action: string; resource?: string; note: string };
   /** Set when a limit stopped this rather than a rule. */
   limit?: string;
+  /** Set when the breaker held the session. Different from a denial, and said so. */
+  paused?: { signal: string; reason: string };
   error?: string;
 }
 

@@ -72,10 +72,14 @@ export const EVENT_SCHEMA = {
       },
     },
     policyHash: { type: 'string' },
+    bundleHash: { type: 'string' },
+    conditionsInForce: { type: 'array', items: { type: 'string' } },
     argsDigest: { type: 'string' },
     execution: { enum: Object.values(EXECUTION) },
     exitCode: { type: 'integer' },
     durationMs: { type: 'integer', minimum: 0 },
+    // Additive and optional, which is the only safe change inside a frozen v1.
+    costUsd: { type: 'number', minimum: 0 },
     outputDigest: { type: 'string' },
     authorizedBy: { type: 'string' },
   },
@@ -130,6 +134,17 @@ export function validateEvent(candidate: unknown): string[] {
     const value = event[key];
     if (typeof value === 'string' && value.length > 128) {
       problems.push(`${key} looks like content rather than a digest`);
+    }
+  }
+
+  /* A cost is a number somebody reported, so the row refuses the shapes that would
+     make every total downstream meaningless rather than merely wrong. */
+  const cost = event['costUsd'];
+  if (cost !== undefined) {
+    if (typeof cost !== 'number' || !Number.isFinite(cost)) {
+      problems.push('costUsd must be a finite number');
+    } else if (cost < 0) {
+      problems.push('costUsd cannot be negative');
     }
   }
 

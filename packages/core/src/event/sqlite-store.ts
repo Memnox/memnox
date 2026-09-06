@@ -76,6 +76,20 @@ const MIGRATIONS: readonly { version: number; sql: string }[] = [
       );
     `,
   },
+  {
+    /* Added rather than edited into v1: a machine that already has a ledger keeps it.
+       Nullable, because absent means nobody reported a cost and that is not zero. */
+    version: 2,
+    sql: 'ALTER TABLE events ADD COLUMN costUsd REAL;',
+  },
+  {
+    /* The bundle and the conditions a verdict was reached under. Both were knowable
+       at the moment and neither was kept, so no decision could be replayed against
+       what the workspace had published or what was frozen when it was taken. */
+    version: 3,
+    sql: `ALTER TABLE events ADD COLUMN bundleHash TEXT;
+          ALTER TABLE events ADD COLUMN conditionsInForce TEXT;`,
+  },
 ];
 
 interface Row {
@@ -112,12 +126,20 @@ function toRow(event: MemnoxEvent): Row {
         : alternative.resource,
     altNote: alternative === undefined ? null : alternative.note,
     policyHash: event.policyHash ?? null,
+    bundleHash: event.bundleHash ?? null,
+    /* Joined rather than a second table: it is read back whole every time and never
+       queried across, so a row of ids is the shape that matches the use. */
+    conditionsInForce:
+      event.conditionsInForce === undefined || event.conditionsInForce.length === 0
+        ? null
+        : event.conditionsInForce.join(','),
     argsDigest: event.argsDigest ?? null,
     execution: event.execution ?? null,
     exitCode: event.exitCode ?? null,
     durationMs: event.durationMs ?? null,
     outputDigest: event.outputDigest ?? null,
     authorizedBy: event.authorizedBy ?? null,
+    costUsd: event.costUsd ?? null,
   };
 }
 
@@ -153,6 +175,7 @@ function fromRow(row: Row): MemnoxEvent {
     ['target', text('target')],
     ['shadowEffect', text('shadowEffect')],
     ['policyHash', text('policyHash')],
+    ['bundleHash', text('bundleHash')],
     ['argsDigest', text('argsDigest')],
     ['execution', text('execution')],
     ['outputDigest', text('outputDigest')],
@@ -161,10 +184,12 @@ function fromRow(row: Row): MemnoxEvent {
   for (const [key, value] of optional) {
     if (value !== undefined) Object.assign(event, { [key]: value });
   }
-  for (const key of ['exitCode', 'durationMs'] as const) {
+  for (const key of ['exitCode', 'durationMs', 'costUsd'] as const) {
     const value = number(key);
     if (value !== undefined) event[key] = value;
   }
+  const conditions = text('conditionsInForce');
+  if (conditions !== undefined) event.conditionsInForce = conditions.split(',');
 
   if (ruleName !== undefined) {
     const line = number('ruleLine');

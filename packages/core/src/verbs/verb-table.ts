@@ -188,3 +188,28 @@ export function actionForCommand(
 export function hasTag(verb: Verb, tag: VerbTag): boolean {
   return (verb.tags ?? []).includes(tag);
 }
+
+/**
+ * A command glob for one Memnox action, from the table the evaluator itself reads.
+ *
+ * `git.push-force` is our name for it; `git push --force*` is what a command-level deny
+ * list has to match. Deriving it from the table means a rule compiled into somebody
+ * else's config gates exactly what this product would have refused, rather than a
+ * pattern written twice and drifting.
+ */
+export function commandGlobFor(
+  action: string,
+  tableFor: (name: string) => VerbTable | null,
+): string | null {
+  const dot = action.indexOf('.');
+  if (dot <= 0) return null;
+  const cli = action.slice(0, dot);
+  const table = tableFor(cli);
+  if (table === null) return null;
+
+  const verb = table.verbs.find((each) => verbAction(cli, each) === action);
+  if (verb === undefined) return null;
+  // `**` means "and the rest", which is exactly what a trailing glob says.
+  const pattern = verb.match.replace(/\s*\*\*\s*$/, '').trim();
+  return pattern === '' ? `${cli}*` : `${cli} ${pattern}*`;
+}

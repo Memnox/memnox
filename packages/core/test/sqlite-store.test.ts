@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -123,15 +124,30 @@ describe('the event store', () => {
     db.close();
   });
 
-  it('inserts ten thousand events in under two seconds', async () => {
-    const db = await store();
-    const started = Date.now();
+  /**
+   * Ten thousand rows, and the setting that makes ten thousand rows cheap.
+   *
+   * This used to assert a wall-clock bound, which measures the machine: a correct
+   * store on a loaded laptop failed the suite and taught everybody to re-run it. What
+   * actually decides the throughput is the journal mode — one fsync per commit against
+   * a shared write-ahead log — so that is what is asserted here. The number itself
+   * lives in `pnpm bench`, where a slow answer means something.
+   */
+  it('holds ten thousand events, on a journal built for concurrent writers', async () => {
+    const dir = await home();
+    const db = SqliteEventStore.forHome(dir);
     for (let n = 0; n < 10_000; n += 1) {
       await db.append(event({ id: `e${n}`, at: new Date(n * 1000).toISOString() }));
     }
-    expect(Date.now() - started).toBeLessThan(2000);
     expect(await db.count()).toBe(10_000);
     db.close();
+
+    // Read back from the file: WAL is persistent, so this is what any writer will get.
+    const opened = new Database(databasePathFor(dir), { readonly: true });
+    expect(String(opened.pragma('journal_mode', { simple: true })).toLowerCase()).toBe(
+      'wal',
+    );
+    opened.close();
   });
 
   it('prunes by age and reports how many went', async () => {
