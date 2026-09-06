@@ -89,3 +89,54 @@ describe('PolicyEngine', () => {
     ).toBe(DECISION_EFFECT.ALLOW);
   });
 });
+
+describe('what a rule set pulled from elsewhere can do', () => {
+  /* A workspace bundle is registered as another policy file, so this is the
+     property that makes pulling rules over a network safe at all: a control
+     plane, or anything that managed to answer as one, can deny more and can
+     never grant. Without it, an `allow` in a bundle would be a remote way to
+     open a gate somebody closed locally. */
+  it('can only tighten what is already enforced, never loosen it', () => {
+    const local: Policy = {
+      name: 'local-deny',
+      match: { actions: ['gh.pr-merge'] },
+      decision: { effect: DECISION_EFFECT.DENY, reason: 'merges are reviewed here' },
+    };
+    const pulled: Policy = {
+      name: 'workspace-allow',
+      match: { actions: ['gh.pr-merge'] },
+      decision: { effect: DECISION_EFFECT.ALLOW, reason: 'the workspace says fine' },
+    };
+
+    const verdict = new PolicyEngine([local, pulled]).evaluate(
+      { action: 'gh.pr-merge' },
+      { agentName: 'agent' },
+    );
+
+    expect(verdict.effect).toBe(DECISION_EFFECT.DENY);
+    expect(verdict.reason).toContain('reviewed here');
+  });
+
+  it('may still tighten an allow into an ask, which is the point of pulling any', () => {
+    const local: Policy = {
+      name: 'local-allow',
+      match: { actions: ['railway.up'] },
+      decision: { effect: DECISION_EFFECT.ALLOW, reason: 'fine locally' },
+    };
+    const pulled: Policy = {
+      name: 'workspace-ask',
+      match: { actions: ['railway.up'] },
+      decision: {
+        effect: DECISION_EFFECT.ASK,
+        reason: 'a deploy is somebody else’s call',
+      },
+    };
+
+    expect(
+      new PolicyEngine([local, pulled]).evaluate(
+        { action: 'railway.up' },
+        { agentName: 'agent' },
+      ).effect,
+    ).toBe(DECISION_EFFECT.ASK);
+  });
+});

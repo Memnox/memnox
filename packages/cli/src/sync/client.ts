@@ -50,7 +50,35 @@ export class CloudUnreachable extends Error {
   }
 }
 
+/** A loopback control plane is somebody developing against one, and is not a risk. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Refused rather than downgraded.
+ *
+ * Every call here carries the machine's bearer token, and the bundle it pulls
+ * back has no signature of its own — TLS is the only thing authenticating either
+ * direction. Over plain http the token is readable by anything on the path, and
+ * the rules this machine then enforces are whatever that thing chose to return.
+ * The check lives here rather than in `login` because it is the choke point: a
+ * hand-edited `account.json` reaches this function too.
+ */
+export function insecureBaseUrl(baseUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return `"${baseUrl}" is not a URL`;
+  }
+  if (parsed.protocol === 'https:') return null;
+  if (parsed.protocol === 'http:' && LOOPBACK.has(parsed.hostname)) return null;
+  return `${baseUrl} is not https, and a token must not travel in the clear`;
+}
+
 export async function callCloud<T>(request: CloudRequest): Promise<CloudResponse<T>> {
+  const insecure = insecureBaseUrl(request.baseUrl);
+  if (insecure !== null) throw new CloudUnreachable(insecure);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs ?? TIMEOUT_MS);
 

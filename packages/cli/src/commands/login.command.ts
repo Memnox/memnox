@@ -9,6 +9,7 @@ import {
   writeAccount,
   accountPathFor,
 } from '../sync/account';
+import { insecureBaseUrl } from '../sync/client';
 import {
   accountFrom,
   approvalUrl,
@@ -51,6 +52,16 @@ export function registerLoginCommand(
         baseUrl: options.url,
         ...(options.enforce === true ? { mode: 'enforce' } : {}),
       };
+
+      /* Checked before a key is generated or anything is printed: refusing at
+         the first call would read as a network fault, and somebody would go and
+         debug DNS for a URL we were never going to accept. */
+      const insecure = insecureBaseUrl(options.url);
+      if (insecure !== null) {
+        throw new Error(
+          `${insecure}. Use https, or a control plane on localhost while you develop against one.`,
+        );
+      }
 
       const flow = new Flow(out, style);
       flow.open('memnox login');

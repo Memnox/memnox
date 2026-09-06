@@ -244,7 +244,7 @@ Does a pass immediately rather than waiting. `--json` for the result.
 
 ### What crosses the wire
 
-**Pulled:** a signed rule bundle, written to `~/.memnox/org.policies.json` and
+**Pulled:** a rule bundle, written to `~/.memnox/org.policies.json` and
 `~/.memnox/org-conditions.json`, where the engine already looks. An unchanged
 bundle costs one `304`. Nothing about the pull is on the decision path: the gate
 reads the file this wrote, minutes later, with no network anywhere near it.
@@ -269,6 +269,20 @@ so a field added to the ledger does not start travelling by accident.
 
 **Sent on the heartbeat:** the hash of the bundle this machine has applied, which
 is what lets a workspace see which machines are on which rules.
+
+### What authenticates a pull
+
+TLS, and the machine token. **The bundle carries no signature of its own**, so
+https is required and `memnox login --url` refuses anything else, loopback aside.
+
+What makes that sufficient rather than merely acceptable is the engine: rules
+compose most-restrictive-wins, so a pulled rule can only ever *tighten* what this
+machine already enforces. A control plane cannot grant your agent anything. The
+worst a bad bundle can do is deny too much, which is visible immediately.
+
+A bundle is applied whole or not at all: it is written to a temporary file, read
+back through the same loader the gate uses, and renamed into place only once it
+has parsed. A half-applied rule set is one nobody wrote.
 
 ### If it cannot reach the control plane
 Nothing stops. The gate has already answered and the row is already written by

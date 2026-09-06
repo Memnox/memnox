@@ -13,6 +13,7 @@ import {
   type Bundle,
 } from '../src/sync/bundle';
 import { accountFrom, approvalUrl, machineKeypair } from '../src/sync/enrol';
+import { callCloud, insecureBaseUrl } from '../src/sync/client';
 
 const bundle = (over: Partial<Bundle> = {}): Bundle => ({
   hash: 'b1a2c3',
@@ -217,5 +218,38 @@ describe('what a person is shown', () => {
     expect(approvalUrl('https://api.memnox.com', 'CDFG-HJKM')).toBe(
       'https://api.memnox.com/device?code=CDFG-HJKM',
     );
+  });
+});
+
+describe('the transport refuses to downgrade', () => {
+  /* Every call carries the machine's bearer token, and the bundle it pulls back
+     carries no signature of its own, so TLS is the only thing authenticating
+     either direction. Over http the token is readable by anything on the path
+     and the rules are whatever that thing chose to return. */
+  it('refuses a control plane that is not https', () => {
+    expect(insecureBaseUrl('http://api.example.com')).toContain('not https');
+    expect(insecureBaseUrl('http://10.0.0.5:8080')).toContain('not https');
+  });
+
+  it('allows https, which is the only thing it allows off this machine', () => {
+    expect(insecureBaseUrl('https://api.memnox.com')).toBeNull();
+  });
+
+  // Somebody developing against a control plane on their own machine is not a risk.
+  it('allows loopback over http, so a local control plane still works', () => {
+    expect(insecureBaseUrl('http://localhost:3000')).toBeNull();
+    expect(insecureBaseUrl('http://127.0.0.1:3000')).toBeNull();
+  });
+
+  it('refuses something that is not a URL at all', () => {
+    expect(insecureBaseUrl('api.memnox.com')).toContain('not a URL');
+  });
+
+  /* The check is in the transport rather than in `login`, because a hand-edited
+     account.json reaches the transport too. */
+  it('stops the call rather than only the login', async () => {
+    await expect(
+      callCloud({ baseUrl: 'http://api.example.com', path: '/v1/x', token: 'secret' }),
+    ).rejects.toThrow(/not https/);
   });
 });
