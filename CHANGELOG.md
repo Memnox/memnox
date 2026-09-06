@@ -7,10 +7,14 @@ Everything before this is a different product and is not listed here. Its versio
 numbers were published to npm and then unpublished. npm never lets a version number be
 used twice, so those numbers are spent whatever this file calls the work now.
 
-## 0.1.0
+## 0.1.1
 
 The first release of this product. Everything below works; the version says this is the
 beginning rather than a promise about stability.
+
+It is `0.1.1` rather than `0.1.0` for one reason: `0.1.0` was published under this name
+by the product that came before and then unpublished, and npm never lets a version
+number be used twice. The number is one higher than the story; nothing else is.
 
 - **An `ask` rule holds for a person instead of denying.** Every seam took an optional
   hold service and nothing outside a test ever built one, so an ask reached "nobody
