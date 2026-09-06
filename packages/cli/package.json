@@ -34,7 +34,7 @@
     "memnox-egress": "dist/bin/egress.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist",

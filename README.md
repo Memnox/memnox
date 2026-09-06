@@ -193,7 +193,7 @@ is one people never install.
 npm install -g memnox     # or just use npx
 ```
 
-Node 20 or newer, on macOS or Linux. On Windows, run it inside WSL —
+Node 22 or newer, on macOS or Linux. On Windows, run it inside WSL —
 [ADR 0001](docs/adr/0001-windows-support.md) says why.
 
 ## Documentation

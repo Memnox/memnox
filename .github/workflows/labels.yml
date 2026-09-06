@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # Import only: existing labels are left alone, matching upstream's force: false.
       - name: Import open source standard labels

@@ -13,7 +13,7 @@ table of where to make each kind of change.
 ```sh
 git clone https://github.com/Memnox/memnox.git
 cd memnox
-pnpm install          # pnpm 11, Node 20 or 22
+pnpm install          # pnpm 11, Node 22 or 24
 pnpm build            # every package, in dependency order
 pnpm test             # ~1200 tests, about three seconds
 pnpm bench            # the wall-clock ones, run on purpose
@@ -39,7 +39,7 @@ in `ARCHITECTURE.md`.
 pnpm format && pnpm typecheck && pnpm test && pnpm deadcode
 ```
 
-All four, clean. CI runs them on Ubuntu and macOS against Node 20 and 22, plus a
+All four, clean. CI runs them on Ubuntu and macOS against Node 22 and 24, plus a
 publish dry run — a shim that works on one platform and not the other is the bug
 that matrix exists to catch.
 
