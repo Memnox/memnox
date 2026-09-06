@@ -1,5 +1,12 @@
 import type { ActionRequest } from '@memnox/core';
-import { DECISION_EFFECT, describeEgress, inspectEgress } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  describeEgress,
+  digest,
+  inspectEgress,
+  isAllowed as holdAllowed,
+  type HoldService,
+} from '@memnox/core';
 import type { HookAuthorizer, HookVerdict } from './hook-authorizer';
 
 export const EGRESS_REQUEST_ACTION = 'http.request';
@@ -33,6 +40,11 @@ export interface HttpAttempt {
 
 export interface EgressSeamDeps {
   authorizer: HookAuthorizer;
+  /**
+   * Somebody to ask. Absent means an ask does not go and says so, which is right for
+   * a test and wrong for a proxy an agent is reaching the network through.
+   */
+  hold?: HoldService;
   sessionId?: string;
 }
 
@@ -84,7 +96,42 @@ export class EgressSeam {
   private async rule(request: ActionRequest): Promise<EgressOutcome> {
     const verdict = await this.deps.authorizer.authorize(request);
     if (verdict.effect === DECISION_EFFECT.ALLOW) return { allowed: true };
+    if (verdict.effect === DECISION_EFFECT.ASK) {
+      const asked = await this.ask(request, verdict);
+      if (asked === null) return { allowed: true };
+      return asked;
+    }
     return { allowed: false, message: describe(verdict) };
+  }
+
+  /**
+   * Puts an ask to a person. Null when it was allowed and the request may go.
+   *
+   * Without this an `ask` rule refused the request outright and told the reader "you
+   * chose to be asked about this" while nobody had been asked — the rule's own words
+   * arguing with what had just happened to them.
+   */
+  private async ask(
+    request: ActionRequest,
+    verdict: HookVerdict,
+  ): Promise<EgressOutcome | null> {
+    const hold = this.deps.hold;
+    if (hold === undefined) {
+      return {
+        allowed: false,
+        message: `${describe(verdict)} Nobody could be asked, so it did not go.`,
+      };
+    }
+
+    const result = await hold.hold({
+      sessionId: this.deps.sessionId ?? 'ses_local',
+      agent: 'an agent',
+      operation: request.action,
+      fingerprint: digest(`${request.action}:${request.target ?? ''}`),
+      reason: verdict.reason,
+      ...(request.target === undefined ? {} : { target: request.target }),
+    });
+    return holdAllowed(result) ? null : { allowed: false, message: describe(verdict) };
   }
 }
 

@@ -1,4 +1,10 @@
-import { DECISION_EFFECT, type ActionRequest } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  HOLD_ANSWER,
+  HoldService,
+  type ActionRequest,
+  type HoldAnswer,
+} from '@memnox/core';
 import { LocalGate } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
 import type { HookAuthorizer } from '../src/hook-authorizer';
@@ -141,5 +147,48 @@ describe('the egress seam', () => {
     expect(
       (await seam.gateRequest({ method: 'GET', url: 'https://example.com' })).allowed,
     ).toBe(true);
+  });
+});
+
+describe('an ask on the network seam reaches a person', () => {
+  const asking: HookAuthorizer = {
+    async authorize() {
+      return { effect: DECISION_EFFECT.ASK, reason: 'unknown host' };
+    },
+  } as unknown as HookAuthorizer;
+
+  const answering = (answer: HoldAnswer | null): HoldService =>
+    new HoldService({ ask: async () => (answer === null ? null : { answer }) });
+
+  /* Without a hold the seam refused outright and told the reader "you chose to be
+     asked about this" while nobody had been asked — the rule's own words arguing
+     with what had just happened to them. */
+  it('lets the request go once somebody says yes', async () => {
+    const seam = new EgressSeam({
+      authorizer: asking,
+      hold: answering(HOLD_ANSWER.ONCE),
+    });
+    expect((await seam.gateConnect('example.com:443')).allowed).toBe(true);
+  });
+
+  it('stops it when somebody says no', async () => {
+    const seam = new EgressSeam({
+      authorizer: asking,
+      hold: answering(HOLD_ANSWER.DENY),
+    });
+    expect((await seam.gateConnect('example.com:443')).allowed).toBe(false);
+  });
+
+  it('stops it when nobody answers, and says nobody could be asked', async () => {
+    const seam = new EgressSeam({ authorizer: asking, hold: answering(null) });
+    const outcome = await seam.gateConnect('example.com:443');
+    expect(outcome.allowed).toBe(false);
+  });
+
+  it('says so plainly when no hold is wired at all', async () => {
+    const seam = new EgressSeam({ authorizer: asking });
+    const outcome = await seam.gateConnect('example.com:443');
+    expect(outcome.allowed).toBe(false);
+    expect(outcome.message).toContain('Nobody could be asked');
   });
 });

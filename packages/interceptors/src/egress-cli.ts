@@ -3,7 +3,7 @@ import { createServer, request as httpRequest, type IncomingMessage } from 'node
 import type { ServerResponse, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { EgressSeam, EGRESS_BLIND_SPOTS } from './egress-seam';
-import { buildAuthorizer, log } from './seam-runtime';
+import { buildAuthorizer, buildHold, log } from './seam-runtime';
 import { EGRESS_DEFAULT_PORT, EGRESS_MAX_BODY_BYTES } from './tool-hook.constants';
 
 const REFUSED_STATUS = 403;
@@ -162,7 +162,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const seam = new EgressSeam({ authorizer: await buildAuthorizer() });
+  const seam = new EgressSeam({
+    authorizer: await buildAuthorizer(),
+    /* An ask on the network seam has to reach a person, or `ask` is a slower `deny`. */
+    hold: buildHold(),
+  });
   buildServer(seam).listen(port, '127.0.0.1', () => {
     log(`egress seam on 127.0.0.1:${port}`);
     // A blind spot nobody reads is a blind spot nobody has.
