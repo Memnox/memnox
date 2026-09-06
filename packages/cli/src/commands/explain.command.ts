@@ -1,5 +1,7 @@
 import { cwd } from 'node:process';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Command } from 'commander';
 import {
   actionForVerb,
@@ -7,6 +9,11 @@ import {
   VERB_TAG,
   verbTableFor,
   classifyActionClass,
+  combinedCapabilities,
+  coverageFor,
+  coverageSummary,
+  SEAM_STATE,
+  describeCombined,
   inventoryOf,
   LocalGate,
   parseQuestion,
@@ -15,7 +22,12 @@ import {
   type CapabilityInventory,
   type CapabilityTrace,
   type AuthenticatedCli,
+  type McpTool,
+  type CombinedCapability,
+  type CoverageFacts,
+  type DiscoveredAgent,
   type DiscoveryReport,
+  type EnvironmentSnapshot,
   type ParsedQuestion,
   type VerbTable,
 } from '@memnox/core';
@@ -23,6 +35,9 @@ import type { CliContext } from '../cli-context';
 import { row } from '../cli-output';
 import { resolvePolicyFile } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
+import { gatherHealth } from '../health-probe';
+import { guardProfilePath } from '../memnox-paths';
+import { loginPathConfigured } from '../protect/shell-profile';
 
 /** Every field is read off a scan, so the chain is evidence rather than a guess. */
 function renderTrace(context: CliContext, trace: CapabilityTrace): void {
@@ -154,11 +169,44 @@ export function registerExplainCommand(
       const seams = buildSeams(cwd());
       const { report, snapshot } = await scanMachine(seams, { probe: false });
 
+      /* An agent kind is checked first: "cursor" is the product, not a tool that
+         happens to be named after it. Every kind answers here, harness or not —
+         one of them answering and the rest erroring is the asymmetry a reader hits
+         the moment they try the second name they can see in a scan. */
+      const agent = report.agents.find((each) => each.kind === subject);
+      if (agent !== undefined) {
+        /* Explain never starts anybody's MCP servers, so the tools come from the last
+           scan that did. An unprobed snapshot holds no tools and would read as an
+           agent with no chain, which is a different claim from "not asked yet". */
+        const probed = await lastProbedScan(seams);
+        renderAgent(
+          context,
+          agent,
+          report,
+          probed,
+          await coverageFacts(cwd()),
+          options.json === true,
+        );
+        return;
+      }
+
       // An authenticated CLI is the thing people ask about first, so it is checked
       // before the tool index: "vercel" means the CLI, not a tool named vercel.
       const cli = report.authenticated.find((each) => each.name === subject);
-      if (cli !== undefined && !subject.includes(' ')) {
-        renderCli(context, cli, report, options.json === true);
+      /* And one that is merely installed, which the scan also names. Answering only
+         for the authenticated ones meant `scan` listed eight tools and `explain`
+         denied every one of them existed — the same asymmetry the agent branch above
+         is careful to avoid, one field over. The verb table is the half worth reading
+         and it does not need a credential. */
+      const installed = report.tools.find((each) => each.name === subject);
+      const subjectCli: ExplainedCli | null =
+        cli ??
+        (installed !== undefined && verbTableFor(subject) !== null
+          ? { name: subject, detectedFrom: installed.detectedFrom }
+          : null);
+
+      if (subjectCli !== null && !subject.includes(' ')) {
+        renderCli(context, subjectCli, report, options.json === true);
         return;
       }
 
@@ -177,6 +225,16 @@ export function registerExplainCommand(
           return;
         }
         renderAnswer(context, question, answer);
+        return;
+      }
+
+      /* An MCP server the scan named. Same reason as the CLI branch above: a reader
+         types the second name they can see on the scan, and a server that answers
+         "nothing here provides that" about a server the scan just listed is the one
+         wrong answer that makes somebody stop trusting both screens. */
+      const server = serverNamed(report, subject);
+      if (server !== null && !subject.includes(' ')) {
+        renderServer(context, server, options.json === true);
         return;
       }
 
@@ -206,9 +264,20 @@ export function registerExplainCommand(
  * exactly what `protect` will gate. A screen that listed capabilities the gate did not
  * actually recognise would be worse than no screen.
  */
+type ExplainedCli =
+  | AuthenticatedCli
+  | {
+      name: string;
+      /** The path that proved it is here. An installed CLI has this and no credential. */
+      detectedFrom: string;
+      via?: undefined;
+      detail?: undefined;
+      productionLooking?: undefined;
+    };
+
 function renderCli(
   context: CliContext,
-  cli: AuthenticatedCli,
+  cli: ExplainedCli,
   report: DiscoveryReport,
   asJson: boolean,
 ): void {
@@ -219,8 +288,11 @@ function renderCli(
   }
 
   const { out, style } = context;
+  const authenticated = cli.via !== undefined;
   out.line('');
-  out.line(`${style.bold(cli.name)}  ${style.dim('· authenticated CLI')}`);
+  out.line(
+    `${style.bold(cli.name)}  ${style.dim(authenticated ? '· authenticated CLI' : '· installed CLI')}`,
+  );
   out.line('');
 
   const agents = report.agents.map((agent) => agent.kind);
@@ -229,7 +301,14 @@ function renderCli(
     'Reachable by',
     agents.length === 0 ? 'no agent here' : agents.join(', '),
   );
-  row(context.out, 'Credential', cli.via);
+  /* "Nothing here is logged in" is a different claim from "this cannot reach
+     anything", and the verbs below are true either way — a credential can arrive
+     tomorrow without the table changing. */
+  row(
+    context.out,
+    'Credential',
+    cli.via ?? 'none found here — the table below is what it could do with one',
+  );
   if (cli.detail !== undefined) row(context.out, '', cli.detail);
   if (cli.productionLooking !== undefined) {
     // A guess from a name stays a guess all the way into the screen.
@@ -259,6 +338,286 @@ function renderCli(
   out.line('');
   out.line(
     `  ${style.dim(`memnox protect --for ${cli.name}`)}   put the dangerous ones behind ask or deny`,
+  );
+  out.line('');
+}
+
+/**
+ * What a harness runs, rather than what it is. Every line is read off the disk it
+ * scaffolded, because the interesting number about an orchestrator is how many
+ * principals it puts behind one row on the roster.
+ */
+function renderAgent(
+  context: CliContext,
+  agent: DiscoveredAgent,
+  report: DiscoveryReport,
+  last: EnvironmentSnapshot | null,
+  facts: CoverageFacts,
+  asJson: boolean,
+): void {
+  const harness = report.harnesses.find((each) => each.agentId === agent.id) ?? null;
+  const combined = chainsFor(agent.id, last);
+  if (asJson) {
+    context.out.json({
+      agent,
+      harness,
+      combined,
+      coverage: coverageFor(agent.kind, agent.id, report.surfaces, facts),
+    });
+    return;
+  }
+
+  const { out, style } = context;
+  const what = harness === null ? 'agent' : 'harness, runs other agents';
+  out.line('');
+  out.line(`${style.bold(agent.kind)}  ${style.dim(`· ${what}`)}`);
+  out.line('');
+
+  // Only a harness has these three, and printing them empty for Cursor would imply
+  // Cursor might have had them.
+  if (harness !== null) {
+    row(
+      context.out,
+      'Runs',
+      harness.runtimes.length === 0
+        ? 'nothing this scan could name'
+        : harness.runtimes.join(', '),
+    );
+    row(
+      context.out,
+      'Roles',
+      harness.roles.length === 0
+        ? 'none defined on this disk'
+        : `${harness.roles.length} — ${harness.roles.join(', ')}`,
+    );
+    row(
+      context.out,
+      'Hooks',
+      harness.hooks.length === 0
+        ? 'none installed into another product'
+        : harness.hooks.join(', '),
+    );
+    if (harness.federated) {
+      row(
+        context.out,
+        'Federated',
+        style.warn('works with agents on machines this scan cannot see'),
+      );
+    }
+  }
+
+  const coverage = coverageFor(agent.kind, agent.id, report.surfaces, facts);
+  const own = report.surfaces.filter((surface) => surface.agentId === agent.id);
+  row(context.out, 'Declared in', agent.configPaths.join(', '));
+  row(context.out, 'Surfaces', [...new Set(own.map((each) => each.kind))].join(', '));
+
+  const servers = [
+    ...new Set(own.flatMap((surface) => (surface.servers ?? []).map((s) => s.name))),
+  ];
+  row(
+    context.out,
+    'MCP servers',
+    servers.length === 0 ? 'none declared in its config' : servers.join(', '),
+  );
+  // The shell is why a tool list understates a coding agent, so it is said out loud.
+  const viaShell = report.reachability.find(
+    (each) => each.agentId === agent.id,
+  )?.viaShell;
+  if (viaShell === true) {
+    row(context.out, 'Shell', 'holds one, which reaches everything you can');
+  }
+
+  if (combined.length > 0) {
+    out.line('');
+    out.line('  Combined capability');
+    for (const capability of combined) {
+      out.line(`    ${style.warn(capability.consequence)}`);
+      out.line(`    ${style.dim(describeCombined(capability))}`);
+    }
+  } else if (last === null) {
+    out.line('');
+    out.note(
+      'No scan here has asked the servers, so no chain is shown. Run "memnox scan --save".',
+    );
+  }
+
+  /* The question somebody actually has: what is in front of this one right now, and
+     what would close the rest. Per agent, because a wrapped Claude Code and an
+     unwrapped Cursor average out to a number nobody can act on. */
+  const { held, total } = coverageSummary(coverage);
+  out.line('');
+  out.line(
+    `  Governed by  ${held === total ? style.ok(`all ${total} seam(s)`) : style.warn(`${held} of ${total} seam(s)`)}`,
+  );
+  const width = Math.max(...coverage.map((each) => each.surface.length)) + 2;
+  for (const seam of coverage) {
+    if (seam.state === SEAM_STATE.NOT_HELD) continue;
+    const mark = seam.state === SEAM_STATE.HELD ? style.ok('✓') : style.warn('!');
+    out.line(`    ${mark}  ${seam.surface.padEnd(width)}${seam.detail}`);
+    if (seam.next !== undefined) {
+      out.line(`       ${''.padEnd(width)}${style.dim(`→ ${seam.next}`)}`);
+    }
+  }
+
+  out.line('');
+  /* A harness already filters its own tools and is right to. What it cannot see is
+     the other harness on the same disk, the credentials underneath, and the shell
+     they share. Said only for a harness: it is not true of Cursor. */
+  if (harness !== null) {
+    out.note(
+      `${agent.kind} enforces its own tool policy. Memnox governs what it reaches underneath.`,
+    );
+  }
+  out.line('');
+}
+
+/** The tools this agent reached in the last probed scan, and what they add up to. */
+function chainsFor(
+  agentId: string,
+  last: EnvironmentSnapshot | null,
+): CombinedCapability[] {
+  if (last === null) return [];
+  return combinedCapabilities(
+    last.servers
+      .filter((server) => server.agentIds.includes(agentId))
+      .flatMap((server) =>
+        server.tools.map((tool) => ({
+          server: server.name,
+          name: tool.name,
+          effect: tool.effect,
+          inferredFrom: 'name' as const,
+        })),
+      ),
+  );
+}
+
+/**
+ * The most recent snapshot that actually enumerated tools. Every command that reads the
+ * machine also records what it saw, so the newest snapshot is usually this run's own
+ * unprobed one — and reading that would report every harness as holding no tools.
+ */
+async function lastProbedScan(seams: ScanSeams): Promise<EnvironmentSnapshot | null> {
+  const history = await seams.snapshots.history();
+  for (let at = history.length - 1; at >= 0; at -= 1) {
+    const snapshot = history[at] as EnvironmentSnapshot;
+    if (snapshot.servers.some((server) => server.tools.length > 0)) return snapshot;
+  }
+  return null;
+}
+
+/**
+ * The facts coverage is decided from, read once. Every one of them is about this
+ * machine as it stands right now, so the answer changes when somebody wires
+ * something up — which is the point of asking.
+ */
+async function coverageFacts(dir: string): Promise<CoverageFacts> {
+  const health = await gatherHealth(homedir(), dir);
+  return {
+    interceptorsInstalled: health.interceptorsInstalled.length > 0,
+    interceptorsFirstOnPath: health.interceptorDirFirstOnPath,
+    gitHooksInstalled: existsSync(join(dir, '.git', 'hooks', 'pre-push')),
+    osGuardWritten: existsSync(guardProfilePath(homedir())),
+    egressProxySet: PROXY_VARS.some((name) => (process.env[name] ?? '') !== ''),
+    loginPathConfigured: await loginPathConfigured(
+      process.env['SHELL'] ?? 'zsh',
+      homedir(),
+    ),
+    rulesRegistered: health.registeredFiles.length > 0,
+  };
+}
+
+const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy'];
+
+interface ExplainedServer {
+  name: string;
+  /** Agents whose config declares it. */
+  agents: string[];
+  /** The config files that proved it. */
+  detectedFrom: string[];
+  /** Credential names the config hands it. Names only, never a value. */
+  env: string[];
+  /** Tools from the last scan that actually asked. Absent is "not asked", not "none". */
+  tools: McpTool[];
+  probed: boolean;
+}
+
+/** What the scan knows about one server, gathered from every agent that declares it. */
+function serverNamed(report: DiscoveryReport, name: string): ExplainedServer | null {
+  const agents = new Set<string>();
+  const detectedFrom = new Set<string>();
+  const env = new Set<string>();
+  const tools: McpTool[] = [];
+  let declared = false;
+
+  for (const surface of report.surfaces) {
+    for (const launch of surface.servers ?? []) {
+      if (launch.name !== name) continue;
+      declared = true;
+      detectedFrom.add(surface.detectedFrom);
+      for (const variable of launch.env ?? []) env.add(variable);
+      const agent = report.agents.find((each) => each.id === surface.agentId);
+      if (agent !== undefined) agents.add(agent.kind);
+    }
+    for (const tool of surface.tools ?? []) {
+      if (tool.server === name) tools.push(tool);
+    }
+  }
+
+  if (!declared) return null;
+  return {
+    name,
+    agents: [...agents].sort(),
+    detectedFrom: [...detectedFrom].sort(),
+    env: [...env].sort(),
+    tools,
+    probed: tools.length > 0,
+  };
+}
+
+function renderServer(
+  context: CliContext,
+  server: ExplainedServer,
+  asJson: boolean,
+): void {
+  if (asJson) {
+    context.out.json(server);
+    return;
+  }
+
+  const { out, style } = context;
+  out.line('');
+  out.line(`${style.bold(server.name)}  ${style.dim('· MCP server')}`);
+  out.line('');
+  row(
+    out,
+    'Declared by',
+    server.agents.length === 0 ? 'no agent here' : server.agents.join(', '),
+  );
+  for (const path of server.detectedFrom) row(out, 'From', path);
+  if (server.env.length > 0) {
+    // Names only: what a config hands a server, never the value behind it.
+    row(out, 'Credentials', server.env.join(', '));
+  }
+
+  out.line('');
+  if (!server.probed) {
+    /* "Not asked yet" is a different claim from "holds nothing", and explain never
+       starts anybody's server to find out. */
+    out.line('  No tools recorded — nothing has asked this server what it holds.');
+    out.note('"memnox scan" starts it and asks; this command never does.');
+    return;
+  }
+
+  out.line('  Holds');
+  const width = Math.max(...server.tools.map((tool) => tool.name.length)) + 2;
+  for (const tool of server.tools) {
+    const marked =
+      tool.effect === 'destructive' ? style.warn(tool.effect) : style.dim(tool.effect);
+    out.line(`    ${tool.name.padEnd(width)}${marked}`);
+  }
+  out.line('');
+  out.line(
+    `  ${style.dim(`memnox protect --for ${server.name}`)}   put the dangerous ones behind ask or deny`,
   );
   out.line('');
 }
