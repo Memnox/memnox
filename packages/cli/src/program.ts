@@ -19,6 +19,15 @@ import {
 import { registerApprovalsCommand } from './commands/approvals.command';
 import { registerCollisionsCommand } from './commands/collisions.command';
 import { registerFreezeCommand } from './commands/freeze.command';
+import { registerLockCommand } from './commands/lock.command';
+import { registerResumeCommand } from './commands/resume.command';
+import { registerClaimsCommand } from './commands/claims.command';
+import { registerBudgetCommand } from './commands/budget.command';
+import { registerNextCommand } from './commands/next.command';
+import { registerReportCommand } from './commands/report.command';
+import { registerSkillsCommand } from './commands/skills.command';
+import { registerAutopilotCommand } from './commands/autopilot.command';
+import { registerEnvCommand } from './commands/env.command';
 import { registerVerifyCommand } from './commands/verify.command';
 import { registerDaemonCommand } from './commands/daemon.command';
 import { registerUninstallCommand } from './commands/uninstall.command';
@@ -26,6 +35,7 @@ import { registerRunCommand } from './commands/run.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
+import { registerSpendCommand } from './commands/spend.command';
 import { registerSyncCommand } from './commands/sync.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
@@ -42,6 +52,15 @@ export function buildProgram(context: CliContext): Command {
   registerRunCommand(program, context);
   registerUninstallCommand(program, context);
   registerFreezeCommand(program, context);
+  registerLockCommand(program, context);
+  registerResumeCommand(program, context);
+  registerClaimsCommand(program, context);
+  registerBudgetCommand(program, context);
+  registerNextCommand(program, context);
+  registerReportCommand(program, context);
+  registerSkillsCommand(program, context);
+  registerAutopilotCommand(program, context);
+  registerEnvCommand(program, context);
   registerApprovalsCommand(program, context);
   registerCollisionsCommand(program, context);
   registerVerifyCommand(program, context);
@@ -53,6 +72,7 @@ export function buildProgram(context: CliContext): Command {
   registerPolicyCommand(program, context);
   // Off until somebody runs `login`: with no account file these reach nothing.
   registerLoginCommand(program, context);
+  registerSpendCommand(program, context);
   registerSyncCommand(program, context);
   registerWatchCommand(program, context);
   registerRewindCommand(program, context);
