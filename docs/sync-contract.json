@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "note": "The wire between memnox-runtime and memnox-cloud, by example: the bundle a machine is sent, the heartbeat it reports, the batch it posts for what it did, and the census it posts for what it can do. This file is the original; memnox-cloud/docs/sync-contract.json is a verbatim copy. Change one and copy it across whole, so a diff between the two stays empty. A test in each repository asserts its own side against this, because the two were written against each other's documentation rather than against each other, and every field name that drifted did so silently.",
+  "bundle": {
+    "hash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+    "policies": [
+      {
+        "hash": "p1",
+        "layer": "org",
+        "content": "version = 1\n"
+      }
+    ],
+    "rules": [
+      {
+        "id": "no-force-push-to-main",
+        "policyHash": "p1",
+        "line": 3,
+        "domain": "git",
+        "effect": "deny",
+        "specificity": 2,
+        "match": "git.push*",
+        "reason": "main is shared.",
+        "alternative": "push a branch and open a pull request"
+      }
+    ],
+    "conditions": [
+      {
+        "id": "cnd_deploy_freeze",
+        "kind": "freeze",
+        "subject": "deploys",
+        "scope": "workspace",
+        "fromAt": 1757000000000,
+        "untilAt": 1757003600000
+      },
+      {
+        "id": "cnd_open_incident",
+        "kind": "incident",
+        "fromAt": 1757000000000
+      }
+    ],
+    "tags": [
+      {
+        "resourceRef": "svc:payments",
+        "tag": "production"
+      }
+    ]
+  },
+  "heartbeat": {
+    "runtimeVersion": "0.1.0",
+    "bundleHashApplied": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389"
+  },
+  "events": {
+    "events": [
+      {
+        "kind": "agent.session.started",
+        "dedupKey": "session:ses_01",
+        "subjectId": "ses_01",
+        "actorType": "agent",
+        "occurredAt": 1757000123000,
+        "agentSessionId": "ses_01",
+        "payload": {
+          "agentId": "claude-code",
+          "agentKind": "claude-code"
+        }
+      },
+      {
+        "kind": "agent.action.recorded",
+        "dedupKey": "evt_0001",
+        "subjectId": "evt_0001",
+        "actorType": "agent",
+        "occurredAt": 1757000123000,
+        "agentSessionId": "ses_01",
+        "payload": {
+          "agentId": "claude-code",
+          "surface": "git",
+          "operation": "git.push",
+          "classes": [
+            "write"
+          ],
+          "effect": "deny",
+          "finalEffect": "deny",
+          "reason": "main is shared.",
+          "resourceRef": "origin/main",
+          "argsDigest": "sha256:9f2b",
+          "ruleId": "no-force-push-to-main",
+          "policyHash": "p1",
+          "bundleHash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+          "conditionIds": [
+            "cnd_deploy_freeze"
+          ],
+          "alternative": "push a branch and open a pull request"
+        }
+      },
+      {
+        "kind": "agent.action.recorded",
+        "dedupKey": "evt_0002",
+        "subjectId": "evt_0002",
+        "actorType": "agent",
+        "occurredAt": 1757000456000,
+        "agentSessionId": "ses_01",
+        "payload": {
+          "agentId": "claude-code",
+          "surface": "mcp",
+          "operation": "github.merge_pull_request",
+          "classes": [
+            "write"
+          ],
+          "effect": "ask",
+          "finalEffect": "allow",
+          "reason": "a merge is somebody else\u2019s call",
+          "resourceRef": "acme/web#412",
+          "ruleId": "ask-before-merge",
+          "policyHash": "p1",
+          "bundleHash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+          "exitCode": 0,
+          "errored": false,
+          "startedAt": 1757000454800
+        }
+      },
+      {
+        "kind": "approval.requested",
+        "dedupKey": "apr_evt_0002",
+        "subjectId": "apr_evt_0002",
+        "actorType": "agent",
+        "occurredAt": 1757000456000,
+        "agentSessionId": "ses_01",
+        "payload": {
+          "actionId": "evt_0002",
+          "channel": "terminal",
+          "scope": "ask-before-merge"
+        }
+      },
+      {
+        "kind": "approval.resolved",
+        "dedupKey": "apr_evt_0002:resolved",
+        "subjectId": "apr_evt_0002",
+        "actorType": "agent",
+        "occurredAt": 1757000456000,
+        "agentSessionId": "ses_01",
+        "payload": {
+          "outcome": "approved",
+          "resolvedBy": "tresor"
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "takenAt": "2025-09-04T15:33:20.000Z",
+    "agents": [
+      {
+        "id": "claude-code",
+        "kind": "claude-code",
+        "version": "2.1",
+        "surfaces": []
+      }
+    ],
+    "servers": [
+      {
+        "name": "github",
+        "grantedBy": "~/.claude/settings.json",
+        "agentIds": [
+          "claude-code"
+        ],
+        "tools": [
+          {
+            "name": "merge_pull_request",
+            "effect": "write"
+          }
+        ]
+      }
+    ],
+    "resources": [
+      {
+        "id": "res_ssh",
+        "kind": "secret",
+        "path": "~/.ssh/id_ed25519",
+        "sensitivity": "high",
+        "reachableBy": [
+          "claude-code"
+        ]
+      }
+    ]
+  },
+  "census": {
+    "events": [
+      {
+        "kind": "agent.reported",
+        "dedupKey": "agent:claude-code@2025-09-04T15:33:20.000Z",
+        "subjectId": "claude-code",
+        "actorType": "automation",
+        "occurredAt": 1757000000000,
+        "payload": {
+          "agentId": "claude-code",
+          "kind": "claude-code",
+          "version": "2.1"
+        }
+      },
+      {
+        "kind": "agent.reach.reported",
+        "dedupKey": "reach:claude-code:mcp:github/merge_pull_request@2025-09-04T15:33:20.000Z",
+        "subjectId": "claude-code",
+        "actorType": "automation",
+        "occurredAt": 1757000000000,
+        "payload": {
+          "agentId": "claude-code",
+          "resourceRef": "mcp:github/merge_pull_request",
+          "classes": [
+            "write"
+          ],
+          "path": [
+            "claude-code",
+            "github",
+            "merge_pull_request"
+          ]
+        }
+      },
+      {
+        "kind": "agent.reach.reported",
+        "dedupKey": "reach:claude-code:~/.ssh/id_ed25519@2025-09-04T15:33:20.000Z",
+        "subjectId": "claude-code",
+        "actorType": "automation",
+        "occurredAt": 1757000000000,
+        "payload": {
+          "agentId": "claude-code",
+          "resourceRef": "~/.ssh/id_ed25519",
+          "classes": [
+            "secret",
+            "high"
+          ],
+          "path": [
+            "claude-code",
+            "res_ssh"
+          ]
+        }
+      }
+    ]
+  }
+}

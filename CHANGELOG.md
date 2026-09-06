@@ -6,6 +6,242 @@ for a first release, because there is no previous version to describe a change a
 
 Everything before 0.1.0 was a different product and is not listed here.
 
+## Unreleased
+
+- **An `ask` rule holds for a person instead of denying.** Every seam took an optional
+  hold service and nothing outside a test ever built one, so an ask reached "nobody
+  could be asked, so it was denied" — on a laptop with somebody sitting at it and on a
+  server at three in the morning alike. `ask` was a synonym for `deny` everywhere, and
+  the file-backed approval queue had readers and no writer. The question is written
+  down now and answered by whoever gets there first: the terminal, `memnox approve` in
+  another one, or the workspace, whose answer arrives on the machine's next heartbeat.
+- **Two machines on one repository stop being a coin flip.** The control plane had a
+  complete shared-lease API and the runtime had never called it. Unreachable is not
+  held: a lease is coordination and not safety, so a control plane that cannot be
+  reached degrades a shared lease to a local one rather than stopping a write.
+- **A budget can be counted across a fleet.** One counted per machine is one multiplied
+  by however many machines there are, so three servers each allowed twenty pull
+  requests a day was sixty.
+- **`memnox doctor` names what is stopping work when no rule is.** A paused session, an
+  exhausted allowance, an unanswered question and a held path all look identical from
+  inside an agent — it asked, and nothing happened — and none of them appears in
+  `memnox why`, because none is a policy decision.
+- **`memnox env` prints what a service manager has to set.** `memnox run` puts the seams
+  in front of an agent it starts, and nothing starts an agent running under systemd or
+  in a container. Those read no shell profile, so the PATH line reached a terminal and
+  never reached the server the agent was actually on. `PATH` is expanded for systemd
+  and Docker, neither of which runs a shell.
+- **`memnox lock` did not actually hold anything.** The lease belonged to the command
+  that took it, and that command exits the moment it has printed — so every hand-taken
+  lease was abandoned before the next one could see it, and `lock --list` answered
+  "nothing is held" one line after taking one. It belongs to the shell now. It also
+  holds exactly the path you name: widening to the parent is the seam's rule, where
+  ten writes must not become ten leases, and applying it to a path somebody typed
+  locked a directory they had not asked for — or the whole repository, for a path that
+  did not exist yet.
+- **`memnox explain` denied things `memnox scan` had just listed.** It answered for
+  agents and authenticated CLIs only, so a scan naming eight tools and an MCP server
+  was followed by nine "nothing here provides that". Both now answer, and a test
+  asserts the property rather than the three cases.
+- **`memnox report` argued with itself about spend**, printing a figure and then saying
+  nothing here could produce one.
+- **`memnox doctor` stopped reporting a fault it could not fix.** It expected every
+  binary the classifier knows, while `protect --interceptors` wraps only the ones the
+  machine has and says so — so a machine without `wget` was told twice that something
+  was wired wrong and given a fix that changed nothing. `--purge` no longer claims a
+  clean machine while the project's rule file is still in the repository.
+- **`memnox uninstall` clears what would govern the next install.** A pause or a held
+  call left behind stops a fresh install before it has done anything, and says nothing
+  about why.
+- **The generated baseline denied the wrong git commands.** Its rule was described as
+  "force-pushing, and hard resets" and matched `git.push`, `git.reset`, `git.clean` —
+  so it denied every ordinary push and permitted `git push --force`. It names what the
+  verb table actually produces now, and a test asserts every destructive git verb is
+  covered.
+
+- **A verdict can be replayed against what was in force when it was taken.** The engine
+  stamped a state version on every decision and no seam carried it to the ledger, so the
+  one field built to make a freeze visible afterwards was computed and dropped. Events
+  carry `bundleHash` and `conditionsInForce` now, both additive and optional inside the
+  frozen v1, and both reach the control plane's `decisions` row.
+- **The console can answer what an agent can do.** A kept scan is sent as a census, once
+  per scan: every agent, and everything each one reaches that it has not touched yet.
+  The control plane's capability projection was built to receive exactly this and had
+  never been sent one, so the "can" half of the product was empty in every workspace.
+- **Held calls reach the approval queue.** A hold is recorded on the action itself here,
+  so nothing ever sent one and the inbox an approver reads was empty however many times
+  somebody was actually interrupted. An ask a person released is reported as allowed
+  rather than as still waiting, and one nobody answered stays open.
+- **A batch is sized in rows rather than in actions.** One action is up to four rows on
+  the wire once its session and its approval are counted, so a post sized by actions
+  could be four times the limit and be refused whole. The cursor only advances past what
+  was actually included.
+
+- **A workspace freeze now reaches the gate.** `memnox sync` wrote what the control
+  plane declared to `~/.memnox/org-conditions.json`, reported it applied, and every
+  gate on the machine read only the local freeze file. A production freeze was pulled
+  by every machine and governed none of them. Decision paths read both files now;
+  `freeze --lift` still reaches only the local one, so nobody ends a company-wide
+  incident from their laptop.
+- **And for as long as it was declared for.** The control plane sends a condition's
+  window as `fromAt` and `untilAt`; this side read `from` and `until`, which were never
+  there, so every condition arrived windowless and was given a day from the moment it
+  was pulled. An hour-long freeze ran for a day and a week-long one was gone after one.
+  A condition with no end is held for a day past the last sync and renewed by the next,
+  including a 304.
+- **The console can say what an agent can do.** A machine pushed no `agentId`, and the
+  control plane's capability projection keys every row on it, so the census was empty
+  for every workspace. A batch also declares the sessions it mentions, so actions are
+  no longer filed under a session nothing opened.
+- **`docs/sync-contract.json`.** One example of every message on the wire, copied
+  verbatim into `memnox-cloud`, with a test on each side reading it. Both repositories
+  were tested against their own idea of the wire and never against each other's, which
+  is how three field names drifted with both suites green.
+- **The fleet page shows what is running.** The runtime version is reported on every
+  heartbeat rather than only at enrolment.
+
+- **Harnesses.** `memnox scan` detects Hermes (`~/.hermes/config.yaml`), OpenClaw
+  (`~/.openclaw/`) and Ruflo (`.claude-flow/`, `.ruflo/`, `.swarm/` and the rest,
+  beside the work). All three run other agents, so a `HARNESSES` block counts the
+  principals behind the row and names the roles, runtimes, hooks and federation.
+  `memnox explain <harness>` answers with what it runs.
+- **Their own filters are honoured.** A tool Hermes excluded, or one an OpenClaw
+  allow-list leaves out, is not reported as reachable through it; the count it removed
+  is printed beside the smaller number. An OpenClaw agent denied `exec` is reported
+  without a shell.
+- **Combined capability.** A `COMBINED CAPABILITY` block names paths a set of permitted
+  tools opens that no single one of them opens — acquire, package, emit, grouped by
+  subject, from a fixed verb table. No model is involved.
+- **`memnox mcp wrap`** also reads `~/.openclaw/openclaw.json` and the `.mcp.json`
+  beside the work, which is where Ruflo registers its own server. Hermes' YAML is never
+  rewritten.
+- **Drift under a harness.** `diff` and `watch` compare the roles, hook files,
+  runtimes and federation flag of a harness, so a role that appeared overnight is an
+  event. Nothing else would have fired for it: a new role changes no config a client
+  reads.
+- **Codex CLI's MCP servers are read at last.** Its config is TOML and the detector
+  parsed servers with a JSON reader, so a Codex machine was reported with no servers,
+  no tools and no findings about either. It now has the same rows as every other agent.
+- **A tool is counted once, however many clients declare its server.** The same
+  `github` server in five editors was reported as five servers and five times its
+  tools, which inflated the tool count, the destructive count, the risk band and the
+  governed-capability gap.
+- **`memnox explain <agent>` answers for every kind**, not only for a harness.
+- **`memnox mcp wrap` covers Codex and Hermes.** Their TOML and YAML are edited a line
+  at a time instead of reserialised, so comments, key order, quoting style and block
+  lists survive and `unwrap` restores the file byte for byte. A YAML argument a parser
+  would retype — `no`, `8080` — is quoted, so a wrapped server gets the argument its
+  author wrote. A server declared by URL is named and left alone.
+- **`protect --apply-native` writes OpenClaw's allow and deny lists** as well as Claude
+  Code's permissions. An `ask` rule is never written there, because OpenClaw has two
+  effects and guessing either way is wrong.
+- **`memnox explain <agent>` ends with "Governed by"** — which seams hold that agent
+  right now and the command that closes each one that does not. A windowed product is
+  told about its login shell rather than to use `memnox run`, which cannot reach it.
+- **`doctor --wiring` reads every MCP config**, not four of them. There were three
+  hardcoded lists of where a server can be declared and they had drifted, so the check
+  reported "none routed through the proxy" on machines where most of them were.
+- **`memnox protect --path`** writes the interceptor directory onto your login `PATH`,
+  which is the one seam `memnox run` cannot carry: an editor opened from a dock icon
+  takes its environment from the login shell. Opt-in by name, fenced by markers,
+  shell-aware (zsh, bash, fish), and removed by `--revert-path` or `uninstall`.
+- **Ruflo detection corrected against its own user guide.** It keyed on `.harness/`,
+  which is Harness.io's CI directory, and on `.ruflo/`, which Ruflo does not write —
+  the first would have reported a swarm on unrelated repositories. It now keys on
+  `claude-flow.config.json` and reads `AGENTS.md` to name Codex as a hosted runtime.
+- **The MCP proxy reads the registered rule files, not only `MEMNOX_POLICIES`.** It
+  read the environment alone, so `memnox mcp wrap` on its own repointed every server at
+  a proxy that came up with no rules and forwarded everything — while `doctor --wiring`
+  reported all servers routed. Routed is not governed. The interceptors had always
+  fallen back to the registry; the proxy does now too.
+- **`memnox policy use [file]`** registers a hand-written rule file so the seams load
+  it, and `doctor --wiring` now reports a readable rule file that nothing registered as
+  **broken** rather than ok — `policy test` answering DENY while every seam allows the
+  same action is the state a health check must never print a clean number about.
+- **`explain <agent>` will not call a seam held when there is nothing to decide with**,
+  so a wrapped server with no registered rules reads as open.
+- **No wall-clock assertion is left in the test suite.** Three tests measured the
+  machine rather than the code and failed under load: ledger throughput, probe
+  parallelism, and the config watcher. Parallelism is now proved by counting probes in
+  flight at once — a serial probe peaks at one instead of five, and that is checked by
+  mutating the source; the watcher's own return value already distinguished a change
+  from a timeout; and the throughput number moved to `pnpm bench`.
+- **Each host's tool filter is read with that host's own precedence.** Hermes and
+  OpenClaw resolve include/exclude in opposite directions — a present `tools.include`
+  decides alone in Hermes and `exclude` is never consulted, while OpenClaw denies first
+  — and an explicit `include: []` registers nothing rather than nothing being filtered.
+  One shared matcher got all three wrong and reported the wrong reachable tool set.
+  Matching is now case-sensitive: `readFile` and `readfile` are two tools.
+- **`protect --apply-native` writes Hermes' `approvals.deny`**, a command deny list that
+  blocks before any yolo bypass. The globs come from the shipped verb tables, the list
+  is fenced so a revert takes only ours, and applying then reverting against a real
+  `config.yaml` leaves it byte-identical.
+- **An MCP rule now compiles into Claude Code's permissions.** `toClaudeCodePermissions`
+  translated filesystem, shell and git actions and silently nothing for `mcp.*` — the
+  product's flagship surface — so every MCP rule came back untranslated. It now writes
+  `mcp__*__<tool>` for a deny or an ask, without parentheses, which Claude Code skips a
+  rule for. An allow still has to name its server, because Claude Code skips an
+  unanchored allow glob, and that is reported rather than written into a file where it
+  would do nothing.
+- **`memnox skills` sees what a harness taught itself.** It looked in three places, all
+  one level deep, and found none of Hermes' — the one agent that writes its own skills
+  between runs. It now walks a nested layout and reads `~/.hermes/skills`, taking a real
+  machine from 2 skills found to 70. A skill is named by its own directory, so two
+  called `search` under different groups stay two.
+- **Dollars are real now.** `BUDGET_UNIT.usd` and the breaker's `spend` signal existed
+  with nothing able to reach them: the event row had no cost field, so a dollar budget
+  counted zero for ever. The row gains an optional `costUsd` — the only change a frozen
+  v1 permits — `memnox spend <usd>` is the seam the agent reports through, and
+  `memnox report` shows what was spent and what of it went on work that was redone.
+  Memnox still prices nothing: no report means no spend line, never `$0.00`.
+- **`why` says whether the change was actually approved.** Branch protection and
+  CODEOWNERS already stood beside a refusal; the commonest honest refusal there is —
+  "technically it can, and nobody approved this" — was missing. Read through `gh pr
+  view`, read-only, on the branch the reader is standing on. A decision the forge did
+  not report is said as unknown, never as "not approved", and a check still running is
+  not counted as passing.
+- **A refusal says whether retrying could ever work.** It named the reason and the
+  alternative and left the model to guess, so a rule read like a transient failure and
+  got retried — which is the loop the circuit breaker exists to stop, arriving from the
+  one place that could have said so. A rule says retrying will fail identically, a
+  freeze or a budget says the condition will clear, an ask says it is waiting on a
+  person, and an upstream that died says it is a failure and not a rule. The MCP proxy
+  and the shell interceptor give the same sentence.
+- **An irreversible action is never automatic.** `autopilot` banded purely on the
+  policy verdict, so an allow was enough to hand over sending an email. Reversibility is
+  now an input: anything Memnox cannot put back is held at needs-approval however
+  ordinary the rule that permits it, and the band only ever narrows.
+- **`memnox verify --enforcement` proves the seams actually refuse.** Nothing did:
+  `doctor --wiring` reads configuration, and every serious defect this release fixes was
+  the product reporting governance it was not doing. The probe plants a rule, attempts
+  the forbidden action through the proxy and the interceptor, and reports what came
+  back — with no `MEMNOX_POLICIES` and its own `HOME`, because an agent has neither.
+  Reintroducing the inert-proxy bug turns it red, which is the test that matters.
+- **The MCP proxy no longer dies on an unreadable rule file.** Reading the registry
+  meant one bad file in an unrelated repository threw on startup, so every wrapped
+  server failed to start and the agent came up with nothing. It now loads what parses,
+  names what did not, and says plainly when nothing loaded.
+- **The circuit breaker actually fires.** It lived only in the daemon, and no seam has
+  ever spoken to the daemon on the hot path — so on an ordinary machine it observed
+  nothing and the loop it exists to stop ran until somebody noticed the bill. The seam
+  now replays the session from the ledger, which every surface already writes to, and
+  holds the session when it trips. No daemon, no counter to keep, and it works in the
+  default path rather than the optional one. A held session runs nothing until
+  `memnox resume` lifts it.
+- **Roles have a screen at last.** `roles:` on a rule, `agentRole` on the evaluation,
+  and `memnox run --role` all existed and nothing ever showed what a job may do, so a
+  workforce could be written down and never read back. `memnox autopilot --role <name>`
+  renders one job's boundary, evaluated as that job; `--roles` lists every job the rules
+  name with what each may do. Read from the rules rather than a roster, because a role
+  nothing has a rule about governs nothing.
+- **The autonomy ladder no longer reaches the top on an afternoon's work.** A machine
+  that had run three commands and been asked about none read as `trusted`, the top rung
+  of a ladder whose whole point is that it is climbed as evidence accumulates. Quiet is
+  not proved: below fifty actions in the window a clean record earns `supervised` and no
+  more. The floor only ever holds a level down, never lifts one.
+- **Capability inventory version 2.** `harnesses[]` and `chains[]` added; neither could
+  be expressed in v1 without lying about the count.
+
 ## 0.1.0
 
 The first release. Everything below works; the version says this is the beginning

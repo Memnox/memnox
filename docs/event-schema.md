@@ -7,6 +7,14 @@ safe change within v1.
 Published as JSON Schema at `https://memnox.dev/schema/event-v1.json`, and exported as
 `EVENT_SCHEMA` from `@memnox/core`.
 
+## Optional
+
+| Field | Type | Notes |
+|---|---|---|
+| `costUsd` | number ≥ 0 | What the action cost, when something reported it. Memnox prices nothing: absent means nobody said, which is not the same as zero. Record one with `memnox spend`. |
+| `bundleHash` | string | Which workspace bundle this machine held. `policyHash` covers the whole stack as this machine assembled it, which is not a thing the control plane can name. |
+| `conditionsInForce` | string[] | The conditions in force when the verdict was reached. The engine computed a state version for every decision and nothing carried it to the ledger, so the field built to make a freeze visible afterwards was stamped and dropped. |
+
 ## Required
 
 | Field | Type | Notes |
@@ -34,6 +42,8 @@ Published as JSON Schema at `https://memnox.dev/schema/event-v1.json`, and expor
 | `rule` | `{ name, layer, file, line }` — enough to open the file |
 | `alternative` | `{ action, resource, note }` |
 | `policyHash` | the rule set in force then, not now |
+| `bundleHash` | the workspace bundle this machine was running. Absent means not logged in, which is not the same as behind |
+| `conditionsInForce` | ids of the freezes and incidents in force at the verdict, so it can be replayed against them |
 | `argsDigest` | a hash. The arguments never reach a row |
 | `execution` | `completed` \| `failed` \| `blocked` \| `timed-out` |
 | `exitCode`, `durationMs` | |

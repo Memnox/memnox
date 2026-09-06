@@ -20,6 +20,16 @@ It stores a **path**, a **kind** and a **fingerprint**. Never a value. The event
 schema refuses a digest field holding more than 128 characters, because that is the
 shape of a payload that escaped.
 
+### I wrapped my servers. Is that enough?
+
+Almost. Wrapping points every server at the proxy; the proxy still needs rules. It reads
+`MEMNOX_POLICIES` when set and otherwise the files this machine has registered, so
+`memnox mcp wrap` plus `memnox policy use` is enough on its own — no environment
+variable, which matters because an editor opened from a dock icon carries none.
+
+`memnox doctor --wiring` says which half is missing, and `memnox explain <agent>` says
+it per agent.
+
 ### What happens if Memnox is not running?
 
 The interceptors evaluate in process — same rules, a little slower. If the rules
@@ -42,6 +52,35 @@ days of `memnox timeline`, then `memnox protect --enforce`.
 
 A single number is unarguable, and an unarguable number is one nobody acts on. There
 are counts by severity and a band that names every rule that fired.
+
+### Does it replace the security in Hermes, OpenClaw or Ruflo?
+
+No, and it reads what they enforce rather than ignoring it. Hermes filters tools per
+server, OpenClaw has allow/deny lists and a container sandbox, Ruflo has signed
+manifests and PII filtering. All three are real controls. A tool Hermes excluded is not
+reported as reachable through Hermes, and the count it removed is printed beside the
+smaller number.
+
+What none of them can see is the other two on the same disk, the credentials underneath
+(`~/.aws/credentials`, the `gh` login, the browser profile), and the shell all three
+share. They decide what their agent may call; Memnox decides what the machine underneath
+lets through. [Harnesses](harnesses.md) has the detail.
+
+### Will it rewrite my config and lose my comments?
+
+No. A JSON config is written whole, because JSON holds nothing a round trip would lose.
+Codex's TOML and Hermes' YAML have their two launch lines replaced and every other byte
+copied through, so `memnox mcp unwrap` gives the file back byte for byte. Anything that
+will not parse is skipped and named, never rewritten.
+
+### What is "combined capability"?
+
+A set of tools that opens a path none of them opens alone: `read_customer`,
+`create_customer_export`, `send_customer_file`. Each is ordinary, each passes review on
+its own, and holding all three is exfiltration. It is found from tool names by a fixed
+verb table — an acquire step, an optional package step, an emit step, grouped by the
+subject they act on. No model is involved, and a chain containing a step that is already
+destructive is not printed, because those are counted elsewhere.
 
 ### Does it review my code?
 

@@ -6,11 +6,18 @@
 > repository. Stack choices are **[proposed]**.
 
 **What this plan is built toward.** `VISION.md` is the vision all three repositories share,
-written as sixty-five pains rather than as an architecture, over one sentence: **Memnox solves
-the gap between what AI agents can do, what they actually do, and what your organization intended
-them to do.** Cite a pain by number when a milestone is answering to one (`2.1` what an agent can
-reach, `2.61` to `2.64` recovery, `2.65` two agents in one repository); the phase index in its
-appendix maps each `§NN` to the pains it closes and runs to `§12`.
+written as a strategy note rather than as an architecture, over one move: do not sell protection,
+sell **the ability to safely increase agent autonomy**. The category it names is a **control
+plane for autonomous work**. Part I is the always-on case in twenty sections, Part II the local
+wedge in ten. Cite a section as `I.NN` or `II.NN` when a milestone is answering to one: `I.8` two
+agents on one file, `I.9` agent rollback, `II.2` effective capability, `II.9` cross-agent
+protection.
+
+**The sixty-five pains and the `§01` to `§12` phase index went with the previous vision.** A
+`2.NN` or `§NN` citation left in this plan, in a source comment or in a test resolves to nothing
+now, and should be rewritten to the section it actually answers the next time that line is
+touched. `spec §2.4` is unaffected: that is the functional spec, a different document, and it is
+still not in this repository.
 
 **This copy is the original.** `memnox-cloud/VISION.md` and `memnox-client/VISION.md` are verbatim
 copies of it, because all three repositories are version controlled and the directory above them is
@@ -285,7 +292,7 @@ the line it explains; anything longer belongs in `docs/`, where it is read on pu
 
 ---
 
-## M9 — Recovery and pre-flight (≈ 1.5 weeks) — vision 2.61–2.64
+## M9 — Recovery and pre-flight (≈ 1.5 weeks) — vision `I.9`
 
 **Milestone demo:** an agent wrecks an uncommitted working tree; `memnox rewind` puts it
 back in one command and the wreckage is still reachable. `memnox check "deploy payments"`
@@ -324,7 +331,7 @@ Slack reader here would mean a token on every laptop and a demo instead of a pro
 
 ---
 
-## M10 — Leases and the broker (≈ 1.5 weeks) — vision 2.65
+## M10 — Leases and the broker (≈ 1.5 weeks) — vision `I.8`, `II.9`
 
 **Milestone demo:** Cursor and Claude Code run in one repository. The second one to write
 `src/billing` is told who holds it and what they have been doing, waits, and proceeds when
@@ -348,7 +355,7 @@ the first session ends. `memnox lock --list` shows both from a third terminal.
 | OSS-10.4 | Reads never wait | Only write-class and destructive actions take or wait on a lease | Conformance row per class | 10.3, 5.11 | S |
 | OSS-10.5 | Reclaim a dead owner | A lease whose pid is gone is reclaimable rather than waited on | Kill a holder, next writer proceeds | 10.2 | M |
 | OSS-10.6 | Take at the seam | The interceptor takes a lease on the paths a command writes, once per session | One session writing ten files takes one lease, not ten | 10.2, 5.1 | M |
-| OSS-10.7 | The held prompt | Names the holder, how long, and what it has done — read from the ledger, not guessed | Matches the vision block | 10.6, 6.5 | M |
+| OSS-10.7 | The held prompt | Names the holder, how long, and what it has done — read from the ledger, not guessed | Matches the `I.8` block | 10.6, 6.5 | M |
 | OSS-10.8 | Wait, take, refuse | `[w]` bounded wait, `[t]` recorded override, `[d]` refuse; timeout is a refusal naming the holder | Race test: two writers, first wins, second waits then proceeds | 10.7, 9.9 | L |
 | OSS-10.9 | `memnox lock` | `--list`, `<path> --for <window>`, `--release <id>`; a third terminal sees both | Manual two-agent run | 10.2 | M |
 | OSS-10.10 | Release on session end | Session end releases its leases; `memnox uninstall` leaves none behind | No lease survives its session in the fixture | 10.2, 7.2 | S |
@@ -359,6 +366,75 @@ a wrong lease is wrong silently and the cost is somebody's afternoon. So: **it l
 and never meaning, it never blocks a read, every lease expires, and a wait is always
 bounded.** A lease that could hang an agent forever is worse than the collision it prevents.
 
+**Built.** `core/coordination` holds the lease, the register, the overlap rule and the
+gate; `memnox lock` lists, takes, releases and forgets; the shell seam takes one before a
+write and never for a read; `memnox run` releases what a session held even when the agent
+crashed. Two things the tests forced and the plan did not say: a write claims the
+directory it lands in, because a lease per file is ten refusals for one afternoon, and the
+wait is bounded by a count as well as by the clock, because a clock that does not advance
+would otherwise be a hang.
+
+
+## What the vision asked for, and where it is
+
+`VISION.md` is thirty sections. These are the ones with a surface, so the next person
+does not go looking for something that is not there.
+
+| Section | Where |
+|---|---|
+| `I.3` circuit breaker | `core/session/breaker.ts`, held via `core/session/pause.ts`; the daemon counts outcomes on `RECORD`. `memnox paused` / `memnox resume`. Error loop, no progress, action explosion, scope drift and a reported-spend ceiling. The flat ceilings stay in `core/daemon/limits.ts`. |
+| `I.4` skill quarantine | `core/discovery/skills.ts`, `memnox skills`. A skill whose reach grew since it was accepted is held. |
+| `I.6` progressive autonomy, `I.16` what to automate next, `I.20` the primary screen | `core/session/autonomy.ts`, `memnox next`. |
+| `I.7` role-based authority | `policy.match.roles` was already parsed and matched and nothing ever set the field. `memnox run --role`, `MEMNOX_AGENT_ROLE`. |
+| `I.8` two agents on one file | `core/coordination`, `memnox lock`. |
+| `I.10` black box | `timeline`, `why`, `trace`, and `memnox claims` for what was said against what was recorded. |
+| `I.12` grouped approval | `core/gate/grouping.ts`; `memnox approvals` groups by default, `approve --group`. |
+| `I.13` autonomy budget | `core/session/budget.ts`, `memnox budget`, enforced in the daemon. |
+| `I.15` daily agent CFO | `core/session/operations.ts`, `memnox report`. |
+| `I.1`, `I.2`, `I.5`, `I.14` autopilot and blast radius | `core/session/autopilot.ts`, `memnox autopilot`. |
+| `I.3` scope drift, and the task everything compares against | `core/session/session-task.ts`; `memnox run --task/--paths/--expect`. |
+
+**Three rules these all had to obey, and they are worth keeping.**
+
+**Counts, never scores.** `memnox next` prints how many times somebody said yes, not
+how many hours they would save. A number nobody can check does not belong on a screen
+somebody is being asked to act on.
+
+**Never estimate what only somebody else can report.** There is no spend line in
+`memnox report` and a `usd` budget counts nothing on its own: this machine watches a
+command run and cannot price a model call. `EventCost` is the seam for whatever can.
+
+**An unruled capability is not a permitted one.** `memnox autopilot` counts what no
+rule covers in its own band and refuses to call a boundary ready while most of the
+agent's reach is unruled. Filing those under "runs on its own" would be the screen a
+person trusts most telling a comfortable lie.
+
+**What the audit of remote agents found, and what closed it.** Every seam took an
+optional `HoldService` and nothing outside a test ever built one, so an `ask` rule
+reached `Nobody could be asked, so it was denied`. `ask` was a synonym for `deny`
+everywhere, and `PendingApprovals` — the file-backed queue that exists so a second
+terminal or the control plane can answer — had readers and no writer. `core/gate/routed-prompt.ts`
+is the fix: the question is written down first and answered from the terminal, from
+`memnox approve`, or from the workspace, whichever arrives first.
+
+Three things follow from that seam being real. A held call travels up on the heartbeat
+and its answer comes back on the next one, which is the only per-machine round trip
+there is and so the only way to answer a question raised on a box nobody can reach
+(`memnox-cloud/src/machines/held-call.ts`). Leases consult the workspace register the
+cloud already had and the runtime had never called. And a budget can be counted across
+the fleet, because one counted per machine is one multiplied by however many machines
+there are.
+
+All three degrade rather than block: an unreachable control plane turns a fleet budget
+into a machine budget and a shared lease into a local one, and leaves a held call still
+answerable from a terminal. A lease is coordination and not safety, so one that blocked
+work whenever the network hiccuped is one people would turn off inside a day.
+
+**What rendering the boundary found.** The generated baseline's git rule was described
+as "force-pushing, and hard resets" and matched `git.push`, `git.reset`, `git.clean` —
+so it denied every ordinary push and permitted `git push --force`, which is the whole
+point inverted. `domains.ts` now names what the verb table actually produces, and
+`domains.test.ts` asserts every destructive git verb is covered.
 ---
 
 ## Sequencing and staffing

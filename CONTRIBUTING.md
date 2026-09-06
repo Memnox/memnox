@@ -15,7 +15,8 @@ git clone https://github.com/Memnox/memnox.git
 cd memnox
 pnpm install          # pnpm 11, Node 20 or 22
 pnpm build            # every package, in dependency order
-pnpm test             # ~1000 tests, about three seconds
+pnpm test             # ~1200 tests, about three seconds
+pnpm bench            # the wall-clock ones, run on purpose
 ```
 
 Run your working copy against your own machine:

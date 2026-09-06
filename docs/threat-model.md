@@ -68,7 +68,16 @@ any `UPDATE` except recording who released a held call.
    unknown is not blocked by default. The overrides file exists for exactly this.
 4. **A held call has a timeout.** Nobody at the keyboard for two minutes means denied,
    which is safe, but it also means an unattended run cannot use ASK rules at all.
-5. **A row is best effort.** Every seam writes its row after the verdict has been
+5. **A harness's far side is somebody else's machine.** Ruflo and OpenClaw can both
+   hand work to agents elsewhere. A local scan reports that federation is switched on
+   and cannot see what crosses it, what the other side holds, or what it did. The scan
+   says so out loud rather than leaving it as an absence.
+6. **A harness's roles are read from disk, not from what is running.** A swarm that
+   defines its roles at runtime, or one whose layout changed in a version we have not
+   caught up with, is reported with fewer principals than it has. Detection is by
+   config file on purpose — a process list is a different tool with different risks —
+   and the layout revision each detector was written against is printed in the report.
+7. **A row is best effort.** Every seam writes its row after the verdict has been
    applied, and a ledger that cannot be opened loses the row rather than stopping the
    agent. So the record can be short where the disk was full or the file unwritable,
    and nothing says so at the time. The alternative — refusing to act because the

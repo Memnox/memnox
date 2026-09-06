@@ -38,6 +38,14 @@ dependency, and one path that every decision travels down.
 
 Nothing in that picture calls a network, and nothing consults a model.
 
+**An agent may itself be several.** Hermes, OpenClaw and Ruflo are harnesses: they run
+other agents, so they enter the picture at the left as one row and reach the seams as
+several principals. They enforce their own tool policies and Memnox reads those rather
+than ignoring them — a tool a harness filtered out is not counted as reachable through
+it. What a harness cannot see is the other harness on the same disk, the credentials
+underneath it, and the shell they share, and that is exactly the seam this diagram is.
+`docs/harnesses.md` has the whole story.
+
 ## The four packages
 
 | Package | npm name | What it is |
@@ -133,9 +141,16 @@ same input answers the same way a year later.
 kind and a count. The ledger stores a digest of arguments, never the arguments.
 `validateEvent` refuses a digest field long enough to be a payload.
 
-**A refusal names a way forward.** The alternative is resolved from the rule that
-denied, never invented. An agent told only "no" abandons the task; one told what to
-use instead finishes it.
+**A refusal names a way forward, and says whether to try again.** The alternative is
+resolved from the rule that denied, never invented. An agent told only "no" abandons the
+task; one told what to use instead finishes it — and one that cannot tell a rule from a
+flaky server retries the rule until the budget is gone, which is why every refusal
+carries its retryability.
+
+**Nothing irreversible is handed over.** Reversibility is an input to the autonomy
+bands, not a note beside them: a destructive action a milestone can undo is a smaller
+decision than an ordinary one it cannot. A wrong ask costs an interruption; a wrong send
+costs a sent email.
 
 **It comes off cleanly.** `memnox uninstall` removes the wrappers, the hooks and the
 wrapping; `--purge` takes the history and rules too. A tool that cannot be removed is
@@ -157,7 +172,14 @@ export function registerCollisionsCommand(
 
 A test passes a fixture home and a fixed clock; production passes nothing. `CliContext`
 carries output and styling the same way, which is why no command reaches for `console`
-and why a suite of 1000 tests runs in three seconds without a terminal.
+and why a suite of 1200 tests runs in three seconds without a terminal.
+
+**No test in that suite asserts a wall clock.** One measured ledger throughput and one
+inferred parallelism from a stopwatch, and both failed on a loaded machine for reasons
+that had nothing to do with the code — which teaches everybody to re-run the suite
+rather than read it. Parallelism is now asserted by counting calls in flight at once,
+and the throughput number lives in `pnpm bench`, where a slow answer means something.
+A concurrency test that needs a delay uses a microtask, never a timer.
 
 ## Where to make a change
 
@@ -165,7 +187,9 @@ and why a suite of 1000 tests runs in three seconds without a terminal.
 |---|---|
 | change what `git push` counts as | `core/src/verbs/tables.ts` — and name the classes that moved, in the PR |
 | add a rule field or matcher | `core/src/policy/` |
-| detect a new agent or MCP client | `core/src/discovery/detectors/` |
+| detect a new agent or MCP client | `core/src/discovery/detectors/` — a data spec in `index.ts` when the layout is a config path, its own module when it needs parsing |
+| detect a new harness, or what one hosts | `core/src/discovery/detectors/` for the layout, `core/src/discovery/harness.ts` for what a harness means |
+| change what a set of tools adds up to | `core/src/discovery/composition.ts` — a verb table, reviewed as code |
 | find a new kind of credential | `core/src/discovery/credentials.ts` |
 | add a flag to a command | the command file, then the folder beside it for what the flag does |
 | add a command | `cli/src/commands/<name>.command.ts`, registered in `cli/src/program.ts` |
