@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir, release } from 'node:os';
-import { dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   guardFor,
   guardPlanFrom,
@@ -9,6 +9,7 @@ import {
   loadPoliciesFromFile,
   OS_GUARD,
   seatbeltProfile,
+  type GuardPolicy,
 } from '@memnox/core';
 import {
   installGitHooks,
@@ -92,9 +93,13 @@ export async function runHooks(context: CliContext, repoDir: string): Promise<vo
  * even to a binary that never saw a wrapper. What it cannot express is printed, because
  * a guard quietly covering less than the rules do is worse than no guard at all.
  */
-export async function runOsGuard(context: CliContext, repoDir: string): Promise<void> {
+export async function runOsGuard(
+  context: CliContext,
+  repoDir: string,
+  /** Injected so a test can point it at a symlinked home, which is the whole bug. */
+  home: string = homedir(),
+): Promise<void> {
   const { out, style } = context;
-  const home = homedir();
   const support = guardFor(process.platform, release());
 
   const file = resolvePolicyFile();
@@ -111,7 +116,7 @@ export async function runOsGuard(context: CliContext, repoDir: string): Promise<
   if (support.guard === OS_GUARD.SEATBELT) {
     const path = guardProfilePath(home);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    await writeFile(path, seatbeltProfile(plan.policy), {
+    await writeFile(path, seatbeltProfile(throughSymlinks(plan.policy)), {
       encoding: 'utf8',
       mode: 0o600,
     });
@@ -190,4 +195,48 @@ export async function runPathLine(
 async function firstExisting(paths: readonly string[]): Promise<string | null> {
   for (const path of paths) if (existsSync(path)) return path;
   return null;
+}
+
+/**
+ * The paths the kernel will actually see.
+ *
+ * Seatbelt matches on the resolved path, so a rule naming a symlinked one silently
+ * matches nothing: on macOS `/tmp` is `/private/tmp`, and a profile written with
+ * `(deny file-read* (subpath "/tmp/x/.ssh"))` let every read of that key straight
+ * through while reporting that the sandbox was on. The same is true of any home
+ * reached through a link.
+ *
+ * Both spellings are kept. Resolving is what makes the rule bite; keeping the
+ * original costs one line and covers the case where the link is what gets opened.
+ */
+function throughSymlinks(policy: GuardPolicy): GuardPolicy {
+  const both = (paths: readonly string[]): string[] => [
+    ...new Set(paths.flatMap((path) => [path, resolveThrough(path)])),
+  ];
+  return {
+    denyRead: both(policy.denyRead),
+    denyWrite: both(policy.denyWrite),
+    allowWrite: both(policy.allowWrite),
+  };
+}
+
+/**
+ * `realpath` on the longest part of the path that exists, with the rest put back.
+ *
+ * A denied path very often does not exist yet — that is half the point of denying it —
+ * and `realpathSync` throws on those, so resolving only what is there is what makes
+ * the rule cover the file when it appears.
+ */
+function resolveThrough(path: string): string {
+  let head = path;
+  const tail: string[] = [];
+  while (head !== dirname(head)) {
+    try {
+      return join(realpathSync(head), ...tail);
+    } catch {
+      tail.unshift(basename(head));
+      head = dirname(head);
+    }
+  }
+  return path;
 }
