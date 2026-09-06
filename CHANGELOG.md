@@ -31,6 +31,20 @@ Everything before 0.1.0 was a different product and is not listed here.
   in a container. Those read no shell profile, so the PATH line reached a terminal and
   never reached the server the agent was actually on. `PATH` is expanded for systemd
   and Docker, neither of which runs a shell.
+- **The git hooks blocked every commit and no force push.** `protect --hooks` wrote a
+  hook that called a bare `memnox`, so in any shell without it on PATH — which is every
+  shell, after `npx memnox` — it exited non-zero and stopped every commit in the
+  repository with nothing but "command not found". It also only ever asked about
+  `git.push`, which the baseline allows, so the force push it exists to catch went
+  through. It fails open when it cannot run, rules on `git.push-force`, and reads the
+  rewrite off the refs git hands it.
+- **The kernel profile named paths the kernel never matches.** Seatbelt matches the
+  resolved path, so a deny naming a symlinked home — `/tmp` is `/private/tmp` on macOS
+  — matched nothing, and `memnox run` reported "inside the sandbox profile" while a raw
+  `cat` read the key it was denying. Both spellings are written now.
+- **An ask on the network seam refused without asking anybody.** The egress proxy
+  turned an `ask` rule into a 403 and told the reader "you chose to be asked about
+  this", which is the rule's own words arguing with what had just happened to them.
 - **`memnox resume` did not resume anything.** The breaker replayed the session's whole
   ledger after every command, so the failures that caused a pause were still in it and
   the first command after a resume re-tripped it on the same five. A session could be
