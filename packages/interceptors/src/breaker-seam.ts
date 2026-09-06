@@ -52,6 +52,20 @@ export function pauseMessage(pause: SessionPause): string {
 }
 
 /**
+ * When a person last let this session carry on, so the replay starts after it.
+ *
+ * Null when it has never been paused, which is every ordinary session.
+ */
+async function resumedAt(home: string, sessionId: string): Promise<string | null> {
+  try {
+    const pause = await new SessionPauses(home).read(sessionId);
+    return pause?.resumedAt ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Replay what this session has done and hold it if the breaker trips.
  *
  * Called after the action, because the trip conditions need the outcome: "ran the same
@@ -64,10 +78,21 @@ export async function observeSession(
   if (sessionId === undefined || sessionId === '') return null;
 
   try {
+    /* Only what happened since a person last lifted a hold on this session.
+       Replaying the whole ledger meant the failures that caused the pause were still
+       in it, so the first command after `memnox resume` re-tripped the breaker on the
+       same five failures — and the session could never actually be resumed. Lifting a
+       hold is somebody saying "carry on from here", and this is what makes that true. */
+    const since = await resumedAt(home, sessionId);
+
     const store = SqliteEventStore.forHome(home);
     let events;
     try {
-      events = await store.query({ sessionId, limit: REPLAY_LIMIT });
+      events = await store.query({
+        sessionId,
+        limit: REPLAY_LIMIT,
+        ...(since === null ? {} : { since }),
+      });
     } finally {
       store.close();
     }
