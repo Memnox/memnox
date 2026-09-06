@@ -207,5 +207,75 @@ unsigned.
 ### `memnox purge`
 Drops history past `retentionDays`. `--dry-run` says what would go.
 
+## Connecting to a workspace
+
+Optional, and off until you run it. Everything above works with no account, no
+network and no key; this section is the only part of the runtime that talks to
+anything, and it does nothing at all until `memnox login` has succeeded.
+
+### `memnox login`
+Connects this machine to a workspace, so it gets the rules that workspace
+publishes. A device-code flow: it prints a code, opens the approval page, and
+waits for somebody with access to approve it.
+
+| Flag | What it does |
+|---|---|
+| `--url <base>` | the control plane, default `https://api.memnox.com` |
+| `--enforce` | start in enforce rather than observe |
+| `--no-open` | print the URL instead of opening a browser |
+
+It writes `~/.memnox/account.json`, owner only: the workspace, a machine id, a
+token scoped to this machine, and an Ed25519 private key generated here. **The
+private key never leaves.** Anything that can read that file can act as this
+machine, which is why it is `0600` and why `memnox logout` exists.
+
+### `memnox logout`
+Forgets the credential. Rules already pulled stay in force, because a machine
+that silently stopped being governed the moment it lost its token would be a
+worse failure than one that keeps the last rules it was given.
+
+### `memnox sync`
+Pulls the rules the workspace publishes and sends what happened. It runs on the
+daemon's heartbeat, about once a minute, backing off to fifteen minutes while the
+control plane is unreachable.
+
+### `memnox sync now`
+Does a pass immediately rather than waiting. `--json` for the result.
+
+### What crosses the wire
+
+**Pulled:** a signed rule bundle, written to `~/.memnox/org.policies.json` and
+`~/.memnox/org-conditions.json`, where the engine already looks. An unchanged
+bundle costs one `304`. Nothing about the pull is on the decision path: the gate
+reads the file this wrote, minutes later, with no network anywhere near it.
+
+**Sent, per action, in signed batches of at most 500:**
+
+| Field | What it is |
+|---|---|
+| `dedupKey`, `subjectId` | the event id, so a resend is deduplicated |
+| `occurredAt`, `agentSessionId` | when, and which session |
+| `surface`, `operation`, `classes` | `shell`, `git.push-force`, `destructive` |
+| `effect`, `reason`, `ruleId` | what was decided and which rule decided it |
+| `resourceRef` | what it acted on: a path, a host, a branch |
+| `argsDigest` | **a hash of the arguments, never the arguments** |
+| `exitCode`, `startedAt` | how it ended and how long it took |
+| `policyHash` | the rule set in force at the time |
+
+**Never sent:** the arguments themselves, transcripts, file contents, credential
+values, or anything under `~/.memnox/` other than the fields above. The payload is
+an explicit allow-list in `sync/push.ts` rather than the event minus a blocklist,
+so a field added to the ledger does not start travelling by accident.
+
+**Sent on the heartbeat:** the hash of the bundle this machine has applied, which
+is what lets a workspace see which machines are on which rules.
+
+### If it cannot reach the control plane
+Nothing stops. The gate has already answered and the row is already written by
+the time any of this runs, so a failed send loses a send and never a verdict.
+The rows stay and the next pass retries them.
+
+## Taking it back out
+
 ### `memnox uninstall`
 Interceptors, git hooks and wrapping. `--purge` also deletes `~/.memnox`.

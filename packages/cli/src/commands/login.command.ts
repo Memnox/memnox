@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
+import { Flow } from '../flow';
 import {
   forgetAccount,
   readAccount,
@@ -51,18 +52,17 @@ export function registerLoginCommand(
         ...(options.enforce === true ? { mode: 'enforce' } : {}),
       };
 
+      const flow = new Flow(out, style);
+      flow.open('memnox login');
+      flow.step('Control plane', options.url);
+
       const keys = machineKeypair();
+      flow.step('Machine key generated', 'ed25519, never leaves this machine');
+
       const offer = await request(enrolment, keys.publicKey);
       const url = approvalUrl(options.url, offer.userCode);
-
-      out.line('');
-      out.line(`Log in to ${style.bold(options.url)}`);
-      out.line('');
-      out.line(`  Your code is  ${style.bold(offer.userCode)}`);
-      out.line('');
-      out.line('Approve at:');
-      out.line(`  ${url}`);
-      out.line('');
+      flow.value('Your code', offer.userCode);
+      flow.step('Approve at', url);
 
       // Nobody is at the keyboard on a CI runner, and waiting for a keypress
       // there would hang the build rather than enrol the machine.
@@ -71,21 +71,28 @@ export function registerLoginCommand(
         (seams.open ?? openBrowser)(url);
       }
 
-      out.note('Waiting for approval…');
+      flow.step('Waiting for approval…');
       const collected = await waitForApproval(options.url, offer, seams);
 
       const account = accountFrom(enrolment, keys, collected, new Date().toISOString());
       await writeAccount(home(), account);
 
-      out.line('');
-      out.line(`${style.ok('Enrolled.')} This machine is ${collected.machineId}.`);
-      // Printed because nobody asked for it: a wrong answer has to be visible.
-      out.line(`  workspace   ${collected.workspaceId}`);
-      out.line(`  mode        ${collected.mode}`);
-      out.line(`  credential  ${accountPathFor(home())}`);
-      out.line('');
-      out.note('It now pulls your workspace rules. Nothing else leaves this machine.');
-      out.note('Take it back off with "memnox logout".');
+      /* Shown because nobody asked for it: this is the moment the machine stops
+         being local-only, so what it is now bound to has to be visible without
+         running a second command to find out. */
+      flow.box('Enrolled', [
+        `${style.dim('machine')}     ${collected.machineId}`,
+        `${style.dim('workspace')}   ${collected.workspaceId}`,
+        `${style.dim('mode')}        ${collected.mode}`,
+        `${style.dim('credential')}  ${accountPathFor(home())}`,
+      ]);
+      flow.close(style.ok('This machine is enrolled.'));
+      flow.hint('It now pulls your workspace rules. Nothing else leaves this machine.');
+      flow.hint('Take it back off with "memnox logout".');
+
+      /* The one line a script would read, on stdout and undecorated, while
+         everything above it is commentary on stderr. */
+      out.line(collected.machineId);
     });
 
   program
