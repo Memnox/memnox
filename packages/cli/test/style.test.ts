@@ -11,6 +11,14 @@ describe('plainStyle', () => {
     expect(plainStyle.effect(DECISION_EFFECT.DENY, 'BLOCK')).toBe('BLOCK');
     expect(plainStyle.risk(RISK_LEVEL.CRITICAL, 'critical')).toBe('critical');
     expect(plainStyle.symbol(DECISION_EFFECT.ALLOW)).toBe('');
+    expect(plainStyle.accent('x')).toBe('x');
+    // Not even the padding a chip adds: plain mode is byte-identical or nothing.
+    expect(plainStyle.chip('x')).toBe('x');
+  });
+
+  it('says it draws nothing, rather than leaving it to be inferred', () => {
+    expect(plainStyle.decorated).toBe(false);
+    expect(ansiStyle.decorated).toBe(true);
   });
 });
 

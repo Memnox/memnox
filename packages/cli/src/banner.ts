@@ -50,6 +50,23 @@ const at = (grid: readonly boolean[][], row: number, column: number): boolean =>
   row >= 0 && column >= 0 && (grid[row]?.[column] ?? false);
 
 /**
+ * Whether the shadow shows at this cell.
+ *
+ * The row under the word only, offset one column right — a ledge the letters
+ * stand on rather than a shadow cast through them.
+ *
+ * A true drop shadow was tried first and does not survive this resolution. At
+ * six rows a counter is one or two cells wide, so the shadow of the stroke
+ * above lands *inside* the letter: the gap in an `E`, the notch in an `M`, the
+ * middle of an `O`. Every rule for keeping it out — no block beside it, past
+ * the glyph's right edge — traded the speckle for a different speckle, because
+ * the real problem is that there is nowhere for it to fall. Depth that costs
+ * legibility is not depth; it is a smudge that used to be a word.
+ */
+const shadowed = (grid: readonly boolean[][], row: number, column: number): boolean =>
+  row === ROWS && at(grid, ROWS - 1, column - 1);
+
+/**
  * The wordmark, one string per line.
  *
  * A row taller than the face, because the last row's shadow falls below it and
@@ -66,8 +83,7 @@ export function wordmark(style: Style, plain: string): string[] {
     let line = '';
     for (let column = 0; column < width; column += 1) {
       if (at(grid, row, column)) line += style.bold(FACE);
-      // The cell up and to the left is what casts into this one.
-      else if (at(grid, row - 1, column - 1)) line += style.dim(SHADOW);
+      else if (shadowed(grid, row, column)) line += style.dim(SHADOW);
       else line += ' ';
     }
     lines.push(line);
