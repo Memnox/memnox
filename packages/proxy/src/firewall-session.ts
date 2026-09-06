@@ -3,6 +3,9 @@ import {
   describeHold,
   digest,
   isAllowed as holdAllowed,
+  refusalShapeFor,
+  RETRYABILITY,
+  type RefusalShape,
   type HoldRequest,
   type HoldService,
 } from '@memnox/core';
@@ -210,7 +213,17 @@ export class FirewallSession {
 
     this.deps.log(`wrapped server is not accepting input; dropped ${describe(message)}`);
     if (identify(message) === null) return; // A notification expects no reply.
-    this.deps.channel.toClient(serializeMessage(denial(message.id, SERVER_GONE_REASON)));
+    /* The upstream died: transient, and the one refusal here that a retry can fix.
+       Telling the model "policy decision, do not retry" would be wrong the other way. */
+    this.deps.channel.toClient(
+      serializeMessage(
+        denial(message.id, SERVER_GONE_REASON, undefined, {
+          retryability: RETRYABILITY.LATER,
+          guidance:
+            'The server this call needed is not running. This is a failure, not a rule: retrying once it is back may succeed.',
+        }),
+      ),
+    );
   }
 
   private forwardRaw(payload: string): void {
@@ -227,11 +240,16 @@ function identify(message: JsonRpcMessage): MessageId | null {
  * An isError result, not a protocol error, so the model reads the denial reason — and
  * the alternative rides in the message, which is how the agent learns what to do
  * instead rather than abandoning the task.
+ *
+ * The shape says whether retrying could ever work. Without it a refusal reads as a
+ * transient failure, and the agent retries a rule forty times — which is the loop the
+ * circuit breaker exists to stop, arriving from the one place that could have said so.
  */
 function denial(
   id: JsonRpcMessage['id'],
   reason: string,
   alternative?: { action: string; resource?: string; note: string },
+  shape: RefusalShape = refusalShapeFor(DECISION_EFFECT.DENY, reason),
 ): JsonRpcMessage {
   const instead =
     alternative === undefined
@@ -241,7 +259,12 @@ function denial(
     jsonrpc: '2.0',
     id,
     result: {
-      content: [{ type: 'text', text: `Denied by Memnox: ${reason}${instead}` }],
+      content: [
+        {
+          type: 'text',
+          text: `Denied by Memnox: ${reason}${instead}\n${shape.guidance}`,
+        },
+      ],
       isError: true,
     },
   };

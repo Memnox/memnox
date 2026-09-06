@@ -1,13 +1,15 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { EventSink, LocalGate } from '@memnox/core';
+import type { EventSink, HoldService, LocalGate } from '@memnox/core';
 import {
   LocalGateAuthorizer,
+  SessionLimitedAuthorizer,
   UngovernedAuthorizer,
   type CallAuthorizer,
 } from './call-authorizer';
 import { FirewallSession, type FirewallChannel } from './firewall-session';
 import { LineBuffer } from './json-rpc';
 import { recordToLedger, type LedgerContext } from './ledger';
+import type { SessionLimits } from './session-limits';
 import type { McpCallRecord } from './result-guard';
 import { ToolFilter } from './tool-filter';
 
@@ -32,6 +34,18 @@ export interface FirewallOptions {
   ledger?: EventSink;
   /** Supplied so a row's time is the caller's to fix in a test. */
   now?: () => Date;
+  /**
+   * The pause and the budget. Absent means neither is consulted, which is what a
+   * test wants and what an embedder without a `~/.memnox` gets — the same bargain
+   * as `gate` and `ledger`, so nothing here reads a disk on its own.
+   */
+  limits?: SessionLimits;
+  /**
+   * Holds an ASK for a person. Absent means an ASK is a denial and says so, which is
+   * right for a test and wrong for a wrapped server: without one, every `ask` rule an
+   * MCP call hits is a refusal nobody was ever offered the chance to answer.
+   */
+  hold?: HoldService;
 }
 
 /** How the proxy reaches the process table and the client stream. */
@@ -66,6 +80,9 @@ export class McpFirewall {
       channel: this.buildChannel(),
       log: this.log,
       server: options.serverName,
+      ...(options.hold === undefined ? {} : { hold: options.hold }),
+      ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+      ...(options.agent === undefined ? {} : { agent: options.agent }),
       // Every call reaches the ledger once, when its outcome is known.
       record: (call) => this.write(call),
     });
@@ -77,9 +94,31 @@ export class McpFirewall {
    */
   private write(call: McpCallRecord): void {
     const sink = this.ledger;
-    if (sink === null) return;
     const now = this.options.now ?? (() => new Date());
-    recordToLedger(sink, call, now().toISOString(), this.ledgerContext);
+    if (sink !== null) {
+      recordToLedger(sink, call, now().toISOString(), this.ledgerContext);
+    }
+    this.observe();
+  }
+
+  /**
+   * Replay the session now that this call's outcome is known.
+   *
+   * After the row rather than before it, because the breaker counts what happened:
+   * "the same tool failed eleven times" is only true once the eleventh has
+   * returned. This is the half that was missing entirely — the proxy wrote its
+   * outcomes to the same ledger the breaker replays and nothing ever replayed
+   * them, so a loop that never touched a shell ran until somebody noticed.
+   *
+   * Not awaited, and never allowed to reject: the verdict is already applied and
+   * the JSON-RPC stream is not worth interrupting for a pause that will be read
+   * before the next call anyway.
+   */
+  private observe(): void {
+    const limits = this.options.limits;
+    const sessionId = this.options.sessionId;
+    if (limits === undefined || sessionId === undefined || sessionId === '') return;
+    void limits.observe(sessionId).catch(() => undefined);
   }
 
   private get ledgerContext(): LedgerContext {
@@ -132,8 +171,16 @@ export class McpFirewall {
 
   private buildAuthorizer(): CallAuthorizer {
     const gate = this.options.gate;
-    if (gate === undefined) return new UngovernedAuthorizer();
-    return new LocalGateAuthorizer(gate, this.options.serverName, this.options.sessionId);
+    const rules =
+      gate === undefined
+        ? new UngovernedAuthorizer()
+        : new LocalGateAuthorizer(gate, this.options.serverName, this.options.sessionId);
+
+    /* Outside the rules, so a pause and a spent budget hold on a machine with no
+       policy file too: neither is a statement about what is allowed. */
+    const limits = this.options.limits;
+    if (limits === undefined) return rules;
+    return new SessionLimitedAuthorizer(rules, limits, this.options.sessionId);
   }
 
   private buildChannel(): FirewallChannel {
