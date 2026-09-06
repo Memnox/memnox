@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readAccount, writeAccount, accountPathFor } from '../src/sync/account';
+import { readAccount, writeAccount, accountPathFor } from '@memnox/core';
 import {
   applyBundle,
   documentFrom,
@@ -12,6 +12,14 @@ import {
   PULL_OUTCOME,
   type Bundle,
 } from '../src/sync/bundle';
+import {
+  ORG_CONDITION_GRACE_MS,
+  overlaysInForce,
+  readOverlays,
+  stateFactsInForce,
+  WORKSPACE_WIDE,
+  writeOverlays,
+} from '@memnox/core';
 import { accountFrom, approvalUrl, machineKeypair } from '../src/sync/enrol';
 import { callCloud, insecureBaseUrl } from '../src/sync/client';
 
@@ -184,23 +192,106 @@ describe('applying a bundle', () => {
     await applyBundle(
       home,
       bundle({
-        conditions: [{ id: 'inc_1', kind: 'incident', subject: 'payments', until: 1 }],
+        conditions: [
+          { id: 'inc_1', kind: 'incident', subject: 'payments', fromAt: 0, untilAt: 1 },
+        ],
       }),
     );
 
-    const org = JSON.parse(await readFile(orgConditionsPath(home), 'utf8')) as unknown[];
+    const org = JSON.parse(await readFile(orgConditionsPath(home), 'utf8')) as {
+      conditions: unknown[];
+    };
 
-    expect(org).toHaveLength(1);
+    expect(org.conditions).toHaveLength(1);
     expect(orgConditionsPath(home)).not.toBe(join(home, '.memnox', 'overlays.json'));
   });
 
-  it('gives every condition an end, like every other overlay', () => {
+  /* The two halves were written against each other's documentation rather than
+     against each other: this side read `from` and `until`, the wire sends `fromAt`
+     and `untilAt`, so every condition arrived windowless and was given a default
+     day. A freeze declared for an hour ran for a day, one declared for a week was
+     gone after a day, and neither was visible from either repository alone. */
+  it('honours the window the control plane sent, rather than defaulting one', () => {
+    const hour = 60 * 60 * 1000;
     const overlays = overlaysFrom(
-      bundle({ conditions: [{ id: 'c1', kind: 'freeze', subject: 'deploys' }] }),
+      bundle({
+        conditions: [
+          { id: 'c1', kind: 'freeze', subject: 'deploys', fromAt: 0, untilAt: hour },
+        ],
+      }),
+      hour * 100,
     );
 
-    expect(overlays[0]?.validUntil).toBeDefined();
+    expect(overlays[0]?.declaredAt).toBe(new Date(0).toISOString());
+    expect(overlays[0]?.validUntil).toBe(new Date(hour).toISOString());
+  });
+
+  it('bounds an open-ended condition from the last sync, so it can be renewed', () => {
+    const at = 1_000_000;
+    const overlays = overlaysFrom(
+      bundle({
+        conditions: [{ id: 'c1', kind: 'freeze', subject: 'deploys', fromAt: 0 }],
+      }),
+      at,
+    );
+
+    expect(Date.parse(overlays[0]?.validUntil ?? '')).toBe(at + ORG_CONDITION_GRACE_MS);
     expect(overlays[0]?.source).toBe('the workspace');
+  });
+
+  it('reads a condition with no subject as the whole workspace', () => {
+    const overlays = overlaysFrom(
+      bundle({ conditions: [{ id: 'c1', kind: 'freeze', fromAt: 0 }] }),
+    );
+
+    expect(overlays[0]?.subject).toBe(WORKSPACE_WIDE);
+  });
+
+  /* The file was written, reported as applied, and read by nothing: every gate
+     called `readOverlays`, which only ever looked at the local freeze file. A
+     production freeze reached every laptop and governed none of them. */
+  it('puts a workspace condition where the gate reads it', async () => {
+    const soon = Date.now() + 60 * 60 * 1000;
+    await applyBundle(
+      home,
+      bundle({
+        conditions: [
+          { id: 'c1', kind: 'freeze', subject: 'deploys', fromAt: 0, untilAt: soon },
+        ],
+      }),
+    );
+
+    const facts = stateFactsInForce(
+      await overlaysInForce(home),
+      new Date().toISOString(),
+    );
+
+    expect(facts).toContain('freeze:deploys');
+  });
+
+  it('leaves a workspace condition alone when the local freeze file is lifted', async () => {
+    const soon = Date.now() + 60 * 60 * 1000;
+    await applyBundle(
+      home,
+      bundle({
+        conditions: [
+          { id: 'c1', kind: 'freeze', subject: 'deploys', fromAt: 0, untilAt: soon },
+        ],
+      }),
+    );
+    // What `freeze --lift` does: read the local file, lift everything, write it back.
+    const local = await readOverlays(home);
+    await writeOverlays(
+      home,
+      local.map((each) => ({ ...each, liftedAt: new Date().toISOString() })),
+    );
+
+    const facts = stateFactsInForce(
+      await overlaysInForce(home),
+      new Date().toISOString(),
+    );
+
+    expect(facts).toContain('freeze:deploys');
   });
 
   it('turns a rule into the shape the gate reads', () => {

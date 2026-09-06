@@ -11,6 +11,7 @@ import {
   LineReader,
   LocalGate,
   SessionLimits,
+  SessionPauses,
   socketPathFor,
   type DaemonRequest,
   type DaemonResponse,
@@ -170,5 +171,103 @@ describe('the daemon', () => {
     const second = new MemnoxDaemon({ log: () => {} });
     await expect(second.listen(home)).resolves.toContain('memnox.sock');
     await second.close();
+  });
+});
+
+describe('a socket path the kernel will not accept', () => {
+  /* Over the limit, `listen` fails with EADDRINUSE and sends somebody hunting for a
+     process that is not there. The length is knowable before we try, so it is said. */
+  it('says the path is too long rather than letting the kernel say the wrong thing', async () => {
+    const tooLong = `/tmp/${'x'.repeat(120)}`;
+
+    await expect(
+      new MemnoxDaemon({ log: () => undefined }).listen(tooLong),
+    ).rejects.toThrow(/socket path is \d+ bytes and the kernel allows/);
+  });
+});
+
+describe('the breaker holds a session that is getting nowhere', () => {
+  const failing = (n: number): DaemonRequest => ({
+    id: n,
+    method: DAEMON_METHOD.RECORD,
+    sessionId: 'ses_loop',
+    action: 'npm.test',
+    exitCode: 1,
+  });
+
+  it('lets work through while it is still going somewhere', async () => {
+    const { daemon, path } = await running({ gate: await gate() });
+    for (let i = 1; i <= 4; i += 1) await ask(path, failing(i));
+
+    const verdict = await ask(path, {
+      id: 9,
+      method: DAEMON_METHOD.EVALUATE,
+      sessionId: 'ses_loop',
+      action: 'npm.test',
+    });
+    expect(verdict.paused).toBeUndefined();
+    await daemon.close();
+  });
+
+  it('holds it once the same command has failed the same way five times', async () => {
+    const { daemon, path } = await running({ gate: await gate() });
+    for (let i = 1; i <= 5; i += 1) await ask(path, failing(i));
+
+    const verdict = await ask(path, {
+      id: 9,
+      method: DAEMON_METHOD.EVALUATE,
+      sessionId: 'ses_loop',
+      action: 'git.status',
+    });
+    expect(verdict.effect).toBe(DECISION_EFFECT.DENY);
+    expect(verdict.paused?.signal).toBe('error-loop');
+    /* A pause is not a denial and reads differently: it names the count and says how
+       a person lifts it, because "why did you stop my agent" is answered with both. */
+    expect(verdict.reason).toContain('memnox resume ses_loop');
+    await daemon.close();
+  });
+
+  it('holds the session and not the machine', async () => {
+    const { daemon, path } = await running({ gate: await gate() });
+    for (let i = 1; i <= 5; i += 1) await ask(path, failing(i));
+
+    const other = await ask(path, {
+      id: 9,
+      method: DAEMON_METHOD.EVALUATE,
+      sessionId: 'ses_other',
+      action: 'npm.test',
+    });
+    expect(other.paused).toBeUndefined();
+    await daemon.close();
+  });
+
+  it('lets a person lift the hold', async () => {
+    const { daemon, path } = await running({ gate: await gate() });
+    for (let i = 1; i <= 5; i += 1) await ask(path, failing(i));
+    expect(daemon.resume('ses_loop')).toBe(true);
+
+    const after = await ask(path, {
+      id: 9,
+      method: DAEMON_METHOD.EVALUATE,
+      sessionId: 'ses_loop',
+      action: 'npm.test',
+    });
+    expect(after.paused).toBeUndefined();
+    await daemon.close();
+  });
+
+  it('writes the hold where the other seams can see it', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-daemon-pause-'));
+    const pauses = new SessionPauses(home);
+    const daemon = new MemnoxDaemon({ now: () => NOW, log: () => {}, pauses });
+    await daemon.listen(home);
+    const path = socketPathFor(home);
+
+    for (let i = 1; i <= 5; i += 1) await ask(path, failing(i));
+    // Written on a floating promise, so give the daemon a turn to finish it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect((await pauses.inForce('ses_loop'))?.signal).toBe('error-loop');
+    await daemon.close();
   });
 });

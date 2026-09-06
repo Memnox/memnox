@@ -1,9 +1,22 @@
 import { readFile } from 'node:fs/promises';
-import { SqliteEventStore } from '@memnox/core';
-import { readAccount } from './account';
+import { join } from 'node:path';
+import {
+  fleetBudgets,
+  HOLD_ANSWER,
+  MEMNOX_HOME,
+  NodeSnapshotStore,
+  PendingApprovals,
+  readBudgets,
+  SqliteEventStore,
+  windowHoursOf,
+  writeFleetSpend,
+  type HoldAnswer,
+} from '@memnox/core';
+import { CLI_VERSION } from '../defaults';
+import { readAccount } from '@memnox/core';
 import { orgPolicyPath, PULL_OUTCOME, pullBundle, type PullResult } from './bundle';
 import { CloudUnreachable } from './client';
-import { pushEvents, PUSH_OUTCOME, type PushResult } from './push';
+import { pushCensus, pushEvents, PUSH_OUTCOME, type PushResult } from './push';
 import { callCloud } from './client';
 
 /**
@@ -22,6 +35,8 @@ const BACKOFF_MS = 15 * 60_000;
 export interface Pass {
   pull?: PullResult;
   push?: PushResult;
+  /** What this machine can do, sent once per scan. Absent when no scan is kept. */
+  census?: PushResult;
   /** Set when nothing could be reached, which is not an error worth printing. */
   unreachable?: boolean;
   /** True once the credential is gone: stop until somebody logs in again. */
@@ -46,8 +61,19 @@ export async function onePass(home: string): Promise<Pass> {
     }
     if (push.outcome === PUSH_OUTCOME.REVOKED) return { pull, push, revoked: true };
 
+    /* After the actions, because the actions are what somebody is waiting on and a
+       census is hundreds of rows that will be just as true next minute. */
+    const census = await pushCensus(
+      home,
+      account,
+      await new NodeSnapshotStore(join(home, MEMNOX_HOME)).latest(),
+    );
+    if (census.outcome === PUSH_OUTCOME.REVOKED) {
+      return { pull, push, census, revoked: true };
+    }
+
     await beat(home, account, pull);
-    return { pull, push };
+    return { pull, push, census };
   } catch (err) {
     if (err instanceof CloudUnreachable) return { unreachable: true };
     throw err;
@@ -60,6 +86,19 @@ export async function onePass(home: string): Promise<Pass> {
  * Reported after the bundle is in place rather than after it arrives: the
  * console's "which machines are behind" is only true if this says applied.
  */
+/**
+ * What this machine is holding, and what came back.
+ *
+ * The heartbeat is the only per-machine round trip there is, which makes it the only
+ * place an answer can reach a machine nobody can walk over to. A held call on a VPS
+ * at three in the morning is written to disk by the seam and named here; whatever the
+ * control plane has decided about one comes back in the same exchange and is written
+ * into the same file the seam is polling.
+ *
+ * Everything here is best effort. A control plane that cannot be reached must leave
+ * the machine exactly as it was — still holding, still waiting, still able to be
+ * answered from a terminal.
+ */
 async function beat(
   home: string,
   account: Awaited<ReturnType<typeof readAccount>>,
@@ -68,14 +107,96 @@ async function beat(
   if (account === null) return;
   const applied =
     pull.outcome === PULL_OUTCOME.APPLIED ? pull.hash : await heldHash(home);
-  await callCloud({
+
+  const approvals = new PendingApprovals(home);
+  const moment = new Date().toISOString();
+  const holding = await approvals.list(moment);
+  /* Only the ones counted across the workspace. A machine budget needs no round
+     trip and must not pay for one. */
+  const asking = fleetBudgets(await readBudgets(home)).filter(
+    (budget) => windowHoursOf(budget) > 0,
+  );
+
+  const response = await callCloud<HeartbeatReply>({
     baseUrl: account.baseUrl,
     path: `/v1/workspaces/${account.workspaceId}/machines/${account.machineId}/heartbeat`,
     method: 'POST',
     token: account.token,
-    body: applied === undefined ? {} : { bundleHashApplied: applied },
+    body: {
+      /* Every beat, not only at enrolment. The fleet page reads this column, so
+         reporting it once meant it showed the version a machine was installed
+         with for the rest of its life — a page about what is running that
+         answered what used to be. */
+      runtimeVersion: CLI_VERSION,
+      ...(applied === undefined ? {} : { bundleHashApplied: applied }),
+      /* Names only: the operation and what it is about. Never the arguments, which
+         is the same rule the ledger follows and for the same reason. */
+      budgets: asking.map((budget) => ({
+        name: budget.name,
+        actions: budget.actions,
+        windowHours: windowHoursOf(budget),
+      })),
+      holding: holding.map((each: (typeof holding)[number]) => ({
+        id: each.id,
+        agent: each.request.agent,
+        operation: each.request.operation,
+        reason: each.request.reason,
+        askedAt: each.askedAt,
+        expiresAt: each.expiresAt,
+        ...(each.request.target === undefined ? {} : { target: each.request.target }),
+      })),
+    },
   });
+
+  await applyAnswers(approvals, response.body?.answers ?? [], moment);
+
+  /* Written even when empty, so a budget that was fleet-counted yesterday and
+     cannot be today falls back to this machine's own count rather than to a
+     figure nobody has checked since. */
+  if (asking.length > 0) {
+    await writeFleetSpend(
+      home,
+      (response.body?.fleetSpend ?? []).map((each) => ({ ...each, at: moment })),
+    );
+  }
 }
+
+/** What the control plane may say back about a call this machine is holding. */
+interface HeartbeatAnswer {
+  id: string;
+  answer: string;
+  by?: string;
+}
+
+interface HeartbeatReply {
+  answers?: HeartbeatAnswer[];
+  fleetSpend?: { name: string; spent: number }[];
+}
+
+/**
+ * Written into the file the seam is already polling, so a remote answer and a
+ * second terminal arrive by exactly the same route.
+ *
+ * An answer this machine does not recognise is dropped rather than acted on: the
+ * only ids that mean anything here are the ones this machine raised.
+ */
+async function applyAnswers(
+  approvals: PendingApprovals,
+  answers: readonly HeartbeatAnswer[],
+  at: string,
+): Promise<void> {
+  for (const answer of answers) {
+    if (!ANSWERS.includes(answer.answer)) continue;
+    await approvals.answer(
+      answer.id,
+      answer.answer as HoldAnswer,
+      answer.by ?? 'the workspace',
+      at,
+    );
+  }
+}
+
+const ANSWERS: readonly string[] = Object.values(HOLD_ANSWER);
 
 /** The hash of what is already on disk, so an unchanged bundle costs one 304. */
 async function heldHash(home: string): Promise<string | undefined> {

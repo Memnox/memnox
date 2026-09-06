@@ -3,9 +3,11 @@ import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { LocalGate } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { readBudgets, readFleetSpend, SessionPauses } from '@memnox/core';
 import { MemnoxDaemon } from '../daemon-server';
+import { withEvents } from '../event-store';
 import { resolvePolicyFile } from '../policy-path';
-import { readAccount } from '../sync/account';
+import { readAccount } from '@memnox/core';
 import { syncLoop } from '../sync/heartbeat';
 
 export function registerDaemonCommand(
@@ -24,13 +26,28 @@ export function registerDaemonCommand(
         ? await LocalGate.fromFiles([file], { agentName: 'agent' })
         : undefined;
 
+      /* Read once, here: a daily budget that reset whenever this process did would be
+         a budget anybody could clear by killing it. */
+      const budgets = await readBudgets(home());
+      const spentAlready =
+        budgets.length === 0
+          ? []
+          : await withEvents(home(), (store) => store.query({ limit: 20_000 }));
+
       const daemon = new MemnoxDaemon({
         ...(gate === undefined ? {} : { gate }),
+        ...(budgets.length === 0
+          ? {}
+          : { budgets, spentAlready, fleetSpend: await readFleetSpend(home()) }),
+        pauses: new SessionPauses(home()),
         log: (message) => context.out.note(message),
       });
 
       const path = await daemon.listen(home());
       context.out.line(`Listening on ${path}`);
+      if (budgets.length > 0) {
+        context.out.note(`${budgets.length} budget(s) in force.`);
+      }
       if (gate === undefined) {
         context.out.note(`No rules at ${file}; everything will be allowed.`);
       }

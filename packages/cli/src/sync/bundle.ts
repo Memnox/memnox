@@ -1,13 +1,17 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   loadPoliciesFromFile,
   MEMNOX_HOME,
-  OVERLAY_KIND,
+  orgConditionsPathFor,
+  orgOverlaysFrom,
+  writeOrgConditions,
+  type OrgCondition,
+  type OrgConditionsFile,
   type Overlay,
 } from '@memnox/core';
 import { registerPolicyFile } from '../policy-registry';
-import type { Account } from './account';
+import type { Account } from '@memnox/core';
 import { callCloud } from './client';
 
 /**
@@ -18,7 +22,6 @@ import { callCloud } from './client';
 
 /** Written by the pull and never by hand; `memnox login` is what starts it. */
 const ORG_POLICY_FILE = 'org.policies.json';
-const ORG_CONDITIONS_FILE = 'org-conditions.json';
 const OWNER_ONLY = 0o600;
 
 export interface BundleRule {
@@ -33,14 +36,8 @@ export interface BundleRule {
   alternative?: string;
 }
 
-export interface BundleCondition {
-  id: string;
-  kind: string;
-  subject: string;
-  reason?: string;
-  from?: number;
-  until?: number;
-}
+/** The control plane's shape, kept as it arrives. `OrgCondition` is the same row. */
+export type BundleCondition = OrgCondition;
 
 export interface Bundle {
   hash: string;
@@ -77,9 +74,8 @@ export function orgPolicyPath(home: string): string {
   return join(home, MEMNOX_HOME, ORG_POLICY_FILE);
 }
 
-export function orgConditionsPath(home: string): string {
-  return join(home, MEMNOX_HOME, ORG_CONDITIONS_FILE);
-}
+/** Re-exported so the sync tests and `doctor` name the same file the gate reads. */
+export const orgConditionsPath = orgConditionsPathFor;
 
 /**
  * One conditional GET, and what to do with each answer.
@@ -92,6 +88,7 @@ export async function pullBundle(
   home: string,
   account: Account,
   held?: string,
+  now: () => number = Date.now,
 ): Promise<PullResult> {
   const answer = await callCloud<Bundle>({
     baseUrl: account.baseUrl,
@@ -100,7 +97,14 @@ export async function pullBundle(
     ...(held === undefined ? {} : { ifNoneMatch: held }),
   });
 
-  if (answer.status === 304) return { outcome: PULL_OUTCOME.UNCHANGED };
+  if (answer.status === 304) {
+    /* An unchanged bundle still moves the horizon an open-ended condition is held
+       to: the machine has just heard from the control plane, which is the whole
+       evidence that horizon stands on. Without this a workspace freeze that nobody
+       edited would lapse a day later on every machine still faithfully syncing. */
+    await touchOrgConditions(home, now());
+    return { outcome: PULL_OUTCOME.UNCHANGED };
+  }
   if (answer.status === 401 || answer.status === 403) {
     return { outcome: PULL_OUTCOME.REVOKED };
   }
@@ -123,7 +127,11 @@ export async function pullBundle(
  * file, loaded through the same reader the gate uses, and only moved into place
  * once it has parsed.
  */
-export async function applyBundle(home: string, bundle: Bundle): Promise<PullResult> {
+export async function applyBundle(
+  home: string,
+  bundle: Bundle,
+  now: () => number = Date.now,
+): Promise<PullResult> {
   const path = orgPolicyPath(home);
   const staging = `${path}.incoming`;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -149,11 +157,7 @@ export async function applyBundle(home: string, bundle: Bundle): Promise<PullRes
      reader between the two never sees a half-written rule set. */
   await rename(staging, path);
   await registerPolicyFile(home, path);
-  await writeFile(
-    orgConditionsPath(home),
-    JSON.stringify(overlaysFrom(bundle), null, 2),
-    { encoding: 'utf8', mode: OWNER_ONLY },
-  );
+  await writeOrgConditions(home, { syncedAt: now(), conditions: bundle.conditions });
 
   return {
     outcome: PULL_OUTCOME.APPLIED,
@@ -192,20 +196,23 @@ export function documentFrom(bundle: Bundle): unknown {
  * `freeze --lift` reads that file, marks everything active as lifted and writes
  * it back, which would quietly end an incident somebody declared for the whole
  * company.
+ *
+ * The conversion itself lives beside the reader in core, so the gate and this
+ * agree on what a condition means by construction rather than by review.
  */
-export function overlaysFrom(bundle: Bundle): Overlay[] {
-  return bundle.conditions.map((condition) => ({
-    id: condition.id,
-    kind:
-      condition.kind === OVERLAY_KIND.FREEZE
-        ? OVERLAY_KIND.FREEZE
-        : OVERLAY_KIND.INCIDENT,
-    subject: condition.subject,
-    reason: condition.reason ?? 'declared for the workspace',
-    declaredAt: new Date(condition.from ?? Date.now()).toISOString(),
-    validUntil: new Date(
-      condition.until ?? Date.now() + 24 * 60 * 60 * 1000,
-    ).toISOString(),
-    source: 'the workspace',
-  }));
+export function overlaysFrom(bundle: Bundle, syncedAt: number = Date.now()): Overlay[] {
+  return orgOverlaysFrom({ syncedAt, conditions: bundle.conditions });
+}
+
+/** Move the horizon after a 304, keeping the conditions exactly as they were. */
+async function touchOrgConditions(home: string, at: number): Promise<void> {
+  try {
+    const held = JSON.parse(
+      await readFile(orgConditionsPathFor(home), 'utf8'),
+    ) as Partial<OrgConditionsFile>;
+    if (!Array.isArray(held.conditions)) return;
+    await writeOrgConditions(home, { syncedAt: at, conditions: held.conditions });
+  } catch {
+    // Nothing pulled yet, so there is no horizon to move.
+  }
 }

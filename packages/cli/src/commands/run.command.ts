@@ -7,13 +7,24 @@ import { delimiter } from 'node:path';
 import type { Command } from 'commander';
 import {
   guardFor,
+  isEmptyScope,
+  LeaseRegistry,
   MILESTONE_REASON,
   Milestones,
   OS_GUARD,
   sandboxCommand,
   SESSION_VAR,
+  SessionTasks,
+  taskFor,
+  type DeclaredScope,
+  type SessionTask,
 } from '@memnox/core';
-import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
+import {
+  ENV_AGENT_ROLE as AGENT_ROLE_VAR,
+  FALLBACK_SHELL,
+  interceptorDirFor,
+  REAL_SHELL_VAR,
+} from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import { guardProfilePath, transcriptPathFor } from '../memnox-paths';
 import { NodeGit, NodeWorktree } from '../node-git';
@@ -59,6 +70,7 @@ interface RunDeps {
   ) => Promise<number>;
   home?: () => string;
   newId?: () => string;
+  now?: () => Date;
 }
 
 const defaultStart = (
@@ -115,6 +127,13 @@ export function registerRunCommand(
     )
     .option('--no-guard', 'start outside the kernel sandbox even when a profile exists')
     .option('--no-milestone', 'do not keep the working tree before the agent starts')
+    .option('--task <statement>', 'what you actually asked for, in your words')
+    .option('--paths <globs>', 'paths the task covers, comma separated')
+    .option('--repos <list>', 'repositories the task covers, comma separated')
+    .option('--services <list>', 'services the task covers, comma separated')
+    .option('--envs <list>', 'environments the task covers, comma separated')
+    .option('--expect <count>', 'roughly how many actions this should take')
+    .option('--role <name>', 'the job this agent is enrolled under, matched by roles:')
     .action(
       async (
         command: string[],
@@ -123,6 +142,13 @@ export function registerRunCommand(
           transcript?: boolean;
           guard?: boolean;
           milestone?: boolean;
+          task?: string;
+          paths?: string;
+          repos?: string;
+          services?: string;
+          envs?: string;
+          expect?: string;
+          role?: string;
         },
       ) => {
         const binary = command[0];
@@ -133,9 +159,21 @@ export function registerRunCommand(
         const home = (deps.home ?? homedir)();
         const sessionId = (deps.newId ?? newSessionId)();
         const env = environmentFor(process.env, home, sessionId, options.shell);
+        if (options.role !== undefined) env[AGENT_ROLE_VAR] = options.role;
 
         context.out.note(`session ${sessionId}`);
         context.out.note(`interceptors on PATH from ${interceptorDirFor(home)}`);
+
+        /* Written before the agent starts, because everything that can say "this went
+           somewhere it was not asked to go" compares against a declaration. Nothing
+           infers one: a session with no task is undeclared, never in violation. */
+        const declared = await declareTask(home, sessionId, options, deps);
+        if (declared !== null) {
+          context.out.note(`task "${declared.statement}"`);
+          if (declared.expectedActions !== undefined) {
+            context.out.note(`expecting about ${declared.expectedActions} actions`);
+          }
+        }
 
         /* Taken before a single command runs, because the point is the willingness to
            let it run unsupervised — and that only exists if the way back is already
@@ -159,8 +197,17 @@ export function registerRunCommand(
 
         const start = deps.start ?? defaultStart;
         const [executable, ...args] = guarded;
-        const code = await start(executable ?? binary, args, env, transcript);
-        process.exitCode = code;
+        try {
+          process.exitCode = await start(executable ?? binary, args, env, transcript);
+        } finally {
+          /* Rule 3 from the other end: a session that has ended cannot still be holding
+             a path, whatever its lease said about expiry. In a `finally`, because an
+             agent that crashed is exactly the one whose paths must not stay held. */
+          const let_go = await releaseLeases(home, sessionId, deps);
+          if (let_go > 0) {
+            context.out.note(`released ${let_go} lease${let_go === 1 ? '' : 's'}`);
+          }
+        }
       },
     );
 }
@@ -185,6 +232,79 @@ export function sandboxed(
   const profile = guardProfilePath(home);
   if (!(seams.exists ?? existsSync)(profile)) return command;
   return sandboxCommand(profile, command);
+}
+
+/**
+ * The task, when one was given. Every dimension is optional and an omitted one is
+ * undeclared rather than empty — a task that declared paths says nothing about
+ * environments, and reporting the second as drift would be an invention.
+ */
+async function declareTask(
+  home: string,
+  sessionId: string,
+  options: {
+    task?: string;
+    paths?: string;
+    repos?: string;
+    services?: string;
+    envs?: string;
+    expect?: string;
+  },
+  deps: RunDeps,
+): Promise<SessionTask | null> {
+  const scope: DeclaredScope = {
+    ...listOf('paths', options.paths),
+    ...listOf('repositories', options.repos),
+    ...listOf('services', options.services),
+    ...listOf('environments', options.envs),
+  };
+  if (options.task === undefined && isEmptyScope(scope)) return null;
+
+  const expected =
+    options.expect === undefined ? undefined : Number.parseInt(options.expect, 10);
+  if (expected !== undefined && (Number.isNaN(expected) || expected < 1)) {
+    throw new Error('--expect takes a count, e.g. --expect 40');
+  }
+
+  const task = taskFor(
+    sessionId,
+    options.task ?? 'unstated',
+    scope,
+    (deps.now ?? (() => new Date()))().toISOString(),
+    expected,
+  );
+  await new SessionTasks(home).declare(task);
+  return task;
+}
+
+function listOf<TKey extends string>(
+  key: TKey,
+  value: string | undefined,
+): Partial<Record<TKey, string[]>> {
+  if (value === undefined) return {};
+  const items = value
+    .split(',')
+    .map((each) => each.trim())
+    .filter((each) => each.length > 0);
+  return items.length === 0 ? {} : ({ [key]: items } as Record<TKey, string[]>);
+}
+
+/** Quiet on failure: a register that cannot be written must not stop an agent exiting. */
+async function releaseLeases(
+  home: string,
+  sessionId: string,
+  deps: RunDeps,
+): Promise<number> {
+  try {
+    const registry = new LeaseRegistry(home);
+    const released = await registry.releaseSession(
+      sessionId,
+      (deps.now ?? (() => new Date()))().toISOString(),
+    );
+    return released.length;
+  } catch {
+    return 0;
+  }
 }
 
 /**

@@ -9,7 +9,10 @@ import {
   registerRunCommand,
   sandboxed,
 } from '../src/commands/run.command';
-import { SESSION_VAR } from '@memnox/core';
+import { LeaseRegistry, SESSION_VAR } from '@memnox/core';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { transcriptPathFor } from '../src/memnox-paths';
 
 const HOME = '/home/dev';
@@ -152,5 +155,71 @@ describe('starting an agent inside the kernel sandbox', () => {
 
   it('leaves the command alone when the person said not to', () => {
     expect(sandboxed(['claude'], '/home/me', false, mac)).toEqual(['claude']);
+  });
+});
+
+describe('a session that ends holds nothing', () => {
+  const NOW = new Date('2026-09-05T10:00:00.000Z');
+
+  async function runWithLeases(
+    home: string,
+    start: () => Promise<number>,
+  ): Promise<RecordedOutput> {
+    const out = new RecordedOutput();
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
+    registerRunCommand(program, new CliContext(out, plainStyle), {
+      start: start as never,
+      home: () => home,
+      newId: () => 'ses_test',
+      now: () => NOW,
+      milestones: (() => {
+        throw new Error('no repository');
+      }) as never,
+    });
+    await program.parseAsync(['run', '--', 'claude'], { from: 'user' });
+    return out;
+  }
+
+  it('releases what the session took when the agent exits', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-run-lease-'));
+    const registry = new LeaseRegistry(home, () => true);
+    await registry.take(
+      'src/billing',
+      { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      NOW.toISOString(),
+    );
+
+    await runWithLeases(home, async () => 0);
+    expect(await registry.held(NOW.toISOString())).toEqual([]);
+  });
+
+  it('releases them even when the agent crashed, which is when it matters most', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-run-crash-'));
+    const registry = new LeaseRegistry(home, () => true);
+    await registry.take(
+      'src/billing',
+      { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      NOW.toISOString(),
+    );
+
+    await expect(
+      runWithLeases(home, async () => {
+        throw new Error('the agent died');
+      }),
+    ).rejects.toThrow('the agent died');
+    expect(await registry.held(NOW.toISOString())).toEqual([]);
+  });
+
+  it('leaves the leases of another session alone', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-run-other-'));
+    const registry = new LeaseRegistry(home, () => true);
+    await registry.take(
+      'docs',
+      { agent: 'cursor', sessionId: 'ses_other', pid: process.pid },
+      NOW.toISOString(),
+    );
+
+    await runWithLeases(home, async () => 0);
+    expect((await registry.held(NOW.toISOString())).map((l) => l.path)).toEqual(['docs']);
   });
 });

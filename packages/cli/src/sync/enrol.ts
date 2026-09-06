@@ -2,7 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { hostname } from 'node:os';
 import { CLI_VERSION } from '../defaults';
 import { callCloud, CloudUnreachable } from './client';
-import type { Account } from './account';
+import type { Account } from '@memnox/core';
 
 /**
  * Enrolling this machine, the way `npm login` signs you in: the CLI asks, prints
