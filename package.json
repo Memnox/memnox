@@ -12,6 +12,7 @@
     "build": "pnpm -r --filter \"./packages/**\" build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
     "test:watch": "vitest",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"packages/*/test/**/*.ts\"",
