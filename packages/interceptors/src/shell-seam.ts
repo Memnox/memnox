@@ -1,5 +1,16 @@
-import type { ActionRequest } from '@memnox/core';
-import { DECISION_EFFECT, resolveShellLine } from '@memnox/core';
+import type { ActionRequest, LeaseHolder } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  digest,
+  isAllowed as holdAllowed,
+  leasePathFor,
+  leaseScopeFor,
+  proceeds,
+  resolveShellLine,
+  takesLease,
+  type HoldService,
+  type LeaseGate,
+} from '@memnox/core';
 import type { HookAuthorizer, HookVerdict } from './hook-authorizer';
 
 export const SHELL_ACTION = 'shell.execute';
@@ -20,6 +31,22 @@ export interface ShellSeamDeps {
   sessionId?: string;
   workingDirectory?: string;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Somebody to ask. Absent means an ASK is withheld and says so, which is right for
+   * a test and wrong for a shell an agent is typing into: without one, every `ask`
+   * rule the line hits is a refusal nobody was offered the chance to answer.
+   */
+  hold?: HoldService;
+  /**
+   * Two agents on one repository. Absent on a machine running one agent, which is the
+   * ordinary case and must stay free of every cost this adds.
+   */
+  leases?: {
+    gate: LeaseGate;
+    holder: LeaseHolder;
+    repositoryRoot: string;
+    isDirectory: (path: string) => boolean;
+  };
 }
 
 /** Deny beats ask beats allow, so a line is ruled by its worst command and not its last. */
@@ -63,10 +90,82 @@ export class ShellSeam {
       verdict = worse(verdict, await this.deps.authorizer.authorize(request));
     }
 
-    if (verdict.effect === DECISION_EFFECT.ALLOW) {
-      return { run: command, exitCode: SHELL_EXIT_OK };
+    if (verdict.effect === DECISION_EFFECT.ASK) {
+      const answered = await this.askAbout(line, verdict);
+      if (answered !== null) return answered;
+    } else if (verdict.effect !== DECISION_EFFECT.ALLOW) {
+      return { message: describe(verdict), exitCode: SHELL_EXIT_WITHHELD };
     }
+
+    /* Policy first, then coordination. A command the rules refuse never reaches the
+       register, so nothing can end up holding a path it was never allowed to write. */
+    const held = await this.claim(line);
+    if (held !== null) return held;
+
+    return { run: command, exitCode: SHELL_EXIT_OK };
+  }
+
+  /**
+   * Puts an ASK to a person. Null when it was allowed and the line may proceed.
+   *
+   * Withheld rather than run when nobody answers: a walk-away must not become a yes,
+   * and a timeout is said differently from a refusal so the two read differently.
+   */
+  private async askAbout(
+    line: string,
+    verdict: HookVerdict,
+  ): Promise<ShellOutcome | null> {
+    const hold = this.deps.hold;
+    if (hold === undefined) {
+      return {
+        message: `${describe(verdict)}\nNobody could be asked, so it was withheld. Run the agent under "memnox run".`,
+        exitCode: SHELL_EXIT_WITHHELD,
+      };
+    }
+
+    const result = await hold.hold({
+      sessionId: this.deps.sessionId ?? 'ses_local',
+      agent: 'an agent',
+      operation: SHELL_ACTION,
+      fingerprint: digest(line),
+      reason: verdict.reason,
+      command: line,
+    });
+    if (holdAllowed(result)) return null;
     return { message: describe(verdict), exitCode: SHELL_EXIT_WITHHELD };
+  }
+
+  /**
+   * Takes the paths this line writes, or answers with who is already on them. Reads
+   * never reach the register: `takesLease` decides that here, so there is no path
+   * through this seam that can make a reader wait.
+   */
+  private async claim(line: string): Promise<ShellOutcome | null> {
+    const leases = this.deps.leases;
+    if (leases === undefined) return null;
+
+    for (const resolved of resolveShellLine(line, this.deps.env ?? {}).actions) {
+      if (!takesLease(String(resolved.class))) continue;
+      const path = leasePathFor(
+        resolved.target,
+        leases.repositoryRoot,
+        this.deps.workingDirectory ?? leases.repositoryRoot,
+      );
+      if (path === null) continue;
+
+      const scope = leaseScopeFor(path, leases.isDirectory);
+      const verdict = await leases.gate.claim(
+        scope,
+        leases.holder,
+        `${resolved.action} ${resolved.target ?? ''}`.trim(),
+      );
+      if (proceeds(verdict)) continue;
+      return {
+        message: verdict.message ?? `${scope} is held by another agent.`,
+        exitCode: SHELL_EXIT_WITHHELD,
+      };
+    }
+    return null;
   }
 
   private requestFor(action: string, target: string): ActionRequest {

@@ -7,6 +7,7 @@ import {
   HOLD_OUTCOME,
   isAllowed as holdAllowed,
   MEMNOX_HOME,
+  refusalShapeFor,
   renderEvidence,
   type BinaryVerdict,
   type HoldService,
@@ -213,7 +214,10 @@ function refusal(
       : `\nInstead: ${alternative.action}${
           alternative.resource === undefined ? '' : ` ${alternative.resource}`
         } — ${alternative.note}`;
-  return `Denied by Memnox: ${decision.reason}\n(${verdict.because})${instead}`;
+  /* The same sentence the MCP proxy gives, because an agent that meets both seams
+     must not learn two different things about whether a refusal is worth retrying. */
+  const { guidance } = refusalShapeFor(DECISION_EFFECT.DENY, decision.reason);
+  return `Denied by Memnox: ${decision.reason}\n(${verdict.because})${instead}\n${guidance}`;
 }
 
 /** Where the real binary lives, found along PATH with our own directory removed. */

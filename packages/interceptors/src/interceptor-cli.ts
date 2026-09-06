@@ -2,10 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
+import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
 import {
   DECISION_EFFECT,
   isBrowserLauncher,
-  readOverlays,
+  overlaysInForce,
+  provenanceOf,
   SESSION_VAR,
   splitCommandLine,
   SqliteEventStore,
@@ -23,7 +25,8 @@ import { BrowserSeam } from './browser-seam';
 import { loadHookGate } from './hook-gate-loader';
 import { readHookConfig } from './hook-config';
 import { record } from './record';
-import { log } from './seam-runtime';
+import { reportToDaemon } from './daemon-client';
+import { buildHold, log } from './seam-runtime';
 
 /**
  * One binary behind every interceptor. It is invoked through a name in the interceptor directory,
@@ -45,18 +48,33 @@ async function main(): Promise<void> {
   const config = await readHookConfig(process.env, home);
   const gate = await loadHookGate(config);
 
-  const overlays = await readOverlays(home);
+  const overlays = await overlaysInForce(home);
+  /* Read once, at the moment the command arrives: a verdict has to be replayable
+     against the bundle and the freeze that were in force when it was reached, not
+     against whichever ones happen to be there when somebody asks. */
+  const provenance = await provenanceOf(home, overlays, new Date().toISOString());
   const sink = openLedger(home);
   const started = Date.now();
   const outcome = await ruleOnCommand(binary, args, {
     ...(gate === null ? {} : { gate }),
     overlays,
     env: process.env,
+    /* Without this an `ask` rule denies instead of asking, which is the difference
+       between an agent that can be left running and one that cannot. */
+    hold: buildHold(),
     ...(process.env[SESSION_VAR] === undefined
       ? {}
       : { sessionId: process.env[SESSION_VAR] }),
     log,
   });
+
+  /* A held session runs nothing. Checked before the rules rather than after, because
+     the point of a pause is that the agent stops, not that it keeps asking. */
+  const held = await pauseHolding(home, process.env[SESSION_VAR]);
+  if (held !== null) {
+    process.stderr.write(`${pauseMessage(held)}\n`);
+    process.exit(1);
+  }
 
   if (!outcome.allowed) {
     process.stderr.write(`${outcome.message ?? 'denied'}\n`);
@@ -71,16 +89,26 @@ async function main(): Promise<void> {
           ...(gate === null ? {} : { gate }),
           overlays,
           env: process.env,
+          hold: buildHold(),
           log,
         });
         if (again.allowed) {
-          await handAndRecord(basename(next), rest, home, sink, again, started);
+          await handAndRecord(
+            basename(next),
+            rest,
+            home,
+            sink,
+            again,
+            started,
+            provenance,
+          );
           return;
         }
         process.stderr.write(`${again.message ?? 'denied'}\n`);
       }
     }
     await record(sink, {
+      ...provenance,
       outcome,
       effect: DECISION_EFFECT.DENY,
       reason: outcome.reason ?? 'denied',
@@ -112,7 +140,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await handAndRecord(binary, args, home, sink, outcome, started);
+  await handAndRecord(binary, args, home, sink, outcome, started, provenance);
 }
 
 /** The ledger, or null when it will not open. A lost row never stops a command. */
@@ -135,9 +163,21 @@ async function handAndRecord(
   sink: EventSink | null,
   outcome: Awaited<ReturnType<typeof ruleOnCommand>>,
   started: number,
+  provenance: Awaited<ReturnType<typeof provenanceOf>>,
 ): Promise<never> {
   const status = hand(binary, args, home);
+  /* The breaker watches outcomes, and this is the only place one exists. Best effort:
+     no daemon means the counters are not kept, never that the command is held up. */
+  await reportToDaemon(home, {
+    action: outcome.action,
+    exitCode: status,
+    ...(outcome.target === undefined ? {} : { target: outcome.target }),
+    ...(process.env[SESSION_VAR] === undefined
+      ? {}
+      : { sessionId: process.env[SESSION_VAR] }),
+  });
   await record(sink, {
+    ...provenance,
     outcome,
     effect: DECISION_EFFECT.ALLOW,
     reason: outcome.reason ?? 'no rule matched',
@@ -149,6 +189,17 @@ async function handAndRecord(
       ? {}
       : { sessionId: process.env[SESSION_VAR] }),
   });
+
+  /* The row is written, so the session can be replayed. This is what makes the breaker
+     work without a daemon: the ledger is the session, and every seam already writes to
+     it. A trip is reported here and enforced on the next command, because this one has
+     already run — stopping it now would be a receipt rather than a control. */
+  const tripped = await observeSession({
+    home,
+    sessionId: process.env[SESSION_VAR],
+  });
+  if (tripped !== null) process.stderr.write(`${pauseMessage(tripped)}\n`);
+
   process.exit(status);
 }
 

@@ -2,6 +2,9 @@
 export const ENV_POLICIES = 'MEMNOX_POLICIES';
 /** Name the local rules match on `agents:`; defaults to the agent kind. */
 export const ENV_AGENT_NAME = 'MEMNOX_AGENT_NAME';
+/** The job it was enrolled under, matched by a rule's `roles:`. A workforce is
+ * several agents with different authority, and this is what tells them apart. */
+export const ENV_AGENT_ROLE = 'MEMNOX_AGENT_ROLE';
 
 export const POLICY_PATH_SEPARATOR = ',';
 

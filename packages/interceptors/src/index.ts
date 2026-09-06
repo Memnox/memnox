@@ -12,3 +12,5 @@ export * from './git-hooks';
 export * from './daemon-client';
 export * from './browser-seam';
 export * from './record';
+export * from './breaker-seam';
+export * from './seam-runtime';

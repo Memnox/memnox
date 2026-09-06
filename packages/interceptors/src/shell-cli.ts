@@ -6,7 +6,7 @@ import {
   SHELL_MODE,
   type ShellInvocation,
 } from './shell-invocation';
-import { buildAuthorizer, log } from './seam-runtime';
+import { buildAuthorizer, buildHold, buildLeases, log } from './seam-runtime';
 
 const USAGE = `Usage: memnox-shell -c "<command line>"
        memnox-shell -- <command...>
@@ -58,10 +58,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  const leases = buildLeases();
   const seam = new ShellSeam({
     authorizer: await buildAuthorizer(),
     workingDirectory: process.cwd(),
     env: process.env,
+    hold: buildHold(),
+    ...(leases === undefined ? {} : { leases }),
   });
   const outcome = await seam.gate(command);
 

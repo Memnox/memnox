@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { readPolicyRegistry } from '@memnox/core';
 import {
   ENV_AGENT_NAME,
+  ENV_AGENT_ROLE,
   ENV_POLICIES,
   POLICY_PATH_SEPARATOR,
 } from './tool-hook.constants';
@@ -12,6 +13,8 @@ const REGISTRY_FILE = 'policies.json';
 export interface HookConfig {
   policyFiles: string[];
   agentName?: string;
+  /** The role a rule's `roles:` matches, when this agent was enrolled under one. */
+  agentRole?: string;
 }
 
 /**
@@ -31,6 +34,7 @@ export async function readHookConfig(
         ? await readPolicyRegistry(join(homeDir, CONFIG_DIR, REGISTRY_FILE))
         : splitPaths(configured),
     ...pick('agentName', env[ENV_AGENT_NAME]),
+    ...pick('agentRole', env[ENV_AGENT_ROLE]),
   };
 }
 

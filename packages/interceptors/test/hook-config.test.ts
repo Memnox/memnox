@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { writeOrgConditions } from '@memnox/core';
 import { readHookConfig } from '../src/hook-config';
 import { loadHookGate } from '../src/hook-gate-loader';
 
@@ -16,14 +17,32 @@ policies:
       reason: "no credential need was declared"
 `;
 
+const STATE_POLICY = `version: 1
+policies:
+  - name: no-deploys-while-frozen
+    match:
+      actions: ["shell.deploy"]
+      state: ["freeze:deploys"]
+    decision:
+      effect: deny
+      reason: "deploys are frozen for this workspace"
+`;
+
 /** A home directory as `memnox setup` would have left it. */
-function home(options: { registry?: boolean; config?: Record<string, string> } = {}): {
+function home(
+  options: {
+    registry?: boolean;
+    config?: Record<string, string>;
+    /** Adds a rule that only bites while the workspace has frozen deploys. */
+    statePolicy?: boolean;
+  } = {},
+): {
   dir: string;
   policyFile: string;
 } {
   const dir = mkdtempSync(join(tmpdir(), 'memnox-hook-config-'));
   const policyFile = join(dir, 'memnox.policies.yaml');
-  writeFileSync(policyFile, POLICY);
+  writeFileSync(policyFile, options.statePolicy === true ? STATE_POLICY : POLICY);
   mkdirSync(join(dir, '.memnox'), { recursive: true });
 
   if (options.registry === true) {
@@ -63,9 +82,46 @@ describe('readHookConfig', () => {
 
   it('builds a working gate from the registered policy files', async () => {
     const { dir } = home({ registry: true });
-    const gate = await loadHookGate(await readHookConfig({}, dir));
+    const gate = await loadHookGate(await readHookConfig({}, dir), dir);
     expect(
       gate?.evaluate({ action: 'filesystem.read', target: '/srv/.env' }).effect,
     ).toBe('deny');
+  });
+
+  /* The gate read only the local freeze file, and `memnox sync` wrote what the
+     workspace declared to a second one. So a production freeze was pulled by every
+     machine, reported as applied, and consulted by none of them. */
+  it('lets a condition the workspace declared reach the gate', async () => {
+    const { dir } = home({ registry: true, statePolicy: true });
+    await writeOrgConditions(dir, {
+      syncedAt: Date.now(),
+      conditions: [
+        {
+          id: 'c1',
+          kind: 'freeze',
+          subject: 'deploys',
+          fromAt: 0,
+          untilAt: Date.now() + 60 * 60 * 1000,
+        },
+      ],
+    });
+
+    const gate = await loadHookGate(await readHookConfig({}, dir), dir);
+
+    expect(gate?.evaluate({ action: 'shell.deploy' }).effect).toBe('deny');
+  });
+
+  it('does not hold that condition once its window has passed', async () => {
+    const { dir } = home({ registry: true, statePolicy: true });
+    await writeOrgConditions(dir, {
+      syncedAt: Date.now(),
+      conditions: [
+        { id: 'c1', kind: 'freeze', subject: 'deploys', fromAt: 0, untilAt: 1 },
+      ],
+    });
+
+    const gate = await loadHookGate(await readHookConfig({}, dir), dir);
+
+    expect(gate?.evaluate({ action: 'shell.deploy' }).effect).not.toBe('deny');
   });
 });

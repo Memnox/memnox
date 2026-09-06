@@ -27,6 +27,8 @@ export interface RecordInput {
   agent?: string;
   rule?: { name: string; layer: string; file: string; line?: number };
   policyHash?: string;
+  bundleHash?: string;
+  conditionsInForce?: readonly string[];
   exitCode?: number;
   durationMs?: number;
 }
@@ -58,6 +60,10 @@ export function eventFor(input: RecordInput): MemnoxEvent {
     ...(outcome.target === undefined ? {} : { target: outcome.target }),
     ...(input.rule === undefined ? {} : { rule: input.rule }),
     ...(input.policyHash === undefined ? {} : { policyHash: input.policyHash }),
+    ...(input.bundleHash === undefined ? {} : { bundleHash: input.bundleHash }),
+    ...(input.conditionsInForce === undefined
+      ? {}
+      : { conditionsInForce: input.conditionsInForce }),
     ...(input.exitCode === undefined ? {} : { exitCode: input.exitCode }),
     ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
   };

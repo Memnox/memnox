@@ -18,6 +18,18 @@ export interface AskOptions {
   timeoutMs?: number;
 }
 
+export interface ReportOptions {
+  action: string;
+  target?: string;
+  sessionId?: string;
+  /** How the command ended. The breaker's error and progress signals need this. */
+  exitCode?: number;
+  outOfScope?: boolean;
+  /** Reported, never estimated. Absent on every surface that cannot know it. */
+  costUsd?: number;
+  timeoutMs?: number;
+}
+
 /**
  * Null on any failure at all — not running, too slow, garbled. The caller then
  * evaluates in process, which is the same rules a little slower. A daemon that could
@@ -27,8 +39,59 @@ export function askDaemon(
   home: string,
   options: AskOptions,
 ): Promise<DaemonResponse | null> {
+  return speak(home, options.timeoutMs, {
+    id: 1,
+    method: DAEMON_METHOD.EVALUATE,
+    action: options.action,
+    ...(options.target === undefined ? {} : { target: options.target }),
+    ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+  });
+}
+
+/**
+ * What happened, after it happened.
+ *
+ * The breaker watches outcomes, so without this every one of its signals counts
+ * nothing: a request on its own cannot say whether the same command has now failed
+ * eleven times. Best effort, like everything else here — a daemon that is not running
+ * means the counters are not kept, not that the command is held up.
+ */
+export function reportToDaemon(
+  home: string,
+  options: ReportOptions,
+): Promise<DaemonResponse | null> {
+  return speak(home, options.timeoutMs, {
+    id: 1,
+    method: DAEMON_METHOD.RECORD,
+    action: options.action,
+    ...(options.target === undefined ? {} : { target: options.target }),
+    ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+    ...(options.exitCode === undefined ? {} : { exitCode: options.exitCode }),
+    ...(options.outOfScope === undefined ? {} : { outOfScope: options.outOfScope }),
+    ...(options.costUsd === undefined ? {} : { costUsd: options.costUsd }),
+  });
+}
+
+/** Whether this session is held. One connect, asked before anything runs. */
+export function askStatus(
+  home: string,
+  sessionId: string,
+  timeoutMs?: number,
+): Promise<DaemonResponse | null> {
+  return speak(home, timeoutMs, {
+    id: 1,
+    method: DAEMON_METHOD.STATUS,
+    sessionId,
+  });
+}
+
+function speak(
+  home: string,
+  timeout: number | undefined,
+  message: Parameters<typeof encode>[0],
+): Promise<DaemonResponse | null> {
   const path = socketPathFor(home);
-  const timeoutMs = options.timeoutMs ?? DAEMON_TIMEOUT_MS;
+  const timeoutMs = timeout ?? DAEMON_TIMEOUT_MS;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -44,15 +107,7 @@ export function askDaemon(
     timer.unref?.();
 
     const socket = connect(path, () => {
-      socket.write(
-        encode({
-          id: 1,
-          method: DAEMON_METHOD.EVALUATE,
-          action: options.action,
-          ...(options.target === undefined ? {} : { target: options.target }),
-          ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
-        }),
-      );
+      socket.write(encode(message));
     });
 
     const reader = new LineReader();
