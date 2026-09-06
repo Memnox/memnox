@@ -31,6 +31,11 @@ Everything before 0.1.0 was a different product and is not listed here.
   in a container. Those read no shell profile, so the PATH line reached a terminal and
   never reached the server the agent was actually on. `PATH` is expanded for systemd
   and Docker, neither of which runs a shell.
+- **`memnox resume` did not resume anything.** The breaker replayed the session's whole
+  ledger after every command, so the failures that caused a pause were still in it and
+  the first command after a resume re-tripped it on the same five. A session could be
+  paused and never let go. It replays from the moment a person lifted the hold now,
+  which is what lifting one means.
 - **`memnox lock` did not actually hold anything.** The lease belonged to the command
   that took it, and that command exits the moment it has printed — so every hand-taken
   lease was abandoned before the next one could see it, and `lock --list` answered
