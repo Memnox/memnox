@@ -1,9 +1,13 @@
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { MEMNOX_HOME } from '@memnox/core';
+import { MEMNOX_HOME } from '../config/config';
 
 /**
  * The account file, and the only thing that turns any of this on.
+ *
+ * It lives here rather than beside the CLI's sync code because the seams are separate
+ * processes and need it too: a lease taken on one machine has to be checked against
+ * the workspace, and an interceptor cannot import a command.
  *
  * With no account file nothing here makes a network call at all — not a
  * heartbeat, not a lookup, nothing. That is the whole of the promise on the
