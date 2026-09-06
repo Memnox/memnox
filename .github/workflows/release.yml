@@ -1,14 +1,20 @@
 name: Release
 
-# Releasing is a decision. Changesets opens a version PR and only publishes when
-# somebody merges it, so no push to main can cut a release on its own.
+# Releasing is a decision, and a tag is how somebody makes it.
+#
+# This ran on every push to main, which was safe only while a changeset was always
+# pending: the action opens a version PR when it finds one and publishes when it does
+# not. With none pending, merging anything to main published it — and because this
+# workflow and `ci.yml` are independent, it would have published without waiting to
+# see whether the tests passed.
 on:
   push:
-    branches: [main]
+    tags: ['v*']
 
+# `id-token` is what signs the provenance attestation; `contents` is only read here,
+# because a tag build publishes what the tag points at and writes nothing back.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
   id-token: write
 
 jobs:
@@ -25,13 +31,11 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - uses: changesets/action@v1
-        with:
-          version: pnpm run version
-          publish: pnpm run release
-          commit: 'chore: version packages'
-          title: 'chore: version packages'
+      # The action exists to open version PRs from changesets, which a tag build is
+      # past. `changeset publish` is the half that matters here: it skips anything
+      # already on the registry and publishes the rest in dependency order, so
+      # `@memnox/core` lands before the CLI that requires it.
+      - run: pnpm run release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
