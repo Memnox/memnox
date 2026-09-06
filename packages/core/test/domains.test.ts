@@ -10,6 +10,8 @@ import {
   DECISION_EFFECT,
   type DecisionEffect,
 } from '../src/constants/decision.constants';
+import { TOOL_CLASS } from '../src/discovery/classify';
+import { verbAction, verbTableFor } from '../src/verbs/index';
 
 describe('the five domains somebody decides about', () => {
   it('covers each one exactly once', () => {
@@ -70,5 +72,31 @@ describe('turning answers into rules', () => {
     );
     expect(policy?.match.targets).toContain('**/.ssh/**');
     expect(policy?.match.targets).not.toContain('**');
+  });
+});
+
+describe('the baseline denies what it says it denies', () => {
+  /* This read `git.push` once, so the generated baseline denied every ordinary push
+     and permitted `git push --force`. Both halves were wrong and neither was visible
+     until something rendered the boundary one action at a time. */
+  const git = DOMAIN_CHOICES.find((choice) => choice.domain === POLICY_DOMAIN.GIT);
+
+  it('names every destructive git action the verb table produces', () => {
+    const table = verbTableFor('git');
+    const destructive = (table?.verbs ?? [])
+      .filter((verb) => verb.class === TOOL_CLASS.DESTRUCTIVE)
+      .map((verb) => verbAction('git', verb));
+
+    expect(destructive.length).toBeGreaterThan(0);
+    for (const action of destructive) {
+      expect(
+        git?.actions,
+        `${action} is destructive and the baseline misses it`,
+      ).toContain(action);
+    }
+  });
+
+  it('leaves an ordinary push alone, because denying every push gets it uninstalled', () => {
+    expect(git?.actions).not.toContain('git.push');
   });
 });

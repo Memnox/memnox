@@ -63,7 +63,20 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
     question: 'Force-pushing, and hard resets',
     recommended: DECISION_EFFECT.DENY,
     because: 'it rewrites history somebody else may already have pulled',
-    actions: ['git.push', 'git.reset', 'git.clean'],
+    /* The names the verb table actually produces. This read `git.push` and so the
+       baseline denied every ordinary push while permitting `git push --force` — the
+       opposite of what the question above it asks, and invisible until something
+       rendered the boundary action by action. `git.reset` and `git.clean` stay for
+       the generic classifier's spelling of the same commands. */
+    actions: [
+      'git.push-force',
+      'git.push-f',
+      'git.reset-hard',
+      'git.branch-d',
+      'git.clean-fd',
+      'git.reset',
+      'git.clean',
+    ],
   },
   {
     domain: POLICY_DOMAIN.MCP,
