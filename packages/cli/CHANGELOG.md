@@ -1,6 +1,6 @@
 # memnox
 
-## 0.3.0
+## 0.4.0
 
 ### Minor Changes
 
@@ -65,9 +65,9 @@ skills` says which of the two it is per file. Where a vendor does not document t
 ### Patch Changes
 
 - Updated dependencies [8530156]
-  - @memnox/core@0.3.0
-  - @memnox/interceptors@0.3.0
-  - @memnox/proxy@0.3.0
+  - @memnox/core@0.4.0
+  - @memnox/interceptors@0.4.0
+  - @memnox/proxy@0.4.0
 
 ## 0.2.1
 

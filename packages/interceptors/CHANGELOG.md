@@ -1,11 +1,11 @@
 # @memnox/interceptors
 
-## 0.3.0
+## 0.4.0
 
 ### Patch Changes
 
 - Updated dependencies [8530156]
-  - @memnox/core@0.3.0
+  - @memnox/core@0.4.0
 
 ## 0.2.1
 
