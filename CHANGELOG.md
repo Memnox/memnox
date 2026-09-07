@@ -7,6 +7,13 @@ Everything before this is a different product and is not listed here. Its versio
 numbers were published to npm and then unpublished. npm never lets a version number be
 used twice, so those numbers are spent whatever this file calls the work now.
 
+Those releases are tagged `legacy/v0.3.0` through `legacy/v0.6.1`. They are the same
+repository and the same linear history, kept under a prefix because the version restarts
+at `0.1.1` here: left under their own names they sorted above every release this series
+will make for months, and a tag list nobody can read is one nobody checks. The commits
+are untouched and the release points are still recorded, under a name that says which
+numbering they belong to.
+
 ## 0.1.1
 
 The first release of this product. Everything below works; the version says this is the
