@@ -1,6 +1,5 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { existsSync } from 'node:fs';
 import {
   delegations,
   describeLevel,
@@ -15,7 +14,7 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { withEvents } from '../event-store';
-import { resolvePolicyFile } from '../policy-path';
+import { policySetInForce } from '../policy-path';
 
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -59,10 +58,11 @@ export function registerNextCommand(
       const asked = interruptions(events, week);
 
       const config = await loadOrCreateConfig(home());
-      const file = resolvePolicyFile();
-      const gate = existsSync(file)
-        ? await LocalGate.fromFiles([file], { agentName: 'agent' })
-        : null;
+      const rules = await policySetInForce(home());
+      const gate =
+        rules.policies.length === 0
+          ? null
+          : new LocalGate(rules.policies, { agentName: 'agent' });
       const standing = standingOf({
         enforcing: config.mode === ENFORCEMENT_MODE.ENFORCE,
         rules: gate?.rules().length ?? 0,

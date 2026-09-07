@@ -387,3 +387,28 @@ function asOptionalStringArray(
   if (input === undefined || input === null) return undefined;
   return asStringArray(input, path, issues) ?? undefined;
 }
+
+/**
+ * The renamed effects, rewritten in place as text.
+ *
+ * Text rather than a round trip through the parser: a rule file carries comments,
+ * an order somebody chose and a format they picked, and re-serializing it would hand
+ * all three back as something else. Only the value on an `effect` key moves — every
+ * other byte in the file is left exactly as it was found.
+ *
+ * Never automatic. A rule file is a security control, so a machine that quietly
+ * rewrote one would be the thing this product exists to catch.
+ */
+export function renameEffectsIn(source: string): { text: string; renamed: string[] } {
+  const renamed: string[] = [];
+  const text = source.replace(
+    /^(\s*(?:-\s*)?effect\s*[:=]\s*)(["']?)([A-Za-z_]+)\2([^\S\n]*(?:#.*)?)$/gm,
+    (whole, lead: string, quote: string, effect: string, trail: string) => {
+      const now = RENAMED_EFFECTS.get(effect);
+      if (now === undefined) return whole;
+      renamed.push(`"${effect}" is now "${now}"`);
+      return `${lead}${quote}${now}${quote}${trail}`;
+    },
+  );
+  return { text, renamed };
+}

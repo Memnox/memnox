@@ -17,6 +17,27 @@ import { transcriptPathFor } from '../src/memnox-paths';
 
 const HOME = '/home/dev';
 
+/**
+ * Never the real one. Left unstubbed, every `memnox run` in this file took a git
+ * milestone in whatever repository the suite was running in — hundreds of refs under
+ * `refs/memnox/`, written by a test that was only ever checking an environment
+ * variable.
+ */
+class FakeMilestones {
+  readonly taken: { note?: string }[] = [];
+  forgotten = 0;
+
+  async take(request: { note?: string }): Promise<{ id: string }> {
+    this.taken.push(request);
+    return { id: `mst_test${this.taken.length}` };
+  }
+
+  async forget(): Promise<string[]> {
+    this.forgotten += 1;
+    return [];
+  }
+}
+
 describe('the environment memnox run builds', () => {
   it('puts the interceptors first on PATH, so they are found before the real binary', () => {
     const env = environmentFor({ PATH: '/usr/bin:/bin' }, HOME, 'ses_1', 'memnox-shell');
@@ -46,6 +67,7 @@ describe('the environment memnox run builds', () => {
 });
 
 describe('memnox run', () => {
+  const milestones = new FakeMilestones();
   async function run(args: string[], start: ReturnType<typeof vi.fn>) {
     const out = new RecordedOutput();
     /* A usage error otherwise exits the process and prints to the real stderr, so the
@@ -56,6 +78,9 @@ describe('memnox run', () => {
       start: start as never,
       home: () => HOME,
       newId: () => 'ses_test',
+      // Stated, never read off the runner's PATH: `claude` is installed on some.
+      onPath: () => true,
+      milestones: (() => milestones) as never,
     });
     await program.parseAsync(args, { from: 'user' });
     return out;
@@ -76,11 +101,47 @@ describe('memnox run', () => {
     expect(out.notes.join('\n')).toContain('ses_test');
   });
 
+  it('applies retention where the milestone is made, not only when asked', async () => {
+    /* Left to `rewind --forget` alone, a machine that starts agents all day reached
+       nine hundred refs and a listing nobody could read. */
+    const before = milestones.forgotten;
+    await run(
+      ['run', '--', 'claude'],
+      vi.fn(async () => 0),
+    );
+    // One taken, one pruned: retention runs on the same path that made the milestone.
+    expect(milestones.taken.at(-1)?.note).toBe('before claude');
+    expect(milestones.forgotten).toBe(before + 1);
+  });
+
   it('hands back the agent’s own exit code, because a wrapper that swallowed it would lie', async () => {
     const start = vi.fn(async () => 42);
     await run(['run', '--', 'claude'], start);
     expect(process.exitCode).toBe(42);
     process.exitCode = 0;
+  });
+
+  it('refuses a binary that is not there, and names the one meant', async () => {
+    /* `claude-code` is what the scan calls the agent and `claude` is what starts it,
+       so this is the first thing a reader types after reading one screen. */
+    const out = new RecordedOutput();
+    const start = vi.fn(async () => 0);
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
+    registerRunCommand(program, new CliContext(out, plainStyle), {
+      start: start as never,
+      home: () => HOME,
+      newId: () => 'ses_test',
+      onPath: (binary) => binary === 'claude',
+      binaryMeantBy: () => 'claude',
+      milestones: (() => new FakeMilestones()) as never,
+    });
+
+    await expect(
+      program.parseAsync(['run', '--', 'claude-code'], { from: 'user' }),
+    ).rejects.toThrow(/"claude-code" is not on PATH[\s\S]*memnox run -- claude/);
+    // Nothing was set up for a run that never started: no session, no milestone.
+    expect(start).not.toHaveBeenCalled();
+    expect(out.notes).toEqual([]);
   });
 
   it('says what to type when no command was named', async () => {
@@ -94,6 +155,7 @@ describe('memnox run', () => {
 });
 
 describe('the transcript tap', () => {
+  const milestones = new FakeMilestones();
   async function run(args: string[], start: ReturnType<typeof vi.fn>) {
     const out = new RecordedOutput();
     const program = new Command();
@@ -101,6 +163,9 @@ describe('the transcript tap', () => {
       start: start as never,
       home: () => HOME,
       newId: () => 'ses_test',
+      // Stated, never read off the runner's PATH: `claude` is installed on some.
+      onPath: () => true,
+      milestones: (() => milestones) as never,
     });
     await program.parseAsync(args, { from: 'user' });
     return out;
@@ -172,6 +237,7 @@ describe('a session that ends holds nothing', () => {
       home: () => home,
       newId: () => 'ses_test',
       now: () => NOW,
+      onPath: () => true,
       milestones: (() => {
         throw new Error('no repository');
       }) as never,

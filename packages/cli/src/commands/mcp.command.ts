@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -18,6 +17,7 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { backupPathFor } from '../memnox-paths';
+import { onPath } from '../on-path';
 
 interface ConfigFile {
   path: string;
@@ -114,15 +114,7 @@ function proxyOnPath(resolve: (binary: string) => boolean = defaultResolve): boo
   return resolve(PROXY_BINARY);
 }
 
-const defaultResolve = (binary: string): boolean => {
-  try {
-    execFileSync('command', ['-v', binary], { stdio: 'ignore', shell: true });
-    return true;
-  } catch {
-    // Not on PATH, which is the whole thing this check exists to catch.
-    return false;
-  }
-};
+const defaultResolve = (binary: string): boolean => onPath(binary);
 
 export function registerMcpCommand(
   program: Command,

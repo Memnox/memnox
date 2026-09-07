@@ -72,8 +72,15 @@ export async function requestCode(
     },
   });
   if (answer.status !== 200 && answer.status !== 201) {
+    /* A 404 is not a refusal and reading as one sent somebody to argue with an
+       administrator about a permission, when what is actually there is a host that
+       does not serve this API. */
+    const missing = answer.status === 404 || answer.status === 501;
     throw new EnrolmentRefused(
-      `the control plane refused the request (${answer.status}).`,
+      missing
+        ? `${options.baseUrl} has no device-enrolment endpoint (${answer.status}), so it is not a Memnox control plane.\n` +
+            'Point at the right one with "memnox login --url <base>". This machine is unchanged.'
+        : `the control plane refused the request (${answer.status}).`,
     );
   }
   const offer = answer.body;

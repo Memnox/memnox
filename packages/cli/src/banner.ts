@@ -1,3 +1,4 @@
+import type { CliOutput } from './cli-output';
 import type { Style } from './style';
 
 /**
@@ -89,4 +90,19 @@ export function wordmark(style: Style, plain: string): string[] {
     lines.push(line);
   }
   return lines;
+}
+
+/**
+ * The wordmark, above whatever the command is about to say.
+ *
+ * Commentary on stderr like the rest of the chrome, so `memnox scan --json | jq` and
+ * `eval "$(memnox env)"` still receive the payload alone. Drawn only for a decorated
+ * stream, and never under `--json`: a caller that asked for a machine answer is not
+ * asking for block art on its diagnostics.
+ */
+export function masthead(out: CliOutput, style: Style): void {
+  if (!style.decorated) return;
+  out.note('');
+  for (const line of wordmark(style, 'memnox')) out.note(line);
+  out.note('');
 }

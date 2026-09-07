@@ -1,5 +1,5 @@
 import type { AgentRef } from './agent';
-import type { Resource } from './resource';
+import { classifyResourceKind, type Resource } from './resource';
 import type { Surface } from './surface';
 import { TRANSITIVE_SURFACES, type SurfaceKind } from './discovery.constants';
 
@@ -66,5 +66,25 @@ export function attributeResources(
       if (ref !== undefined) reachableBy.push(ref);
     }
     return { ...resource, reachableBy };
+  });
+}
+
+/**
+ * Which agents reach a path that nothing opened as a resource — the credential list.
+ * Counted off the same table the reachable block reads, because the screen printed
+ * `~/.ssh/id_ed25519  5 agents` in one section and `4 agents` in another, and a reader
+ * who catches two numbers for one file stops believing both.
+ */
+export function agentsReachingPath(
+  path: string,
+  agents: readonly AgentRef[],
+  surfaces: readonly Surface[],
+): AgentRef[] {
+  const kind = classifyResourceKind(path);
+  return agents.filter((agent) => {
+    const kinds = surfaces
+      .filter((surface) => surface.agentId === agent.id)
+      .flatMap((surface) => SURFACE_REACHES[surface.kind] ?? []);
+    return kinds.includes(kind);
   });
 }

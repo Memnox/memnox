@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import {
   BAND,
@@ -6,7 +6,7 @@ import {
   actionsForCli,
   blastRadiusOf,
   boundaryFor,
-  loadPoliciesFromFile,
+  type Policy,
   rolesIn,
   standingFor,
   type CandidateAction,
@@ -17,7 +17,7 @@ import {
   type Boundary,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { resolvePolicyFile } from '../policy-path';
+import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
 
 /**
  * Can I leave this running?
@@ -40,23 +40,32 @@ export function registerAutopilotCommand(program: Command, context: CliContext):
         agent: string | undefined,
         options: { file?: string; json?: boolean; role?: string; roles?: boolean },
       ) => {
-        const file = resolvePolicyFile(options.file);
-        if (!existsSync(file)) {
+        /* Every file in force, not this directory's: a registered checkout's rules
+           govern this machine whichever directory the reader is standing in, and one
+           that will not load must not take the boundary down with it. */
+        const rules = await policySetInForce(homedir(), options.file);
+        if (rules.policies.length === 0) {
           throw new Error(
-            `No rules at ${file}, so there is no boundary to show. Write one:  memnox protect --yes`,
+            `No rules at ${resolvePolicyFile(options.file)}, so there is no boundary to show. Write one:  memnox protect --yes`,
           );
         }
+        sayWhatDidNotLoad(context, rules);
 
         const candidatesFor = (): CandidateAction[] =>
           interceptedBinaries().flatMap((binary) => actionsForCli(binary));
 
         if (options.roles === true) {
-          await renderWorkforce(context, file, candidatesFor(), options.json === true);
+          await renderWorkforce(
+            context,
+            rules.policies,
+            candidatesFor(),
+            options.json === true,
+          );
           return;
         }
 
         const name = agent ?? 'claude-code';
-        const gate = await LocalGate.fromFiles([file], {
+        const gate = new LocalGate(rules.policies, {
           agentName: name,
           /* Evaluated as the job, so a `roles:` rule fires. Without this the screen
              would show what the product may do and call it what the role may do. */
@@ -192,11 +201,11 @@ function band(
  */
 async function renderWorkforce(
   context: CliContext,
-  file: string,
+  policies: readonly Policy[],
   candidates: CandidateAction[],
   asJson: boolean,
 ): Promise<void> {
-  const roles = rolesIn(await loadPoliciesFromFile(file));
+  const roles = rolesIn([...policies]);
   const { out, style } = context;
 
   if (roles.length === 0) {
@@ -209,7 +218,7 @@ async function renderWorkforce(
 
   const standings = [];
   for (const role of roles) {
-    const gate = await LocalGate.fromFiles([file], { agentName: role, agentRole: role });
+    const gate = new LocalGate([...policies], { agentName: role, agentRole: role });
     const boundary = boundaryFor(role, candidates, (action) => {
       const verdict = gate.evaluate({ action });
       return {

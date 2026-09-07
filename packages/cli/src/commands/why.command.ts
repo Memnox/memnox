@@ -30,7 +30,10 @@ function render(context: CliContext, event: MemnoxEvent): void {
   );
   out.line('');
   row(context.out, 'when', event.at);
-  row(context.out, 'agent', `${event.agent} (${event.actorType})`);
+  /* The actor type only when it says something the name has not: an unnamed actor
+     recorded as "an agent" rendered as "an agent (agent)". */
+  const named = event.agent.toLowerCase().includes(event.actorType.toLowerCase());
+  row(context.out, 'agent', named ? event.agent : `${event.agent} (${event.actorType})`);
   row(context.out, 'surface', event.surface);
   row(context.out, 'class', event.class);
   row(context.out, 'reason', event.reason);

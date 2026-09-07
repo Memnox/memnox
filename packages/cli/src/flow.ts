@@ -1,6 +1,5 @@
 import type { CliOutput } from './cli-output';
 import type { Style } from './style';
-import { wordmark } from './banner';
 
 /**
  * A command that reports its steps as it takes them.
@@ -50,13 +49,8 @@ export class Flow {
     this.out.note(`${this.gutter(mark)}${text}`);
   }
 
-  /** The wordmark, then the command's own name on a filled block. */
+  /** The command's own name on a filled block. The wordmark above it is the program's. */
   open(name: string): void {
-    if (this.on) {
-      this.out.note('');
-      for (const line of wordmark(this.style, 'memnox')) this.out.note(line);
-      this.out.note('');
-    }
     this.say(START, this.style.chip(name));
     this.say(RAIL, '');
   }

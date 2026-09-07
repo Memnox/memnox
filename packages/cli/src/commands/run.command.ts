@@ -28,6 +28,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { guardProfilePath, transcriptPathFor } from '../memnox-paths';
 import { NodeGit, NodeWorktree } from '../node-git';
+import { binaryMeantBy, onPath } from '../on-path';
 
 /**
  * Everything the child needs to be governed, set as environment rather than asked of
@@ -71,6 +72,9 @@ interface RunDeps {
   home?: () => string;
   newId?: () => string;
   now?: () => Date;
+  /** Injected so a test states what is installed rather than reading the runner's PATH. */
+  onPath?: (binary: string) => boolean;
+  binaryMeantBy?: (name: string) => string | null;
 }
 
 const defaultStart = (
@@ -154,6 +158,18 @@ export function registerRunCommand(
         const binary = command[0];
         if (binary === undefined) {
           throw new Error('Name the command to run:  memnox run -- claude');
+        }
+        /* Before a session, a task, a milestone or the sandbox. Checked last, the
+           refusal came back as `sandbox-exec: execvp() ... No such file or directory`
+           over a working tree this had already kept for a run that never started. */
+        if (!(deps.onPath ?? onPath)(binary)) {
+          const meant = (deps.binaryMeantBy ?? binaryMeantBy)(binary);
+          throw new Error(
+            `"${binary}" is not on PATH, so there is nothing to start.` +
+              (meant === null
+                ? ''
+                : `\nThe binary for ${binary} is "${meant}":  memnox run -- ${meant}`),
+          );
         }
 
         const home = (deps.home ?? homedir)();
@@ -327,6 +343,10 @@ async function keepMilestone(
       sessionId,
       note: `before ${binary}`,
     });
+    /* Retention applied where milestones are made rather than only when somebody
+       asks. Left to `--forget` alone, a machine that starts agents all day reached
+       nine hundred refs and a `rewind --list` nobody could read. */
+    await milestones.forget();
     return taken.id;
   } catch {
     return null;

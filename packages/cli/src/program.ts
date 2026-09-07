@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { masthead } from './banner';
 import type { CliContext } from './cli-context';
 import { CLI_VERSION } from './defaults';
 import { registerScanCommand } from './commands/scan.command';
@@ -44,6 +45,14 @@ export function buildProgram(context: CliContext): Command {
     .name('memnox')
     .description('Memnox — the execution trust layer for AI agents')
     .version(CLI_VERSION);
+
+  /* Once, above every command, from the one place that knows a command is about to
+     run. Drawing it inside each command would mean the next one added forgets, and
+     `--help` and `--version` never reach here, which is right: neither is a run. */
+  program.hook('preAction', (_program, command) => {
+    if (command.opts()['json'] === true) return;
+    masthead(context.out, context.style);
+  });
 
   registerScanCommand(program, context);
   registerDiffCommand(program, context);

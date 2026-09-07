@@ -1,24 +1,18 @@
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import {
   DECISION_EFFECT,
   INTENT_KIND,
   LocalGate,
-  loadPolicySet,
-  MEMNOX_HOME,
+  type PolicySet,
   preflightFor,
   overlaysInForce,
-  readPolicyRegistry,
   stateFactsInForce,
   type Preflight,
   type LocalVerdict,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { resolvePolicyFile } from '../policy-path';
-
-const REGISTRY_FILE = 'policies.json';
+import { policySetInForce, sayWhatDidNotLoad } from '../policy-path';
 
 interface Ruling {
   action: string;
@@ -55,7 +49,9 @@ export function registerCheckCommand(
         return;
       }
 
-      const gate = await buildGate(options.agent, now());
+      const { gate, rules } = await buildGate(options.agent, now());
+      // A file that would not load is not an absent rule, so it is never silent here.
+      sayWhatDidNotLoad(context, rules);
       const rulings = preflight.actions.map((action) => ({
         action: action.action,
         verdict: gate.evaluate({
@@ -73,19 +69,20 @@ export function registerCheckCommand(
 }
 
 /** The rules actually in force here, plus whatever state is open — the same as the gate. */
-async function buildGate(agent: string, moment: string): Promise<LocalGate> {
+async function buildGate(
+  agent: string,
+  moment: string,
+): Promise<{ gate: LocalGate; rules: PolicySet }> {
   const home = homedir();
-  const registered = await readPolicyRegistry(join(home, MEMNOX_HOME, REGISTRY_FILE));
-  const here = resolvePolicyFile();
-  const files = new Set(registered);
-  if (existsSync(here)) files.add(here);
-
-  const set = await loadPolicySet([...files]);
+  const rules = await policySetInForce(home);
   const overlays = await overlaysInForce(home);
-  return new LocalGate(set.policies, {
-    agentName: agent,
-    stateFacts: stateFactsInForce(overlays, moment),
-  });
+  return {
+    rules,
+    gate: new LocalGate(rules.policies, {
+      agentName: agent,
+      stateFacts: stateFactsInForce(overlays, moment),
+    }),
+  };
 }
 
 const ORDER: Record<string, number> = {
@@ -116,6 +113,10 @@ function render(
   const shown = [...rulings].sort(
     (a, b) => (ORDER[a.verdict.effect] ?? 3) - (ORDER[b.verdict.effect] ?? 3),
   );
+  /* One reason for the whole list is a footnote, not eleven columns of it. Printed
+     per row it pushed the actions off the left of anybody's attention. */
+  const reasons = new Set(rulings.map((ruling) => ruling.verdict.reason));
+  const shared = reasons.size === 1 ? [...reasons][0] : undefined;
   for (const ruling of shown) {
     const effect = ruling.verdict.effect;
     const label =
@@ -124,14 +125,36 @@ function render(
         : effect === DECISION_EFFECT.ASK
           ? style.warn('ask  ')
           : style.dim('allow');
-    out.line(
-      `  ${label}  ${ruling.action.padEnd(width)}${style.dim(ruling.verdict.reason)}`,
-    );
+    const reason = shared === undefined ? style.dim(ruling.verdict.reason) : '';
+    out.line(`  ${label}  ${ruling.action.padEnd(width)}${reason}`.trimEnd());
+  }
+  if (shared !== undefined) {
+    out.line('');
+    out.line(`  ${style.dim(shared)}`);
   }
 
   out.line('');
   if (stopped.length === 0) {
-    out.line(`Nothing here would stop. ${rulings.length} action(s) checked.`);
+    /* An unruled action is not a permitted one. Reporting eleven of them as "nothing
+       would stop" is the comfortable lie: no rule covers them, which is a different
+       fact from a rule having allowed them, and it is the one worth acting on. */
+    const unruled = rulings.filter(
+      (ruling) => ruling.verdict.matchedPolicies.length === 0,
+    ).length;
+    if (unruled === rulings.length) {
+      out.line(
+        `Nothing here would stop, and no rule covers any of it. ${rulings.length} action(s) checked.`,
+      );
+      out.line(
+        `  ${style.dim('memnox protect')}   put the dangerous ones behind ask or deny`,
+      );
+      return;
+    }
+    out.line(
+      unruled === 0
+        ? `Nothing here would stop. ${rulings.length} action(s) checked.`
+        : `Nothing here would stop. ${rulings.length} action(s) checked, ${unruled} of them covered by no rule.`,
+    );
     return;
   }
   out.line(

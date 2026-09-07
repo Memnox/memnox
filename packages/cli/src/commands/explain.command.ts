@@ -16,6 +16,7 @@ import {
   describeCombined,
   inventoryOf,
   LocalGate,
+  type PolicySet,
   parseQuestion,
   toolsMatching,
   traceCapability,
@@ -33,7 +34,7 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { row } from '../cli-output';
-import { resolvePolicyFile } from '../policy-path';
+import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { gatherHealth } from '../health-probe';
 import { guardProfilePath } from '../memnox-paths';
@@ -77,7 +78,8 @@ interface Answer {
 async function answerQuestion(
   question: ParsedQuestion,
   inventory: CapabilityInventory,
-  policyFile: string,
+  rules: PolicySet,
+  here: string,
 ): Promise<Answer> {
   const agent = inventory.agents.find((each) =>
     each.kind.toLowerCase().includes(question.agent.toLowerCase()),
@@ -116,15 +118,18 @@ async function answerQuestion(
     : `${tools.length} tool(s) across ${inventory.mcpServers.length} server(s)`;
 
   const action = actionForVerb(question.verb);
-  if (!existsSync(policyFile)) {
+  if (rules.policies.length === 0) {
     return {
       technically,
       runtime,
-      policy: `no rules at ${policyFile} — nothing here would stop it`,
+      policy: `no rules at ${here} — nothing here would stop it`,
     };
   }
 
-  const gate = await LocalGate.fromFiles([policyFile], { agentName: agent.kind });
+  /* Every file in force, not just this directory's: the registry names the other
+     repositories on the disk, and reading one file answered "you are not governed"
+     about a machine that is. */
+  const gate = new LocalGate(rules.policies, { agentName: agent.kind });
   const verdict = gate.evaluate({ action, target: question.resource });
   const rule = verdict.matchedPolicies[0];
   const named = rule === undefined ? 'no rule matched' : `rule ${rule.name}`;
@@ -215,11 +220,15 @@ export function registerExplainCommand(
         const { question, error } = parseQuestion(subject);
         if (question === undefined) throw new Error(error);
 
+        const rules = await policySetInForce(homedir(), options.file);
         const answer = await answerQuestion(
           question,
           inventoryOf(report, snapshot.takenAt),
+          rules,
           resolvePolicyFile(options.file),
         );
+        // A file that would not load is not an absent rule, and is never silent here.
+        sayWhatDidNotLoad(context, rules);
         if (options.json === true) {
           context.out.json({ question, ...answer });
           return;

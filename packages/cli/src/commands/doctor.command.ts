@@ -107,7 +107,12 @@ export function registerDoctorCommand(
       out.line('');
       for (const finding of report.findings) {
         out.line(`  ${severity(style, finding).padEnd(SEVERITY_WIDTH)}${finding.title}`);
-        out.line(`  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(finding.evidence)}`);
+        /* Skipped when it is the path the title just gave: a resource with nothing
+           else naming it carries itself as its own evidence, and printing it twice
+           reads as two facts about one file. */
+        if (!finding.title.includes(finding.evidence)) {
+          out.line(`  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(finding.evidence)}`);
+        }
         const remediation = finding.remediation;
         if (remediation !== undefined) {
           out.line(

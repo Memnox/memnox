@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { discover, summarize } from '../src/discovery/discover';
 import { SENSITIVITY, SURFACE_KIND } from '../src/discovery/discovery.constants';
+import { agentRefOf } from '../src/discovery/agent';
+import { agentsReachingPath } from '../src/discovery/reachability';
 import { FakeMachine } from './fake-machine';
 
 const NOW = '2026-08-31T09:00:00.000Z';
@@ -79,5 +81,17 @@ describe('discover', () => {
       'claude-code',
       'cursor',
     ]);
+  });
+
+  it('counts a credential path exactly as the resource block counts the same file', async () => {
+    const report = await discover(FakeMachine.from(MACHINE), { now: NOW });
+    const path = '/home/dev/.ssh/id_ed25519';
+    const resource = report.resources.find((each) => each.path === path);
+
+    expect(
+      agentsReachingPath(path, report.agents.map(agentRefOf), report.surfaces).map(
+        (ref) => ref.id,
+      ),
+    ).toEqual(resource?.reachableBy.map((ref) => ref.id));
   });
 });

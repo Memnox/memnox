@@ -1,5 +1,7 @@
 import {
   AGENT_APPROVAL,
+  agentRefOf,
+  agentsReachingPath,
   approvalOf,
   describeBrowser,
   describeCombined,
@@ -146,7 +148,8 @@ export function renderMachine(
   out.line(`${surfaces.length} execution surfaces.`);
   if (counts.approvedAgents.length === 0 && report.agents.length > 0) {
     out.note(
-      'No agent has been approved or refused here. Decide with "memnox config set approvedAgents".',
+      'No agent has been approved or refused here. Decide with ' +
+        `"memnox config set approvedAgents ${report.agents.map((agent) => agent.kind).join(',')}".`,
     );
   }
   out.line('');
@@ -187,7 +190,13 @@ function renderCredentials(context: CliContext, report: DiscoveryReport): void {
   const { out, style } = context;
   if (report.credentials.length === 0) return;
 
-  const agents = report.agents.length;
+  const refs = report.agents.map(agentRefOf);
+  /* Counted per path off the same table the reachable block reads. Standing in the
+     agent total here meant one screen said `5 agents` and `4 agents` about one file. */
+  const reach = (path: string): string => {
+    const count = agentsReachingPath(path, refs, report.surfaces).length;
+    return `${count} agent${count === 1 ? '' : 's'}`;
+  };
   out.line('');
   out.line(style.bold('CREDENTIALS THESE AGENTS CAN READ'));
   out.line('');
@@ -199,8 +208,9 @@ function renderCredentials(context: CliContext, report: DiscoveryReport): void {
       ...report.envFiles.map((each) => each.path.length),
     ) + PATH_GUTTER;
   for (const credential of report.credentials) {
-    const reach = `${agents} agent${agents === 1 ? '' : 's'}`;
-    out.line(`  ${style.warn('!')}  ${credential.path.padEnd(width)}${reach}`);
+    out.line(
+      `  ${style.warn('!')}  ${credential.path.padEnd(width)}${reach(credential.path)}`,
+    );
     if (credential.detail !== undefined) {
       out.line(`     ${style.dim(credential.detail)}`);
     }
@@ -214,9 +224,7 @@ function renderCredentials(context: CliContext, report: DiscoveryReport): void {
         : env.keyLike === 1
           ? ', 1 looks like a credential'
           : `, ${env.keyLike} look like credentials`;
-    out.line(
-      `  ${style.warn('!')}  ${env.path.padEnd(width)}${agents} agent${agents === 1 ? '' : 's'}`,
-    );
+    out.line(`  ${style.warn('!')}  ${env.path.padEnd(width)}${reach(env.path)}`);
     out.line(`     ${style.dim(`${env.variables} variables${keys}`)}`);
   }
 }

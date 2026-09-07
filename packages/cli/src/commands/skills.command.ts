@@ -79,6 +79,9 @@ function merge(
   return [...by.values()];
 }
 
+/** What fits a terminal beside the held ones and the closing count. */
+const NEW_SHOWN = 12;
+
 function render(context: CliContext, findings: readonly SkillFinding[]): void {
   const { out, style } = context;
   if (findings.length === 0) {
@@ -103,7 +106,21 @@ function render(context: CliContext, findings: readonly SkillFinding[]): void {
     out.line('');
     out.line(style.bold('NEW'));
     out.line('');
-    for (const skill of fresh) out.line(`  ${style.dim('+')}  ${describeSkill(skill)}`);
+    /* The ones that name a tool first, and the rest counted. Seventy rows is not a
+       screen anybody reads, and the sixty that name nothing this knows are the sixty
+       there is nothing to decide about. */
+    const ordered = [...fresh].sort((a, b) => b.reaches.length - a.reaches.length);
+    for (const skill of ordered.slice(0, NEW_SHOWN)) {
+      out.line(`  ${style.dim('+')}  ${describeSkill(skill)}`);
+    }
+    const rest = ordered.length - NEW_SHOWN;
+    if (rest > 0) {
+      const quiet = ordered.slice(NEW_SHOWN).filter((each) => each.reaches.length === 0);
+      out.line(
+        `  ${style.dim(`… and ${rest} more, ${quiet.length} of which name no tool this knows`)}`,
+      );
+      out.note('"memnox skills --json" lists every one.');
+    }
   }
 
   const known = findings.length - held.length - fresh.length;
