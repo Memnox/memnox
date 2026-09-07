@@ -1,8 +1,15 @@
 import { createHash } from 'node:crypto';
-import { SKILL_STANDING, type SkillFinding } from '@memnox/core';
+import {
+  DEFINITION_KIND,
+  describeGrant,
+  GRANT,
+  SKILL_STANDING,
+  type SkillFinding,
+} from '@memnox/core';
 
 /**
- * A skill an agent wrote for itself, sent so a person reviews it.
+ * What an agent runs on beyond its config, sent so a person reviews it: a skill it
+ * wrote for itself, or a definition somebody installed into it.
  *
  * `VISION.md` `I.4`: an agent that improves itself changes what it will do
  * tomorrow, and *"Memnox should treat every newly generated skill like a
@@ -48,14 +55,19 @@ const WORTH_REPORTING: readonly string[] = [
 ];
 
 /**
- * How severe a standing is, in the words the findings table already uses.
+ * How severe one of these is, in the words the findings table already uses.
  *
  * A skill that reaches further than the accepted version is the one this whole
  * screen exists for — yesterday it edited files, today it also names `kubectl`
  * — so it is the one that outranks the rest.
  */
-function severityOf(standing: string): string {
-  return standing === SKILL_STANDING.WIDENED ? 'high' : 'medium';
+function severityOf(finding: SkillFinding): string {
+  if (finding.standing === SKILL_STANDING.WIDENED) return 'high';
+  /* A definition somebody installed that declares no tools runs with the session's
+     whole tool set. It is new rather than widened, so the standing does not rank it —
+     and the grant is the widest one on the machine, so it has to. */
+  if (finding.grant.kind === GRANT.INHERITS) return 'high';
+  return 'medium';
 }
 
 /**
@@ -78,6 +90,7 @@ export function skillRef(finding: SkillFinding): string {
 
 /** What a person is told about it, in one line they can act on. */
 function titleFor(finding: SkillFinding): string {
+  if (finding.kind === DEFINITION_KIND.AGENT) return definitionTitle(finding);
   if (finding.standing === SKILL_STANDING.WIDENED) {
     return `${finding.agent} widened its own skill "${finding.name}": it now reaches ${finding.gained.join(', ')}`;
   }
@@ -89,6 +102,24 @@ function titleFor(finding: SkillFinding): string {
     return `${finding.agent} wrote itself a new skill "${finding.name}", reaching ${reaches}`;
   }
   return `${finding.agent} changed its own skill "${finding.name}"`;
+}
+
+/**
+ * A persona somebody installed, said as what it was rather than as what it wrote.
+ *
+ * The verb is "installed into", never "wrote itself": these arrive from a public
+ * roster by the hundred and attributing them to the agent would put the blame on the
+ * wrong thing and hide how they got there.
+ */
+function definitionTitle(finding: SkillFinding): string {
+  const grant = describeGrant(finding.grant);
+  if (finding.standing === SKILL_STANDING.WIDENED) {
+    return `A definition installed into ${finding.agent}, "${finding.name}", widened: it ${grant}`;
+  }
+  if (finding.standing === SKILL_STANDING.NEW) {
+    return `A definition was installed into ${finding.agent}, "${finding.name}", and it ${grant}`;
+  }
+  return `A definition installed into ${finding.agent}, "${finding.name}", changed`;
 }
 
 /**
@@ -123,7 +154,7 @@ export function skillChangesFrom(
         occurredAt: at,
         payload: {
           kind: SKILL_FINDING_KIND,
-          severity: severityOf(finding.standing),
+          severity: severityOf(finding),
           /* Where it lives, never what it says. */
           subjectRef: finding.path,
           title: titleFor(finding),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SKILL_STANDING, type SkillFinding } from '@memnox/core';
+import { DEFINITION_KIND, GRANT, SKILL_STANDING, type SkillFinding } from '@memnox/core';
 import { SKILL_FINDING_KIND, skillChangesFrom, skillRef } from '../src/sync/skills';
 
 /**
@@ -18,10 +18,13 @@ function skill(over: Partial<SkillFinding> = {}): SkillFinding {
     name: 'deploy',
     path: '/home/ana/.hermes/skills/ops/deploy/SKILL.md',
     agent: 'hermes',
+    kind: DEFINITION_KIND.SKILL,
+    grant: { kind: GRANT.UNREAD, tools: [] },
     reaches: ['kubectl', 'git'],
     digest: 'sha-1111',
     standing: SKILL_STANDING.NEW,
     gained: ['kubectl', 'git'],
+    widerGrant: false,
     ...over,
   };
 }

@@ -460,13 +460,26 @@ spend ceiling. A pause names the count that produced it and says how to lift it:
 a stop nobody can argue with or undo is one people work around by uninstalling.
 
 ### `memnox skills`
-Skills your agents have written for themselves, treated like deployments. A
-skill whose reach has grown since you accepted it is held — yesterday it edited
-files, today it also names `kubectl` — because that is the change nobody would
-otherwise look at. `--accept <name>` records that you have looked.
+What your agents run on beyond their config, treated like deployments: skills
+they wrote for themselves, and definitions somebody installed into them.
+`--accept <name>` records that you have looked.
 
-A skill naming a tool is evidence it may use it, never proof that it does, and
-the screen says so.
+Two things are held. A skill or definition whose reach has grown since you
+accepted it — yesterday it edited files, today it also names `kubectl`, or it
+named four tools and now names none. And a roster that arrived all at once:
+twelve or more new definitions in one directory is an install rather than
+somebody's own work, and it is shown as one row with a count, never as three
+hundred.
+
+The count that matters is on that row. On Claude Code, Qwen and ZCode a
+definition file with no `tools:` key inherits every tool in the session — the
+shell, writes, and every connected MCP server — so an absent key is the widest
+grant on the machine and not the narrowest. Public rosters run to hundreds of
+files and almost none of them set it.
+
+Two claims, kept apart. What a file *declares* is read out of its own header and
+stated as fact. What it *names* is a match against the verb tables: evidence it
+may use a tool, never proof that it does, and the screen says so.
 
 ### `memnox claims [session]`
 What the agent said it did, against what the record says it did. Reads the

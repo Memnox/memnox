@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  discoverSkills,
+  discoverDefinitions,
   fleetBudgets,
   HOLD_ANSWER,
   MEMNOX_HOME,
@@ -121,7 +121,8 @@ export async function onePass(home: string): Promise<Pass> {
 }
 
 /**
- * What the agents here have taught themselves, against what somebody accepted.
+ * What the agents here have taught themselves and what somebody installed into them,
+ * against what anybody accepted.
  *
  * A failure is nothing to report rather than a failed pass: an unreadable
  * skills directory must not cost the heartbeat, which is what says this machine
@@ -131,7 +132,7 @@ async function skillReview(
   home: string,
 ): Promise<{ findings: SkillFinding[]; takenAt: string } | null> {
   try {
-    const found = await discoverSkills(new NodeMachineReader());
+    const found = await discoverDefinitions(new NodeMachineReader());
     const accepted = await readAcceptedSkills(home);
     return {
       findings: reviewSkills(found, accepted),

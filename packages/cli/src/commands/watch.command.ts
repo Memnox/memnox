@@ -3,13 +3,20 @@ import type { Command } from 'commander';
 import {
   agentUpdates,
   alertsFor,
+  bulkArrivals,
   CHANGE_DIRECTION,
   CHANGE_SUBJECT,
   compareSnapshots,
+  describeSkill,
   describeUpdate,
+  discoverDefinitions,
+  readAcceptedSkills,
+  reviewSkills,
+  SKILL_STANDING,
   watchablePaths,
   type EnvironmentChange,
   type EnvironmentSnapshot,
+  type SkillFinding,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import type { CredentialFinding, DiscoveryReport } from '@memnox/core';
@@ -86,6 +93,10 @@ export function registerWatchCommand(
         const between = waiter();
         let baseline = await seams.snapshots.latest();
         let previous: DiscoveryReport | null = null;
+        /* Definitions are not in the snapshot, so the previous cycle's ids are kept
+           here. Null on the first cycle for the same reason the baseline is: a watch
+           starting on a machine reports what arrives, never what was already there. */
+        let seenDefinitions: Set<string> | null = null;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
           if (cycle > 0) await between.wait(interval * MILLISECONDS);
           const { report: scanned, snapshot } = await scanMachine(seams, {
@@ -100,7 +111,18 @@ export function registerWatchCommand(
              nobody granted the difference, which is what makes it worth saying. */
           const updates = baseline === null ? [] : agentUpdates(baseline, snapshot);
           baseline = snapshot;
-          if (changes.length === 0 && updates.length === 0 && logins.length === 0)
+          /* An installed definition touches no config the snapshot carries, so this
+             is its own pass. Without it the watcher wakes on `~/.claude/agents` — it
+             is watched — and reports nothing, which is worse than not watching. */
+          const definitions = await reviewDefinitions(seams);
+          const arrived = sinceLastCycle(seenDefinitions, definitions);
+          seenDefinitions = new Set(definitions.map((each) => each.id));
+          if (
+            changes.length === 0 &&
+            updates.length === 0 &&
+            logins.length === 0 &&
+            arrived.length === 0
+          )
             continue;
           for (const login of logins) {
             context.out.line(
@@ -108,11 +130,79 @@ export function registerWatchCommand(
             );
             context.out.line(`      ${context.style.dim('memnox protect --for <cli>')}`);
           }
+          reportDefinitions(context, arrived, options.json === true);
           await report(context, seams, snapshot, changes, updates, options.json === true);
         }
         between.close();
       },
     );
+}
+
+/**
+ * What the agents here run on beyond their config, against what anybody accepted.
+ *
+ * A failure is nothing to report rather than a failed cycle: an unreadable definitions
+ * directory must not stop the watch that is reporting everything else.
+ */
+async function reviewDefinitions(seams: ScanSeams): Promise<SkillFinding[]> {
+  try {
+    const found = await discoverDefinitions(seams.reader);
+    return reviewSkills(found, await readAcceptedSkills(seams.reader.homeDir()));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The ones that arrived since the last cycle. A watch starting on a machine full of
+ * definitions reports none of them: what was already there is `memnox skills`, and a
+ * watch that opened with three hundred rows is one nobody leaves running.
+ */
+function sinceLastCycle(
+  seen: Set<string> | null,
+  findings: readonly SkillFinding[],
+): SkillFinding[] {
+  if (seen === null) return [];
+  return findings.filter(
+    (each) => each.standing !== SKILL_STANDING.KNOWN && !seen.has(each.id),
+  );
+}
+
+/** A roster as one line, and anything else as its own. */
+function reportDefinitions(
+  context: CliContext,
+  arrived: readonly SkillFinding[],
+  asJson: boolean,
+): void {
+  if (arrived.length === 0) return;
+  if (asJson) {
+    context.out.line(JSON.stringify({ definitions: arrived }));
+    return;
+  }
+  const { out, style } = context;
+  const arrivals = bulkArrivals(arrived);
+  const grouped = new Set(
+    arrivals.flatMap((each) => each.definitions.map((one) => one.id)),
+  );
+  for (const arrival of arrivals) {
+    out.line('');
+    out.line(style.warn('⚠ A ROSTER ARRIVED'));
+    out.line('');
+    out.line(
+      `  ${arrival.definitions.length} new ${arrival.agent} definitions in ${arrival.root}`,
+    );
+    if (arrival.inheriting > 0) {
+      out.line(
+        `  ${style.warn(`${arrival.inheriting} declare no tools, so each inherits every tool in the session`)}`,
+      );
+    }
+    out.line(`      ${style.dim('memnox skills')}`);
+  }
+  for (const one of arrived) {
+    if (grouped.has(one.id)) continue;
+    out.line(`  ${style.warn('!')} ${describeSkill(one)}`);
+    out.line(`      ${style.dim('memnox skills')}`);
+  }
 }
 
 async function report(

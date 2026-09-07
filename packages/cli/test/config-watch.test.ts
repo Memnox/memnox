@@ -16,6 +16,16 @@ describe('the directories worth watching', () => {
     expect(paths).toContain('/home/me/.cursor');
     expect(paths).toContain('/home/me');
   });
+
+  /* A definition installed into an agent's own directory changes what that agent may
+     do and touches no config at all, so the directory it lands in is watched too. */
+  it('watches the directories definitions are installed into', () => {
+    const paths = watchablePaths('/home/me');
+
+    expect(paths).toContain('/home/me/.qwen/agents');
+    expect(paths).toContain('/home/me/.github/agents');
+    expect(paths).toContain('/home/me/.config/opencode/agents');
+  });
 });
 
 describe('waking on a change', () => {
@@ -67,6 +77,50 @@ describe('waking on a change', () => {
     });
 
     expect(await watcher.next(20)).toBe(false);
+    watcher.close();
+  });
+
+  /* Every cycle writes a snapshot under `~/.memnox` and `~` is watched, so without
+     this the watcher wakes on its own write and the interval stops meaning anything. */
+  it('does not wake on what this program wrote itself', async () => {
+    let fire: ((event: string, name: string) => void) | null = null;
+    const watcher = watchConfigPaths(['/watched'], {
+      watch: ((
+        _path: string,
+        _options: unknown,
+        onChange: (event: string, name: string) => void,
+      ) => {
+        fire = onChange;
+        return { close: () => {} };
+      }) as unknown as typeof watch,
+    });
+    (fire as unknown as (event: string, name: string) => void)(
+      'rename',
+      '.memnox/scans/2026-09-07.json',
+    );
+
+    expect(await watcher.next(20)).toBe(false);
+    watcher.close();
+  });
+
+  it('still wakes on a change it did not make', async () => {
+    let fire: ((event: string, name: string) => void) | null = null;
+    const watcher = watchConfigPaths(['/watched'], {
+      watch: ((
+        _path: string,
+        _options: unknown,
+        onChange: (event: string, name: string) => void,
+      ) => {
+        fire = onChange;
+        return { close: () => {} };
+      }) as unknown as typeof watch,
+    });
+    (fire as unknown as (event: string, name: string) => void)(
+      'rename',
+      '.claude/agents/devops-automator.md',
+    );
+
+    expect(await watcher.next(20)).toBe(true);
     watcher.close();
   });
 

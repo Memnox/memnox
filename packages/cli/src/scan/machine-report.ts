@@ -3,11 +3,13 @@ import {
   agentRefOf,
   agentsReachingPath,
   approvalOf,
+  DEFINITION_KIND,
   describeBrowser,
   describeCombined,
   describeHarness,
   distinctTools,
   gapLines,
+  GRANT,
   measureGap,
   principalCount,
   SENSITIVITY,
@@ -58,6 +60,7 @@ export function renderMachine(
   }
 
   renderHarnesses(context, report);
+  renderDefinitions(context, report);
 
   const servers = report.surfaces.filter((surface) => surface.kind === SURFACE_KIND.MCP);
   if (servers.length > 0) {
@@ -289,6 +292,48 @@ function renderBrowsers(context: CliContext, report: DiscoveryReport): void {
  * tools and each is right to. What none of them can see is the other two, the
  * credentials on the disk underneath, and the shell all three share.
  */
+/**
+ * Personas installed into an agent's own directory, counted by what they grant.
+ *
+ * Not folded into the gap below it, and that is deliberate: the gap counts actions a
+ * rule could be written about, and a definition is not an action — it is how wide the
+ * session running those actions is. Counting them together would make one number out
+ * of two different claims.
+ */
+function renderDefinitions(context: CliContext, report: DiscoveryReport): void {
+  const { out, style } = context;
+  const installed = report.definitions.filter(
+    (each) => each.kind === DEFINITION_KIND.AGENT,
+  );
+  if (installed.length === 0) return;
+
+  const agents = [...new Set(installed.map((each) => each.agent))].join(', ');
+  out.line(
+    style.bold('AGENT DEFINITIONS'.padEnd(LABEL_WIDTH)) +
+      `${installed.length} installed into ${agents}`,
+  );
+
+  /* The line that lands. A definition file reads as documentation — the largest public
+     roster's own security policy calls these non-executable prompt definitions — and on
+     these harnesses one that names no tools runs with the shell and every server. */
+  const inheriting = installed.filter((each) => each.grant.kind === GRANT.INHERITS);
+  if (inheriting.length > 0) {
+    out.line(
+      ''.padEnd(LABEL_WIDTH) +
+        style.warn(
+          `${inheriting.length} of them declare no tools, so each inherits every tool in the session`,
+        ),
+    );
+  }
+  const declared = installed.filter((each) => each.grant.kind === GRANT.DECLARED);
+  if (declared.length > 0) {
+    out.line(
+      ''.padEnd(LABEL_WIDTH) +
+        style.dim(`${declared.length} name the tools they may use`),
+    );
+  }
+}
+
 function renderHarnesses(context: CliContext, report: DiscoveryReport): void {
   const { out, style } = context;
   if (report.harnesses.length === 0) return;

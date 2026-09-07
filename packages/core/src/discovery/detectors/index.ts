@@ -99,12 +99,26 @@ export function watchablePaths(home: string): string[] {
   return [...paths].sort();
 }
 
-/** Directories the parsing detectors read, watched so a new server or role is an event. */
+/**
+ * Directories the parsing detectors read, watched so a new server or role is an event,
+ * plus the directories definitions are installed into.
+ *
+ * A definition directory is watched for the same reason a config is: what an agent may
+ * do changed and no config records it. `~/.claude` is already covered by the bare
+ * `.claude.json` above, and the rest are here because nothing else on this list would
+ * bring them in.
+ */
 const PARSED_CONFIG_DIRS: readonly string[] = [
   '.hermes',
   '.openclaw',
   '.claude-flow',
   '.codex',
+  '.gemini/agents',
+  '.qwen/agents',
+  '.zcode/agents',
+  '.github/agents',
+  '.copilot/agents',
+  '.config/opencode/agents',
 ];
 
 export * from './detector';

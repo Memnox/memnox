@@ -35,5 +35,6 @@ export * from './credentials';
 export * from './browser';
 export * from './repo-evidence';
 export * from './gap';
+export * from './frontmatter';
 export * from './skills';
 export * from './skill-store';

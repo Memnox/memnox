@@ -9,10 +9,29 @@ import { watch, type FSWatcher } from 'node:fs';
 /** Enough for an editor's write-rename dance to finish, short enough to feel immediate. */
 const SETTLE_MS = 250;
 
+/**
+ * What this program writes itself, which is never a change to report.
+ *
+ * `~` is watched, and every cycle saves a snapshot under `~/.memnox` — so without this
+ * the watcher wakes on its own write, rescans, writes again, and the interval stops
+ * meaning anything. A loop that spins is a worse watcher than one that sleeps.
+ */
+const OURS = '.memnox';
+
 interface ConfigWatch {
   /** Resolves when something changed, or when the wait ran out. */
   next(timeoutMs: number): Promise<boolean>;
   close(): void;
+}
+
+/**
+ * A path under our own directory, however the platform spelled it. A watcher that
+ * reports no filename reports a change, because an unnamed one may be anybody's.
+ */
+function isOurs(name: string | Buffer | null | undefined): boolean {
+  if (name === null || name === undefined) return false;
+  const text = typeof name === 'string' ? name : name.toString('utf8');
+  return text === OURS || text.startsWith(`${OURS}/`) || text.startsWith(`${OURS}\\`);
 }
 
 export function watchConfigPaths(
@@ -31,7 +50,8 @@ export function watchConfigPaths(
   let wake: (() => void) | null = null;
   const watchers: FSWatcher[] = [];
 
-  const touched = (): void => {
+  const touched = (_event: string, name?: string | Buffer | null): void => {
+    if (isOurs(name)) return;
     pending = true;
     if (wake !== null) {
       const resume = wake;

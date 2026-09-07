@@ -6,6 +6,7 @@ import { DEFAULT_DETECTORS } from './detectors/index';
 import { harnessOf, type Harness } from './harness';
 import { chainsFor, type AgentChains } from './composition';
 import type { MachineReader, McpLister } from './ports';
+import { discoverDefinitions, type DiscoveredSkill } from './skills';
 import {
   classifyResourceKind,
   classifySensitivity,
@@ -93,6 +94,13 @@ export interface DiscoveryReport {
    * needs one principal able to walk all of it.
    */
   combined: AgentChains[];
+  /**
+   * Skills an agent wrote for itself and personas somebody installed into it, each with
+   * the tool grant its own header states. Not in `read`, because every one of them
+   * carries its own path here and three hundred rows would bury the credentials that
+   * list exists for.
+   */
+  definitions: DiscoveredSkill[];
 }
 
 export interface DiscoveryOptions {
@@ -164,6 +172,13 @@ export async function discover(
     Object.keys(options.env ?? {}),
   );
 
+  /* Both the home directory and the work: a definition checked into a repository is
+     installed by cloning it, which is the one nobody chose to install at all. */
+  const definitions = await discoverDefinitions(reader, [
+    reader.homeDir(),
+    ...(options.projectDirs ?? []),
+  ]);
+
   const refs: AgentRef[] = agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
   const combined = chainsFor(
@@ -186,6 +201,7 @@ export async function discover(
     envFiles,
     harnesses,
     combined,
+    definitions,
   };
 }
 

@@ -199,6 +199,33 @@ calling it Ruflo would report a swarm on a machine that has none.
 OpenClaw is absent from that list. Nothing it publishes says where it keeps them, and a
 layout nobody has published is not guessed at.
 
+## Definitions somebody installed
+
+A persona installed into an agent's own directory is the other half of the same
+question, and it does not arrive one at a time. Public rosters run to hundreds of
+markdown files and a script installs them across every harness on the machine, usually
+overwriting what was there without keeping a copy:
+
+```
+~/.claude/agents/<slug>.md          ~/.qwen/agents/<slug>.md
+~/.codex/agents/<slug>.toml         ~/.zcode/agents/<slug>.md
+~/.github/agents/<slug>.md          ~/.gemini/agents/<slug>.md
+~/.copilot/agents/<slug>.md         ~/.config/opencode/agents/<slug>.md
+```
+
+The grant is in the header, and on **Claude Code, Qwen and ZCode an absent `tools:` key
+means every tool in the session** — the shell, writes, and every connected MCP server.
+So the widest grant a file can carry is the one written by leaving a line out, which is
+why `memnox skills` reports "inherits every tool in the session" rather than folding it
+in with a file that declares nothing.
+
+Where a vendor does not document that meaning the answer is "declares no tools this
+reads", not a guess: reporting a guess as the widest grant on the machine is how a
+screen stops being believed.
+
+**Definitions in a project are read too.** A roster checked into a repository is
+installed by cloning it, which is the one nobody chose to install at all.
+
 ## Drift
 
 A harness gains a role without any config a client reads changing, so nothing on the
