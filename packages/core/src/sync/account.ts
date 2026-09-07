@@ -1,6 +1,7 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 /**
  * The account file, and the only thing that turns any of this on.
@@ -69,10 +70,7 @@ export async function readAccount(home: string): Promise<Account | null> {
 export async function writeAccount(home: string, account: Account): Promise<void> {
   const path = accountPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(account, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: OWNER_ONLY,
-  });
+  await writeJsonAtomic(path, account);
   // Set explicitly: an existing file keeps its old mode through a write.
   await chmod(path, OWNER_ONLY);
 }

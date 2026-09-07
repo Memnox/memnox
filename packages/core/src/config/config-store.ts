@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   CONFIG_FILE,
@@ -8,6 +8,7 @@ import {
   renderConfig,
   type MemnoxConfig,
 } from './config';
+import { writeAtomic } from '../store/atomic-file';
 
 export function configPathFor(home: string): string {
   return join(home, MEMNOX_HOME, CONFIG_FILE);
@@ -32,5 +33,5 @@ export async function loadOrCreateConfig(home: string): Promise<MemnoxConfig> {
 export async function saveConfig(home: string, config: MemnoxConfig): Promise<void> {
   const path = configPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, renderConfig(config), { encoding: 'utf8', mode: 0o600 });
+  await writeAtomic(path, renderConfig(config));
 }

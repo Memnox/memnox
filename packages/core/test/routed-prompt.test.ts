@@ -35,6 +35,8 @@ const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-routed-'));
  * shaped exactly like the bug it was written to catch: an answer that arrives late
  * reads as nobody having answered.
  */
+/* The 30s deadlines below are well clear of how long `held` can poll: vitest's default
+   five seconds is the same wall-clock bound that made the sibling suite flake. */
 const POLL_MS = 10;
 const PATIENT_MS = 10_000;
 const IMPATIENT_MS = 150;
@@ -72,7 +74,7 @@ describe('a held call is written down before anybody is asked', () => {
 
     await approvals.answer(waiting, HOLD_ANSWER.ONCE, 'tresor', new Date().toISOString());
     expect(await asking).toEqual({ answer: HOLD_ANSWER.ONCE });
-  });
+  }, 30_000);
 
   it('carries a refusal back as a refusal', async () => {
     const approvals = new PendingApprovals(await home());
@@ -86,7 +88,7 @@ describe('a held call is written down before anybody is asked', () => {
     await approvals.answer(waiting, HOLD_ANSWER.DENY, 'tresor', new Date().toISOString());
 
     expect(await asking).toEqual({ answer: HOLD_ANSWER.DENY });
-  });
+  }, 30_000);
 
   /* A walk-away must not become a yes, and it must not hang the agent either. */
   it('gives up when nobody answers, and leaves nothing behind', async () => {
@@ -139,7 +141,7 @@ describe('a held call is written down before anybody is asked', () => {
     );
 
     expect(await asking).toEqual({ answer: HOLD_ANSWER.ONCE });
-  });
+  }, 30_000);
 });
 
 describe('what the seams now get', () => {
@@ -161,7 +163,7 @@ describe('what the seams now get', () => {
     await approvals.answer(waiting, HOLD_ANSWER.ONCE, 'tresor', new Date().toISOString());
 
     expect((await holding).outcome).toBe(HOLD_OUTCOME.ALLOWED);
-  });
+  }, 30_000);
 
   it('reports nobody answering as unattended rather than as a refusal', async () => {
     const approvals = new PendingApprovals(await home());

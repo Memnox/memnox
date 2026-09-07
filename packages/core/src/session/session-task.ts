@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import {
@@ -9,6 +9,7 @@ import {
   type ScopeSubject,
 } from '../domain/task';
 import type { ActionRequest } from '../domain/action-event';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 /**
  * What somebody actually asked for, written down before the agent starts.
@@ -72,10 +73,7 @@ export class SessionTasks {
 
   async declare(task: SessionTask): Promise<void> {
     await mkdir(taskDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeFile(this.pathFor(task.sessionId), `${JSON.stringify(task, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    await writeJsonAtomic(this.pathFor(task.sessionId), task);
   }
 
   async read(sessionId: string): Promise<SessionTask | null> {

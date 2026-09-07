@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import { OVERLAY_KIND, type Overlay } from './overlay';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 const OVERLAY_FILE = 'overlays.json';
 
@@ -23,10 +24,10 @@ export async function readOverlays(home: string): Promise<Overlay[]> {
 export async function writeOverlays(home: string, overlays: Overlay[]): Promise<void> {
   const path = overlayPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(overlays, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  /* Atomic: `overlaysInForce` reads this on every decision, and a torn read is
+     caught and returned as "nothing is frozen" — a freeze that stops applying for
+     one command and leaves no trace of having done so. */
+  await writeJsonAtomic(path, overlays);
 }
 
 /**
@@ -122,10 +123,7 @@ export async function writeOrgConditions(
 ): Promise<void> {
   const path = orgConditionsPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writeJsonAtomic(path, file);
 }
 
 /**

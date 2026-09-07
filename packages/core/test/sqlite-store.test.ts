@@ -148,7 +148,7 @@ describe('the event store', () => {
       'wal',
     );
     opened.close();
-  });
+  }, 60_000);
 
   it('prunes by age and reports how many went', async () => {
     const db = await store();

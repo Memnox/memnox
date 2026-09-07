@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import type { AcceptedSkill } from './skills';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 const SKILL_FILE = 'skills.json';
 
@@ -25,8 +26,5 @@ export async function writeAcceptedSkills(
 ): Promise<void> {
   const path = skillPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(accepted, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writeJsonAtomic(path, accepted);
 }

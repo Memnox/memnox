@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import type { FleetSpend } from './budget';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 const FLEET_FILE = 'fleet-spend.json';
 
@@ -31,8 +32,5 @@ export async function writeFleetSpend(
 ): Promise<void> {
   const path = fleetSpendPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(spend, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writeJsonAtomic(path, spend);
 }

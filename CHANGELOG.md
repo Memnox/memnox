@@ -16,6 +16,11 @@ It is `0.1.1` rather than `0.1.0` for one reason: `0.1.0` was published under th
 by the product that came before and then unpublished, and npm never lets a version
 number be used twice. The number is one higher than the story; nothing else is.
 
+- **Every store writes through a rename now**, not only the three on the decision path.
+  A freeze is the one that mattered most: `overlaysInForce` reads it before every
+  verdict and a torn read is caught and returned as "nothing is frozen", so a
+  production freeze would stop applying for a command and leave no trace of having
+  done so.
 - **A record read while it was being written read as missing.** Every store here parses
   JSON and treats a parse failure as "not there", which is right for a file that was
   never created and wrong for one being rewritten. `writeFile` truncates before it

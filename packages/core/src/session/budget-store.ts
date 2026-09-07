@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import { BUDGET_UNIT, BUDGET_WINDOW, type Budget } from './budget';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 const BUDGET_FILE = 'budgets.json';
 
@@ -23,10 +24,7 @@ export async function readBudgets(home: string): Promise<Budget[]> {
 export async function writeBudgets(home: string, budgets: Budget[]): Promise<void> {
   const path = budgetPathFor(home);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(budgets, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writeJsonAtomic(path, budgets);
 }
 
 /**
