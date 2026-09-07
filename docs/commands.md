@@ -518,6 +518,12 @@ Connects this machine to a workspace, so it gets the rules that workspace
 publishes. A device-code flow: it prints a code, opens the approval page, and
 waits for somebody with access to approve it.
 
+**The control plane says where the approval page is**, in the `verificationUri`
+of its answer. It has to: `--url` names an API, and on every deployment with a
+console those are two different origins, so a page derived from the API base is
+a page that does not exist. A control plane too old to say gets the derived
+address as a fallback, which is right only where the two share an origin.
+
 | Flag | What it does |
 |---|---|
 | `--url <base>` | the control plane, default `https://api.memnox.com` |

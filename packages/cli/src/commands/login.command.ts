@@ -3,7 +3,15 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
 import { Flow } from '../flow';
-import { forgetAccount, readAccount, writeAccount, accountPathFor } from '@memnox/core';
+import {
+  ENFORCEMENT_MODE,
+  forgetAccount,
+  loadOrCreateConfig,
+  readAccount,
+  saveConfig,
+  writeAccount,
+  accountPathFor,
+} from '@memnox/core';
 import { insecureBaseUrl } from '../sync/client';
 import {
   accountFrom,
@@ -66,7 +74,7 @@ export function registerLoginCommand(
       flow.step('Machine key generated', 'ed25519, never leaves this machine');
 
       const offer = await request(enrolment, keys.publicKey);
-      const url = approvalUrl(options.url, offer.userCode);
+      const url = approvalUrl(options.url, offer.userCode, offer);
       flow.value('Your code', offer.userCode);
       flow.step('Approve at', url);
 
@@ -82,6 +90,19 @@ export function registerLoginCommand(
 
       const account = accountFrom(enrolment, keys, collected, new Date().toISOString());
       await writeAccount(home(), account);
+
+      /* Only where `--enforce` was passed, which is somebody saying it out loud.
+         Enrolling without the flag records what the workspace has this machine
+         set to and leaves `config.toml` alone: a login that silently moved a
+         machine out of the mode its owner chose would be the worst possible
+         first impression of a control plane, and the graduation path exists for
+         exactly this and asks first. */
+      if (options.enforce === true) {
+        const current = await loadOrCreateConfig(home());
+        if (current.mode !== ENFORCEMENT_MODE.ENFORCE) {
+          await saveConfig(home(), { ...current, mode: ENFORCEMENT_MODE.ENFORCE });
+        }
+      }
 
       /* Shown because nobody asked for it: this is the moment the machine stops
          being local-only, so what it is now bound to has to be visible without

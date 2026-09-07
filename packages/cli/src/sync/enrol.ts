@@ -2,7 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { hostname } from 'node:os';
 import { CLI_VERSION } from '../defaults';
 import { callCloud, CloudUnreachable } from './client';
-import type { Account } from '@memnox/core';
+import { isEnforcementMode, type Account } from '@memnox/core';
 
 /**
  * Enrolling this machine, the way `npm login` signs you in: the CLI asks, prints
@@ -19,6 +19,14 @@ interface DeviceOffer {
   userCode: string;
   intervalSeconds: number;
   expiresAt: number;
+  /**
+   * Where the control plane says a person approves this, and the same page with
+   * the code already in it. Optional because a deployment with no console
+   * configured sends neither, and because a control plane older than this field
+   * sends neither either.
+   */
+  verificationUri?: string;
+  verificationUriComplete?: string;
 }
 
 interface Collected {
@@ -144,7 +152,26 @@ export async function waitForApproval(
 }
 
 /** Where a person goes to approve, printed for them to open. */
-export function approvalUrl(baseUrl: string, userCode: string): string {
+/**
+ * Where to send somebody to approve this machine.
+ *
+ * The control plane's own answer wins, because only the deployment knows where
+ * its console is: the base URL here is an API that serves no pages, and on
+ * every deployment that has a console at all the two are different origins.
+ * Deriving the address from the API base sent people to a 404.
+ *
+ * Falling back to that derivation anyway, for a control plane too old to say.
+ * It is wrong in the same way it always was, but it is not a regression, and
+ * the alternative is printing no address at all to somebody whose console does
+ * happen to share the origin.
+ */
+export function approvalUrl(
+  baseUrl: string,
+  userCode: string,
+  offered?: { verificationUri?: string; verificationUriComplete?: string },
+): string {
+  const said = offered?.verificationUriComplete ?? offered?.verificationUri;
+  if (said !== undefined && said !== '') return said;
   return new URL(`/device?code=${encodeURIComponent(userCode)}`, baseUrl).toString();
 }
 
@@ -162,6 +189,11 @@ export function accountFrom(
     token: collected.token,
     privateKey: keys.privateKey,
     enrolledAt: at,
+    /* What the workspace has this machine set to, recorded as heard rather than
+       applied. Without it the first heartbeat after enrolling reads as a change
+       and rewrites `config.toml` — which is how logging in would quietly move a
+       machine somebody had deliberately put in `advise`. */
+    ...(isEnforcementMode(collected.mode) ? { cloudMode: collected.mode } : {}),
   };
 }
 

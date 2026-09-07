@@ -305,8 +305,33 @@ describe('applying a bundle', () => {
 });
 
 describe('what a person is shown', () => {
-  it('points at a page they can open', () => {
+  /* The base URL is an API that serves no pages, and on every deployment with a
+     console the two are different origins, so the control plane's own answer is
+     the only one that can be right. Deriving it here sent people to a 404. */
+  it('points at the page the control plane named', () => {
+    expect(
+      approvalUrl('https://api.memnox.com', 'CDFG-HJKM', {
+        verificationUri: 'https://app.memnox.com/device',
+        verificationUriComplete: 'https://app.memnox.com/device?code=CDFG-HJKM',
+      }),
+    ).toBe('https://app.memnox.com/device?code=CDFG-HJKM');
+  });
+
+  it('takes the bare page when that is all it was given', () => {
+    expect(
+      approvalUrl('https://api.memnox.com', 'CDFG-HJKM', {
+        verificationUri: 'https://app.memnox.com/device',
+      }),
+    ).toBe('https://app.memnox.com/device');
+  });
+
+  /* A control plane too old to say. Wrong in the same way it always was, and
+     not a regression — and right where the console shares the API's origin. */
+  it('falls back to the API base when the control plane says nothing', () => {
     expect(approvalUrl('https://api.memnox.com', 'CDFG-HJKM')).toBe(
+      'https://api.memnox.com/device?code=CDFG-HJKM',
+    );
+    expect(approvalUrl('https://api.memnox.com', 'CDFG-HJKM', {})).toBe(
       'https://api.memnox.com/device?code=CDFG-HJKM',
     );
   });

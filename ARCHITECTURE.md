@@ -117,7 +117,8 @@ that writes anywhere else says so and takes a backup first.
 | Path | What |
 |---|---|
 | `~/.memnox/memnox.db` | the event ledger, append-only by database trigger |
-| `~/.memnox/config.json` | mode, retention, fail-open |
+| `~/.memnox/config.toml` | mode, retention, fail-open |
+| `~/.memnox/account.json` | the enrolment, and the last mode the workspace set |
 | `~/.memnox/policies.json` | the registry: which rule files this machine loads |
 | `~/.memnox/bin/` | the PATH wrappers |
 | `~/.memnox/guard/` | the seatbelt profile or Landlock ruleset |
@@ -126,6 +127,17 @@ that writes anywhere else says so and takes a backup first.
 | `~/.memnox/pending/` | held calls waiting for a person |
 | `~/.memnox/overlays.json` | freezes and anything else true only for a while |
 | `memnox.policies.toml` | the rules, in the project — reviewable and diffable |
+
+**The mode is applied here, and a workspace can move it.** An enrolled machine
+sends the mode it is running on every heartbeat and the reply carries the one the
+workspace has set, so a fleet is taken from observe to enforce without anybody
+reaching a box. It lands as a **change**, never as an assertion: `account.json`
+keeps the last mode heard, and `config.toml` is rewritten only when the reply
+differs from it. The alternative — writing what the reply says on every pass —
+would revert an edit somebody made on purpose, within the minute, for ever, to a
+file whose first line says it is theirs to edit. It is the same shape as the
+bundle: applied on a change, a 304 otherwise. A machine with no account file
+hears nothing, because nothing calls out at all.
 
 `cli/src/memnox-paths.ts` is where those paths are built. Two files spelling the same
 path is how the kernel profile came to be written by one command and looked for by

@@ -11,6 +11,7 @@ import {
   ENFORCEMENT_MODE,
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
+  isEnforcementMode,
   overlaysInForce,
   stateFactsInForce,
   type EnvironmentSnapshot,
@@ -44,7 +45,8 @@ const contractPath = join(
 
 interface Contract {
   bundle: Bundle;
-  heartbeat: { runtimeVersion: string; bundleHashApplied: string };
+  heartbeat: { runtimeVersion: string; bundleHashApplied: string; mode: string };
+  heartbeatReply: { mode: string; modeApplied: string };
   events: { events: Record<string, unknown>[] };
   snapshot: EnvironmentSnapshot;
   census: { events: Record<string, unknown>[] };
@@ -193,6 +195,30 @@ describe('the batch this machine sends', () => {
 
     expect(drafts.length).toBeLessThanOrEqual(500);
     expect(through.length).toBeLessThan(many.length);
+  });
+});
+
+/**
+ * The one exchange that carries a mode in both directions, and they are not the
+ * same field: up is what this machine is running, down is what the workspace has
+ * set. A version of either side that read one as the other would report a
+ * graduation as already done.
+ */
+describe('the heartbeat this machine reports', () => {
+  it('names every mode the control plane may set', async () => {
+    const { heartbeat, heartbeatReply } = await contract();
+
+    expect(isEnforcementMode(heartbeat.mode)).toBe(true);
+    expect(isEnforcementMode(heartbeatReply.mode)).toBe(true);
+    expect(isEnforcementMode(heartbeatReply.modeApplied)).toBe(true);
+  });
+
+  /* Deliberately unequal in the example: that is the state a graduation passes
+     through, and it is the one both halves have to render honestly. */
+  it('shows what was asked for apart from what is running', async () => {
+    const { heartbeatReply } = await contract();
+
+    expect(heartbeatReply.mode).not.toBe(heartbeatReply.modeApplied);
   });
 });
 
