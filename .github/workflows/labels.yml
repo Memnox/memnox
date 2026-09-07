@@ -1,7 +1,7 @@
 name: Labels
 
-# Ported from EddieHubCommunity/support. Their gh-action-open-source-labels is archived and
-# floats on @main, so the label set is vendored here and ghlbl is pinned instead.
+# Ported from EddieHubCommunity/support. Their gh-action-open-source-labels is archived
+# and floats on @main, so the label set is vendored here and applied with `gh`.
 on:
   push:
     branches: [main]
@@ -29,16 +29,24 @@ jobs:
           sparse-checkout: .github/labels.json
           sparse-checkout-cone-mode: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # Import only: existing labels are left alone, matching upstream's force: false.
+      # Import only: a label that is already there is left exactly as it is.
+      #
+      # This used a third party importer that claimed the same thing and did not do
+      # it: the first existing label came back 422 `already_exists` and failed the
+      # run, so the workflow went red on every push once the labels existed. `gh` is
+      # on the runner, creates one label per call, and lets each one say "already"
+      # without taking the rest down with it.
       - name: Import open source standard labels
-        run: >-
-          npx --yes --package github-label-template@0.0.2 --
-          ghlbl -o "$OWNER" -r "$REPO" -t "$GITHUB_TOKEN" -i .github/labels.json
+        run: |
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            name=$(jq -r '.name' <<<"$label")
+            color=$(jq -r '.color' <<<"$label")
+            if gh label create "$name" --color "$color" 2>/dev/null; then
+              echo "created  $name"
+            else
+              echo "already  $name"
+            fi
+          done
         env:
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

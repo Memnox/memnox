@@ -92,7 +92,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.json
+      # cdxgen rather than cyclonedx-npm: that one shells out to `npm ls`, which
+      # cannot read a pnpm store, so it reported every transitive dev dependency as
+      # missing and exited 1. cdxgen reads `pnpm-lock.yaml` directly.
+      - run: pnpm dlx @cyclonedx/cdxgen@11 -t pnpm -o sbom.json --no-recurse
       - uses: actions/upload-artifact@v4
         with:
           name: sbom
