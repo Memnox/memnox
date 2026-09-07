@@ -1,6 +1,6 @@
 # memnox
 
-## 0.2.0
+## 0.2.1
 
 ### Minor Changes
 
@@ -56,6 +56,6 @@ directory` over a working tree it had just kept for a run that never started. Th
 ### Patch Changes
 
 - Updated dependencies [f99aca0]
-  - @memnox/core@0.2.0
-  - @memnox/interceptors@0.2.0
-  - @memnox/proxy@0.2.0
+  - @memnox/core@0.2.1
+  - @memnox/interceptors@0.2.1
+  - @memnox/proxy@0.2.1
