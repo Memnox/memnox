@@ -30,3 +30,4 @@ export * from './domain/digest';
 export * from './intercept/index';
 export * from './daemon/index';
 export * from './verbs/index';
+export * from './store/atomic-file';

@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import { HOLD_ANSWER, type HoldAnswer, type HoldRequest } from './hold';
+import { writeJsonAtomic } from '../store/atomic-file';
 
 /**
  * A held call, written down so something other than the terminal it started in can
@@ -51,10 +52,7 @@ export class PendingApprovals {
       expiresAt: new Date(Date.parse(askedAt) + timeoutMs).toISOString(),
     };
     await mkdir(pendingDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeFile(pathFor(this.home, pending.id), JSON.stringify(pending, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    await writeJsonAtomic(pathFor(this.home, pending.id), pending);
     return pending;
   }
 
@@ -113,10 +111,7 @@ export class PendingApprovals {
       answeredAt: at,
       answeredBy: by,
     };
-    await writeFile(pathFor(this.home, id), JSON.stringify(answered, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    await writeJsonAtomic(pathFor(this.home, id), answered);
     return { answered };
   }
 

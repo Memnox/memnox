@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
+import { writeJsonAtomic } from '../store/atomic-file';
 import {
   conflicts,
   leasesInForce,
@@ -215,10 +216,9 @@ export class LeaseRegistry {
 
   private async write(lease: Lease): Promise<void> {
     await mkdir(leaseDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeFile(this.pathFor(lease.id), `${JSON.stringify(lease, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    /* Atomic: a lease read while it is being renewed must not read as absent, or the
+       next writer takes a path somebody is holding. */
+    await writeJsonAtomic(this.pathFor(lease.id), lease);
   }
 
   /**

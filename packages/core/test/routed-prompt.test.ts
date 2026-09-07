@@ -29,12 +29,25 @@ const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-routed-'));
  * A virtual clock cannot be used here: the waiter polls a file that another party
  * writes, so advancing time instantly burns the whole deadline before the answer can
  * land. The intervals are milliseconds, so this stays fast without pretending.
+ *
+ * Nothing here sleeps a fixed amount and hopes. A test that waited 30ms for the file
+ * to appear passed on a laptop and failed on a loaded CI runner, which is a flake
+ * shaped exactly like the bug it was written to catch: an answer that arrives late
+ * reads as nobody having answered.
  */
 const POLL_MS = 10;
-const PATIENT_MS = 2_000;
+const PATIENT_MS = 10_000;
 const IMPATIENT_MS = 150;
 
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
+/** Waits for the held call to be written down, however slow the machine is. */
+async function held(approvals: PendingApprovals): Promise<string> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    const [waiting] = await approvals.list(new Date().toISOString());
+    if (waiting !== undefined) return waiting.id;
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+  throw new Error('the held call was never written down');
+}
 
 const silent: HoldPrompt = { ask: async () => null };
 
@@ -51,21 +64,13 @@ describe('a held call is written down before anybody is asked', () => {
     });
 
     const asking = prompt.ask(request, PATIENT_MS);
-    // Give it a turn to write the file before anybody could answer it.
-    await settle();
-
-    const waiting = await approvals.list(new Date().toISOString());
-    expect(waiting).toHaveLength(1);
+    // It is written down before anybody could answer it, however slow the machine.
+    const waiting = await held(approvals);
     // Nobody should have to guess the id to answer it.
     expect(said.join(' ')).toContain('memnox approve');
-    expect(said.join(' ')).toContain(waiting[0]?.id ?? 'missing');
+    expect(said.join(' ')).toContain(waiting);
 
-    await approvals.answer(
-      waiting[0]?.id ?? '',
-      HOLD_ANSWER.ONCE,
-      'tresor',
-      new Date().toISOString(),
-    );
+    await approvals.answer(waiting, HOLD_ANSWER.ONCE, 'tresor', new Date().toISOString());
     expect(await asking).toEqual({ answer: HOLD_ANSWER.ONCE });
   });
 
@@ -77,14 +82,8 @@ describe('a held call is written down before anybody is asked', () => {
     });
 
     const asking = prompt.ask(request, PATIENT_MS);
-    await settle();
-    const [waiting] = await approvals.list(new Date().toISOString());
-    await approvals.answer(
-      waiting?.id ?? '',
-      HOLD_ANSWER.DENY,
-      'tresor',
-      new Date().toISOString(),
-    );
+    const waiting = await held(approvals);
+    await approvals.answer(waiting, HOLD_ANSWER.DENY, 'tresor', new Date().toISOString());
 
     expect(await asking).toEqual({ answer: HOLD_ANSWER.DENY });
   });
@@ -131,10 +130,9 @@ describe('a held call is written down before anybody is asked', () => {
     });
 
     const asking = prompt.ask(request, PATIENT_MS);
-    await settle();
-    const [waiting] = await approvals.list(new Date().toISOString());
+    const waiting = await held(approvals);
     await approvals.answer(
-      waiting?.id ?? '',
+      waiting,
       HOLD_ANSWER.ONCE,
       'somebody elsewhere',
       new Date().toISOString(),
@@ -159,14 +157,8 @@ describe('what the seams now get', () => {
     );
 
     const holding = service.hold(request);
-    await settle();
-    const [waiting] = await approvals.list(new Date().toISOString());
-    await approvals.answer(
-      waiting?.id ?? '',
-      HOLD_ANSWER.ONCE,
-      'tresor',
-      new Date().toISOString(),
-    );
+    const waiting = await held(approvals);
+    await approvals.answer(waiting, HOLD_ANSWER.ONCE, 'tresor', new Date().toISOString());
 
     expect((await holding).outcome).toBe(HOLD_OUTCOME.ALLOWED);
   });

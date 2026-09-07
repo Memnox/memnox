@@ -16,6 +16,14 @@ It is `0.1.1` rather than `0.1.0` for one reason: `0.1.0` was published under th
 by the product that came before and then unpublished, and npm never lets a version
 number be used twice. The number is one higher than the story; nothing else is.
 
+- **A record read while it was being written read as missing.** Every store here parses
+  JSON and treats a parse failure as "not there", which is right for a file that was
+  never created and wrong for one being rewritten. `writeFile` truncates before it
+  writes, so a reader arriving in between saw an empty file: a held call being answered
+  was reported as gone and the waiter stopped waiting, turning a yes somebody had just
+  typed into a refusal. Approvals, leases and pauses are written through a rename now,
+  which no reader can see the middle of. CI found it as a flaky test; it was a race on
+  the enforcement path.
 - **An `ask` rule holds for a person instead of denying.** Every seam took an optional
   hold service and nothing outside a test ever built one, so an ask reached "nobody
   could be asked, so it was denied" — on a laptop with somebody sitting at it and on a

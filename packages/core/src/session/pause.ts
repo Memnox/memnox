@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
+import { writeJsonAtomic } from '../store/atomic-file';
 import type { BreakerSignal } from './breaker';
 
 /**
@@ -95,14 +96,9 @@ export class SessionPauses {
 
   private async write(pause: SessionPause): Promise<void> {
     await mkdir(pauseDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeFile(
-      this.pathFor(pause.sessionId),
-      `${JSON.stringify(pause, null, 2)}\n`,
-      {
-        encoding: 'utf8',
-        mode: 0o600,
-      },
-    );
+    /* Atomic: a pause read while it is being lifted must not read as absent, or a
+       held session runs one command it was stopped from running. */
+    await writeJsonAtomic(this.pathFor(pause.sessionId), pause);
   }
 }
 
