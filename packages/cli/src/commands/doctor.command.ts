@@ -8,6 +8,8 @@ import {
   discover,
   lastProbed,
   MEMNOX_HOME,
+  NodeFindingsStore,
+  type FindingsStore,
   NodeMachineReader,
   NodeSnapshotStore,
   rankAgents,
@@ -36,6 +38,8 @@ export function registerDoctorCommand(
   cwd: () => string = () => process.cwd(),
   buildSnapshots: () => SnapshotStore = () =>
     new NodeSnapshotStore(join(homedir(), MEMNOX_HOME)),
+  buildFindings: () => FindingsStore = () =>
+    new NodeFindingsStore(join(homedir(), MEMNOX_HOME)),
 ): void {
   program
     .command('doctor')
@@ -85,6 +89,23 @@ export function registerDoctorCommand(
           surfaces,
         ),
       });
+
+      /* Kept so the sync pass can send it. Printing was the whole of what this
+         command did with a finding, which left the fleet page empty on every
+         deployment while every laptop knew exactly what was wrong with it.
+
+         Best effort: a machine that cannot write this still shows its report.
+         The scan is what the reader asked for; reporting it onward is not. */
+      try {
+        await buildFindings().keep({
+          takenAt: new Date().toISOString(),
+          findings: report.findings,
+        });
+      } catch (err) {
+        context.out.line(
+          context.style.dim(`  (findings not kept for sync: ${String(err)})`),
+        );
+      }
 
       const standings = rankAgents(report.findings, surfaces);
 

@@ -8,9 +8,10 @@ import {
   type EventSink,
   type MemnoxEvent,
 } from '@memnox/core';
-import type { EnvironmentSnapshot } from '@memnox/core';
+import type { EnvironmentSnapshot, Finding } from '@memnox/core';
 import type { Account } from '@memnox/core';
 import { censusFrom } from './census';
+import { findingsFrom } from './findings';
 import { callCloud } from './client';
 
 /**
@@ -53,6 +54,10 @@ interface Cursor {
   lastPushAt?: string;
   /** `takenAt` of the newest scan already sent, so one scan is sent once. */
   censusThrough?: string;
+  /** The same, for what that scan *found*. Kept apart: a census can land and a
+   *  findings post be refused, and one cursor would then hide the findings for
+   *  ever behind a census that had already been sent. */
+  findingsThrough?: string;
 }
 
 export const PUSH_OUTCOME = {
@@ -353,6 +358,45 @@ export async function pushCensus(
   }
 
   await mergeCursor(home, { censusThrough: snapshot.takenAt });
+  return { outcome: PUSH_OUTCOME.SENT, sent: rows.length, duplicates: 0 };
+}
+
+/**
+ * Send what a kept scan found, once.
+ *
+ * Its own post and its own cursor, for the same reasons the census has them,
+ * and read off the same kept scan rather than by taking a new one.
+ *
+ * Findings are deduplicated on their content, not on the scan that produced
+ * them, so a machine nobody has fixed reports the same rows every sync and the
+ * control plane appends nothing. The cursor is what stops it *posting* them
+ * every sync; the dedup key is what makes it harmless when it does.
+ */
+export async function pushFindings(
+  home: string,
+  account: Account,
+  scan: { findings: readonly Finding[]; takenAt: string } | null,
+): Promise<PushResult> {
+  if (scan === null) return { outcome: PUSH_OUTCOME.NOTHING };
+  const cursor = await readCursor(home);
+  if (cursor.findingsThrough !== undefined && cursor.findingsThrough >= scan.takenAt) {
+    return { outcome: PUSH_OUTCOME.NOTHING };
+  }
+
+  const rows = findingsFrom(scan.findings, scan.takenAt);
+  if (rows.length === 0) {
+    /* A machine with nothing wrong still moves its cursor: without this a clean
+       scan is reconsidered on every sync for ever. */
+    await mergeCursor(home, { findingsThrough: scan.takenAt });
+    return { outcome: PUSH_OUTCOME.NOTHING };
+  }
+
+  for (let at = 0; at < rows.length; at += MAX_POST) {
+    const result = await postBatch(account, rows.slice(at, at + MAX_POST));
+    if (result.outcome !== PUSH_OUTCOME.SENT) return result;
+  }
+
+  await mergeCursor(home, { findingsThrough: scan.takenAt });
   return { outcome: PUSH_OUTCOME.SENT, sent: rows.length, duplicates: 0 };
 }
 

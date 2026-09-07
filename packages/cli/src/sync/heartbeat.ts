@@ -4,6 +4,7 @@ import {
   fleetBudgets,
   HOLD_ANSWER,
   MEMNOX_HOME,
+  NodeFindingsStore,
   NodeSnapshotStore,
   PendingApprovals,
   readBudgets,
@@ -16,7 +17,13 @@ import { CLI_VERSION } from '../defaults';
 import { readAccount } from '@memnox/core';
 import { orgPolicyPath, PULL_OUTCOME, pullBundle, type PullResult } from './bundle';
 import { CloudUnreachable } from './client';
-import { pushCensus, pushEvents, PUSH_OUTCOME, type PushResult } from './push';
+import {
+  pushCensus,
+  pushEvents,
+  pushFindings,
+  PUSH_OUTCOME,
+  type PushResult,
+} from './push';
 import { callCloud } from './client';
 
 /**
@@ -37,6 +44,8 @@ export interface Pass {
   push?: PushResult;
   /** What this machine can do, sent once per scan. Absent when no scan is kept. */
   census?: PushResult;
+  /** What that scan found wrong. Absent when `doctor` has never run here. */
+  findings?: PushResult;
   /** Set when nothing could be reached, which is not an error worth printing. */
   unreachable?: boolean;
   /** True once the credential is gone: stop until somebody logs in again. */
@@ -72,8 +81,21 @@ export async function onePass(home: string): Promise<Pass> {
       return { pull, push, census, revoked: true };
     }
 
+    /* After the census, and last of the three, for the same reason the census
+       comes after the actions: this is the least time-critical of them. A
+       finding is about how this machine is configured, which is as true in a
+       minute as it is now. */
+    const findings = await pushFindings(
+      home,
+      account,
+      await new NodeFindingsStore(join(home, MEMNOX_HOME)).latest(),
+    );
+    if (findings.outcome === PUSH_OUTCOME.REVOKED) {
+      return { pull, push, census, findings, revoked: true };
+    }
+
     await beat(home, account, pull);
-    return { pull, push, census };
+    return { pull, push, census, findings };
   } catch (err) {
     if (err instanceof CloudUnreachable) return { unreachable: true };
     throw err;

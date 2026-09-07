@@ -14,6 +14,7 @@ export * from './node-machine';
 export * from './node-mcp-lister';
 export * from './snapshot';
 export * from './snapshot-store';
+export * from './findings-store';
 export * from './server-review';
 export * from './reachability';
 export * from './reach-detail';

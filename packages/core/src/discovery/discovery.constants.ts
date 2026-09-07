@@ -100,6 +100,35 @@ export const FINDING_SEVERITY = {
 
 export type FindingSeverity = (typeof FINDING_SEVERITY)[keyof typeof FINDING_SEVERITY];
 
+/**
+ * What a finding *is*, apart from how bad it is and how it is worded.
+ *
+ * The title is prose and changes whenever the sentence reads better; the
+ * severity says how much it matters. Neither says what kind of problem this is,
+ * which is what a fleet groups by — "every machine with a reachable production
+ * database" is one question and "everything critical" is a different one.
+ *
+ * It is also the stable half of a finding's identity across scans. The local id
+ * is a fresh UUID every run, so without this the same problem found twice is
+ * two problems.
+ */
+export const FINDING_KIND = {
+  /** A sensitive file or store that agents on this machine can read. */
+  SENSITIVE_RESOURCE_REACHABLE: 'sensitive_resource_reachable',
+  /** Destructive tools on a surface with no rule in front of them. */
+  UNCHECKED_DESTRUCTIVE_TOOLS: 'unchecked_destructive_tools',
+  /** Production, reachable from a machine doing local work. */
+  PRODUCTION_REACHABLE: 'production_reachable',
+  /** Read, write and send held together: an export no single rule refuses. */
+  EXPORT_PATH: 'export_path',
+  /** A chain whose every step is ordinary and whose end is not. */
+  TOOL_CHAIN: 'tool_chain',
+  /** A shell surface, which makes everything the user reaches reachable. */
+  SHELL_SURFACE: 'shell_surface',
+} as const;
+
+export type FindingKind = (typeof FINDING_KIND)[keyof typeof FINDING_KIND];
+
 export const SEVERITY_ORDER: Record<FindingSeverity, number> = {
   [FINDING_SEVERITY.LOW]: 0,
   [FINDING_SEVERITY.MEDIUM]: 1,

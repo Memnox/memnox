@@ -12,6 +12,7 @@ import {
   type HardenStep,
 } from './finding';
 import {
+  FINDING_KIND,
   FINDING_SEVERITY,
   HARDEN_MODE,
   HARDEN_TARGET,
@@ -100,6 +101,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     const closable = CLOSABLE_BY_PATH.includes(resource.kind);
     findings.push({
       id,
+      kind: FINDING_KIND.SENSITIVE_RESOURCE_REACHABLE,
       severity: severityOfResource(resource),
       title: closable
         ? `${path} is readable by ${resource.reachableBy.length} agent(s)`
@@ -119,6 +121,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     const id = newId();
     findings.push({
       id,
+      kind: FINDING_KIND.UNCHECKED_DESTRUCTIVE_TOOLS,
       severity: FINDING_SEVERITY.HIGH,
       title: `${destructive.length} destructive tool(s) on ${surface.kind}, and nothing is checking any of them`,
       agentIds: [surface.agentId],
@@ -137,6 +140,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     const name = resource.path ?? resource.id;
     findings.push({
       id,
+      kind: FINDING_KIND.PRODUCTION_REACHABLE,
       severity: FINDING_SEVERITY.HIGH,
       title: `${name} is production, and ${resource.reachableBy.length} agent(s) here reach it while doing local work`,
       agentIds: agentIdsOf(resource.reachableBy),
@@ -150,6 +154,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     const id = newId();
     findings.push({
       id,
+      kind: FINDING_KIND.EXPORT_PATH,
       severity: FINDING_SEVERITY.HIGH,
       title: `${combination.agentId.replace('agt_', '')} can read sensitive data, write files and send outward — together that is an export, and no single rule refuses it`,
       agentIds: [combination.agentId],
@@ -167,6 +172,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
       const emit = chain.steps[chain.steps.length - 1];
       findings.push({
         id,
+        kind: FINDING_KIND.TOOL_CHAIN,
         severity: FINDING_SEVERITY.HIGH,
         title: `${agentId.replace('agt_', '')}: ${chain.consequence} — every tool in the path is ordinary on its own`,
         agentIds: [agentId],
@@ -191,6 +197,7 @@ export function runDoctor(input: DoctorInput): DoctorReport {
     const id = newId();
     findings.push({
       id,
+      kind: FINDING_KIND.SHELL_SURFACE,
       severity: FINDING_SEVERITY.MEDIUM,
       // Named, or two agents with a shell read as the same finding printed twice.
       title: `a shell surface makes everything the user can reach reachable from ${entry.agentId.replace('agt_', '')}`,

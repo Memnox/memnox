@@ -4,6 +4,7 @@ import {
   FINDING_SEVERITY,
   SENSITIVITY,
   SEVERITY_ORDER,
+  type FindingKind,
   type FindingSeverity,
   type HardenMode,
   type HardenTarget,
@@ -39,6 +40,14 @@ export interface HardenChange {
 
 export interface Finding {
   id: string;
+  /**
+   * What kind of problem this is, apart from its wording and its severity.
+   *
+   * Required: a finding with no category is one a fleet cannot group and the
+   * control plane cannot store — `findings.kind` is `NOT NULL` there — and it
+   * is the stable half of the identity a re-scan is deduplicated on.
+   */
+  kind: FindingKind;
   severity: FindingSeverity;
   title: string;
   agentIds: string[];
