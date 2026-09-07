@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { EnforcementMode } from '../constants/enforcement.constants';
 import { MEMNOX_HOME } from '../config/config';
 import { writeJsonAtomic } from '../store/atomic-file';
 
@@ -35,6 +36,19 @@ export interface Account {
   /** Ed25519 PEM. Signs the batches this machine sends; never leaves. */
   privateKey: string;
   enrolledAt: string;
+  /**
+   * The last mode the control plane told this machine, whether or not it was
+   * applied.
+   *
+   * Here so that a *change* can be told from a repetition. The heartbeat reply
+   * carries the workspace's mode on every pass, and a machine that wrote it to
+   * `config.toml` each time would silently revert an edit somebody made on
+   * purpose, within a minute, for ever. Recording what was last heard means the
+   * control plane graduates a machine rather than continuously asserting one —
+   * the same shape as the bundle, which is applied when its hash changes and
+   * costs a 304 otherwise.
+   */
+  cloudMode?: EnforcementMode;
 }
 
 export function accountPathFor(home: string): string {

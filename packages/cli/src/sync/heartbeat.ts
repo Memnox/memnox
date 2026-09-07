@@ -4,6 +4,8 @@ import {
   discoverDefinitions,
   fleetBudgets,
   HOLD_ANSWER,
+  isEnforcementMode,
+  loadOrCreateConfig,
   MEMNOX_HOME,
   NodeFindingsStore,
   NodeMachineReader,
@@ -12,9 +14,13 @@ import {
   readAcceptedSkills,
   readBudgets,
   reviewSkills,
+  saveConfig,
   SqliteEventStore,
   windowHoursOf,
   writeFleetSpend,
+  writeAccount,
+  type Account,
+  type EnforcementMode,
   type HoldAnswer,
   type SkillFinding,
 } from '@memnox/core';
@@ -168,6 +174,7 @@ async function beat(
   pull: PullResult,
 ): Promise<void> {
   if (account === null) return;
+  const running = (await loadOrCreateConfig(home)).mode;
   const applied =
     pull.outcome === PULL_OUTCOME.APPLIED ? pull.hash : await heldHash(home);
 
@@ -192,6 +199,11 @@ async function beat(
          answered what used to be. */
       runtimeVersion: CLI_VERSION,
       ...(applied === undefined ? {} : { bundleHashApplied: applied }),
+      /* What this machine is actually doing with a verdict, which is not always
+         what the workspace set: the mode is applied here, and somebody at this
+         box may have changed it. Reported so the fleet page can show the two
+         apart instead of showing the request and calling it the state. */
+      mode: running,
       /* Names only: the operation and what it is about. Never the arguments, which
          is the same rule the ledger follows and for the same reason. */
       budgets: asking.map((budget) => ({
@@ -212,6 +224,7 @@ async function beat(
   });
 
   await applyAnswers(approvals, response.body?.answers ?? [], moment);
+  await applyMode(home, account, running, response.body?.mode);
 
   /* Written even when empty, so a budget that was fleet-counted yesterday and
      cannot be today falls back to this machine's own count rather than to a
@@ -234,6 +247,53 @@ interface HeartbeatAnswer {
 interface HeartbeatReply {
   answers?: HeartbeatAnswer[];
   fleetSpend?: { name: string; spent: number }[];
+  /** What the workspace has this machine set to. Applied only when it changes. */
+  mode?: string;
+}
+
+/**
+ * Moving this machine along the ramp, when the control plane says to.
+ *
+ * A *change*, never an assertion. The reply carries the workspace's mode on
+ * every pass, so writing it each time would revert an edit somebody made to
+ * `config.toml` on purpose, within a minute, for ever — and the file says
+ * "yours to edit" at the top. What was last heard is kept on the account, so a
+ * repetition is silent and only a graduation lands. Same shape as the bundle,
+ * which applies on a changed hash and costs a 304 otherwise.
+ *
+ * Both directions, deliberately. Going up is the point; going back down is the
+ * valve somebody needs when a rule set breaks the build at two in the morning,
+ * and making that the one thing you have to SSH to every box for is how it gets
+ * done by uninstalling instead.
+ *
+ * Best effort and last, like everything else here. A machine that cannot write
+ * its own config is still holding, still reporting, still governed by whatever
+ * it already had.
+ */
+async function applyMode(
+  home: string,
+  account: Account,
+  running: EnforcementMode,
+  told: string | undefined,
+): Promise<void> {
+  // A word from a newer control plane is not a mode the gate here can read.
+  if (told === undefined || !isEnforcementMode(told)) return;
+  if (told === account.cloudMode) return;
+
+  try {
+    /* The account first. If the config write fails, the next pass sees no
+       change and leaves this machine alone rather than fighting the file every
+       minute — and `mode` on the next beat still reports the truth, so the
+       drift is visible in the console rather than silent. */
+    await writeAccount(home, { ...account, cloudMode: told });
+    if (told === running) return;
+    const config = await loadOrCreateConfig(home);
+    await saveConfig(home, { ...config, mode: told });
+  } catch {
+    /* Deliberately silent: this runs inside the heartbeat, and a machine that
+       cannot be graduated must still beat. The console shows what it reports
+       running, which is what it is. */
+  }
 }
 
 /**
