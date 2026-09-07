@@ -1,4 +1,4 @@
-import { createSign, sign as signBytes } from 'node:crypto';
+import { createHash, createSign, sign as signBytes } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -8,10 +8,11 @@ import {
   type EventSink,
   type MemnoxEvent,
 } from '@memnox/core';
-import type { EnvironmentSnapshot, Finding } from '@memnox/core';
+import type { EnvironmentSnapshot, Finding, SkillFinding } from '@memnox/core';
 import type { Account } from '@memnox/core';
 import { censusFrom } from './census';
 import { findingsFrom } from './findings';
+import { skillChangesFrom } from './skills';
 import { callCloud } from './client';
 
 /**
@@ -58,6 +59,16 @@ interface Cursor {
    *  findings post be refused, and one cursor would then hide the findings for
    *  ever behind a census that had already been sent. */
   findingsThrough?: string;
+  /**
+   * What was reported about self-taught skills last time, as a digest.
+   *
+   * A digest rather than a timestamp, unlike the two above. Those read a scan
+   * that was kept, and the scan's own `takenAt` says whether it has been sent.
+   * Skills are reviewed as they are found, so there is no such moment — and a
+   * time cursor would mean a skill edited twice inside one sync interval is
+   * reviewed once. The set is what changed or did not.
+   */
+  skillsDigest?: string;
 }
 
 export const PUSH_OUTCOME = {
@@ -465,4 +476,48 @@ export async function pushEvents(
     lastPushAt: now().toISOString(),
   });
   return result;
+}
+
+/**
+ * Send the skills an agent wrote for itself, when the set changes.
+ *
+ * `VISION.md` `I.4`. Its own post and its own cursor, for the same reasons the
+ * census and the findings have them.
+ *
+ * Cursored on the content rather than on a moment: a skill widened, reviewed,
+ * and widened again inside one sync interval is two things a person needs to
+ * see, and a timestamp would show them one. The dedup key makes a repeat
+ * harmless; this is what stops it being sent at all.
+ *
+ * The digest moves even when there is nothing to report, so a machine whose
+ * agents have taught themselves nothing costs one comparison per sync rather
+ * than reconsidering an empty set for ever.
+ */
+export async function pushSkills(
+  home: string,
+  account: Account,
+  review: { findings: readonly SkillFinding[]; takenAt: string } | null,
+): Promise<PushResult> {
+  if (review === null) return { outcome: PUSH_OUTCOME.NOTHING };
+
+  const rows = skillChangesFrom(review.findings, review.takenAt);
+  const digest = createHash('sha256')
+    .update(rows.map((row) => String(row['dedupKey'])).join(' '))
+    .digest('hex');
+
+  const cursor = await readCursor(home);
+  if (cursor.skillsDigest === digest) return { outcome: PUSH_OUTCOME.NOTHING };
+
+  if (rows.length === 0) {
+    await mergeCursor(home, { skillsDigest: digest });
+    return { outcome: PUSH_OUTCOME.NOTHING };
+  }
+
+  for (let at = 0; at < rows.length; at += MAX_POST) {
+    const result = await postBatch(account, rows.slice(at, at + MAX_POST));
+    if (result.outcome !== PUSH_OUTCOME.SENT) return result;
+  }
+
+  await mergeCursor(home, { skillsDigest: digest });
+  return { outcome: PUSH_OUTCOME.SENT, sent: rows.length, duplicates: 0 };
 }

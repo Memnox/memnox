@@ -1,17 +1,22 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  discoverSkills,
   fleetBudgets,
   HOLD_ANSWER,
   MEMNOX_HOME,
   NodeFindingsStore,
+  NodeMachineReader,
   NodeSnapshotStore,
   PendingApprovals,
+  readAcceptedSkills,
   readBudgets,
+  reviewSkills,
   SqliteEventStore,
   windowHoursOf,
   writeFleetSpend,
   type HoldAnswer,
+  type SkillFinding,
 } from '@memnox/core';
 import { CLI_VERSION } from '../defaults';
 import { readAccount } from '@memnox/core';
@@ -21,6 +26,7 @@ import {
   pushCensus,
   pushEvents,
   pushFindings,
+  pushSkills,
   PUSH_OUTCOME,
   type PushResult,
 } from './push';
@@ -46,6 +52,8 @@ export interface Pass {
   census?: PushResult;
   /** What that scan found wrong. Absent when `doctor` has never run here. */
   findings?: PushResult;
+  /** Skills the agents here wrote for themselves. Absent when none changed. */
+  skills?: PushResult;
   /** Set when nothing could be reached, which is not an error worth printing. */
   unreachable?: boolean;
   /** True once the credential is gone: stop until somebody logs in again. */
@@ -94,11 +102,43 @@ export async function onePass(home: string): Promise<Pass> {
       return { pull, push, census, findings, revoked: true };
     }
 
+    /* Last, and reviewed here rather than read from something kept.
+       Unlike a scan, this is a walk of a few directories and a digest of what
+       is in them — cheap enough to take every pass, and it has to be: a skill
+       an agent wrote between two runs is the thing this reports, so reading a
+       snapshot taken before it would report the machine as it used to be. */
+    const skills = await pushSkills(home, account, await skillReview(home));
+    if (skills.outcome === PUSH_OUTCOME.REVOKED) {
+      return { pull, push, census, findings, skills, revoked: true };
+    }
+
     await beat(home, account, pull);
-    return { pull, push, census, findings };
+    return { pull, push, census, findings, skills };
   } catch (err) {
     if (err instanceof CloudUnreachable) return { unreachable: true };
     throw err;
+  }
+}
+
+/**
+ * What the agents here have taught themselves, against what somebody accepted.
+ *
+ * A failure is nothing to report rather than a failed pass: an unreadable
+ * skills directory must not cost the heartbeat, which is what says this machine
+ * is alive and carries the answers to calls it is holding.
+ */
+async function skillReview(
+  home: string,
+): Promise<{ findings: SkillFinding[]; takenAt: string } | null> {
+  try {
+    const found = await discoverSkills(new NodeMachineReader());
+    const accepted = await readAcceptedSkills(home);
+    return {
+      findings: reviewSkills(found, accepted),
+      takenAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
   }
 }
 
