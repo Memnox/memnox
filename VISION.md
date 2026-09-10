@@ -1,188 +1,728 @@
-# Memnox — Control Plane for Autonomous Work
+# Memnox — The Context & Control Plane for Autonomous Work
 
-**Strategy note: repositioning Memnox from "AI security" to "the thing that lets you safely increase agent autonomy."**
-
----
-
-## The core repositioning
-
-Don't sell "protection." Sell the ability to **safely increase agent autonomy**.
-
-The agents already do the work. Memnox should become the thing that makes users comfortable saying:
-
-> "Go ahead. Handle it yourself."
-
-That creates a much stronger paid product.
+> **Give AI agents the context to work like part of your team. Keep the authority yours.**
 
 ---
 
-## The Memnox opportunity
+# 1. The Core Vision
 
-Across all three ecosystems, the same pattern appears:
+AI agents are becoming capable of doing real work.
 
-```
-Hermes       → long-running autonomous worker
-OpenClaw     → always-on personal/business operator
-Ruflo        → multi-agent engineering workforce
-                    │
-                    ▼
-             MORE AUTONOMY
-                    │
-                    ▼
-              MORE ACCESS
-                    │
-                    ▼
-             MORE CONSEQUENCE
-                    │
-                    ▼
-             LESS HUMAN TRUST
-```
+They can write code, operate infrastructure, manage CRM systems, communicate with customers, research markets, run workflows, and coordinate with other agents.
 
-Memnox sits exactly at the last step. It should turn:
+The problem is no longer:
 
-> "I don't trust this agent enough to let it run unattended."
+> **"Can AI do the work?"**
 
-into:
+The problem is:
 
-> "Memnox is watching it. Let it run."
+> **"Can I trust AI to do the work without me watching everything?"**
 
----
+Today, agents can execute actions, but they often lack the context that humans naturally use when deciding what to do.
 
-## 1. The first addictive feature: Autopilot
+They don't know:
 
-This should be the heart of Memnox. Not a security dashboard.
+* what the team decided last week
+* why an architectural choice was made
+* who is already working on something
+* what is currently blocked
+* which code is being changed by another agent
+* what the organization considers sensitive
+* whether production is frozen
+* whether a PR has been approved
+* what happened during the last incident
+* whether the requested action makes sense **right now**
 
-A user chooses: **Run this agent autonomously.** Memnox creates the boundary automatically.
+Memnox gives agents that missing context.
 
-For example, an OpenClaw running a business operations workflow:
+It creates a persistent intelligence layer across:
 
-```
-OPENCLAW AUTOPILOT
+* code
+* GitHub
+* Slack
+* Linear/Jira
+* meetings
+* documents
+* infrastructure
+* humans
+* agents
+* decisions
+* actions
 
-Allowed automatically:
-✓ read email
-✓ classify email
-✓ create CRM records
-✓ research prospects
-✓ draft responses
-✓ update task lists
-✓ create documents
+Then it uses that context to help agents **understand, plan, coordinate, act, and learn**.
 
-Needs approval:
-⚠ send external email
-⚠ modify CRM records
-⚠ publish content
+The result:
 
-Never allowed:
-✕ transfer money
-✕ delete customer data
-✕ access private credentials
-✕ change account ownership
-```
-
-The user doesn't need to understand IAM, MCP permissions, Linux permissions, OAuth scopes, etc. Memnox translates "let my agent work" into enforceable boundaries.
+> **Agents don't just have access to your systems. They understand the environment they're operating in.**
 
 ---
 
-## 2. Hermes: turn overnight automation into Overnight Autopilot
+# 2. The Memnox Thesis
 
-A developer says: *"Tonight, let Hermes fix the failing CI pipeline."*
+The next generation of AI infrastructure isn't only about making agents more capable.
 
-Memnox says — **Overnight Autopilot**:
+It is about making them **more autonomous without making them uncontrolled.**
 
+The progression is:
+
+```text
+Better models
+      ↓
+Better tools
+      ↓
+More capable agents
+      ↓
+More autonomous work
+      ↓
+More agents
+      ↓
+More organizational complexity
+      ↓
+Need for context + coordination + authority
 ```
-Hermes can:
 
-✓ inspect logs
-✓ inspect repository
-✓ modify files
+Memnox sits in that final layer.
+
+Its job is to answer three questions:
+
+```text
+CONTEXT
+
+What does the agent need to know?
+
+        ↓
+
+INTENT
+
+What should the agent do?
+
+        ↓
+
+AUTHORITY
+
+Is the agent allowed to do it?
+```
+
+This creates the foundation for autonomous work.
+
+---
+
+# 3. The Category
+
+Memnox is:
+
+> **The context and control plane for autonomous work.**
+
+It is not:
+
+* another AI agent
+* another coding assistant
+* another orchestration framework
+* another memory database
+* another SIEM
+* another MCP firewall
+* merely an AI security product
+
+Memnox sits **above agents and below organizational systems**.
+
+```text
+                    HUMANS
+                       │
+                       ▼
+               ┌───────────────┐
+               │    MEMNOX     │
+               │               │
+               │    Context    │
+               │   Decisions   │
+               │  Coordination │
+               │    Intent     │
+               │    Policy     │
+               │   Authority   │
+               └───────┬───────┘
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+     Claude          Codex         OpenClaw
+        │              │              │
+        ▼              ▼              ▼
+     GitHub          Cloud          CRM
+     Files           AWS            Email
+     MCP             APIs           Slack
+```
+
+---
+
+# 4. The Real Product
+
+The real product is not "agent security."
+
+The real product is:
+
+> **Increasing the amount of work an organization can safely delegate to AI.**
+
+Memnox should continuously move customers from:
+
+> "I need to watch this agent."
+
+to:
+
+> "Memnox understands what is happening."
+
+to:
+
+> "Memnox will stop it if something goes wrong."
+
+to:
+
+> "I trust it enough to leave it running."
+
+to:
+
+> "I can give it more responsibility."
+
+to:
+
+> **"I can run an AI workforce."**
+
+That is the product loop.
+
+---
+
+# 5. The First Killer Experience: Agent Context
+
+The first thing Memnox should make developers experience is:
+
+> **"This agent actually understands my project."**
+
+An agent receives a task:
+
+```text
+Fix the payment retry logic.
+```
+
+Instead of immediately modifying code, Memnox provides context:
+
+```text
+MEMNOX IMPLEMENTATION BRIEF
+
+Task
+Fix payment retry logic.
+
+Relevant decisions
+• Retry logic must remain inside PaymentService.
+• Do not retry declined payments.
+• Webhook retries use exponential backoff.
+
+Current work
+• Sarah is modifying payment_service.ts.
+• David is working on webhook-retry.ts.
+
+Known issues
+• INC-482 involves duplicate payment attempts.
+
+Existing patterns
+• Stripe adapter uses RetryPolicy.
+• Adyen adapter uses WebhookRetryPolicy.
+
+Potential conflict
+⚠ Your current approach modifies the same
+  state machine Sarah is currently changing.
+
+Recommended approach
+Extend RetryPolicy instead of creating
+a second retry implementation.
+```
+
+Now the agent can act with the organization's knowledge.
+
+This is the foundation of Memnox.
+
+---
+
+# 6. Project Memory
+
+Memnox builds a persistent project brain from:
+
+```text
+GitHub
+Slack
+Linear
+Jira
+Google Docs
+Meetings
+PRs
+Issues
+Commits
+Code
+Incidents
+Decisions
+Agent activity
+```
+
+It turns scattered information into usable context.
+
+The goal isn't simply to store information.
+
+The goal is:
+
+> **Make the right information available to the right agent at the right moment.**
+
+---
+
+# 7. Decision Memory
+
+Every organization contains thousands of invisible decisions.
+
+Examples:
+
+```text
+"We don't use Redis for this service."
+
+"All payment state changes go through
+PaymentStateMachine."
+
+"Production deployments require two approvals."
+
+"Never expose customer data to external APIs."
+
+"Use the existing adapter pattern."
+```
+
+Humans remember these implicitly.
+
+Agents don't.
+
+Memnox turns them into machine-usable organizational knowledge.
+
+An agent can ask:
+
+```text
+memnox decisions "payment architecture"
+```
+
+and receive the relevant decisions with their source, owner, date, and current status.
+
+---
+
+# 8. The Killer Feature: WIP Intelligence
+
+One of the biggest problems with multiple AI agents is not malicious behavior.
+
+It is **agents getting in each other's way.**
+
+```text
+Claude → modifying checkout.ts
+
+Codex → modifying checkout.ts
+
+Cursor → modifying checkout.ts
+```
+
+Memnox understands the active work across agents and humans.
+
+Instead of waiting for Git conflicts:
+
+```text
+⚠ WORK CONFLICT
+
+Claude Code is modifying:
+
+src/checkout.ts
+
+Sarah is also modifying:
+
+src/checkout.ts
+
+Codex is currently reviewing:
+
+src/checkout.ts
+
+Recommendation:
+
+Coordinate before continuing.
+```
+
+Memnox can optionally lock the resource:
+
+```text
+memnox lock src/checkout.ts
+```
+
+Other agents can still read it, but cannot perform conflicting writes.
+
+This turns Memnox from memory into **coordination infrastructure**.
+
+---
+
+# 9. Agent Coordination
+
+As companies move from one agent to dozens of agents, coordination becomes a fundamental problem.
+
+Imagine:
+
+```text
+Planner
+   ↓
+Architect
+   ↓
+Coder
+   ↓
+Tester
+   ↓
+Security
+   ↓
+Reviewer
+   ↓
+Deployer
+```
+
+Memnox knows:
+
+* what every agent is doing
+* what every agent knows
+* what every agent changed
+* what every agent is waiting for
+* what resources are being modified
+* where agents are conflicting
+* which agent owns which task
+
+Memnox becomes the shared coordination layer.
+
+---
+
+# 10. The Agent Workforce
+
+Memnox should treat agents as workers inside an organization.
+
+Each agent has:
+
+```text
+IDENTITY
+ROLE
+MISSION
+CONTEXT
+CAPABILITIES
+AUTHORITY
+CURRENT TASK
+TRUST LEVEL
+BUDGET
+HISTORY
+```
+
+For example:
+
+```text
+CODING AGENT
+
+Mission:
+Implement backend features.
+
+Can:
+✓ read repository
+✓ modify source
 ✓ run tests
 ✓ create branches
 ✓ create PRs
 
 Cannot:
-
-✕ merge directly to main
-✕ deploy production
+✕ merge production code
 ✕ modify secrets
-✕ modify IAM
-✕ delete infrastructure
+✕ access production database
 ```
 
-Then Hermes gets stuck. Instead of allowing six hours of recursive retries:
+The important difference is that Memnox doesn't just define what an agent **can technically access**.
 
-```
-03:14   Test failed
-03:18   Retry
-03:26   Retry
-03:41   Same failure
-03:52   Memnox: STOP
-```
-
-Memnox detects:
-
-```
-Same command: 11 times
-Same error: 11 times
-No state improvement
-Token spend increasing
-```
-
-Then: **AUTONOMOUS LOOP STOPPED**
-
-> Hermes has attempted the same remediation 11 times with no measurable progress. Estimated additional spend: $14.20/hour. Task paused.
-
-That's directly monetizable. You're not merely securing Hermes — you're preventing autonomous agents from burning money while accomplishing nothing.
+It understands what the agent is **supposed to accomplish**.
 
 ---
 
-## 3. Make this universal: Agent Circuit Breaker
+# 11. Organizational Context
 
-This should work across Hermes, OpenClaw, Ruflo, Claude Code, Codex, etc. Memnox watches execution and detects:
+This is where Memnox becomes difficult to replace.
 
-| Signal | Pattern |
-|---|---|
-| Retry loop | same action × 10 |
-| Error loop | same failure × 5 |
-| Token burn | $18 spent, 0 progress |
-| Action explosion | expected 20 actions, actual 1,200 |
-| Scope drift | task: "fix checkout" → actual: modifying authentication system |
+An agent receives:
 
-Then: **Memnox paused the agent.**
+> "Deploy the latest version."
 
-This is an extremely strong reason to pay.
+Technically, it can.
+
+Memnox checks the organization:
+
+```text
+Slack:
+"Production frozen until Monday."
+
+Linear:
+INC-482 active.
+
+GitHub:
+PR has not been approved.
+
+Calendar:
+Release window closed.
+```
+
+Memnox responds:
+
+```text
+DEPLOYMENT BLOCKED
+
+Production deployment is currently
+unauthorized.
+
+Reason:
+
+• Active production freeze
+• Incident INC-482
+• PR has not received approval
+• Release window is closed
+```
+
+The agent didn't merely encounter a permission error.
+
+It understood **why the organization doesn't want this action right now.**
 
 ---
 
-## 4. Hermes self-learning creates another killer feature
+# 12. Context → Intent → Authority
 
-Hermes can create skills and improve itself. That means:
+This becomes the fundamental Memnox architecture.
 
+```text
+               AGENT REQUEST
+
+                     ↓
+
+                ┌─────────┐
+                │ CONTEXT │
+                └────┬────┘
+                     ↓
+             What is happening?
+                     ↓
+                ┌─────────┐
+                │ INTENT  │
+                └────┬────┘
+                     ↓
+              What should happen?
+                     ↓
+               ┌──────────┐
+               │AUTHORITY │
+               └────┬─────┘
+                    ↓
+             Is it allowed?
+                    ↓
+             ALLOW / ASK / DENY
+                    ↓
+                  ACTION
 ```
-Agent learns
-      ↓
-Skill changes
-      ↓
-Future behavior changes
+
+This is the core of Memnox.
+
+---
+
+# 13. Progressive Autonomy
+
+Memnox should not force organizations to choose between:
+
+```text
+ALLOW EVERYTHING
+
+or
+
+APPROVE EVERYTHING
 ```
 
-That's dangerous. Memnox should treat every newly generated skill like a software deployment.
+Instead:
 
-**Hermes:** "I created a new skill."
-
-**Memnox:**
-
+```text
+OBSERVE
+   ↓
+ASSIST
+   ↓
+SUPERVISED
+   ↓
+AUTONOMOUS
+   ↓
+TRUSTED
 ```
+
+A team might start with:
+
+```text
+git push → ASK
+```
+
+After observing hundreds of safe pushes:
+
+```text
+Memnox:
+
+You've approved 127 similar pushes.
+
+Risk: Low.
+
+Recommendation:
+Allow autonomous git pushes for this agent.
+```
+
+The organization gradually delegates more.
+
+Memnox becomes the system through which **trust is earned**.
+
+---
+
+# 14. Autopilot
+
+Autopilot is the user-facing expression of progressive autonomy.
+
+The user says:
+
+> **"Run this agent autonomously."**
+
+Memnox creates the boundaries.
+
+Example:
+
+```text
+OPENCLAW AUTOPILOT
+
+Mission:
+Generate qualified sales leads.
+
+Can:
+✓ research companies
+✓ enrich prospects
+✓ update CRM
+✓ draft outreach
+✓ schedule meetings
+
+Needs approval:
+⚠ send external email
+⚠ publish content
+
+Never:
+✕ issue refunds
+✕ access payment data
+✕ modify pricing
+✕ impersonate executives
+```
+
+The user doesn't need to manually configure dozens of permissions.
+
+They define the **mission**.
+
+Memnox translates that mission into enforceable autonomy.
+
+---
+
+# 15. Agent Circuit Breaker
+
+Autonomous agents can fail without being malicious.
+
+They can loop.
+
+They can waste money.
+
+They can drift away from the original task.
+
+Memnox detects abnormal execution.
+
+```text
+Signal              Pattern
+
+Retry loop          same action × 10
+Error loop          same failure × 5
+Token burn          $18 spent, no progress
+Action explosion    expected 20, actual 1,200
+Scope drift         "fix checkout" →
+                    modifying authentication
+```
+
+Memnox pauses the agent.
+
+```text
+AUTONOMOUS LOOP STOPPED
+
+Hermes attempted the same remediation
+11 times with no measurable progress.
+
+No state improvement detected.
+
+Estimated additional spend:
+$14.20/hour
+
+Task paused.
+```
+
+This isn't merely security.
+
+It is **autonomy reliability**.
+
+---
+
+# 16. Agent Budgets
+
+Autonomous work needs economic boundaries.
+
+```text
+HERMES
+
+LLM budget:          $25/day
+External APIs:       500/day
+GitHub PRs:          20/day
+Production deploys:  3/day
+Database writes:     5,000/day
+Outbound emails:     50/day
+```
+
+Memnox can detect abnormal consumption.
+
+```text
+⚠ AUTONOMY BUDGET
+
+Hermes has consumed:
+
+$23.81 / $25
+
+Most spend:
+Repeated failed browser workflow.
+
+Recommendation:
+Pause agent and investigate.
+```
+
+Memnox becomes part of the organization's **AI operations economics**.
+
+---
+
+# 17. Capability Drift
+
+Agents can change over time.
+
+A skill gets added.
+
+An MCP server gets connected.
+
+A new credential appears.
+
+A new tool becomes available.
+
+Memnox detects the change.
+
+```text
 NEW AGENT CAPABILITY
 
-Skill:
-deploy-production
+Agent:
+Hermes
+
+New capability:
+production-deployment
 
 Previously:
-No production deployment
+No production access.
 
 Now:
-✓ AWS access
+✓ AWS
 ✓ Kubernetes
 ✓ production deployment
 
@@ -193,964 +733,689 @@ Status:
 QUARANTINED
 ```
 
-Then: **Review new skill.** The user sees exactly what changed.
-
-This solves: *"My agent is silently becoming more powerful."* And that's a very strong recurring reason to keep Memnox running.
+This is important because autonomous systems shouldn't silently become more powerful.
 
 ---
 
-## 5. OpenClaw: make the agent safe enough to become a 24/7 employee
+# 18. Agent Black Box
 
-OpenClaw's biggest appeal is that people can put it on a VPS and let it operate through messaging channels. But imagine a user connects:
+Every autonomous run should produce a causal record.
 
-```
-Email · Calendar · CRM · Browser · GitHub · Cloudflare · AWS · Stripe · Slack
-```
+Not just:
 
-OpenClaw becomes a digital employee. Memnox gives that employee a **job description**:
-
-```
-AI Sales Employee
-
-MISSION
-Generate qualified leads.
-
-CAN:
-✓ research companies
-✓ enrich prospects
-✓ update CRM
-✓ draft outreach
-✓ schedule meetings
-
-CAN'T:
-✕ send bulk campaigns
-✕ modify pricing
-✕ access payment data
-✕ issue refunds
-✕ impersonate executives
+```text
+agent.log
 ```
 
-That's the key: **Memnox should increase the amount of authority users are willing to delegate.**
+But:
 
----
+```text
+RUN #8291
 
-## 6. Build Progressive Autonomy
+User intent:
+"Fix checkout failures."
 
-This could become one of your signature concepts. Instead of `ALLOW / DENY`, Memnox has:
-
-```
-OBSERVE
-    ↓
-ASSIST
-    ↓
-SUPERVISED
-    ↓
-AUTONOMOUS
-    ↓
-TRUSTED
-```
-
-**Week 1** — Hermes: "Can I deploy staging?" Human: Yes. Memnox records that.
-
-**Week 2** — Memnox: "You approved 23 identical staging deployments. Enable autonomous staging deployments?" User: Yes.
-
-**Week 4** — Memnox: "You've approved 17 production rollbacks during incidents. Allow automatic rollback when the deployment is <30 minutes old and the health check fails?" User: Yes.
-
-The user's agent becomes more autonomous over time without becoming uncontrolled. That's addictive.
-
----
-
-## 7. Ruflo: solve the AI workforce problem
-
-You don't have one agent. You have:
-
-```
-Planner · Architect · Coder · Tester · Security · Reviewer · Deployer · Researcher
-```
-
-The problem becomes: **who is allowed to do what?** Memnox becomes the IAM for the agent workforce.
-
-```
-AI WORKFORCE
-
-Architecture Agent  → read code, write ADR
-Coding Agent        → write source
-Testing Agent       → run tests
-Security Agent      → read infrastructure
-Deployment Agent    → deploy staging
-Production Agent    → deploy production
-```
-
-Each gets a role. Memnox enforces the boundaries.
-
----
-
-## 8. Solve Ruflo's multi-agent collision problem
-
-```
-Agent A → refactoring checkout.ts
-Agent B → fixing checkout.ts
-Agent C → security audit checkout.ts
-```
-
-Memnox sees:
-
-```
-3 agents
-1 repository
-same files
-conflicting write operations
-```
-
-Instead of waiting for Git conflicts, **Memnox locks `checkout.ts` for Agent A.** Agent B receives:
-
-> `checkout.ts` is currently controlled by Agent A. You can read it, but cannot modify it.
-
-That's the existing `memnox lock` idea becoming extremely practical. And this isn't merely security — it's **coordination infrastructure**.
-
----
-
-## 9. Agent Rollback
-
-```
-Ruflo swarm → 183 file changes → PR created → production deployed → incident
-```
-
-Memnox has the complete action ledger. User clicks **Rewind agent activity**:
-
-```
 Agent:
-Ruflo deployment swarm
+Hermes
+
+Sub-agent:
+Claude Code
+
+Context:
+CI failure
+↓
+checkout-service
+↓
+dependency mismatch
+↓
+package update
+
+Actions:
+47
+
+Files changed:
+8
+
+Tests:
+23
+
+PR:
+#1821
+
+Deployment:
+staging
+
+Policy:
+46 ALLOW
+1 ASK
+0 DENY
+
+Outcome:
+SUCCESS
+```
+
+The user can ask:
+
+> Why did the agent change this file?
+
+> Why was it allowed?
+
+> What did it touch?
+
+> What decisions influenced it?
+
+> What would have happened if Memnox hadn't stopped it?
+
+Memnox answers using its context and execution history.
+
+---
+
+# 19. `memnox why`
+
+This should become one of the signature experiences.
+
+Agent:
+
+> Why can't I deploy production?
+
+Memnox:
+
+```text
+Because:
+
+1. Production is currently frozen.
+2. PR #1821 has not been approved.
+3. Incident INC-482 is active.
+4. Your role requires human approval.
+
+Decision:
+DENY
+```
+
+This creates an important distinction:
+
+> **Technical capability ≠ organizational authorization.**
+
+---
+
+# 20. Agent Rollback
+
+Memnox should understand actions as part of an execution.
+
+If an agent performs:
+
+```text
+183 file changes
+14 infrastructure changes
+3 configuration changes
+```
+
+the user should be able to see the causal relationship.
+
+```text
+AUTONOMOUS RUN #8291
+
+Agent:
+Ruflo swarm
 
 Changes:
 183 files
 14 infrastructure changes
 3 configuration changes
 
-Restore to:
+Restore:
 Before autonomous run
 
-[REWIND]
+[ REWIND ]
 ```
 
-More powerful than Git alone, because Memnox understands *which changes were caused by which agent execution*.
+The deeper value isn't simply rollback.
+
+It is:
+
+> **Knowing exactly what an agent caused.**
 
 ---
 
-## 10. Agent Black Box
+# 21. "What Should I Automate Next?"
 
-Every autonomous run gets a causal record — not `agent.log`, but:
+Memnox observes repeated human intervention.
 
-```
-RUN #8291
+```text
+Staging deployment
+32 manual approvals
+Risk: Low
 
-User intent:
-"Fix checkout failures."
+CRM enrichment
+18 manual approvals
+Risk: Low
 
-Agent:        Hermes
-Sub-agent:    Claude Code
-
-Reasoning path:
-CI failure → checkout-service → dependency mismatch → package update
-
-Actions:          47
-Files changed:    8
-Tests:            23
-PR:               #1821
-Deployment:       staging
-
-Policy decisions:
-46 ALLOW · 1 ASK · 0 DENY
-
-Outcome: SUCCESS
+CI repair
+9 manual approvals
+Risk: Medium
 ```
 
-Then the user can ask: *Why did the agent change this file? Why did it have permission? What did it touch? What would have happened if we hadn't stopped it?* — Memnox answers all four. Dramatically more useful than raw logs.
+Memnox recommends:
 
----
+```text
+AUTOMATION OPPORTUNITIES
 
-## 11. Combine agent behavior with organizational knowledge
+1. Staging deployments
+   → Autonomous
 
-This is where Memnox becomes much harder to replace.
+2. CRM enrichment
+   → Autonomous
 
-OpenClaw receives: *"Deploy the latest version."* Technically it can. But Memnox knows:
-
-```
-Slack:     "Production frozen until Monday."
-Linear:    INC-482 active.
-GitHub:    PR not approved.
-Calendar:  Release window closed.
-```
-
-**Memnox: DENIED** — *Production deployment is currently unauthorized because the release freeze is active.*
-
-The killer distinction:
-
-- Agent frameworks know: **Can I execute this?**
-- Memnox knows: **Should this organization allow me to execute this right now?**
-
----
-
-## 12. Ask Me Only When Necessary
-
-Memnox shouldn't become an annoying approval popup machine. If an agent performs 1,832 actions, you don't want five hundred `Approve?` prompts.
-
-Instead Memnox learns safe boundaries:
-
-```
-1,801 → automatic
-   24 → automatic
-    5 → grouped approval
-    2 → blocked
-```
-
-> "I grouped 5 similar actions for approval."
-
-One decision. This is how Memnox allows high autonomy without high interruption.
-
----
-
-## 13. Autonomy Budget
-
-Instead of only permissions, give agents budgets:
-
-```
-HERMES
-
-LLM budget:      $25/day
-External API:    500 calls/day
-GitHub:          20 PRs/day
-Production:      3 deployments/day
-Database:        5,000 writes/day
-Email:           50 outbound messages/day
-```
-
-If Hermes starts behaving abnormally and burns through it: **Agent budget exhausted.**
-
-This directly addresses the "infinite token burn" problem and gives businesses financial predictability.
-
----
-
-## 14. Agent Insurance (premium positioning)
-
-Before enabling full autonomy:
-
-```
-MEMNOX
-
-You are enabling:
-Production access · Database writes · GitHub writes · AWS access
-
-Potential blast radius: CRITICAL
-
-Memnox protection:
-✓ action interception
-✓ rollback
-✓ policy enforcement
-✓ credential boundaries
-✓ anomaly detection
-✓ execution ledger
-
-[ENABLE AUTOPILOT]
-```
-
-The emotional value: *"I'm willing to let my AI employee loose because Memnox is standing behind it."* Much more powerful than *"We have an AI security product."*
-
----
-
-## 15. Daily Agent CFO
-
-Especially for Ruflo. If someone runs hundreds of agents:
-
-```
-TODAY'S AI OPERATIONS
-
-Agents:            47
-LLM spend:         $83.42
-Actions:           18,293
-Successful:        17,912
-Blocked:           281
-Retries:           100
-Estimated waste:   $11.37
-
-Top expensive agent:  Ruflo / research swarm
-Top waste source:     Repeated failed browser workflow
-
-Recommended: Enable circuit breaker.
-```
-
-Now Memnox isn't only security. It's **AI operations economics** — and companies will pay for that.
-
----
-
-## 16. "What should I automate next?"
-
-The feature that could make Memnox genuinely addictive. Memnox observes behavior:
-
-```
-Hermes:    32 manual approvals for staging deployment
-OpenClaw:  18 manual CRM updates
-Ruflo:     12 manual test executions
+3. CI repair
+   → Supervised
 ```
 
 Then:
 
-```
-AUTOMATION OPPORTUNITIES
+> **You could safely delegate approximately 6.4 hours/week based on your current workflow.**
 
-1. Staging deployments
-   32 repeated approvals
-   Risk: Low
-   Recommendation: Autonomous
+This is one of the strongest long-term product loops.
 
-2. CRM enrichment
-   18 repeated approvals
-   Risk: Low
-   Recommendation: Autonomous
+Memnox doesn't just protect automation.
 
-3. CI repair
-   9 repeated approvals
-   Risk: Medium
-   Recommendation: Supervised
-```
-
-> "You could safely delegate ~6.4 hours/week based on your current approval history."
-
-That is a fantastic product loop.
+**It discovers where the organization can automate next.**
 
 ---
 
-## 17. Three agents, three Memnox experiences
+# 22. Local AI Agents
 
-### Hermes — *"Let Hermes work overnight."*
+Claude Code, Codex, Cursor, OpenCode, Aider and similar tools already have their own permission and sandbox systems.
 
-- circuit breaker
-- skill-change quarantine
-- token budget
-- overnight mode
-- capability drift
-- recovery
-- causal audit
+Memnox should not try to replace them.
 
-### OpenClaw — *"Turn OpenClaw into a safe digital employee."*
+Instead:
 
-- identity
-- delegation levels
-- messaging permissions
-- external communication controls
-- financial boundaries
-- personal-data boundaries
-- progressive autonomy
+> **Memnox becomes the unified intelligence and policy layer across agents.**
 
-### Ruflo — *"Run an AI engineering workforce without losing control."*
+A developer might have:
 
-- agent identity
-- role-based authority
-- swarm-wide policy
-- file locks
-- cross-agent conflict detection
-- production gates
-- action ledger
-- cost budgets
-- rollback
-
----
-
-## 18. All three converge into one product
-
-```
-                    MEMNOX
-                       │
-       ┌───────────────┼────────────────┐
-       │               │                │
-     HERMES         OPENCLAW          RUFLO
-       │               │                │
-  autonomous        personal/         multi-agent
-    worker          business OS        workforce
-       │               │                │
-       └───────────────┼────────────────┘
-                       │
-                 MEMNOX CONTROL
-                       │
-       ┌───────────────┼─────────────────┐
-       │               │                 │
-    Identity        Policy            Context
-       │               │                 │
-    Authority        Risk             Intent
-       │               │                 │
-       └───────────────┼─────────────────┘
-                       │
-                 REAL ACTIONS
-```
-
-The product category:
-
-> **Memnox = Control Plane for Autonomous Work**
-
-Not another agent. Not another orchestration framework. Not another memory system. Not another SIEM. Not merely AI security.
-
----
-
-## 19. The "pay for it" ladder
-
-Structure the value around **how much autonomy you want to unlock**, rather than number of dashboards.
-
-### Free — *See*
-
-```
-Scan
-Explain
-Agent inventory
-Capabilities
-Basic risk
-```
-
-Hook: *"Holy shit, my agent can do THAT?"*
-
-### Pro — ~$29–49 — *Control*
-
-```
-Runtime enforcement
-Approval workflows
-Circuit breakers
-Budgets
-Capability drift
-Action history
-```
-
-Hook: *"Now I can safely leave it running."*
-
-### Team — ~$99–299 — *Delegate*
-
-```
-Multiple agents
-Multiple VPSs
-Hermes / OpenClaw / Ruflo
-Cross-agent policy
-Agent locks
-Shared organizational context
-Rollback
-Trust scores
-```
-
-Hook: *"My team can run an AI workforce."*
-
-### Enterprise — *Govern*
-
-```
-Agent IAM
-SSO/RBAC
-Production controls
-Audit
-Compliance
-Data boundaries
-Policy-as-code
-Fleet management
-```
-
-Hook: *"We can actually allow autonomous AI inside production."*
-
----
-
-## 20. The most important change to the original vision
-
-Don't make **"What did my agent do?"** the primary experience.
-
-Make **"What can I safely let my agent do next?"** the primary experience.
-
-Then Memnox continuously moves the customer through:
-
-```
-              DON'T TRUST IT
-                    │
-                    ▼
-                 OBSERVE
-                    │
-                    ▼
-                 CONTROL
-                    │
-                    ▼
-                  TRUST
-                    │
-                    ▼
-               DELEGATE MORE
-                    │
-                    ▼
-                AUTOMATE MORE
-                    │
-                    ▼
-                ADD AGENTS
-                    │
-                    ▼
-             RUN AI WORKFORCE
-                    │
-                    ▼
-             MEMNOX IS CRITICAL
-```
-
-That is the addiction loop. The user doesn't pay Memnox because they enjoy security. They pay because **Memnox lets them safely give their agents more responsibility.**
-
-And the ultimate Memnox notification shouldn't be:
-
-> ⚠️ Agent blocked.
-
-It should sometimes be:
-
-> 🤖 Your agents completed 47 tasks overnight. Nothing required your attention.
-
-That is the outcome you're selling.
-
----
-
----
-
-# Part II — Local agents (Claude Code, Codex, Cursor…)
-
-Local agents may actually be the **strongest wedge** for Memnox.
-
-The important distinction: Memnox should not try to replace their local permission systems. Claude Code already has permissions, hooks, and OS-level sandboxing; Codex has approval modes and sandbox boundaries.
-
-Instead: **Memnox becomes the control plane above all local agents.**
-
----
-
-## The local-agent problem
-
-Imagine your laptop has:
-
-```
-Claude Code · Codex · Cursor · OpenCode · Aider
-```
-
-Each one has its own permissions, MCP servers, credentials, filesystem access, network access, approval rules, hooks, sandbox, configuration, and agent sessions.
-
-Your machine doesn't have **one unified policy** for all of them.
-
-Claude may be allowed to access:
-
-```
-~/projects/*
-~/.aws/*
-github.com
-npmjs.org
-```
-
-while Codex has a different sandbox, and Cursor has another set of MCPs. So you end up with **five agents × five security models × five configurations.**
-
----
-
-## Memnox for local agents
-
-```
-                 MEMNOX
-          ┌──────────────────┐
-          │ Global Policy    │
-          │ Risk Engine      │
-          │ Action Ledger    │
-          │ Agent Identity   │
-          │ Trust Score      │
-          └────────┬─────────┘
-                   │
-       ┌───────────┼────────────┐
-       ↓           ↓            ↓
-   Claude Code   Codex       Cursor
-       │           │            │
-       └───────────┼────────────┘
-                   ↓
-            Local Machine
-                   │
-       ┌───────────┼────────────┐
-       ↓           ↓            ↓
-   filesystem    network      MCP/tools
-       │           │            │
-       └───────────┼────────────┘
-                   ↓
-             Real systems
-```
-
-Memnox doesn't care whether the agent is Claude, Codex, Cursor or something else. It cares about: **"What is this agent trying to do, and should it be allowed to do it?"**
-
----
-
-## 1. One command to see everything
-
-```
-memnox scan
-```
-
-```
-AI AGENTS ON THIS MACHINE
-
+```text
 Claude Code
-  Risk: HIGH
-  MCP servers: 7
-  Filesystem: 14 directories
-  Network: 23 domains
-  Credentials detected: 4
-  Shell: YES
-  Git: YES
-  Docker: YES
-
 Codex
-  Risk: MEDIUM
-  MCP servers: 3
-  Filesystem: workspace
-  Network: restricted
-  Shell: YES
-
 Cursor
-  Risk: HIGH
-  MCP servers: 9
-  Filesystem: 31 directories
-  Network: unrestricted
-
-────────────────────────────────
-
-Effective capabilities
-
-Claude + AWS credentials + kubectl
-→ CAN potentially modify production
-
-Claude + GitHub + filesystem
-→ CAN modify repositories
-
-Cursor + Slack MCP + GitHub MCP
-→ CAN read organizational communication
-   and modify source code
+OpenCode
+Aider
 ```
 
-Much more valuable than simply showing Claude's configuration.
+Each has different:
+
+* permissions
+* MCP servers
+* credentials
+* network access
+* filesystem access
+* sandboxing
+* hooks
+
+Memnox creates one organizational view.
+
+```text
+                  MEMNOX
+
+          Global Context
+          Global Policy
+          Agent Identity
+          Risk
+          Trust
+          Action Ledger
+                 │
+       ┌─────────┼─────────┐
+       ↓         ↓         ↓
+    Claude     Codex     Cursor
+       │         │         │
+       └─────────┼─────────┘
+                 ↓
+          Local Machine
+```
 
 ---
 
-## 2. The killer feature: effective capability
+# 23. Effective Capability
 
-Don't just say `Claude has access to AWS.` Say:
+Memnox shouldn't only say:
 
-```
-Claude has:
+> Claude has AWS credentials.
 
+It should understand the combination:
+
+```text
 AWS credentials
-+ kubectl
-+ production kubeconfig
-+ network access
-+ shell execution
++
+kubectl
++
+production kubeconfig
++
+network access
++
+shell execution
+```
 
 Therefore:
 
-⚠️ EFFECTIVE CAPABILITY
-Can modify production Kubernetes resources.
+```text
+⚠ EFFECTIVE CAPABILITY
+
+Claude can potentially modify
+production Kubernetes resources.
 ```
 
-Or:
+This is much closer to understanding **real agent authority**.
 
-```
+---
+
+# 24. One Unified Agent Layer
+
+Memnox should eventually make the underlying agent irrelevant.
+
+Whether the organization uses:
+
+```text
 Claude
-
-GitHub write
-+ Slack read
-+ filesystem read
-+ internet access
-
-Potential capability:
-
-⚠️ Read internal information → package it → send externally
+Codex
+Cursor
+OpenCode
+Hermes
+OpenClaw
+Ruflo
+Custom agents
 ```
 
-Much more powerful than conventional permission inspection.
+Memnox provides the same primitives:
+
+```text
+Context
+Identity
+Intent
+Coordination
+Authority
+Policy
+Risk
+Budget
+Memory
+History
+Trust
+```
+
+That is the platform.
 
 ---
 
-## 3. `memnox protect`
+# 25. Memnox Cloud
 
-```
-memnox protect claude
-```
+The local OSS runtime creates the entry point.
 
-```
-I found 4 high-risk capabilities.
+The cloud creates organizational value.
 
-1. Production AWS credentials
-2. ~/.ssh access
-3. unrestricted network
-4. Docker socket
+### Local Memnox
 
-Recommended:
+Free and open source.
 
-✓ Remove ~/.ssh access
-✓ Block Docker socket
-✓ Restrict network
-✓ Remove production credentials
-✓ Keep GitHub + development AWS
-
-Apply?
-```
-
-```
-✓ Protected Claude Code
-
-Claude can still:
-  ✓ modify your repositories
-  ✓ run tests
-  ✓ install packages
-  ✓ access GitHub
-
-Claude can no longer:
-  ✗ access production
-  ✗ access SSH keys
-  ✗ access Docker daemon
-  ✗ communicate with arbitrary domains
-```
-
----
-
-## 4. The really valuable part is runtime
-
-You run `claude`. Claude decides:
-
-```
-aws s3 cp customer.csv s3://external-bucket
-```
-
-The user might never have explicitly configured that exact scenario. Memnox intercepts:
-
-```
-Claude Code → tool/action → Memnox → policy evaluation → ALLOW / ASK / DENY
-```
-
-```
-🚨 BLOCKED
-
-Claude Code attempted:
-aws s3 cp customer.csv s3://external-bucket
-
-Why?
-• customer.csv contains customer data
-• destination is external
-• current project policy forbids external data transfer
-• agent has no approved export task
-
-Decision: DENY
-```
-
----
-
-## 5. Don't make users approve everything
-
-Otherwise Memnox becomes another annoying permission popup. Memnox should learn autonomy.
-
-**First day:**
-
-```
-npm install     → ALLOW
-git commit      → ALLOW
-git push        → ASK
-terraform apply → DENY
-```
-
-**After observing behavior:**
-
-```
-Trust profile: Claude Code / project-x
-
-npm install        → automatic
-tests              → automatic
-git commits        → automatic
-git push           → automatic
-production deploy  → approval required
-database migration → approval required
-external upload    → blocked
-```
-
-Now the user isn't babysitting the agent.
-
----
-
-## 6. The addictive loop
-
-```
-              Agent wants to act
-                     ↓
-                 Memnox
-                     ↓
-           ┌─────────┼─────────┐
-           ↓         ↓         ↓
-         ALLOW      ASK       DENY
-           ↓         ↓         ↓
-       executes   user       blocked
-                   decides
-           ↓
-       learn from action
-           ↓
-       increase autonomy
-```
-
-The user gradually moves from *"I have to watch Claude"* to *"Claude can work without me."* That's the thing people will pay for.
-
----
-
-## 7. `memnox watch`
-
-```
+```text
+memnox scan
+memnox explain
+memnox context
+memnox protect
 memnox watch
+memnox lock
 ```
 
-```
-06:31 Claude Code started
-
-06:32 Read 48 files
-06:34 Executed npm test
-06:36 Installed package
-06:38 Modified auth.ts
-06:41 Called GitHub API
-06:44 Started Docker container
-06:47 Attempted access to ~/.ssh
-      ↳ BLOCKED
-
-06:48 Attempted outbound request to unknown domain
-      ↳ BLOCKED
-```
-
-You get an agent black box. Not *"Claude says it completed the task"* but **here is exactly what Claude did.**
-
----
-
-## 8. `memnox why`
-
-**Agent:** "Why can't I access production?"
-
-**Memnox:**
-
-```
-Because:
-
-1. Your production environment is currently frozen.
-2. The deployment has no approved PR.
-3. An active incident exists.
-4. Your policy requires human approval for production changes.
-
-Decision: DENY
-```
-
-This is where the organizational-memory vision becomes powerful. The local agent may technically possess the credentials. But **technical capability ≠ authorization.**
-
----
-
-## 9. Cross-agent protection
-
-Something Claude Code itself cannot really solve globally:
-
-```
-Claude Code → working on auth.ts
-Codex       → working on auth.ts
-Cursor      → working on auth.ts
-```
-
-```
-⚠️ CONFLICT
-
-Claude Code is modifying: src/auth.ts
-Codex is modifying:       src/auth.ts
-Cursor is modifying:      src/auth.ts
-
-Risk: concurrent modifications may overwrite each other's work.
-```
-
-```
-memnox lock src/auth.ts
-```
-
-Memnox coordinates the agents. That starts turning Memnox into **the operating system for an AI workforce.**
-
----
-
-## 10. The biggest local-agent opportunity: two layers
-
-### Local Memnox — free / OSS
-
-```
-Your machine
-
-Claude · Codex · Cursor · OpenCode · Aider
-        ↓
-     Memnox
-        ↓
-filesystem · shell · network · MCP · Docker · Git · credentials
-```
+It helps one developer understand and control their local agents.
 
 ### Memnox Cloud
 
-```
-                 Memnox Cloud
+The organization-wide control plane.
 
-        Organization Policy
-                │
-        Agent Identity
-                │
-        Global Agent Fleet
-                │
-        Decision Graph
-                │
-        Action Ledger
-                │
-        Organizational Memory
-                │
-       ┌────────┼─────────┐
-       ↓        ↓         ↓
-    Laptop    VPS       CI/CD
-       ↓        ↓         ↓
-    Claude   Hermes    Ruflo
-    Codex    OpenClaw  Swarms
+```text
+                MEMNOX CLOUD
+
+          Organization Context
+          Decision Graph
+          Agent Identity
+          Agent Fleet
+          Global Policy
+          Trust
+          Action Ledger
+          Autonomy Budgets
+          Approvals
+          Organizational Memory
+                    │
+          ┌─────────┼─────────┐
+          ↓         ↓         ↓
+       Laptop      VPS       CI/CD
+          ↓         ↓         ↓
+       Claude     Hermes    Ruflo
+       Codex      OpenClaw  Swarms
 ```
 
-The cloud isn't just a dashboard. It becomes the **global control plane** for all local and remote agents.
+The cloud is not simply a dashboard.
+
+It is the **shared intelligence and authority layer for every agent in the organization.**
 
 ---
 
-## And this changes the pricing strategy
+# 26. Open Source Strategy
 
-**Free OSS:**
+Open source should communicate:
 
+> **You can trust the layer that sits between your agents and your work.**
+
+Open-source Memnox should provide the developer-facing runtime.
+
+The cloud monetizes:
+
+* organization-wide memory
+* cross-agent coordination
+* fleet management
+* global policies
+* identity
+* approvals
+* long-term history
+* organizational context
+* trust
+* budgets
+* audit
+* remote agents
+
+The strategic split is:
+
+```text
+OPEN SOURCE
+      ↓
+TRUST + ADOPTION
+
+      ↓
+
+MEMNOX CLOUD
+      ↓
+COORDINATION + AUTONOMY
 ```
-memnox scan
-memnox explain
-memnox protect
-basic local policies
-basic local action history
+
+---
+
+# 27. The Business Model
+
+Don't price primarily around dashboards.
+
+Price around:
+
+> **How much autonomous work are you enabling?**
+
+### Free — Explore
+
+```text
+Local agent discovery
+Basic context
+Basic capability analysis
+Basic action history
+Local policies
 ```
 
-**Paid ($29+):**
+Hook:
 
+> **"I didn't realize my agents could do all that."**
+
+### Pro — Autopilot
+
+```text
+Runtime controls
+Approvals
+Circuit breakers
+Budgets
+Capability drift
+Trust
+Extended history
 ```
-Cross-agent policy
-Runtime enforcement
-Agent trust
-Long-term history
-Cloud synchronization
-Organization policies
+
+Hook:
+
+> **"I can finally leave my agent running."**
+
+### Team — Delegate
+
+```text
+Multiple agents
+Multiple machines
+Shared context
+Cross-agent coordination
+Agent locks
+Organizational memory
 Remote agents
-Agent fleet
-Approval workflows
-Audit trail
-Autonomy budgets
-Rollback
-Organizational context
+Autonomous workflows
 ```
 
-So the user isn't paying because *"Memnox protects my Claude Code."* They're paying because:
+Hook:
 
-> **"Memnox lets me run 10 agents without having to supervise 10 agents."**
+> **"My team can run an AI workforce."**
 
-A much stronger willingness-to-pay story.
+### Enterprise — Govern
 
-Importantly: Claude Code already has sophisticated local permissions/hooks/sandboxing, and Codex already has local approval modes and sandboxing — so Memnox should position itself as the **unifying policy and execution layer across agents**, not as a replacement for those mechanisms.
+```text
+Agent IAM
+SSO/RBAC
+Fleet management
+Policy-as-code
+Production controls
+Compliance
+Data boundaries
+Advanced audit
+```
+
+Hook:
+
+> **"We can actually deploy autonomous AI across the organization."**
 
 ---
 
-## Taglines for this wedge
+# 28. The Competitive Position
 
-> **Your agents run locally. Their authority shouldn't be local.**
+Memnox should not try to beat every agent-control company at its own game.
 
-Or more directly:
+The distinction should be:
 
-> **One control plane for every AI agent on your machine.**
+```text
+Agent frameworks
+
+"What can my agent do?"
+```
+
+```text
+Security/control products
+
+"What is my agent allowed to do?"
+```
+
+```text
+Memnox
+
+"What does my agent need to know,
+what should it do, and can it safely
+do it right now?"
+```
+
+That gives Memnox a broader position.
+
+---
+
+# 29. The Memnox Flywheel
+
+Every action creates more organizational knowledge.
+
+```text
+Humans
+  │
+  ↓
+Slack / GitHub / Linear / Meetings
+  │
+  ↓
+MEMNOX MEMORY
+  │
+  ↓
+PROJECT CONTEXT
+  │
+  ↓
+BETTER AGENT PLANS
+  │
+  ↓
+BETTER AGENT ACTIONS
+  │
+  ↓
+MORE AUTONOMOUS WORK
+  │
+  ↓
+MORE AGENT ACTIVITY
+  │
+  └──────────────→ MEMNOX
+```
+
+The more an organization uses Memnox, the better its agents understand the organization.
+
+That creates the long-term moat.
+
+---
+
+# 30. The Ultimate Memnox Loop
+
+The most important change to the original vision is this:
+
+Don't make the primary question:
+
+> **"What did my agent do?"**
+
+Make it:
+
+> **"What can I safely let my agents do next?"**
+
+The customer journey becomes:
+
+```text
+"I don't trust it."
+        ↓
+"Let me observe it."
+        ↓
+"Let Memnox explain it."
+        ↓
+"Let Memnox control it."
+        ↓
+"Let it work while I watch."
+        ↓
+"Let it work without me."
+        ↓
+"Give it more responsibility."
+        ↓
+"Add another agent."
+        ↓
+"Add ten more agents."
+        ↓
+"Run an AI workforce."
+```
+
+Eventually:
+
+> **Memnox becomes critical infrastructure for autonomous work.**
+
+---
+
+# 31. The Outcome
+
+The ultimate Memnox notification shouldn't be:
+
+```text
+⚠ Agent blocked.
+```
+
+It should be:
+
+```text
+🤖 OVERNIGHT SUMMARY
+
+12 agents
+47 tasks completed
+183 changes
+3 PRs created
+2 staging deployments
+
+0 conflicts
+0 policy violations
+0 unresolved failures
+
+$18.42 AI spend
+
+Nothing required your attention.
+```
+
+That is what we're selling.
+
+Not security.
+
+Not memory.
+
+Not another AI dashboard.
+
+**More autonomous work with less human supervision.**
+
+---
+
+# 32. The One-Sentence Vision
+
+> **Memnox gives autonomous agents the context, coordination, and authority they need to work like part of your team.**
+
+Shorter:
+
+> **Memnox is the context and control plane for autonomous work.**
+
+And the emotional promise:
+
+> **Let your agents work. Keep the authority yours.**
+
+Or:
+
+> **Give AI agents the freedom to work. Keep the authority yours.**
+
+---
+
+# 33. The Ultimate Vision
+
+The long-term goal is simple:
+
+Today:
+
+```text
+Human
+  ↓
+AI agent
+  ↓
+Human supervises everything
+```
+
+Tomorrow:
+
+```text
+Human
+  ↓
+Memnox
+  ↓
+AI workforce
+  ↓
+Work gets done
+```
+
+The human moves from:
+
+> **operator**
+
+to:
+
+> **delegator**
+
+And Memnox becomes the layer that makes that transition possible.
+
+> **The future isn't humans using AI agents.**
+>
+> **It's humans managing autonomous work.**
+>
+> **Memnox is the infrastructure that makes that possible.**
