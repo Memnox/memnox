@@ -1,5 +1,6 @@
 import { readAccount } from '../sync/account';
 import type { Lease, LeaseHolder } from './lease';
+import type { WrittenRegion } from './written-region';
 
 /**
  * The half of a lease a laptop structurally cannot hold.
@@ -48,7 +49,15 @@ export type SharedTake =
   | { outcome: typeof SHARED_OUTCOME.UNKNOWN; because: string };
 
 export interface SharedLeases {
-  take(path: string, holder: LeaseHolder, minutes: number): Promise<SharedTake>;
+  take(
+    path: string,
+    holder: LeaseHolder,
+    minutes: number,
+    /* What in the file is being written, where the caller worked it out. The
+       control plane narrows a collision on it and takes the whole file
+       without it, so absent is what every lease meant before this. */
+    region?: WrittenRegion,
+  ): Promise<SharedTake>;
   release(id: string, holder: LeaseHolder): Promise<void>;
 }
 
@@ -62,7 +71,12 @@ export class CloudLeases implements SharedLeases {
     private readonly timeoutMs: number = SHARED_LEASE_TIMEOUT_MS,
   ) {}
 
-  async take(path: string, holder: LeaseHolder, minutes: number): Promise<SharedTake> {
+  async take(
+    path: string,
+    holder: LeaseHolder,
+    minutes: number,
+    region?: WrittenRegion,
+  ): Promise<SharedTake> {
     const account = await readAccount(this.home);
     if (account === null) {
       return { outcome: SHARED_OUTCOME.UNKNOWN, because: 'this machine is not enrolled' };
@@ -77,6 +91,15 @@ export class CloudLeases implements SharedLeases {
       },
       ttlMs: minutes * 60_000,
       activity: `taken on ${account.machineId}`,
+      /* Sent only where there is something to send. An empty list would claim
+         the session knows it is writing nothing, where the truth is that
+         nothing was worked out. */
+      ...(region === undefined || region.lines.length === 0
+        ? {}
+        : { lines: region.lines }),
+      ...(region === undefined || region.symbols.length === 0
+        ? {}
+        : { symbols: region.symbols }),
     };
 
     const response = await this.post(

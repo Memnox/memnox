@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import {
   CloudLeases,
+  GitRegionReader,
   holdFor,
   LeaseGate,
   LeaseRegistry,
@@ -70,6 +71,12 @@ export function buildLeases(cwd: string = process.cwd()): SeamLeases | undefined
          unreachable control plane never stops a write. */
       shared: new CloudLeases(homedir()),
       prompt: new TtyLeasePrompt(),
+      /* Which lines and which function this write touches, read off the change
+         itself at the moment of the write. Git already computes both and puts
+         them in the hunk header, so two agents in one file are told apart
+         without either being asked to declare anything. Bounded and failing to
+         the whole file, because this sits on the write path. */
+      region: (path) => new GitRegionReader(root).read(path),
       now: () => new Date().toISOString(),
     }),
     holder: {

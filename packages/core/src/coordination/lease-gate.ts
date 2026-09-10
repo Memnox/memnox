@@ -7,6 +7,7 @@ import {
 } from './lease';
 import { LEASE_OUTCOME, type LeaseRegistry } from './lease-store';
 import { SHARED_OUTCOME, type SharedLeases } from './shared-leases';
+import type { WrittenRegion } from './written-region';
 
 /**
  * What happens when somebody else already holds the path a write needs.
@@ -87,6 +88,17 @@ export interface LeaseGateDeps {
    */
   shared?: SharedLeases;
   prompt?: LeasePrompt;
+  /**
+   * What in the file this write touches, read at the moment of the write.
+   *
+   * Optional, and absent is the whole file. It exists so two agents in one file
+   * are told apart without either being asked to declare anything: the change
+   * itself already says which lines and, usually, which function.
+   *
+   * Consulted only once the local register has agreed, so a session that is
+   * going to be refused by a collision on this machine never pays for it.
+   */
+  region?: (path: string) => Promise<WrittenRegion>;
   /** The clock, injected so a replay gives the same answer twice. */
   now: () => string;
   sleep?: (ms: number) => Promise<void>;
@@ -167,7 +179,17 @@ export class LeaseGate {
     const shared = this.deps.shared;
     if (shared === undefined) return null;
 
-    const result = await shared.take(path, holder, minutes ?? DEFAULT_SHARED_MINUTES);
+    /* Worked out here rather than by the caller, so every path into the gate
+       gets it. A reader that throws or runs long is the whole file, which is
+       what this claimed before it could narrow anything. */
+    const region = await this.regionOf(path);
+
+    const result = await shared.take(
+      path,
+      holder,
+      minutes ?? DEFAULT_SHARED_MINUTES,
+      region,
+    );
     if (result.outcome !== SHARED_OUTCOME.HELD_BY_ANOTHER) return null;
 
     const where = result.machine === undefined ? '' : ` on ${result.machine}`;
@@ -175,6 +197,17 @@ export class LeaseGate {
       outcome: LEASE_GATE.REFUSED,
       message: `${result.holder}${where} holds ${result.path === '' ? 'this repository' : result.path}. ${result.message}`,
     };
+  }
+
+  /** Never throws and never blocks the write: unknown is the whole file. */
+  private async regionOf(path: string): Promise<WrittenRegion | undefined> {
+    const read = this.deps.region;
+    if (read === undefined) return undefined;
+    try {
+      return await read(path);
+    } catch {
+      return undefined;
+    }
   }
 
   private async ask(
