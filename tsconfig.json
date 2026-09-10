@@ -1,13 +1,7 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@memnox/core": ["packages/core/src"],
-      "@memnox/proxy": ["packages/proxy/src"],
-      "@memnox/interceptors": ["packages/interceptors/src"]
-    }
+    "noEmit": true
   },
   "include": ["packages/*/src", "packages/*/test"]
 }

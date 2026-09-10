@@ -1,4 +1,5 @@
 {
+  "//": "baseUrl and paths live here rather than in the root tsconfig.json, because an editor typechecks a file under the nearest config it can find, which is packages/<name>/tsconfig.json. Without them a package resolved @memnox/core through the node_modules symlink to packages/core/dist, so every import of it answered TS7016 whenever that build output was absent: a fresh clone, a --clean rebuild, or any moment between the two. The root pass resolved to source and stayed green throughout, so the editor and the command line disagreed about 162 imports. Relative paths in an extended config resolve against the file that declares them, so baseUrl here is this repository's root.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -15,6 +16,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@memnox/core": ["packages/core/src"],
+      "@memnox/proxy": ["packages/proxy/src"],
+      "@memnox/interceptors": ["packages/interceptors/src"]
+    }
   }
 }
