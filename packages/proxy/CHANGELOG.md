@@ -1,5 +1,12 @@
 # @memnox/proxy
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [451aa4e]
+  - @memnox/core@0.5.0
+
 ## 0.4.1
 
 ### Patch Changes

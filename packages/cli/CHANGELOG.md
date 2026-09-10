@@ -1,5 +1,85 @@
 # memnox
 
+## 0.5.0
+
+### Minor Changes
+
+- d99da1d: `memnox agents`, and a channel an operator can reach an agent through.
+
+  `VISION.md` section 10 is the agent workforce and section 22 is why it is hard: five
+  agents with five security models, and on a VPS at three in the morning nobody can walk
+  to any of their terminals. This machine could already scan itself and report what it
+  found, but there was no command named for agents and no way for a person to say
+  anything to one.
+
+  - **`memnox agents discover`** scans this machine, keeps the scan, and reports it
+    through the same pass a sync uses rather than growing a second path that sends a
+    census. Two ways to report one scan is one of them drifting, and the cursor that
+    stops a scan being sent twice already lives there.
+  - **`memnox agents list` and `status`** read the kept scan and never take a fresh one.
+    A scan starts every MCP server it finds, and listing is the thing somebody runs twice
+    in a row: making it the expensive one is how it stops being run. `status` names the
+    file that proved each surface rather than counting them, because a count says how
+    much an agent reaches and the path says who granted it.
+  - **All of it is about this machine.** The console answers what the whole fleet runs,
+    because only something holding every machine's reports can. Answering that from here
+    would mean widening what a machine credential reaches, and how narrow that is
+    is exactly what `machine-credential.test.ts` exists to hold.
+  - **`memnox agents control`** collects what an operator has said and acknowledges it.
+    The seam still runs one way: nothing dials this machine, it asks, the same way it
+    asks for a bundle. There is no connection held open waiting to be told something.
+  - **A command is not a verdict, and nothing here may treat one as one.** What comes
+    back is a person's own words for whoever is at the agent. What the agent does next is
+    decided here, locally, against the rules already on disk. If a message ever starts
+    being read as permission then the gate has moved onto the network, and the local
+    first claim goes with it.
+  - **Shown, then acknowledged, in that order.** A turn is handed over once, so
+    acknowledging first would lose it on any failure between the two. The worst case is a
+    receipt nobody recorded rather than an instruction nobody saw, and a receipt that
+    fails to land never fails the message it was about.
+
+- 451aa4e: A write says which lines and which function it touches, worked out at the moment
+  it happens.
+
+  A lease could only ever say the path, so two agents in one file collided even
+  when one was rewriting the imports and the other a function four hundred lines
+  down. The control plane accepts a narrower claim, but only an agent that had
+  been told to declare one ever sent it, which is no agent nobody has updated.
+
+  - **Read off the change, not declared.** Git already computes both halves and
+    puts them in the hunk header: `@@ -6 +6,2 @@ export function retryCharge(` is
+    the lines and the enclosing function in one line of output. No parser, no
+    syntax tree, no dependency, and it covers every language git ships a pattern
+    for.
+  - **On the write path, so it is bounded.** `shared-leases.ts` already states the
+    budget next door: an interceptor runs on every write and a slow control plane
+    must not be felt. The diff is one file, abandoned after 400ms, and read only
+    once the local register has agreed, so a session about to be refused by a
+    collision on this machine never pays for it.
+  - **Every failure is the whole file.** Not a repository, a new file with nothing
+    committed, a language git has no context pattern for, git missing from the
+    path, a rewrite too large to read, or a diff that ran long. All of them answer
+    nothing, and nothing has always meant the whole file to a lease. This can fail
+    to narrow a claim. It cannot lose a collision.
+  - **Only ever within one named file.** A lease is usually taken on the directory
+    a write lands in, and a directory's diff spans several files. Narrowing that
+    by symbol would be a loosening change rather than a refinement: two sessions
+    editing different files under it each name the functions in their own, the two
+    sets never meet, and both proceed where both used to wait. So a region is used
+    only where the diff covers exactly the path that was asked about, and anything
+    wider claims the lot.
+  - **The name beats the row.** A line number is a position and goes stale the
+    moment anybody inserts above it; `retryCharge` is the same function before and
+    after. Where both are known the control plane compares the names, so two
+    agents whose stored ranges have drifted are still told apart correctly.
+
+### Patch Changes
+
+- Updated dependencies [451aa4e]
+  - @memnox/core@0.5.0
+  - @memnox/interceptors@0.5.0
+  - @memnox/proxy@0.5.0
+
 ## 0.4.1
 
 ### Patch Changes

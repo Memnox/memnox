@@ -1,6 +1,6 @@
 {
   "name": "memnox",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Memnox CLI — run the trust runtime, manage policies, inspect the audit trail.",
   "keywords": [
     "ai-agents",
