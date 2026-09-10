@@ -35,6 +35,8 @@ interface Collected {
   mode: string;
   /** Where it landed. Decided by whoever approved, not asked for here. */
   workspaceId: string;
+  /** Where an advisory principal talks to, present when it enrolled as one. */
+  mcpUrl?: string;
 }
 
 /** What the control plane says while nobody has answered yet. */
@@ -53,6 +55,13 @@ interface EnrolOptions {
   /** Sent once so a person can see which machine they are approving. */
   host?: string;
   mode?: string;
+  /**
+   * `mcp` for an agent enrolled as an advisory principal.
+   *
+   * The approval screen renders it, so nobody mistakes an agent that merely
+   * cooperates for one the runtime is interposed in front of.
+   */
+  connection?: string;
 }
 
 /** Ed25519, generated here. The private half never leaves this process. */
@@ -74,9 +83,12 @@ export async function requestCode(
     method: 'POST',
     body: {
       hostname: options.host ?? hostname(),
-      publicKey,
+      /* Omitted for an advisory principal, which signs no bytes there is a key
+         to check. The door enforces that split rather than this side. */
+      ...(options.connection === 'mcp' ? {} : { publicKey }),
       runtimeVersion: CLI_VERSION,
       ...(options.mode === undefined ? {} : { mode: options.mode }),
+      ...(options.connection === undefined ? {} : { connection: options.connection }),
     },
   });
   if (answer.status !== 200 && answer.status !== 201) {

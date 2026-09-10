@@ -38,6 +38,7 @@ import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerSpendCommand } from './commands/spend.command';
 import { registerSyncCommand } from './commands/sync.command';
+import { registerAgentsCommand } from './commands/agents.command';
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
 export function buildProgram(context: CliContext): Command {
@@ -55,6 +56,7 @@ export function buildProgram(context: CliContext): Command {
   });
 
   registerScanCommand(program, context);
+  registerAgentsCommand(program, context);
   registerDiffCommand(program, context);
   registerExplainCommand(program, context);
   registerProtectCommand(program, context);

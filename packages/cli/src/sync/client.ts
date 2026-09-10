@@ -23,7 +23,10 @@ interface CloudResponse<T> {
 interface CloudRequest {
   baseUrl: string;
   path: string;
-  method?: 'GET' | 'POST';
+  /* `DELETE` is here for one route: revoking the credential an agent was
+     onboarded under. Offboarding that left a live credential behind would
+     restore the config and leave the reach. */
+  method?: 'GET' | 'POST' | 'DELETE';
   /** The machine credential, where the route wants one. */
   token?: string;
   body?: unknown;

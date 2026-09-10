@@ -28,6 +28,29 @@ agents, so they get a `HARNESSES` block that counts the principals behind the ro
 `COMBINED CAPABILITY` block for paths a set of permitted tools opens together.
 [Harnesses](harnesses.md) explains both, and what Memnox deliberately leaves to them.
 
+### `memnox agents`
+The agents on this machine, and the channel to them. `discover` is the default.
+
+| Command | What it does |
+|---|---|
+| `agents discover` | scan this machine, keep the scan, and report it if this machine is enrolled |
+| `agents list` | what the last scan found, without taking a new one |
+| `agents status <agent>` | one agent, and the file that proved each surface it has |
+| `agents control [agent]` | collect what an operator has said, and acknowledge it |
+
+All of it is about *this machine*. The console answers what the whole fleet runs,
+because only something holding every machine's reports can, and answering that from
+here would mean widening what a machine credential reaches.
+
+`list` reads the kept scan rather than taking a fresh one, because a scan starts every
+MCP server it finds: listing is the thing somebody runs twice in a row, and making it
+the expensive one is how it stops being run. `discover` is the one that scans.
+
+`control` is the only one that reaches the network, and it reaches it the way
+everything else here does, which is by asking. Nothing dials this machine. What comes
+back is a person's own words for whoever is at the agent, and it is never permission:
+what the agent does next is decided here, against the rules already on disk.
+
 ### `memnox doctor`
 What is reachable that should not be, ranked, each with the one change that closes it.
 `--by-agent` decomposes per agent. Counts by severity, never a total.
@@ -575,6 +598,14 @@ so a field added to the ledger does not start travelling by accident.
 
 **Sent on the heartbeat:** the hash of the bundle this machine has applied, which
 is what lets a workspace see which machines are on which rules.
+
+**Collected by `memnox agents control`:** what an operator has said to an agent on
+this machine, and a receipt saying it was collected. Two more paths on the same
+credential, asked for the same way everything else here is asked for: nothing
+dials this machine, and there is no connection held open waiting to be told. What
+comes back is a person's own words and never a verdict, so collecting one changes
+nothing about what the agent may then do. That is still decided here, against the
+rules already on disk.
 
 ### What authenticates a pull
 
