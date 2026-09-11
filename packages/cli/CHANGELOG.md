@@ -1,5 +1,23 @@
 # memnox
 
+## 0.8.0
+
+### Minor Changes
+
+- Name the agents on this machine, set them up in one command, and cut the front page of `--help` from forty commands to twenty.
+
+  `memnox setup` is the whole first run: it logs the machine in, finds the agents on it, and goes through them one at a time, showing what each can already reach before asking what the workspace should call it and whether to put it under Memnox. The name is the agent's identity in the workspace, sent with the enrolment, because the control plane hashes the hostname and never stores it. `memnox agents name` changes one later, and every command answers to the name, the id or the product.
+
+  Onboarding now rewrites TOML and YAML as well as JSON, so Codex and Hermes are governable rather than only findable. None of the three reformats a line it did not change, comments survive, and every rewrite is read back and refused unless it still holds every server it held.
+
+  Four commands are gone and their work has a home: `diff` is `scan --since`, `autopilot` is `next --agent`, `verify --enforcement` is `doctor --prove`, and `spend` is removed because this machine cannot price a model call. Typing an old one names the new one. Seventeen less common commands still run and keep their own `--help`; they are off the front page rather than gone.
+
+### Patch Changes
+
+- @memnox/core@0.8.0
+- @memnox/proxy@0.8.0
+- @memnox/interceptors@0.8.0
+
 ## 0.7.1
 
 ### Patch Changes
