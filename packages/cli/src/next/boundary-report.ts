@@ -1,5 +1,4 @@
 import { homedir } from 'node:os';
-import type { Command } from 'commander';
 import {
   BAND,
   LocalGate,
@@ -26,75 +25,86 @@ import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../polic
  * is what will actually happen rather than a description of what the rules intend. A
  * screen that summarised the policy would be the one place a person trusts most and
  * the one most likely to be subtly wrong.
+ *
+ * Reached through `memnox next --agent`, because it answers the same question the
+ * primary screen does from the other side: `next` reads the ledger for what a person
+ * has already approved often enough to hand over, and this reads the rules for what
+ * would happen if they did. Two commands for one decision was one of them going
+ * unrun.
  */
-export function registerAutopilotCommand(program: Command, context: CliContext): void {
-  program
-    .command('autopilot [agent]')
-    .description('What an agent would do on its own, and what would still be asked')
-    .option('-f, --file <path>', 'policy file (default: whichever exists)')
-    .option('--role <name>', 'show the boundary of a job rather than of a product')
-    .option('--roles', 'every job the rules name, and what each may do')
-    .option('--json', 'machine-readable output')
-    .action(
-      async (
-        agent: string | undefined,
-        options: { file?: string; json?: boolean; role?: string; roles?: boolean },
-      ) => {
-        /* Every file in force, not this directory's: a registered checkout's rules
-           govern this machine whichever directory the reader is standing in, and one
-           that will not load must not take the boundary down with it. */
-        const rules = await policySetInForce(homedir(), options.file);
-        if (rules.policies.length === 0) {
-          throw new Error(
-            `No rules at ${resolvePolicyFile(options.file)}, so there is no boundary to show. Write one:  memnox protect --yes`,
-          );
-        }
-        sayWhatDidNotLoad(context, rules);
 
-        const candidatesFor = (): CandidateAction[] =>
-          interceptedBinaries().flatMap((binary) => actionsForCli(binary));
+export interface BoundaryOptions {
+  agent?: string;
+  file?: string;
+  json?: boolean;
+  role?: string;
+  roles?: boolean;
+}
 
-        if (options.roles === true) {
-          await renderWorkforce(
-            context,
-            rules.policies,
-            candidatesFor(),
-            options.json === true,
-          );
-          return;
-        }
+/** True when the flags asked what an agent may do rather than what to hand over next. */
+export function wantsBoundary(options: BoundaryOptions): boolean {
+  return (
+    options.agent !== undefined || options.role !== undefined || options.roles === true
+  );
+}
 
-        const name = agent ?? 'claude-code';
-        const gate = new LocalGate(rules.policies, {
-          agentName: name,
-          /* Evaluated as the job, so a `roles:` rule fires. Without this the screen
-             would show what the product may do and call it what the role may do. */
-          ...(options.role === undefined ? {} : { agentRole: options.role }),
-        });
-        const candidates = candidatesFor();
-
-        const boundary = boundaryFor(options.role ?? name, candidates, (action) => {
-          const verdict = gate.evaluate({ action });
-          return {
-            effect: verdict.effect,
-            reason: verdict.reason,
-            matched: verdict.matchedPolicies.length > 0,
-          };
-        });
-        const radius = blastRadiusOf(boundary, credentialsIn(boundary));
-
-        if (options.json === true) {
-          context.out.json({
-            boundary,
-            radius,
-            ready: readyToEnable(radius),
-            ...(options.role === undefined ? {} : { role: options.role }),
-          });
-          return;
-        }
-        render(context, boundary, radius, options.role);
-      },
+export async function renderBoundary(
+  context: CliContext,
+  options: BoundaryOptions,
+): Promise<void> {
+  /* Every file in force, not this directory's: a registered checkout's rules
+     govern this machine whichever directory the reader is standing in, and one
+     that will not load must not take the boundary down with it. */
+  const rules = await policySetInForce(homedir(), options.file);
+  if (rules.policies.length === 0) {
+    throw new Error(
+      `No rules at ${resolvePolicyFile(options.file)}, so there is no boundary to show. Write one:  memnox protect --yes`,
     );
+  }
+  sayWhatDidNotLoad(context, rules);
+
+  const candidatesFor = (): CandidateAction[] =>
+    interceptedBinaries().flatMap((binary) => actionsForCli(binary));
+
+  if (options.roles === true) {
+    await renderWorkforce(
+      context,
+      rules.policies,
+      candidatesFor(),
+      options.json === true,
+    );
+    return;
+  }
+
+  const name = options.agent ?? 'claude-code';
+  const gate = new LocalGate(rules.policies, {
+    agentName: name,
+    /* Evaluated as the job, so a `roles:` rule fires. Without this the screen
+       would show what the product may do and call it what the role may do. */
+    ...(options.role === undefined ? {} : { agentRole: options.role }),
+  });
+  const candidates = candidatesFor();
+
+  const boundary = boundaryFor(options.role ?? name, candidates, (action) => {
+    const verdict = gate.evaluate({ action });
+    return {
+      effect: verdict.effect,
+      reason: verdict.reason,
+      matched: verdict.matchedPolicies.length > 0,
+    };
+  });
+  const radius = blastRadiusOf(boundary, credentialsIn(boundary));
+
+  if (options.json === true) {
+    context.out.json({
+      boundary,
+      radius,
+      ready: readyToEnable(radius),
+      ...(options.role === undefined ? {} : { role: options.role }),
+    });
+    return;
+  }
+  render(context, boundary, radius, options.role);
 }
 
 /** Named from the rules that fired, so nothing here opens a credential to list it. */
@@ -248,6 +258,6 @@ async function renderWorkforce(
     );
   }
   out.line('');
-  out.line(`  ${style.dim('memnox autopilot --role <name>')}   what one of them may do`);
+  out.line(`  ${style.dim('memnox next --role <name>')}   what one of them may do`);
   out.line('');
 }

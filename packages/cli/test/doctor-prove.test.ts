@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PROOF, type SeamProof } from '@memnox/core';
-import { registerVerifyCommand } from '../src/commands/verify.command';
+import { registerDoctorCommand } from '../src/commands/doctor.command';
 import { runCommand } from './cli-harness';
 
 const proofs = (...states: SeamProof['state'][]): SeamProof[] =>
@@ -13,21 +13,25 @@ const proofs = (...states: SeamProof['state'][]): SeamProof[] =>
       }) as SeamProof,
   );
 
+/* The probe is the only seam this needs; doctor's other readers never run on
+   the --prove path, so they stay at their defaults. */
 async function verify(given: SeamProof[]) {
   return runCommand(
     (program, context) =>
-      registerVerifyCommand(
+      registerDoctorCommand(
         program,
         context,
-        async () => given,
-        () => '/home/dev',
+        undefined,
         () => '/work',
+        undefined,
+        undefined,
+        async () => given,
       ),
-    ['verify', '--enforcement'],
+    ['doctor', '--prove'],
   );
 }
 
-describe('memnox verify --enforcement', () => {
+describe('memnox doctor --prove', () => {
   it('reports a seam that let the action through, and exits non-zero', async () => {
     const before = process.exitCode;
     const { out } = await verify(proofs(PROOF.NOT_ENFORCED));

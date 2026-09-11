@@ -4,11 +4,31 @@ import type { Command } from 'commander';
 const MAX_SUGGESTION_DISTANCE = 3;
 
 /**
+ * Commands that used to exist, and what answers their question now.
+ *
+ * A nearest-word guess is worse than useless for these: somebody who typed
+ * `diff` gets pointed at `deny`, which is a different command that runs. They
+ * are kept here rather than as hidden aliases because a spelling that still
+ * works is one the docs keep and nobody stops teaching.
+ */
+const MOVED: Readonly<Record<string, string>> = {
+  diff: 'memnox scan --since <when>',
+  autopilot: 'memnox next --agent <name>',
+  verify: 'memnox doctor --prove',
+  spend:
+    'nothing here: this machine cannot price a model call, so it no longer pretends to',
+};
+
+/**
  * `scan` is the default command, so commander hands an unrecognised word to it as an
  * argument rather than refusing it. Refusing it there blamed `scan` for a word nobody
  * typed, so it is named for what it is here instead.
  */
 export function unknownCommand(program: Command, word: string): string {
+  const moved = MOVED[word.toLowerCase()];
+  if (moved !== undefined) {
+    return `"${word}" is gone. It is now:  ${moved}`;
+  }
   const names = program.commands.map((command) => command.name());
   const nearest = names
     .map((name) => ({ name, distance: distance(word, name) }))
@@ -16,7 +36,7 @@ export function unknownCommand(program: Command, word: string): string {
     .sort((a, b) => a.distance - b.distance)[0];
   return (
     `unknown command "${word}"` +
-    (nearest === undefined ? '' : ` — did you mean "${nearest.name}"?`) +
+    (nearest === undefined ? '' : `, did you mean "${nearest.name}"?`) +
     '\nRun "memnox --help" for the full list.'
   );
 }

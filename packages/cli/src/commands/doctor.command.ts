@@ -24,6 +24,9 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { gatherHealth } from '../health-probe';
+import { proveEnforcement, type ProbeContext } from '../verify/enforcement';
+import { renderEnforcement } from '../verify/enforcement-report';
+import type { SeamProof } from '@memnox/core';
 
 const SEVERITY_WIDTH = 10;
 
@@ -40,6 +43,7 @@ export function registerDoctorCommand(
     new NodeSnapshotStore(join(homedir(), MEMNOX_HOME)),
   buildFindings: () => FindingsStore = () =>
     new NodeFindingsStore(join(homedir(), MEMNOX_HOME)),
+  probe: (ctx: ProbeContext) => Promise<SeamProof[]> = proveEnforcement,
 ): void {
   program
     .command('doctor')
@@ -55,101 +59,120 @@ export function registerDoctorCommand(
       '--by-agent',
       'the same findings per agent on this machine, never a rating of the products',
     )
-    .action(async (options: { json?: boolean; byAgent?: boolean; wiring?: boolean }) => {
-      if (options.wiring === true) {
-        const checks = checkInstallation(await gatherHealth(homedir(), cwd()));
-        if (options.json === true) {
-          context.out.json({ ...summarizeHealth(checks), checks });
+    .option(
+      '--prove',
+      'ask every seam to refuse something, and report what actually came back',
+    )
+    .action(
+      async (options: {
+        json?: boolean;
+        byAgent?: boolean;
+        wiring?: boolean;
+        prove?: boolean;
+      }) => {
+        /* Before --wiring, because somebody who passed both wants the stronger
+         answer: what was configured matters less than what happened. */
+        if (options.prove === true) {
+          await renderEnforcement(context, await probe({ home: homedir(), dir: cwd() }));
           return;
         }
-        renderWiring(context, checks);
-        return;
-      }
-      const reader: MachineReader = buildReader();
-      // The same ground `memnox` covers: a finding it showed and doctor cannot
-      // rank is a credential the reader was told about and never offered a fix for.
-      const discovered = await discover(reader, {
-        now: new Date().toISOString(),
-        projectDirs: [cwd()],
-      });
-      /* Doctor never starts an MCP server, so the tools come from the last scan that
+        if (options.wiring === true) {
+          const checks = checkInstallation(await gatherHealth(homedir(), cwd()));
+          if (options.json === true) {
+            context.out.json({ ...summarizeHealth(checks), checks });
+            return;
+          }
+          renderWiring(context, checks);
+          return;
+        }
+        const reader: MachineReader = buildReader();
+        // The same ground `memnox` covers: a finding it showed and doctor cannot
+        // rank is a credential the reader was told about and never offered a fix for.
+        const discovered = await discover(reader, {
+          now: new Date().toISOString(),
+          projectDirs: [cwd()],
+        });
+        /* Doctor never starts an MCP server, so the tools come from the last scan that
          did. Without them every tool-shaped finding here is unreachable however true
          it is, and the reader is told about a credential with no fix beside it. */
-      const surfaces = withToolsFrom(
-        discovered.surfaces,
-        lastProbed(await buildSnapshots().history()),
-      );
-      const report = runDoctor({
-        resources: discovered.resources,
-        reachability: discovered.reachability,
-        surfaces,
-        // From the hydrated surfaces, not the unprobed scan, or this is always empty.
-        chains: chainsFor(
-          discovered.agents.map((agent) => agent.id),
+        const surfaces = withToolsFrom(
+          discovered.surfaces,
+          lastProbed(await buildSnapshots().history()),
+        );
+        const report = runDoctor({
+          resources: discovered.resources,
+          reachability: discovered.reachability,
           surfaces,
-        ),
-      });
+          // From the hydrated surfaces, not the unprobed scan, or this is always empty.
+          chains: chainsFor(
+            discovered.agents.map((agent) => agent.id),
+            surfaces,
+          ),
+        });
 
-      /* Kept so the sync pass can send it. Printing was the whole of what this
+        /* Kept so the sync pass can send it. Printing was the whole of what this
          command did with a finding, which left the fleet page empty on every
          deployment while every laptop knew exactly what was wrong with it.
 
          Best effort: a machine that cannot write this still shows its report.
          The scan is what the reader asked for; reporting it onward is not. */
-      try {
-        await buildFindings().keep({
-          takenAt: new Date().toISOString(),
-          findings: report.findings,
-        });
-      } catch (err) {
-        context.out.line(
-          context.style.dim(`  (findings not kept for sync: ${String(err)})`),
-        );
-      }
-
-      const standings = rankAgents(report.findings, surfaces);
-
-      if (options.json === true) {
-        context.out.json({ ...report, agents: standings });
-        return;
-      }
-
-      const { out, style } = context;
-      if (options.byAgent === true) {
-        renderByAgent(context, standings);
-        return;
-      }
-      if (report.findings.length === 0) {
-        out.line('Nothing on this machine is reachable that should not be.');
-        return;
-      }
-
-      out.line(style.bold('MEMNOX DOCTOR'));
-      out.line('');
-      for (const finding of report.findings) {
-        out.line(`  ${severity(style, finding).padEnd(SEVERITY_WIDTH)}${finding.title}`);
-        /* Skipped when it is the path the title just gave: a resource with nothing
-           else naming it carries itself as its own evidence, and printing it twice
-           reads as two facts about one file. */
-        if (!finding.title.includes(finding.evidence)) {
-          out.line(`  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(finding.evidence)}`);
-        }
-        const remediation = finding.remediation;
-        if (remediation !== undefined) {
-          out.line(
-            `  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(`fix: ${remediation.description}`)}`,
+        try {
+          await buildFindings().keep({
+            takenAt: new Date().toISOString(),
+            findings: report.findings,
+          });
+        } catch (err) {
+          context.out.line(
+            context.style.dim(`  (findings not kept for sync: ${String(err)})`),
           );
         }
-        out.line('');
-      }
 
-      // Counts, never a total: a number nobody can argue with is a number nobody acts on.
-      const { counts } = report;
-      out.line(
-        `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ` +
-          `${counts.low} low. Nothing here compares this machine to another.`,
-      );
-    });
+        const standings = rankAgents(report.findings, surfaces);
+
+        if (options.json === true) {
+          context.out.json({ ...report, agents: standings });
+          return;
+        }
+
+        const { out, style } = context;
+        if (options.byAgent === true) {
+          renderByAgent(context, standings);
+          return;
+        }
+        if (report.findings.length === 0) {
+          out.line('Nothing on this machine is reachable that should not be.');
+          return;
+        }
+
+        out.line(style.bold('MEMNOX DOCTOR'));
+        out.line('');
+        for (const finding of report.findings) {
+          out.line(
+            `  ${severity(style, finding).padEnd(SEVERITY_WIDTH)}${finding.title}`,
+          );
+          /* Skipped when it is the path the title just gave: a resource with nothing
+           else naming it carries itself as its own evidence, and printing it twice
+           reads as two facts about one file. */
+          if (!finding.title.includes(finding.evidence)) {
+            out.line(`  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(finding.evidence)}`);
+          }
+          const remediation = finding.remediation;
+          if (remediation !== undefined) {
+            out.line(
+              `  ${' '.repeat(SEVERITY_WIDTH)}${style.dim(`fix: ${remediation.description}`)}`,
+            );
+          }
+          out.line('');
+        }
+
+        // Counts, never a total: a number nobody can argue with is a number nobody acts on.
+        const { counts } = report;
+        out.line(
+          `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ` +
+            `${counts.low} low. Nothing here compares this machine to another.`,
+        );
+      },
+    );
 }
 
 const AGENT_WIDTH = 16;

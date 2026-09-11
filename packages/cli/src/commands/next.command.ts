@@ -15,6 +15,11 @@ import {
 import type { CliContext } from '../cli-context';
 import { withEvents } from '../event-store';
 import { policySetInForce } from '../policy-path';
+import {
+  renderBoundary,
+  wantsBoundary,
+  type BoundaryOptions,
+} from '../next/boundary-report';
 
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -39,8 +44,21 @@ export function registerNextCommand(
     .command('next')
     .description('What you could safely let your agents do without being asked')
     .option('--since <window>', 'how far back to read, e.g. 30d', '30d')
+    .option(
+      '--agent <name>',
+      'what that one agent would do on its own, and what it would ask',
+    )
+    .option('--role <name>', 'the same for a job rather than for a product')
+    .option('--roles', 'every job the rules name, and what each may do')
+    .option('-f, --file <path>', 'policy file to read the boundary from')
     .option('--json', 'machine-readable output')
-    .action(async (options: { since: string; json?: boolean }) => {
+    .action(async (options: { since: string; json?: boolean } & BoundaryOptions) => {
+      /* The rules read forwards rather than the ledger read backwards. Same
+         decision, opposite evidence, so they belong under one verb. */
+      if (wantsBoundary(options)) {
+        await renderBoundary(context, options);
+        return;
+      }
       const moment = now();
       const days = Number.parseInt(options.since, 10);
       const since = new Date(

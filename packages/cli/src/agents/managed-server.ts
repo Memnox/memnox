@@ -1,73 +1,95 @@
+import {
+  CONFIG_FORMAT,
+  formatOf,
+  MANAGED_SERVER,
+  managedServerFor,
+  type ConfigFormat,
+  type ManagedServer,
+  type RewriteResult,
+} from './managed-shape';
+import {
+  tomlServerNames,
+  withManagedTomlServer,
+  withoutManagedTomlServer,
+} from './managed-toml';
+import {
+  withManagedYamlServer,
+  withoutManagedYamlServer,
+  yamlServerNames,
+} from './managed-yaml';
+import {
+  jsonServerNames,
+  withManagedJsonServer,
+  withoutManagedJsonServer,
+} from './managed-json';
+
 /**
  * The Memnox server entry an onboarded agent gets, and taking it back out.
  *
- * One name, `memnox`, so onboarding twice replaces its own entry rather than
- * leaving two, and so offboarding removes exactly what onboarding added and
- * nothing a person put there.
+ * Three formats, because three of the agents on an ordinary laptop are not
+ * JSON: Codex keeps TOML and Hermes keeps YAML, and declining those meant half
+ * the agents Memnox could *find* were agents it could not *govern*.
  *
- * JSON only, deliberately. Claude Code, Claude Desktop, Cursor, Cline, VS Code
- * and OpenClaw all keep their servers in JSON; Codex is TOML and Hermes is
- * YAML, and rewriting those means a serializer that has to round-trip somebody
- * else's comments and ordering. `memnox mcp wrap` already declines to rewrite
- * what it cannot parse, for the same reason: never rewrite a file we could not
- * read back, because we would lose what it held.
+ * Every one of them is edited in place rather than re-serialized, and none of
+ * them reformats a line it did not change. TOML gets a table appended as text,
+ * YAML goes through a document that keeps its comments, and JSON is edited by
+ * span through `jsonc-parser`. The last of those was the worst offender before
+ * it was: re-serializing rewrote every line of the file, so adding four lines
+ * produced a diff touching a hundred.
+ *
+ * **Every rewrite is checked before it is returned.** The result is parsed back
+ * with the same parser the detectors use, and it has to still hold every server
+ * it held before plus the managed one. A rewrite that loses somebody's servers,
+ * or produces a file that no longer parses, is refused and the original is left
+ * alone. That is what makes adding a format safe rather than a hope: being
+ * wrong about a spelling costs a connection that does not authenticate, never
+ * a config that will not load.
  */
 
-export const MANAGED_SERVER = 'memnox';
+export { MANAGED_SERVER, managedServerFor };
 
-/** What the entry claims, so a person reading their own config knows why it is there. */
-interface ManagedServer {
-  type: 'http';
-  url: string;
-  headers: Record<string, string>;
-}
-
-export function managedServerFor(mcpUrl: string, token: string): ManagedServer {
-  return {
-    type: 'http',
-    url: mcpUrl,
-    /* The machine credential this agent was enrolled under. It reaches its own
-       workspace and nothing else, and it is the same credential the control
-       plane checks on every other machine route. */
-    headers: { Authorization: `Bearer ${token}` },
-  };
-}
-
-interface RewriteResult {
-  /** The config as it should now be written, or null where it cannot be. */
-  next: string | null;
-  /** Why, where it cannot. Said to the person rather than swallowed. */
-  because?: string;
+/** Whether this file is one of the three shapes onboarding can edit at all. */
+export function canRewrite(path: string): boolean {
+  return formatOf(path) !== null;
 }
 
 /**
  * Adds the managed server, keeping everything else exactly as it was.
  *
- * Reads and rewrites the same object rather than composing a new one, so keys
- * this knows nothing about survive: an agent's model settings, its permissions,
- * its own MCP servers. Losing those would be a far worse outcome than not
- * onboarding at all.
+ * `serversKey` applies to JSON only, where two spellings are in the wild and the
+ * caller has already read which one this file uses. TOML and YAML each have one
+ * spelling their own tooling goes by, so each format module decides its own.
  */
 export function withManagedServer(
   raw: string,
   serversKey: string,
   server: ManagedServer,
+  path = '.json',
 ): RewriteResult {
-  let config: Record<string, unknown>;
-  try {
-    config = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return { next: null, because: 'its config is not JSON this can rewrite' };
+  const format = formatOf(path);
+  if (format === null) {
+    return { next: null, because: 'its config is in a format this cannot rewrite' };
   }
-  const held = config[serversKey];
-  const servers =
-    held !== null && typeof held === 'object' ? (held as Record<string, unknown>) : {};
+  const before = serverNames(raw, format);
+  if (before === null) {
+    return { next: null, because: notReadable(format) };
+  }
 
-  const next = {
-    ...config,
-    [serversKey]: { ...servers, [MANAGED_SERVER]: server },
-  };
-  return { next: `${JSON.stringify(next, null, 2)}\n` };
+  const written = write(raw, serversKey, server, format);
+  if (written.next === null) return written;
+  return checked(written, raw, format, [...before, MANAGED_SERVER]);
+}
+
+function write(
+  raw: string,
+  serversKey: string,
+  server: ManagedServer,
+  format: ConfigFormat,
+): RewriteResult {
+  if (format === CONFIG_FORMAT.TOML) return withManagedTomlServer(raw, server);
+  if (format === CONFIG_FORMAT.YAML) return withManagedYamlServer(raw, server);
+
+  return withManagedJsonServer(raw, serversKey, server);
 }
 
 /**
@@ -78,21 +100,75 @@ export function withManagedServer(
  * changed by hand afterwards being *lost* rather than merged, which is what an
  * undo means. This is the fallback for a backup that has gone missing.
  */
-export function withoutManagedServer(raw: string, serversKey: string): RewriteResult {
-  let config: Record<string, unknown>;
-  try {
-    config = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return { next: null, because: 'its config is not JSON this can rewrite' };
+export function withoutManagedServer(
+  raw: string,
+  serversKey: string,
+  path = '.json',
+): RewriteResult {
+  const format = formatOf(path);
+  if (format === null) {
+    return { next: null, because: 'its config is in a format this cannot rewrite' };
   }
-  const held = config[serversKey];
-  if (held === null || typeof held !== 'object') return { next: raw };
+  const before = serverNames(raw, format);
+  if (before === null) return { next: null, because: notReadable(format) };
 
-  const servers = { ...(held as Record<string, unknown>) };
-  if (!(MANAGED_SERVER in servers)) return { next: raw };
-  delete servers[MANAGED_SERVER];
+  const removed = erase(raw, serversKey, format);
+  if (removed.next === null || removed.next === raw) return removed;
+  return checked(
+    removed,
+    raw,
+    format,
+    before.filter((name) => name !== MANAGED_SERVER),
+  );
+}
 
-  return {
-    next: `${JSON.stringify({ ...config, [serversKey]: servers }, null, 2)}\n`,
-  };
+function erase(raw: string, serversKey: string, format: ConfigFormat): RewriteResult {
+  if (format === CONFIG_FORMAT.TOML) return withoutManagedTomlServer(raw);
+  if (format === CONFIG_FORMAT.YAML) return withoutManagedYamlServer(raw);
+
+  return withoutManagedJsonServer(raw, serversKey);
+}
+
+/**
+ * The rewrite, read back.
+ *
+ * A file that no longer parses, or that has lost a server it held, is refused
+ * and the caller writes nothing. This is the whole safety story for a format
+ * whose exact spelling for an HTTP entry we are taking on trust: the worst a
+ * wrong guess can do is leave an entry the agent cannot connect through, which
+ * `offboard` reverses, rather than a config the agent cannot load.
+ */
+function checked(
+  written: RewriteResult,
+  raw: string,
+  format: ConfigFormat,
+  expected: readonly string[],
+): RewriteResult {
+  const after = serverNames(written.next as string, format);
+  if (after === null) {
+    return {
+      next: null,
+      because: 'the rewritten config would not parse, so it was not written',
+    };
+  }
+  const lost = expected.filter((name) => !after.includes(name));
+  if (lost.length > 0) {
+    return {
+      next: null,
+      because: `the rewrite would have dropped ${lost.join(', ')}, so it was not written`,
+    };
+  }
+  // Unchanged is a valid outcome: there was nothing of ours to remove.
+  return written.next === raw ? { next: raw } : written;
+}
+
+/** Every server a config declares, by whichever parser owns that format. */
+function serverNames(raw: string, format: ConfigFormat): string[] | null {
+  if (format === CONFIG_FORMAT.TOML) return tomlServerNames(raw);
+  if (format === CONFIG_FORMAT.YAML) return yamlServerNames(raw);
+  return jsonServerNames(raw);
+}
+
+function notReadable(format: ConfigFormat): string {
+  return `its config is not ${format.toUpperCase()} this can rewrite`;
 }

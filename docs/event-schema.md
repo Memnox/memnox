@@ -11,7 +11,7 @@ Published as JSON Schema at `https://memnox.dev/schema/event-v1.json`, and expor
 
 | Field | Type | Notes |
 |---|---|---|
-| `costUsd` | number ≥ 0 | What the action cost, when something reported it. Memnox prices nothing: absent means nobody said, which is not the same as zero. Record one with `memnox spend`. |
+| `costUsd` | number ≥ 0 | What the action cost, when something reported it. Memnox prices nothing: absent means nobody said, which is not the same as zero. Something that knows the price reports it through `EventCost`. |
 | `bundleHash` | string | Which workspace bundle this machine held. `policyHash` covers the whole stack as this machine assembled it, which is not a thing the control plane can name. |
 | `conditionsInForce` | string[] | The conditions in force when the verdict was reached. The engine computed a state version for every decision and nothing carried it to the ledger, so the field built to make a freeze visible afterwards was stamped and dropped. |
 

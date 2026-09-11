@@ -37,6 +37,8 @@ export async function enrolAgent(
   agentId: string,
   hostname: string,
   out: CliOutput,
+  /** What to call it on screen. The id stays the identity the credential is cut for. */
+  shownAs: string = agentId,
 ): Promise<EnrolledAgent | EnrolFailure> {
   try {
     /* A key is generated and then not sent: an advisory principal signs no
@@ -44,12 +46,28 @@ export async function enrolAgent(
        keeps one path through `requestCode` rather than two. */
     const { publicKey } = machineKeypair();
     const offer = await requestCode(
-      { baseUrl, host: `${agentId}@${hostname}`, connection: 'mcp' },
+      {
+        baseUrl,
+        host: `${agentId}@${hostname}`,
+        /* The name travels, because the hostname above does not: the control
+           plane hashes it. Without this the console shows a hex id and the
+           name a person just chose lives only on their laptop. */
+        label: shownAs,
+        connection: 'mcp',
+      },
       publicKey,
     );
 
-    out.line(`Approve ${agentId} with the code ${offer.userCode}`);
-    out.note(approvalUrl(baseUrl, offer.userCode, offer));
+    out.line('');
+    out.line(`  Approve ${shownAs} with the code ${offer.userCode}`);
+    out.line(`  ${approvalUrl(baseUrl, offer.userCode, offer)}`);
+    /* Said before the wait rather than after it, because the alternative is a
+       terminal that has printed a code and then gone silent, which reads as a
+       hang. Naming Ctrl+C as safe is the other half: this is the one point
+       where nothing on disk has been touched yet. */
+    out.line(
+      '  Waiting for you to approve it. Ctrl+C stops, and nothing will have changed.',
+    );
 
     const collected = await waitForApproval(baseUrl, offer);
     if (collected.mcpUrl === undefined) {

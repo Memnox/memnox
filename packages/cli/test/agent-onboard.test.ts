@@ -249,6 +249,125 @@ describe('offboarding an agent', () => {
   });
 });
 
+/**
+ * The two formats that are not JSON, through the real onboard and offboard.
+ *
+ * Codex and Hermes are two of the six agent kinds on an ordinary laptop, and
+ * while onboarding declined anything that was not JSON they were agents Memnox
+ * could find and could not govern.
+ */
+describe('onboarding an agent that does not keep JSON', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'memnox-formats-'));
+    await mkdir(join(home, '.codex'), { recursive: true });
+    await writeFile(
+      join(home, '.codex', 'config.toml'),
+      '# mine\nmodel = "o3"\n\n[mcp_servers.node_repl]\ncommand = "node"\n',
+      'utf8',
+    );
+    await mkdir(join(home, '.hermes'), { recursive: true });
+    await writeFile(
+      join(home, '.hermes', 'config.yaml'),
+      '# mine\nruntime: node\n\nmcp_servers:\n  notes:\n    command: notes-mcp\n',
+      'utf8',
+    );
+    vi.stubGlobal('fetch', (async (url: URL | string) =>
+      deviceFlow(String(url), () => undefined)) as typeof fetch);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('puts the entry into a Codex TOML config', async () => {
+    const result = await onboardAgent(
+      home,
+      home,
+      account,
+      'agt_codex-cli',
+      'codex-cli',
+      out(),
+    );
+
+    expect(result.outcome).toBe(ONBOARD.DONE);
+    const written = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
+    expect(written).toContain(`[mcp_servers.${MANAGED_SERVER}]`);
+    // What was already there, including the comment somebody wrote.
+    expect(written).toContain('[mcp_servers.node_repl]');
+    expect(written).toContain('# mine');
+  });
+
+  it('puts the entry into a Hermes YAML config', async () => {
+    const result = await onboardAgent(home, home, account, 'agt_hermes', 'hermes', out());
+
+    expect(result.outcome).toBe(ONBOARD.DONE);
+    const written = await readFile(join(home, '.hermes', 'config.yaml'), 'utf8');
+    expect(written).toContain(MANAGED_SERVER);
+    expect(written).toContain('notes');
+    expect(written).toContain('# mine');
+  });
+
+  it('puts a TOML config back exactly as it was', async () => {
+    /* The backup is the honest undo for every format, because it restores the
+       bytes rather than reconstructing what they might have been. */
+    const before = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
+    await onboardAgent(home, home, account, 'agt_codex-cli', 'codex-cli', out());
+
+    await offboardAgent(home, account, 'agt_codex-cli');
+
+    expect(await readFile(join(home, '.codex', 'config.toml'), 'utf8')).toBe(before);
+  });
+
+  it('puts a YAML config back exactly as it was', async () => {
+    const before = await readFile(join(home, '.hermes', 'config.yaml'), 'utf8');
+    await onboardAgent(home, home, account, 'agt_hermes', 'hermes', out());
+
+    await offboardAgent(home, account, 'agt_hermes');
+
+    expect(await readFile(join(home, '.hermes', 'config.yaml'), 'utf8')).toBe(before);
+  });
+
+  it('removes only its own entry where the backup has gone', async () => {
+    const onboarded = await onboardAgent(
+      home,
+      home,
+      account,
+      'agt_codex-cli',
+      'codex-cli',
+      out(),
+    );
+    await rm(onboarded.record?.backupPath ?? '', { force: true });
+
+    const result = await offboardAgent(home, account, 'agt_codex-cli');
+
+    expect(result.restoredFromBackup).toBe(false);
+    const written = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
+    expect(written).not.toContain(`[mcp_servers.${MANAGED_SERVER}]`);
+    expect(written).toContain('[mcp_servers.node_repl]');
+  });
+
+  it('says so rather than rewriting a TOML config it could not read back', async () => {
+    await writeFile(join(home, '.codex', 'config.toml'), 'not toml at all [[[', 'utf8');
+
+    const result = await onboardAgent(
+      home,
+      home,
+      account,
+      'agt_codex-cli',
+      'codex-cli',
+      out(),
+    );
+
+    expect(result.outcome).toBe(ONBOARD.UNSUPPORTED);
+    expect(await readFile(join(home, '.codex', 'config.toml'), 'utf8')).toBe(
+      'not toml at all [[[',
+    );
+  });
+});
+
 describe('the managed entry itself', () => {
   it('replaces its own entry rather than leaving two', async () => {
     const once = withManagedServer(JSON.stringify(ORIGINAL), 'mcpServers', {

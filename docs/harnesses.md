@@ -229,7 +229,7 @@ installed by cloning it, which is the one nobody chose to install at all.
 ## Drift
 
 A harness gains a role without any config a client reads changing, so nothing on the
-ordinary drift list would ever fire for it. `memnox diff` and `memnox watch` compare the
+ordinary drift list would ever fire for it. `memnox scan --since` and `memnox watch` compare the
 membership itself:
 
 ```

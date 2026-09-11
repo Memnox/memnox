@@ -2,22 +2,24 @@
 
 Every command works with no account and no network.
 
-Anywhere a flag names a stretch of time — `--since`, `--for`, `--usage`,
-`--from-usage`, `--days` — it takes the same shapes: `30m`, `2h`, `7d`. A bare
+Anywhere a flag names a stretch of time (`--since`, `--for`, `--usage`,
+`--from-usage`, `--days`) it takes the same shapes: `30m`, `2h`, `7d`. A bare
 number is read in whatever that flag is about, so `--for 30` is half an hour and
 `--days 30` is a month. `--since` also takes an ISO timestamp.
 
 ## What can act here
 
 ### `memnox scan`
-The default command — `npx memnox` runs it.
+The default command, so `npx memnox` runs it.
 
 | Flag | What it does |
 |---|---|
 | `--tools` | every tool by class, server by server |
 | `--mcp <server>` | one server: what it declares, asks for and reaches |
 | `--usage <window>` | granted against used, e.g. `--usage 7d` |
-| `--save` | keep this scan as a baseline for `diff` |
+| `--save` | keep this scan as a baseline for a later `--since` |
+| `--since <when>` | what changed since the last scan at or before then |
+| `--fail-on <gate>` | `any`, `write-capable` or `credential`; non-zero exit for CI |
 | `--no-probe` | do not start MCP servers; tools go uncounted |
 | `--json` | the capability inventory (version 2) |
 
@@ -28,15 +30,138 @@ agents, so they get a `HARNESSES` block that counts the principals behind the ro
 `COMBINED CAPABILITY` block for paths a set of permitted tools opens together.
 [Harnesses](harnesses.md) explains both, and what Memnox deliberately leaves to them.
 
+### `memnox setup`
+The whole first run, in one command: log in, find the agents on this machine,
+and go through them one at a time.
+
+Named `setup` rather than `onboard` because `agents onboard <agent>` already
+does the precise version of its last step, and two commands one word apart is a
+pair somebody has to read twice to tell apart. Bare `memnox` still runs `scan`:
+the first thing this shows you is your own machine, not a sign-in page.
+
+| Flag | What it does |
+|---|---|
+| `--url <base>` | the control plane, when it is not the default |
+| `--enforce` | start in enforce rather than observe |
+| `--no-open` | print the approval URL instead of opening a browser |
+| `--no-probe` | do not start MCP servers to ask what they hold |
+
+For each agent it prints what that agent is and what it can already reach, asks
+what the workspace should call it, and asks whether to put it under Memnox:
+
+```
+  Claude Code  claude-code
+    id         agt_claude-code
+    config     ~/.claude.json
+    mcp        github, next-devtools
+    can use    shell, filesystem, git, network, mcp
+    can reach  ~/.aws/credentials, /var/run/docker.sock, network
+```
+
+Everything in that block was proved by the scan and none of it is a claim about
+what Memnox will do. The id is what a ledger row will say, the config is the one
+file that would be rewritten (not every file the detector read), and the servers
+are the ones already in it.
+
+In that order, because each answer needs the one above it: whether to onboard an
+agent that can read `~/.aws/credentials` is a different decision from one that
+can only read this checkout, and a name chosen before seeing either is a name
+that says nothing. It asks per agent rather than once at the bottom, because a
+list of five names with one prompt under it is a screen people say yes to
+without reading.
+
+**An agent that cannot be managed is found out before anybody is asked**, not
+after. Its block carries `cannot manage:` and the reason, and the run moves on.
+Answering two questions about an agent and then being told the third step was
+never going to work is the worst version of this screen. The check is a dry run
+of the real rewrite rather than a guess at whether one would work.
+
+**Three config formats are onboardable**, because three of the six agent kinds
+on an ordinary laptop are not JSON: Claude Code, Claude Desktop, Cursor, Cline,
+VS Code and OpenClaw keep JSON, Codex keeps TOML, and Hermes keeps YAML.
+
+**None of them reformats a line it did not change**, and all three keep the
+comments. TOML gets a table appended as text, so every original byte survives
+and a `[header]` closes whatever came before it. YAML goes through a document
+that preserves comments, because a Hermes config is edited by hand. JSON is
+edited by span through `jsonc-parser`, which also means a config with `//` in it
+is onboardable: VS Code and Cline both allow comments in theirs, and a plain
+`JSON.parse` refused the whole file over one.
+
+**Every rewrite is read back before it is written.** The result is parsed with
+the same parser the detectors use, and it has to still hold every server it held
+plus the managed one, or the file is left alone. A rewrite that would drop a
+server, or produce something that no longer parses, is refused and said out
+loud.
+
+**A `y` typed at the name prompt is read as an answer to the next question.**
+Nobody names an agent "y", and taking it would name one "y" and then never ask
+the question the person thought they were answering.
+
+It ends with a row per agent it offered, including the ones nothing happened to:
+
+```
+  Agent          Status     Reason
+  Backend Coder  onboarded
+  Cursor         skipped    you said no
+  Codex CLI      cannot     Codex CLI keeps its config in a format this cannot rewrite safely
+```
+
+A summary of only the successes would let an agent somebody answered a question
+about vanish from the screen, which is how a run ends with a person believing
+more is governed than is.
+
+An already enrolled machine skips the login step rather than enrolling twice,
+and an already onboarded agent is left alone rather than asked about again.
+With nothing attached to the terminal it stops and names the one-at-a-time
+command instead, because every question below waits on a person and asking them
+with no stdin is a command that hangs.
+
+`login`, `agents discover`, `agents name` and `agents onboard` are the same
+steps separately, for when you want one of them.
+
 ### `memnox agents`
-The agents on this machine, and the channel to them. `discover` is the default.
+The agents on this machine: find them, name them, put them to work. `discover` is
+the default.
 
 | Command | What it does |
 |---|---|
-| `agents discover` | scan this machine, keep the scan, and report it if this machine is enrolled |
-| `agents list` | what the last scan found, without taking a new one |
+| `agents discover` | scan this machine, ask what to call what it found, keep the scan, and report it if this machine is enrolled |
+| `agents list` | what the last scan found, without taking a new one, and whether each is onboarded |
+| `agents name <agent> [name]` | call one whatever you call it; `--clear` puts the detected name back |
 | `agents status <agent>` | one agent, and the file that proved each surface it has |
+| `agents onboard [agent]` | back its config up and route it through Memnox; with no agent, lists what could be. `--name` says what the workspace should call it |
+| `agents offboard <agent>` | put the config back and revoke the credential |
 | `agents control [agent]` | collect what an operator has said, and acknowledge it |
+
+**Names are yours, and ids stay the identity.** `agt_claude-code` is what every
+ledger row is keyed on and it never moves. The name is a second field over the
+top: it is what every screen prints, and every command answers to it, to the id,
+to the id without its prefix and to the product. `discover` asks for one per agent
+and Enter keeps the detected one, so naming costs a keystroke to skip. It never
+asks under `--json`, never asks when nothing is attached to the terminal, and
+`--no-ask` turns it off outright. `--name claude-code="Backend Coder"` is the flag
+for a setup script, and it is repeatable.
+
+Names are local. A machine that renamed its own agents and reported the rename
+would be asking the control plane to hold one person's vocabulary for a fleet, and
+the next machine calling a different agent "Backend" would win. They live in
+`~/.memnox/agents/names.json`, owner-only.
+
+**The name is the agent's identity in the workspace.** Onboarding asks for one,
+because the control plane hashes the hostname and never stores it: whatever is
+chosen is sent as the enrolment label and is the only human thing on the fleet
+row. `--name` answers it for a setup script, and a machine with nobody at it
+keeps whatever the agent is already called rather than hanging on a prompt. The
+answer is written locally too, so the name on this laptop and the name in the
+console are one name rather than two that drift.
+
+**Onboarding says what it will do before it does any of it.** The device code
+arrives seconds later and is the first thing most people see, which makes "why is
+this asking me to approve something" the question the screen has to answer before
+it asks. So it names the three steps in order, says that authority does not change,
+and prints the undo beside the result. Nothing on disk is touched until the
+approval comes back, and the screen says that too.
 
 All of it is about *this machine*. The console answers what the whole fleet runs,
 because only something holding every machine's reports can, and answering that from
@@ -100,19 +225,25 @@ A sentence asks a question:
 memnox explain "can claude read ~/.aws"
 ```
 
-Answered from this disk in three rows — technically, runtime, policy. What the
+Answered from this disk in three rows: technically, runtime, policy. What the
 organization intended is not on this disk, so it is not answered here.
 
 ## What changed
 
-### `memnox diff`
+### `memnox scan --since <when>`
+The same scan, compared against the last one this machine kept. Part of `scan`
+rather than a command of its own, because a person who has just seen what can act
+here asks what changed next, and two commands for one question is one of them
+going unrun.
+
 | Flag | What it does |
 |---|---|
 | `--since <when>` | compare against the last scan at or before then |
 | `--from` / `--to` | compare two kept scans |
 | `--fail-on <gate>` | `any`, `write-capable` or `credential`; non-zero exit for CI |
 
-A narrowing never trips `--fail-on`.
+A narrowing never trips `--fail-on`. It needs no account, no network and no
+baseline anybody had to remember to take, because every saved scan records one.
 
 ### `memnox watch`
 Reports what arrived: new servers, new write tools, credentials that became
@@ -193,7 +324,7 @@ The trip is reported after the action that caused it and enforced on the next on
 action that tripped it has already run; holding it at that point would be a receipt
 rather than a control.
 
-### `memnox autopilot --role <name>` / `--roles`
+### `memnox next --role <name>` / `--roles`
 A rule about a product is wrong the moment the team adopts a second one; a rule about
 the job survives the tool being swapped underneath it. `--role` evaluates the boundary
 as that job, so a `roles:` rule fires:
@@ -219,7 +350,7 @@ will happen rather than a summary of what the rules intend. Enrol an agent with
 A role is read from the rules, never from a roster: a job nothing has a rule about is a
 name somebody typed once, and listing it would suggest it governs something.
 
-### `memnox verify --enforcement`
+### `memnox doctor --prove`
 Asks every seam to refuse something, and reports what came back. It plants a rule in a
 scratch directory, attempts the thing the rule forbids through the MCP proxy and the
 shell interceptor, and says whether the action was actually stopped.
@@ -231,8 +362,8 @@ shell interceptor, and says whether the action was actually stopped.
   filesystem  absent        no kernel profile, so a raw binary is not stopped
 ```
 
-`doctor --wiring` reads the configuration; this one runs the action. The two answer
-different questions, and the gap between them is where this product fails worst — a
+`--wiring` reads the configuration; `--prove` runs the action. The two answer
+different questions, and the gap between them is where this product fails worst: a
 proxy that is installed, routed, and loading no rules reports perfectly on the first
 and fails the second.
 
@@ -243,15 +374,6 @@ that exported the variable would prove a seam *can* refuse rather than that it *
 **Absent never fails the command.** A machine with no egress proxy has declined the
 test, not failed it, and going red for that teaches people to stop running the check.
 Only a seam that was in place and let the action through exits non-zero.
-
-### `memnox spend <usd>`
-Records what an agent spent, so a dollar budget and the circuit breaker can see it.
-`--session` defaults to `$MEMNOX_SESSION`, `--for` names the action it was spent on.
-
-Memnox prices nothing. A model call's cost is knowable to the agent and to nobody else
-on this machine, so the alternative to being told is a number nobody can derive — and
-that is the figure a reader stops trusting the rest of the output over. A window with
-no reported cost has no spend line rather than a reassuring `$0.00`.
 
 ### `memnox policy use [file]`
 Registers a rule file, so every seam loads it. Writing `memnox.policies.toml` makes it
@@ -439,9 +561,12 @@ asking about everything is telling you a story about yourself.
 It prints counts, never hours. "Six hours a week you could get back" is a number
 nobody can check, on a screen you are being asked to act on.
 
-### `memnox autopilot [agent]`
-What an agent would do on its own, in three bands: runs on its own, waits for
-you, never. Every line is the verdict the engine actually reaches for that
+### `memnox next --agent <name>`
+What that agent would do on its own, in three bands: runs on its own, waits for
+you, never. Under `next` rather than beside it, because it answers the same
+decision from the other side: bare `next` reads the ledger backwards for what
+has already been approved often enough to hand over, and `--agent` reads the
+rules forwards for what would happen if you did. Every line is the verdict the engine actually reaches for that
 action, asked one at a time — a screen that summarised the rules would be the
 one you trust most and the one most likely to be subtly wrong.
 
@@ -453,9 +578,11 @@ would run unasked, or when more of what the agent can do is unruled than ruled.
 What your agents did in a window and what of it was redone: actions, succeeded,
 failed, blocked, held, and where the same work went twice.
 
-Spend is whatever `memnox spend` reported and nothing else. A window nobody
-reported a cost for says so instead of showing `$0.00` — a reassuring zero on a
-screen about money is worse than an absence.
+Spend is whatever something else reported through `EventCost` and nothing else.
+A window nobody reported a cost for says so instead of showing `$0.00`, because
+a reassuring zero on a screen about money is worse than an absence. Memnox
+prices nothing: a model call's cost is knowable to the agent and to nobody else
+on this machine.
 
 ### `memnox budget`
 How much an agent may do in a window, as against what it may do. `budget set
@@ -520,12 +647,6 @@ systemd, a container, a cron line. `--format sh|systemd|docker`, `--shell`,
 a shell — a literal `$PATH` in a unit file would make the interceptor directory
 the whole path, which is an agent that can run nothing at all. Nothing here
 edits a unit file.
-
-### `memnox verify <bundle>`
-Checks an exported bundle against its signature. Reports `valid`, `unsigned`,
-`tampered` (the events do not match the digest) or `forged` (the signature does
-not check out) — content first, so an edited bundle is never reported as merely
-unsigned.
 
 ### `memnox purge`
 Drops history past `retentionDays`. `--dry-run` says what would go.

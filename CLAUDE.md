@@ -391,7 +391,7 @@ does not go looking for something that is not there.
 | `I.12` grouped approval | `core/gate/grouping.ts`; `memnox approvals` groups by default, `approve --group`. |
 | `I.13` autonomy budget | `core/session/budget.ts`, `memnox budget`, enforced in the daemon. |
 | `I.15` daily agent CFO | `core/session/operations.ts`, `memnox report`. |
-| `I.1`, `I.2`, `I.5`, `I.14` autopilot and blast radius | `core/session/autopilot.ts`, `memnox autopilot`. |
+| `I.1`, `I.2`, `I.5`, `I.14` autopilot and blast radius | `core/session/autopilot.ts`, rendered by `cli/next/boundary-report.ts` under `memnox next --agent`. |
 | `I.3` scope drift, and the task everything compares against | `core/session/session-task.ts`; `memnox run --task/--paths/--expect`. |
 
 **Three rules these all had to obey, and they are worth keeping.**
@@ -404,7 +404,7 @@ somebody is being asked to act on.
 `memnox report` and a `usd` budget counts nothing on its own: this machine watches a
 command run and cannot price a model call. `EventCost` is the seam for whatever can.
 
-**An unruled capability is not a permitted one.** `memnox autopilot` counts what no
+**An unruled capability is not a permitted one.** `memnox next --agent` counts what no
 rule covers in its own band and refuses to call a boundary ready while most of the
 agent's reach is unruled. Filing those under "runs on its own" would be the screen a
 person trusts most telling a comfortable lie.
@@ -429,6 +429,103 @@ All three degrade rather than block: an unreachable control plane turns a fleet 
 into a machine budget and a shared lease into a local one, and leaves a held call still
 answerable from a terminal. A lease is coordination and not safety, so one that blocked
 work whenever the network hiccuped is one people would turn off inside a day.
+
+**What the surface looked like with forty commands on it, and what closed it.**
+`--help` listed forty top level commands, which is a list nobody reads: somebody
+who cannot find the four that matter concludes the product is for somebody else.
+`program.ts` now holds a `SPINE` of nineteen and `configureHelp` filters the rest
+off the front page, where they keep running and keep their own `--help`. The
+decision about what a newcomer sees lives in that one list rather than spread
+across thirty registration functions where the next one added forgets.
+
+Four commands went rather than moved. `diff` is `scan --since`, because it is the
+same scan compared against the kept one and two commands for one question is one
+of them going unrun. `autopilot` is `next --agent`, because both answer whether to
+hand something over and only the evidence differs: the ledger backwards, or the
+rules forwards. `verify --enforcement` is `doctor --prove`, beside the `--wiring`
+it is the second half of. `spend` is gone outright, because this machine cannot
+price a model call and a command that asks somebody to type the number is the
+product pretending otherwise. `unknown-command.ts` names where each went, because
+a nearest-word guess sent `diff` to `deny`, which is a different command that runs.
+
+**Agents have a name a person chose, and an id nothing may move.** `agt_claude-code`
+is what every ledger row is keyed on; the name in `~/.memnox/agents/names.json` is
+what every screen prints, and `resolveAgent` answers to either, to the id without
+its prefix, and to the product. `agents discover` asks for one per agent with Enter
+keeping the detected name, through an injected asker so a test names five agents
+with no terminal. It never asks under `--json` or with nothing on stdin, and a
+refused name is said and skipped rather than re-asked: a discovery that could not
+be finished by pressing Enter is one people learn to run with a flag.
+
+**A name is only an identity if it travels.** The control plane hashes the
+hostname and never stores it, so an agent onboarded through the device flow
+reached the fleet listing as a hex id and the name a person had just chosen
+lived only on their laptop. `enrol.ts` now sends it as `label`, and the cloud
+carries it through `POST device/codes`, the pending-approval screen and
+`machines.enrol`, where the field already existed and nothing ever set it from
+this direction. `machineLabel` in `machine.ts` is the one normalizer both doors
+use, because two of them is one of them drifting.
+
+**Four steps are one intention, so there is one command for them.** `login`,
+`agents discover`, `agents name` and `agents onboard` each do a step, and
+somebody meeting this product has to know all four exist and what order they go
+in. `memnox setup` is the guided run: it connects, scans, and then goes agent
+by agent through what that agent can already reach, what the workspace should
+call it, and whether to put it under Memnox. Per agent rather than in bulk,
+because a list of five names with one prompt under it is a screen people say yes
+to without reading, and because the name only means something beside the reach.
+It is new wiring and no new machinery: every step calls what already owned it,
+and `sync/connect.ts` exists so `login` and this share one device flow rather
+than two that drift.
+
+It is `setup` rather than `onboard` because `agents onboard <agent>` already does
+the precise version of its last step, and two commands one word apart, one
+looping over what the other does once, is a pair nobody can tell apart in a help
+listing. OSS-8.1 removed `setup` from the *hero* so that bare `npx memnox` runs
+`scan`, and that still holds: `scan` keeps `isDefault`, and the first thing this
+product does is show somebody their own machine rather than ask them to sign in.
+
+**What the guided run had to get right, learned from watching a competitor's.**
+Three things. It asks per agent rather than listing six and putting one prompt
+under them, because the second is a screen people agree to without reading. It
+finds out an agent cannot be managed *before* asking about it, because answering
+two questions and then being told the third step was never going to work is
+worse than not being offered. And it prints a row for every agent it offered,
+including the ones nothing happened to: a summary of only the successes is how a
+run ends with somebody believing five agents are governed when two are.
+
+The prompt order is name then confirm, and a `y` at the name prompt is read as
+an answer to the next question. The reverse order loses a typed name to a yes/no
+reader, which silently skips the agent and never names it.
+
+**Half the agents it could find were agents it could not govern.** Onboarding
+rewrote JSON only, so Codex (TOML) and Hermes (YAML) were detected, listed and
+refused. `agents/managed-toml.ts` and `agents/managed-yaml.ts` close that, each
+editing its format the way that format survives being edited: TOML gets a table
+appended as text, because a `[header]` closes whatever was open and every
+original byte then survives, and YAML goes through `parseDocument` so the
+comments come back, because a Hermes config is edited by hand. Re-serializing
+TOML through a writer would have handed back a file meaning the same thing and
+looking nothing like the one somebody wrote.
+
+**JSON was the format this claimed to support and handled worst.** `JSON.parse`
+threw on the first `//`, so a VS Code or Cline config with one comment in it
+reported that the agent could not be managed, which is the same gap TOML and YAML
+had. And `JSON.stringify(next, null, 2)` rewrote every line: a four-space config
+came back two-space, so adding four lines produced a diff touching a hundred and
+a reviewer had to read all of it to find the change. `agents/managed-json.ts`
+edits by span through `jsonc-parser`, matching the indentation already in the
+file. A test asserts that no line the rewrite did not change is different
+afterwards, which is the property all three formats now hold.
+
+**The spelling of an HTTP entry in somebody else's config is a guess, so the
+rewrite checks itself.** `checked()` parses the result back and refuses it unless
+it still holds every server it held plus the managed one. That is what makes
+adding a format safe rather than a hope: being wrong costs an entry that does not
+authenticate, which `offboard` reverses byte-identically from the backup, and
+never a config the agent cannot load. `manageable()` runs the same rewrite as a
+dry run before anybody is asked a question, so an unsupported config is found out
+at the top of the flow rather than after two answers.
 
 **What rendering the boundary found.** The generated baseline's git rule was described
 as "force-pushing, and hard resets" and matched `git.push`, `git.reset`, `git.clean` —

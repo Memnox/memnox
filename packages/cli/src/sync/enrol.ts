@@ -54,6 +54,16 @@ interface EnrolOptions {
   baseUrl: string;
   /** Sent once so a person can see which machine they are approving. */
   host?: string;
+  /**
+   * What a person calls this, and what the console shows afterwards.
+   *
+   * The control plane hashes the hostname and never stores it, so without this
+   * an enrolment reaches the fleet listing as a hex id. That was tolerable while
+   * the only thing enrolling was a laptop the same person was sitting at; an
+   * onboarded agent is a thing somebody deliberately named, and dropping the
+   * name here would mean asking for it and then throwing it away.
+   */
+  label?: string;
   mode?: string;
   /**
    * `mcp` for an agent enrolled as an advisory principal.
@@ -83,6 +93,7 @@ export async function requestCode(
     method: 'POST',
     body: {
       hostname: options.host ?? hostname(),
+      ...(options.label === undefined ? {} : { label: options.label }),
       /* Omitted for an advisory principal, which signs no bytes there is a key
          to check. The door enforces that split rather than this side. */
       ...(options.connection === 'mcp' ? {} : { publicKey }),

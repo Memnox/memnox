@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { inventoryOf, renderShareCard, shareCardFor } from '@memnox/core';
+import { failOnValues, inventoryOf, renderShareCard, shareCardFor } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { readLocalCounts, type LocalCounts } from '../local-counts';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
@@ -8,6 +8,7 @@ import { renderMachine } from '../scan/machine-report';
 import { renderServerReview } from '../scan/server-review';
 import { renderTools } from '../scan/tool-listing';
 import { renderUsage } from '../scan/usage-report';
+import { renderDrift, wantsDrift } from '../scan/drift-report';
 import { unknownCommand } from '../unknown-command';
 
 /**
@@ -37,8 +38,15 @@ export function registerScanCommand(
     .option('--tools', 'list every tool by what it does, server by server')
     .option('--mcp <server>', 'review one MCP server before you trust it')
     .option('--usage <window>', 'what was granted against what was used, e.g. 7d')
-    .option('--save', 'keep this scan, so a later "memnox diff" has a baseline')
+    .option('--save', 'keep this scan, so a later comparison has a baseline')
     .option('--share', 'a card of counts only, safe to paste anywhere')
+    .option('--since <when>', 'what changed since the last scan at or before this time')
+    .option('--from <when>', 'the earlier side of a comparison, as an ISO time')
+    .option('--to <when>', 'the later side of a comparison, as an ISO time')
+    .option(
+      '--fail-on <gate>',
+      `exit non-zero when something widened: ${failOnValues().join(' | ')}`,
+    )
     .option(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
@@ -54,13 +62,24 @@ export function registerScanCommand(
           save?: boolean;
           usage?: string;
           share?: boolean;
+          since?: string;
+          from?: string;
+          to?: string;
+          failOn?: string;
         },
       ) => {
         if (unrecognized.length > 0) {
           throw new Error(unknownCommand(program, unrecognized[0] as string));
         }
+        const seams = buildSeams(cwd());
+        /* Before the scan, because a comparison takes its own later side and a
+           second scan here would be the machine read twice for one question. */
+        if (wantsDrift(options)) {
+          await renderDrift(context, seams, options);
+          return;
+        }
         // Kept only when asked: a scan every command runs would churn the history.
-        const { report, snapshot } = await scanMachine(buildSeams(cwd()), {
+        const { report, snapshot } = await scanMachine(seams, {
           probe: options.probe,
           save: options.save === true,
         });

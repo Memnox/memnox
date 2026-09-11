@@ -53,7 +53,7 @@ export function registerProtectCommand(
   program
     .command('protect')
     // "Protect this" is what somebody says after a scan; harden is what it does.
-    .description('Close what the doctor found, reversibly — proposed by default')
+    .description('Close what the doctor found, reversibly and proposed by default')
     .option('--apply', 'write the proposed steps')
     .option(
       '--revert [id]',

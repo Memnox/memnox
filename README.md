@@ -73,11 +73,56 @@ Three questions, answered from your own disk:
 | Question | Command |
 |---|---|
 | What can act here, and what can it reach? | `memnox scan` |
-| What changed since last time? | `memnox diff`, `memnox watch` |
+| What changed since last time? | `memnox scan --since`, `memnox watch` |
 | May this action proceed? | `memnox protect`, `memnox policy test` |
 
 And afterwards: `memnox timeline` for what happened, `memnox why` for why it was
 decided that way.
+
+## Putting your agents to work
+
+One command does the whole first run:
+
+```sh
+memnox setup
+```
+
+It logs this machine in, finds the agents on it, and then goes one at a time:
+what that agent can already reach, what you want to call it, and whether to put
+it under Memnox. Nothing is onboarded without a yes, and nothing is touched for
+the ones you refuse.
+
+```
+  Claude Code  claude-code
+    can use: shell, filesystem, git, network, mcp
+    can reach: ~/.aws/credentials, /var/run/docker.sock, network
+
+  This is the name acme will show for it.
+  Call it something acme will recognise, or press Enter to keep "Claude Code"  > Backend Coder
+  Put Backend Coder under Memnox now?  [Y/n] y
+```
+
+The name you give is the agent's identity in the workspace: it is sent with the
+enrolment and it is what the console shows from then on. The control plane hashes
+the hostname and never stores it, so without a name a fleet is a list of hex ids
+nobody can tell apart.
+
+The same steps are separate commands when you want them one at a time:
+
+```sh
+memnox agents discover         # find them, and say what you call each one
+memnox agents list             # what is here, and which of them is onboarded
+memnox agents onboard "Backend Coder" --name "Backend Coder"
+```
+
+`discover` asks for a name per agent and Enter keeps the detected one, so naming
+costs a keystroke to skip. It never asks under `--json` and never asks when
+nothing is attached to the terminal; `--name claude-code="Backend Coder"` is the
+flag for a setup script.
+
+The name is yours and the id is the identity. `agt_claude-code` is what every
+ledger row is keyed on and it never moves; the name is what every screen prints,
+and every command answers to either one.
 
 ## Governing an agent
 
@@ -107,7 +152,7 @@ An agent told only "no" abandons the task. One told what to use instead finishes
 The point of a boundary is not that it refuses things. It is that you can walk away.
 
 ```sh
-memnox autopilot               # what it would do alone, and what would still be asked
+memnox next --agent claude-code  # what it would do alone, and what it would ask about
 memnox run --task "fix checkout" --paths 'src/checkout/**' -- claude
 ```
 

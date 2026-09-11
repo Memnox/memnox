@@ -15,7 +15,7 @@ reachable by three agents nobody granted it to.
 ```sh
 memnox scan --tools            # every tool, by what it does
 memnox scan --mcp github       # one server, before you trust it
-memnox scan --save             # keep it, so "memnox diff" has a baseline
+memnox scan --save             # keep it, so a later "--since" has a baseline
 ```
 
 ## Write rules
@@ -58,7 +58,7 @@ An `ask` rule holds the call for a person rather than denying it, so an agent ca
 left alone without every held call becoming a refusal:
 
 ```sh
-memnox autopilot               # what it would do alone, and what would still be asked
+memnox next --agent claude-code  # what it would do alone, and what would still be asked
 memnox approvals               # what is waiting; grouped by kind of work
 memnox approve <id> --group    # one decision for every similar call
 ```
@@ -95,7 +95,7 @@ your attention. Counts, never hours.
 memnox timeline                # what the agents did, in order
 memnox why                     # why the last refusal happened
 memnox why --evidence          # the digests and the outcome behind it
-memnox diff                    # what changed since the last scan
+memnox scan --since yesterday  # what changed since the last scan
 ```
 
 ## Take it off

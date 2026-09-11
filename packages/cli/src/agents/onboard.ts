@@ -1,14 +1,16 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { MCP_CONFIG_LOCATIONS, serversKeyOf, type Account } from '@memnox/core';
+import { MCP_CONFIG_LOCATIONS, type Account } from '@memnox/core';
 import type { CliOutput } from '../cli-output';
 import { ENROL_FAILED, enrolAgent, revokeAgent } from './enrol-agent';
 import {
+  canRewrite,
   MANAGED_SERVER,
   managedServerFor,
   withManagedServer,
   withoutManagedServer,
 } from './managed-server';
+import { jsonServersKey } from './managed-json';
 import {
   backupPathFor,
   readRecord,
@@ -49,6 +51,57 @@ interface AgentConfig {
   path: string;
 }
 
+/** The file onboarding would rewrite, or why there is not one. */
+export interface Manageable {
+  path?: string;
+  because?: string;
+}
+
+/**
+ * Whether this agent can be onboarded at all, and which file would change.
+ *
+ * Asked before a person is, because the alternative is answering two questions
+ * about an agent and then being told the third step was never going to work. It
+ * reads the same files onboarding rewrites, so the two never disagree, and the
+ * path it returns is the one to put on screen: a detector proves an agent from
+ * several files and only one of them is the one that would be edited.
+ */
+export async function manageable(
+  home: string,
+  project: string,
+  agentKind: string,
+): Promise<Manageable> {
+  const config = await configFor(home, project, agentKind);
+  if (config === null) {
+    return {
+      because: `nothing on this machine keeps ${agentKind}'s servers where Memnox looks`,
+    };
+  }
+  if (!canRewrite(config.path)) {
+    return {
+      path: config.path,
+      because: `${config.product} keeps its config in a format this cannot rewrite safely`,
+    };
+  }
+  /* A dry run of the real rewrite, thrown away. Checking that the file parses
+     is weaker than checking that the edit we would make survives being read
+     back, and this is the one place the difference is free to find out. */
+  const raw = await readFile(config.path, 'utf8');
+  const trial = withManagedServer(
+    raw,
+    serversKeyFor(raw, config.path),
+    managedServerFor('https://example.invalid/mcp', 'trial'),
+    config.path,
+  );
+  if (trial.next === null) {
+    return {
+      path: config.path,
+      because: trial.because ?? `${config.product} keeps a config this cannot rewrite`,
+    };
+  }
+  return { path: config.path };
+}
+
 /**
  * Where this agent keeps its servers.
  *
@@ -84,6 +137,8 @@ export async function onboardAgent(
   agentId: string,
   agentKind: string,
   out: CliOutput,
+  /** What the person calls this agent, so the approval screen says it back to them. */
+  shownAs: string = agentId,
   now: () => string = () => new Date().toISOString(),
 ): Promise<OnboardResult> {
   const config = await configFor(home, project, agentKind);
@@ -95,10 +150,7 @@ export async function onboardAgent(
   }
 
   const raw = await readFile(config.path, 'utf8');
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
+  if (!canRewrite(config.path)) {
     /* Never rewrite what we could not read back: we would lose what it held.
        The same rule `memnox mcp wrap` follows. */
     return {
@@ -106,12 +158,12 @@ export async function onboardAgent(
       because: `${config.product} keeps its config in a format this cannot rewrite safely`,
     };
   }
-  const serversKey = serversKeyOf(parsed) ?? 'mcpServers';
+  const serversKey = serversKeyFor(raw, config.path);
 
   /* First, because an enrolment that fails must leave the config untouched.
      It waits for a person: enrolment is the act the control plane requires one
      for, and a machine cannot mint another machine's credential. */
-  const enrolled = await enrolAgent(account.baseUrl, agentId, hostOf(home), out);
+  const enrolled = await enrolAgent(account.baseUrl, agentId, hostOf(home), out, shownAs);
   if ('outcome' in enrolled && enrolled.outcome === ENROL_FAILED) {
     return { outcome: ONBOARD.FAILED, because: enrolled.because };
   }
@@ -141,6 +193,7 @@ export async function onboardAgent(
     raw,
     serversKey,
     managedServerFor(enrolled.mcpUrl, enrolled.token),
+    config.path,
   );
   if (rewritten.next === null) {
     return { outcome: ONBOARD.UNSUPPORTED, because: rewritten.because ?? '' };
@@ -200,8 +253,11 @@ export async function offboardAgent(
        weaker undo. */
     try {
       const raw = await readFile(record.configPath, 'utf8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const stripped = withoutManagedServer(raw, serversKeyOf(parsed) ?? 'mcpServers');
+      const stripped = withoutManagedServer(
+        raw,
+        serversKeyFor(raw, record.configPath),
+        record.configPath,
+      );
       if (stripped.next !== null)
         await writeFile(record.configPath, stripped.next, 'utf8');
     } catch {
@@ -216,6 +272,20 @@ export async function offboardAgent(
   const revoked = await revokeAgent(account, record.machineId);
   await retireRecord(home, agentId, now());
   return { outcome: OFFBOARD.DONE, record, revoked, restoredFromBackup };
+}
+
+/**
+ * Which key holds the servers, for the one format with two spellings in the wild.
+ *
+ * Only JSON needs asking: TOML and YAML each have one spelling their own tooling
+ * goes by, and their modules decide it rather than being told.
+ */
+function serversKeyFor(raw: string, path: string): string {
+  if (!path.toLowerCase().endsWith('.json')) return 'mcp_servers';
+  /* Read the tolerant way the rewrite reads it: a config with a comment in it
+     would otherwise fall back to the default spelling and add a second servers
+     block beside the one the file already has. */
+  return jsonServersKey(raw) ?? 'mcpServers';
 }
 
 /** The machine's own name, for an enrolment that has to be unique per host. */
