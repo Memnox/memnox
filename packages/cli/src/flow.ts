@@ -99,6 +99,28 @@ export class Flow {
     this.say(RAIL, '');
   }
 
+  /**
+   * A line on the rail that is not a step: an aside, a warning, a refusal.
+   *
+   * For the things that happen *inside* a step and are worth one line. Making
+   * each of them a step of its own reads as a dozen things happening rather
+   * than one thing with a dozen parts, and printing them off the rail reads as
+   * a different command having interrupted this one.
+   */
+  aside(text: string): void {
+    this.say(RAIL, `  ${text}`);
+  }
+
+  /**
+   * What a question is drawn with, so a prompt sits on the rail like the rest.
+   *
+   * Readline writes its own line and cannot be handed a renderer, so it is
+   * handed the gutter instead. Empty in plain mode, where there is no rail.
+   */
+  get prompt(): string {
+    return this.on ? `${this.style.dim(RAIL)}   ` : '';
+  }
+
   /** The answer, and the end of the rail. */
   close(text: string): void {
     this.say(END, text);

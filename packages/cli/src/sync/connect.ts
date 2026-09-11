@@ -15,6 +15,7 @@ import {
   approvalUrl,
   CloudUnreachable,
   EnrolmentRefused,
+  goodFor,
   machineKeypair,
   pageCarriesCode,
   requestCode,
@@ -103,7 +104,13 @@ export async function connectMachine(
     flow.value('Your code', offer.userCode);
   }
 
-  flow.step('Waiting for approval…');
+  /* The deadline, because the alternative is a terminal that has opened a
+     browser and then gone silent. A wait with no end named on it reads as a
+     hang, and the person who reads it as one presses Ctrl+C. */
+  flow.step(
+    'Waiting for approval…',
+    `the code is good for ${goodFor(offer)}. Ctrl+C stops, and nothing will change.`,
+  );
   const collected = await waitForApproval(options.url, offer, seams);
 
   const account = accountFrom(enrolment, keys, collected, new Date().toISOString());

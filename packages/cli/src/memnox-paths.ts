@@ -30,3 +30,19 @@ export function transcriptPathFor(home: string, sessionId: string): string {
 export function backupPathFor(home: string, path: string): string {
   return join(home, MEMNOX_HOME, BACKUP_DIR, path.replace(/[/\\ ]/g, '_'));
 }
+
+/**
+ * A path as a person would say it, with their home directory written `~`.
+ *
+ * For screens rather than for anything that opens a file: a column holding
+ * `/Users/somebody/.claude.json` is a column where every real path wraps, and
+ * the first twenty characters of every one of them are the same. Left alone
+ * when the path is not under this home, because a `~` that is not the reader's
+ * home is worse than the long form.
+ */
+export function underHome(path: string, home: string): string {
+  if (home === '' || !path.startsWith(home)) return path;
+  const rest = path.slice(home.length);
+  if (rest !== '' && rest[0] !== '/' && rest[0] !== '\\') return path;
+  return `~${rest}`;
+}

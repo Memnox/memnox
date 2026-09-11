@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '@memnox/core';
 import { OFFBOARD, ONBOARD, offboardAgent, onboardAgent } from '../src/agents/onboard';
 import { readRecord } from '../src/agents/onboarding';
-import { RecordedOutput } from '../src/cli-output';
+import type { EnrolReporter } from '../src/agents/enrol-agent';
 import {
   MANAGED_SERVER,
   withManagedServer,
@@ -32,15 +32,50 @@ const account: Account = {
   enrolledAt: '2026-09-05T10:00:00.000Z',
 };
 
-/** The code and the link go to a person; a test only needs somewhere to put them. */
-const out = () => new RecordedOutput();
+/** What enrolment said while it ran. A test only needs somewhere to put it. */
+interface Said extends EnrolReporter {
+  readonly lines: string[];
+  /** Whether a person was sent to a browser, which is the thing under test. */
+  readonly browsed: boolean;
+}
+
+const out = (): Said => {
+  const lines: string[] = [];
+  let browsed = false;
+  return {
+    lines,
+    get browsed() {
+      return browsed;
+    },
+    approve: ({ what, url, because }) => {
+      browsed = true;
+      lines.push(`approve ${what} at ${url}: ${because}`);
+    },
+  };
+};
 
 /**
- * The control plane's half of the device flow: a code, then an approval already
- * granted. A person approving is the point of the flow and not what these
- * assertions are about.
+ * The control plane's half.
+ *
+ * The sponsored door first, because that is the one an enrolment takes when the
+ * machine already holds a credential. The device flow behind it is what a
+ * control plane too old for that route leaves, and `noSponsoredDoor` is how a
+ * test asks for exactly that.
  */
 const deviceFlow = (url: string, counted: () => void): Response => {
+  if (url.endsWith(`/machines/${account.machineId}/agents`)) {
+    counted();
+    return new Response(
+      JSON.stringify({
+        id: 'mch_agent_1',
+        token: 'mch_agent_secret',
+        connection: 'mcp',
+        mode: 'observe',
+        mcpUrl: `${BASE}/v1/workspaces/acme/mcp`,
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
   if (url.endsWith('/v1/device/codes')) {
     counted();
     return new Response(
@@ -70,6 +105,12 @@ const deviceFlow = (url: string, counted: () => void): Response => {
     headers: { 'content-type': 'application/json' },
   });
 };
+
+/** A control plane too old for the sponsored door, which answers 404 for it. */
+const noSponsoredDoor = (url: string): Response =>
+  url.endsWith('/agents')
+    ? new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } })
+    : deviceFlow(url, () => undefined);
 
 const ORIGINAL = {
   mcpServers: {
@@ -139,6 +180,41 @@ describe('onboarding an agent', () => {
     await onboardAgent(home, home, account, AGENT, 'cursor', out());
 
     expect(enrolments).toBe(1);
+  });
+
+  it('enrols on the credential this machine already holds, with no browser', async () => {
+    /* A person approved this laptop once. Asking them again per agent is the
+       same decision put five times, and the fifth answer never comes. */
+    const said = out();
+    const result = await onboardAgent(home, home, account, AGENT, 'cursor', said);
+
+    expect(result.outcome).toBe(ONBOARD.DONE);
+    expect(result.approvedInBrowser).toBe(false);
+    expect(said.browsed).toBe(false);
+  });
+
+  it('asks a person where the control plane has no door for a machine', async () => {
+    /* Somebody upgrading their laptop ahead of their cloud must not be stopped,
+       so a 404 on that route is a fallback rather than a failure. */
+    vi.stubGlobal('fetch', (async (url: URL | string) =>
+      noSponsoredDoor(String(url))) as typeof fetch);
+
+    const said = out();
+    const result = await onboardAgent(home, home, account, AGENT, 'cursor', said);
+
+    expect(result.outcome).toBe(ONBOARD.DONE);
+    expect(result.approvedInBrowser).toBe(true);
+    expect(said.browsed).toBe(true);
+  });
+
+  it('says why a browser opened, rather than opening one unannounced', async () => {
+    vi.stubGlobal('fetch', (async (url: URL | string) =>
+      noSponsoredDoor(String(url))) as typeof fetch);
+
+    const said = out();
+    await onboardAgent(home, home, account, AGENT, 'cursor', said);
+
+    expect(said.lines.join('\n')).toContain('without a person');
   });
 
   it('leaves the config alone where enrolment fails', async () => {

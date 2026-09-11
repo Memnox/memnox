@@ -24,18 +24,27 @@ export interface NameQuestion {
   lines: readonly string[];
   /** Why it is being asked, which differs between finding one and enrolling one. */
   because: string;
+  /**
+   * What every line of the question starts with, so a prompt can sit on a rail.
+   *
+   * The guided run draws one down the left and readline cannot be handed a
+   * renderer, so it is handed the gutter instead. Two spaces where nobody says,
+   * which is the indent this had before anything was drawing a rail.
+   */
+  gutter?: string;
 }
 
 /** The question, asked wherever the caller says. `null` means keep the default. */
 export type NameAsker = (question: NameQuestion) => Promise<string | null>;
 
-export const askOnTerminal: NameAsker = async ({ shown, lines, because }) => {
+export const askOnTerminal: NameAsker = async ({ shown, lines, because, gutter }) => {
   const { createInterface } = await import('node:readline/promises');
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const above = lines.map((line) => `  ${line}\n`).join('');
+  const lead = gutter ?? '  ';
+  const above = lines.map((line) => `${lead}${line}\n`).join('');
   try {
     const answer = await rl.question(
-      `\n${above}  ${because}, or press Enter to keep "${shown}"  > `,
+      `\n${above}${lead}${because}, or press Enter to keep "${shown}"  > `,
     );
     const wanted = answer.trim();
     return wanted === '' ? null : wanted;

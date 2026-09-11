@@ -39,8 +39,23 @@ const MACHINE = {
   [`${HOME}/.aws/credentials`]: '[default]\naws_access_key_id = AKIAEXAMPLE',
 };
 
-/** The control plane's half: a code, then an approval already granted. */
+/**
+ * The control plane's half.
+ *
+ * The sponsored door first, because a run that is already connected enrols its
+ * agents on this machine's own credential and never opens a browser. The device
+ * flow behind it is what enrolling the machine itself still uses.
+ */
 const deviceFlow = (url: string): Response => {
+  if (url.endsWith(`/machines/${account.machineId}/agents`)) {
+    return json({
+      id: 'mch_agent_1',
+      token: 'mch_agent_secret',
+      connection: 'mcp',
+      mode: 'observe',
+      mcpUrl: `${BASE}/v1/workspaces/acme/mcp`,
+    });
+  }
   if (url.endsWith('/v1/device/codes')) {
     return json({
       deviceCode: 'dev-1',
@@ -225,6 +240,25 @@ describe('memnox setup', () => {
 
     expect(await readRecord(home, 'agt_claude-code')).toBeNull();
     expect(out.notes.join('\n')).toContain('nothing on this machine changed');
+  });
+
+  it('opens no browser for an agent once the machine itself is connected', async () => {
+    /* One approval per laptop. Asking again per agent is the same decision put
+       five times, and a run that opens five tabs ends half finished. */
+    const { out } = await run({});
+
+    const text = out.notes.join('\n');
+    expect(text).not.toContain('device?code');
+    expect(text).toContain('no browser');
+  });
+
+  it('draws every line on one rail, including what enrolment says', async () => {
+    /* Enrolment used to print its own block to stdout while the rest of the run
+       drew a rail on stderr, so the one step that can block on a person looked
+       like a different command had interrupted this one. */
+    const { out } = await run({});
+
+    expect(out.lines).toEqual([]);
   });
 
   it('says plainly that authority did not change', async () => {

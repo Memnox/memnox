@@ -11,6 +11,7 @@ import {
   type ControlCommand,
 } from '../sync/control';
 import { OFFBOARD, ONBOARD, offboardAgent, onboardAgent } from '../agents/onboard';
+import type { EnrolReporter } from '../agents/enrol-agent';
 import { readRecord } from '../agents/onboarding';
 import {
   clearName,
@@ -365,7 +366,7 @@ export function registerAgentsCommand(
           account,
           found.id,
           found.kind,
-          context.out,
+          reportOn(context),
           shown,
         );
         if (options.json === true) {
@@ -388,6 +389,13 @@ export function registerAgentsCommand(
         out.line(`  ${style.dim('config')}    ${record.configPath}`);
         out.line(`  ${style.dim('backup')}    ${record.backupPath}`);
         out.line(`  ${style.dim('machine')}   ${record.machineId}`);
+        out.line(
+          `  ${style.dim('enrolled')}  ${
+            result.approvedInBrowser === true
+              ? 'approved in your browser'
+              : "on this machine's own credential"
+          }`,
+        );
         out.line(`  ${style.dim('undo')}      memnox agents offboard ${quoted(shown)}`);
         /* Said plainly, because onboarding an agent is the moment somebody
          wonders whether it has just been given permission to do more. */
@@ -793,4 +801,29 @@ function collect(value: string, previous: string[]): string[] {
 
 function version(agent: SnapshotAgent): string {
   return agent.version === undefined ? '' : ` ${agent.version}`;
+}
+
+/**
+ * What enrolment says while it runs, as plain lines.
+ *
+ * Commentary rather than payload: a person reads it, and `--json` callers and
+ * pipes must receive the result and nothing else. It used to go to stdout,
+ * which put an approval prompt in the middle of whatever was being piped.
+ */
+function reportOn(context: CliContext): EnrolReporter {
+  const { out, style } = context;
+  return {
+    approve: ({ what, url, code, because, deadline }) => {
+      out.note('');
+      out.note(`Approve ${what} in your browser`);
+      out.note(`  ${url}`);
+      if (code !== undefined) out.note(`  Code ${style.accent(code)}`);
+      out.note(`  ${style.dim(because)}`);
+      out.note(
+        style.dim(
+          `  Waiting for you to answer it, for ${deadline}. Ctrl+C stops, and nothing will change.`,
+        ),
+      );
+    },
+  };
 }

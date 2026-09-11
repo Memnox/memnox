@@ -485,6 +485,33 @@ listing. OSS-8.1 removed `setup` from the *hero* so that bare `npx memnox` runs
 `scan`, and that still holds: `scan` keeps `isDefault`, and the first thing this
 product does is show somebody their own machine rather than ask them to sign in.
 
+**One approval per machine, because five approvals is a run nobody finishes.**
+Onboarding minted every agent's credential through the device flow, so a laptop
+with five agents sent somebody to a browser five times after they had already
+approved the laptop itself. People stopped partway through, which is the worst
+possible outcome: agents believed to be governed that never were, and nothing in
+the fleet to say so. `POST :ws/machines/:id/agents` in the cloud is the fix, and
+the grant it opens is narrow by construction rather than by promise. The auth
+guard already pins a machine credential to its own `:id`, so the door reaches the
+agents on the box a person approved and nothing else; it refuses an advisory
+principal outright, so nothing chains; it caps what one machine may mint; and it
+records the sponsor, so revoking a laptop revokes its agents in the same act.
+Each agent still holds its own credential, because revoking one must not silence
+the others. The device flow stays as the fallback, since a laptop upgraded ahead
+of its control plane answers 404 there and must not be stopped, and the screen
+says why a browser opened rather than leaving a tab to explain itself.
+
+**A run that draws a rail draws all of it.** `enrolAgent` printed its approval
+block with `out.line`, which is stdout, while `setup` drew its rail on stderr:
+the one step that can block on a person appeared to come from a different
+command, and anything piping `memnox` received it. `EnrolReporter` is the seam.
+It carries one method, because the only thing enrolment has to say is that it is
+waiting on somebody: success is the caller's to render, in the caller's own
+shape. Every wait now names its deadline, and `waitForApproval` floors the poll
+interval it was handed, because a control plane sending a zero left it polling as
+fast as the network would answer, which looks like a hang from the terminal and
+like an attack from the other end.
+
 **What the guided run had to get right, learned from watching a competitor's.**
 Three things. It asks per agent rather than listing six and putting one prompt
 under them, because the second is a screen people agree to without reading. It

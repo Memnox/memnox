@@ -10,9 +10,11 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { Flow } from '../flow';
+import { underHome } from '../memnox-paths';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/connect';
 import { manageable, ONBOARD, onboardAgent, type Manageable } from '../agents/onboard';
+import type { EnrolReporter } from '../agents/enrol-agent';
 import { readRecord } from '../agents/onboarding';
 import { displayName, readNames, setName, type AgentNames } from '../agents/names';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
@@ -39,6 +41,16 @@ import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
  * for the same reason: it is the identity the workspace will use, and asking for
  * it beside what the agent can reach is the only place a person has the context
  * to choose a useful one.
+ *
+ * **One rail, and everything on it.** Every line this run prints goes through
+ * `Flow`, prompts included. Enrolment used to print its own block to stdout
+ * while the rest of the run drew a rail on stderr, so the one step that can
+ * block on a person appeared to come from somewhere else, and a pipe received
+ * it. A run that looks like two commands taking turns is one nobody can read.
+ *
+ * **One approval, for the machine.** A person approves this laptop once, and
+ * the agents on it are enrolled on its own credential. See `enrol-agent.ts` for
+ * why that is the right grant rather than a shortcut past one.
  *
  * Nothing here is new machinery. Every step calls the command that owns it.
  */
@@ -69,8 +81,8 @@ export function registerSetupCommand(
         open: boolean;
         probe: boolean;
       }) => {
-        const { out, style } = context;
-        const flow = new Flow(out, style);
+        const { style } = context;
+        const flow = new Flow(context.out, style);
         flow.open('memnox setup');
 
         /* Step one, and skipped when it is already done. Re-running the device
@@ -132,7 +144,7 @@ export function registerSetupCommand(
              the worst version of this screen. */
           const config = await manageable(home(), process.cwd(), agent.kind);
           if (config.because !== undefined) {
-            describeAgent(context, agent, names, report, snapshot, config);
+            describeAgent(flow, context, home(), agent, names, report, snapshot, config);
             results.push({
               name: displayName(names, agent),
               status: STATUS.CANNOT,
@@ -142,6 +154,7 @@ export function registerSetupCommand(
           }
           const outcome = await offerOne(
             context,
+            flow,
             home(),
             agent,
             names,
@@ -176,6 +189,9 @@ async function connectedAccount(
     return existing;
   }
   const connected = await connect(context, home, options, flow, seams);
+  /* Said once, here, because it is the promise the rest of the run keeps: a
+     person answered a browser for this machine and will not be asked again. */
+  flow.aside(context.style.dim('That is the only approval this run needs.'));
   return connected.account;
 }
 
@@ -189,6 +205,7 @@ async function connectedAccount(
  */
 async function offerOne(
   context: CliContext,
+  flow: Flow,
   home: string,
   agent: SnapshotAgent,
   names: AgentNames,
@@ -199,15 +216,16 @@ async function offerOne(
   ask: NameAsker,
   confirm: Confirm,
 ): Promise<Result> {
-  const { out, style } = context;
+  const { style } = context;
   const current = displayName(names, agent);
-  describeAgent(context, agent, names, report, snapshot, config);
+  describeAgent(flow, context, home, agent, names, report, snapshot, config);
 
-  /* No name line: it is in the block above, with what the agent reaches under
-     it. Repeating it here read as two agents rather than one question. */
+  /* No name line in the question: it is in the block above, with what the agent
+     reaches under it. Repeating it here read as two agents rather than one. */
   const wanted = await ask({
     shown: current,
-    lines: [`This is the name ${account.workspaceId} will show for it.`],
+    lines: [],
+    gutter: flow.prompt,
     because: `Call it something ${account.workspaceId} will recognise`,
   }).catch(() => null);
 
@@ -216,21 +234,26 @@ async function offerOne(
     /* Almost certainly an answer meant for the question below this one. Nobody
        names an agent "y", and taking it would name one "y" and then never ask
        the question the person thought they were answering. */
-    out.note(
-      style.warn(`  Read "${wanted}" as an answer to the next question, not a name.`),
+    flow.aside(
+      style.warn(`Read "${wanted}" as an answer to the next question, not a name.`),
     );
   } else if (wanted !== null) {
     const written = await setName(home, agent.id, wanted);
     if (written.ok && written.name !== undefined) name = written.name;
     else {
-      out.note(
-        style.warn(`  Kept "${current}": ${written.because ?? 'that name was refused'}.`),
+      flow.aside(
+        style.warn(`Kept "${current}": ${written.because ?? 'that name was refused'}.`),
       );
     }
   }
 
-  const yes = await confirm(`  Put ${name} under Memnox now?`).catch(() => false);
-  if (!yes) return { name, status: STATUS.SKIPPED, because: 'you said no' };
+  const yes = await confirm(`${flow.prompt}Put ${name} under Memnox now?`).catch(
+    () => false,
+  );
+  if (!yes) {
+    flow.aside(style.dim(`${name} was left alone.`));
+    return { name, status: STATUS.SKIPPED, because: 'you said no' };
+  }
 
   const result = await onboardAgent(
     home,
@@ -238,21 +261,45 @@ async function offerOne(
     account,
     agent.id,
     agent.kind,
-    out,
+    reportOn(flow),
     name,
   );
   if (result.outcome !== ONBOARD.DONE || result.record === undefined) {
     /* Named and carried on rather than thrown. One agent whose config cannot be
        rewritten must not cost somebody the answers they already gave. */
     const because = result.because ?? 'no reason given';
-    out.note(style.warn(`  Did not onboard ${name}: ${because}`));
+    flow.aside(style.warn(`Did not onboard ${name}: ${because}`));
     return { name, status: STATUS.FAILED, because };
   }
-  out.note(`  ${style.ok('onboarded')} ${name}`);
-  out.note(`    ${style.dim(`config updated: ${result.record.configPath}`)}`);
-  out.note(`    ${style.dim(`backup saved:   ${result.record.backupPath}`)}`);
-  out.note(`    ${style.dim(`known as:       ${name} in ${account.workspaceId}`)}`);
+  flow.box(`${name} is under Memnox`, [
+    `${style.dim('known as'.padEnd(LABEL_WIDTH))}${name} in ${account.workspaceId}`,
+    /* Said per agent rather than once at the top, because this is the line that
+       makes the run's promise checkable: nobody had to answer anything. */
+    `${style.dim('enrolled'.padEnd(LABEL_WIDTH))}${
+      result.approvedInBrowser === true
+        ? 'approved in your browser'
+        : "on this machine's own credential, no browser"
+    }`,
+    `${style.dim('config'.padEnd(LABEL_WIDTH))}${underHome(result.record.configPath, home)}`,
+    `${style.dim('backup'.padEnd(LABEL_WIDTH))}${underHome(result.record.backupPath, home)}`,
+  ]);
   return { name, status: STATUS.ONBOARDED };
+}
+
+/** The one question enrolment can ask, drawn on the same rail as the rest. */
+function reportOn(flow: Flow): EnrolReporter {
+  return {
+    approve: ({ what, url, code, because, deadline }) => {
+      flow.step(`Approve ${what} in your browser`, url);
+      if (code !== undefined) flow.value('Your code', code);
+      /* The reason first. This run said it would not need a browser, so one
+         opening without a sentence in front of it reads as a broken promise. */
+      flow.aside(because);
+      flow.aside(
+        `Waiting for you to answer it, for ${deadline}. Ctrl+C stops, and nothing will change.`,
+      );
+    },
+  };
 }
 
 /** A prompt meant for the next question, typed one question early. */
@@ -270,27 +317,28 @@ function isYesOrNo(answer: string): boolean {
  * than a summary of them.
  */
 function describeAgent(
+  flow: Flow,
   context: CliContext,
+  home: string,
   agent: SnapshotAgent,
   names: AgentNames,
   report: DiscoveryReport,
   snapshot: EnvironmentSnapshot,
   config: Manageable,
 ): void {
-  const { out, style } = context;
-  out.note('');
-  out.note(
-    style.bold(`  ${displayName(names, agent)}`) +
-      style.dim(`  ${agent.kind}${version(agent)}`),
-  );
-  row(context, 'id', agent.id);
+  const { style } = context;
+  const rows: string[] = [style.dim(`${agent.kind}${version(agent)}`)];
+  const put = (label: string, value: string): void => {
+    rows.push(`${style.dim(label.padEnd(LABEL_WIDTH))}${value}`);
+  };
+
+  put('id', agent.id);
   /* The one file onboarding would rewrite, not every file the detector read. A
      detector proves an agent from several and only one of them would change. */
-  if (config.path !== undefined) row(context, 'config', config.path);
+  if (config.path !== undefined) put('config', underHome(config.path, home));
 
   const servers = snapshot.servers.filter((server) => server.agentIds.includes(agent.id));
-  row(
-    context,
+  put(
     'mcp',
     servers.length === 0
       ? 'no servers configured'
@@ -305,20 +353,14 @@ function describeAgent(
           .join(', '),
   );
 
-  for (const line of reachOf(agent, report)) {
-    const at = line.indexOf(':');
-    row(context, line.slice(0, at), line.slice(at + 1).trim());
-  }
+  for (const line of reachOf(agent, report, home)) put(line.label, line.value);
   if (config.because !== undefined) {
-    out.note(`    ${style.warn(`cannot manage: ${config.because}`)}`);
+    rows.push(style.warn(`cannot manage: ${config.because}`));
   }
+  flow.box(displayName(names, agent), rows);
 }
 
-const LABEL_WIDTH = 11;
-
-function row(context: CliContext, label: string, value: string): void {
-  context.out.note(`    ${context.style.dim(label.padEnd(LABEL_WIDTH))}${value}`);
-}
+const LABEL_WIDTH = 12;
 
 /**
  * What this agent can already reach, in the words the scan proved.
@@ -327,22 +369,29 @@ function row(context: CliContext, label: string, value: string): void {
  * category and `~/.aws/credentials` is the thing somebody reacts to. Names and
  * paths only: nothing here opens a file to describe it.
  */
-function reachOf(agent: SnapshotAgent, report: DiscoveryReport): string[] {
-  const lines: string[] = [];
+function reachOf(
+  agent: SnapshotAgent,
+  report: DiscoveryReport,
+  home: string,
+): { label: string; value: string }[] {
+  const lines: { label: string; value: string }[] = [];
   const surfaces = [...new Set(agent.surfaces.map((surface) => surface.kind))];
-  if (surfaces.length > 0) lines.push(`can use: ${surfaces.join(', ')}`);
+  if (surfaces.length > 0) lines.push({ label: 'can use', value: surfaces.join(', ') });
 
   const sensitive = report.resources
     .filter((resource) => resource.sensitivity !== SENSITIVITY.ORDINARY)
     .filter((resource) => resource.reachableBy.some((ref) => ref.id === agent.id))
-    .map((resource) => resource.path ?? resource.id);
+    .map((resource) => underHome(resource.path ?? resource.id, home));
   if (sensitive.length > 0) {
-    lines.push(`can reach: ${sensitive.slice(0, SHOWN).join(', ')}`);
-    if (sensitive.length > SHOWN) {
-      lines.push(`and ${sensitive.length - SHOWN} more`);
-    }
+    const more = sensitive.length > SHOWN ? ` and ${sensitive.length - SHOWN} more` : '';
+    lines.push({
+      label: 'can reach',
+      value: `${sensitive.slice(0, SHOWN).join(', ')}${more}`,
+    });
   }
-  if (lines.length === 0) lines.push('nothing this scan could prove');
+  if (lines.length === 0) {
+    lines.push({ label: 'can reach', value: 'nothing this scan could prove' });
+  }
   return lines;
 }
 
@@ -383,7 +432,6 @@ function summarize(
   const done = results.filter((each) => each.status === STATUS.ONBOARDED);
   const width = Math.max(...results.map((each) => each.name.length), 'Agent'.length);
 
-  context.out.note('');
   flow.box(`In ${account.workspaceId}`, [
     style.dim(`${'Agent'.padEnd(width)}  ${'Status'.padEnd(STATUS_WIDTH)}Reason`),
     /* Padded before styling: an escape sequence has width nobody can see but

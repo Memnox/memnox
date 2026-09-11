@@ -1,8 +1,13 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MCP_CONFIG_LOCATIONS, type Account } from '@memnox/core';
-import type { CliOutput } from '../cli-output';
-import { ENROL_FAILED, enrolAgent, revokeAgent } from './enrol-agent';
+import {
+  ENROL_FAILED,
+  enrolAgent,
+  revokeAgent,
+  sponsorOf,
+  type EnrolReporter,
+} from './enrol-agent';
 import {
   canRewrite,
   MANAGED_SERVER,
@@ -44,6 +49,8 @@ interface OnboardResult {
   outcome: Outcome;
   record?: OnboardRecord;
   because?: string;
+  /** Whether a person had to answer a browser for this one, so the screen can say. */
+  approvedInBrowser?: boolean;
 }
 
 interface AgentConfig {
@@ -136,7 +143,7 @@ export async function onboardAgent(
   account: Account,
   agentId: string,
   agentKind: string,
-  out: CliOutput,
+  report: EnrolReporter,
   /** What the person calls this agent, so the approval screen says it back to them. */
   shownAs: string = agentId,
   now: () => string = () => new Date().toISOString(),
@@ -161,9 +168,15 @@ export async function onboardAgent(
   const serversKey = serversKeyFor(raw, config.path);
 
   /* First, because an enrolment that fails must leave the config untouched.
-     It waits for a person: enrolment is the act the control plane requires one
-     for, and a machine cannot mint another machine's credential. */
-  const enrolled = await enrolAgent(account.baseUrl, agentId, hostOf(home), out, shownAs);
+     It spends the credential this machine already holds where the control plane
+     takes one, and asks a person only where it will not. */
+  const enrolled = await enrolAgent(
+    sponsorOf(account),
+    agentId,
+    hostOf(home),
+    report,
+    shownAs,
+  );
   if ('outcome' in enrolled && enrolled.outcome === ENROL_FAILED) {
     return { outcome: ONBOARD.FAILED, because: enrolled.because };
   }
@@ -200,7 +213,11 @@ export async function onboardAgent(
   }
   await writeFile(config.path, rewritten.next, 'utf8');
 
-  return { outcome: ONBOARD.DONE, record };
+  return {
+    outcome: ONBOARD.DONE,
+    record,
+    approvedInBrowser: enrolled.approvedInBrowser,
+  };
 }
 
 export const OFFBOARD = {

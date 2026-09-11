@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '@memnox/core';
 
 /**
@@ -50,6 +51,15 @@ function recordPathFor(home: string, agentId: string): string {
  * Onboarding twice must not overwrite the only copy of what the file said
  * before Memnox ever touched it. The stamp is what lets a second run be
  * reversible too.
+ *
+ * The name carries the file's own name and a digest of the directory it came
+ * from, rather than the whole path flattened into it. One agent can keep more
+ * than one config and both may be called `mcp.json`, so something has to tell
+ * them apart; the digest does it in eight characters. Flattening the path did
+ * it in ninety, and a screen that prints a backup path is a screen where that
+ * line wraps three times and buries every line beside it. Nothing reconstructs
+ * a path from this name: `OnboardRecord` holds both, and that is what offboard
+ * reads.
  */
 export function backupPathFor(
   home: string,
@@ -58,8 +68,12 @@ export function backupPathFor(
   at: string,
 ): string {
   const stamp = at.replace(/[:.]/g, '').replace(/-/g, '');
-  const flat = configPath.replace(/[/\\ ]/g, '_');
-  return join(agentsDir(home), BACKUPS_DIR, safe(agentId), `${stamp}-${flat}`);
+  const where = createHash('sha256')
+    .update(dirname(configPath))
+    .digest('hex')
+    .slice(0, 8);
+  const name = safe(basename(configPath));
+  return join(agentsDir(home), BACKUPS_DIR, safe(agentId), `${stamp}-${where}-${name}`);
 }
 
 export async function writeRecord(home: string, record: OnboardRecord): Promise<void> {

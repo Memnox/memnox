@@ -156,6 +156,32 @@ export interface WaitSeams {
 }
 
 /**
+ * How long to leave between polls, whatever the control plane asked for.
+ *
+ * The floor is the important half. A deployment that sends nothing, or sends a
+ * zero, left this polling as fast as the network would answer: a loop that
+ * looks like a hang from the outside and like an attack from the other end,
+ * and the rate limiter that eventually stops answering turns the wait into a
+ * failure. The ceiling is politeness to whoever is watching the screen, because
+ * a minute between polls is a minute of nothing happening after they approved.
+ */
+const POLL_FLOOR_MS = 1_000;
+const POLL_CEILING_MS = 30_000;
+
+function pollEvery(offer: DeviceOffer): number {
+  const asked = offer.intervalSeconds * 1000;
+  if (!Number.isFinite(asked)) return POLL_FLOOR_MS;
+  return Math.min(Math.max(asked, POLL_FLOOR_MS), POLL_CEILING_MS);
+}
+
+/** How long a person has to answer, in the words a screen says it in. */
+export function goodFor(offer: DeviceOffer, now: number = Date.now()): string {
+  const minutes = Math.round((offer.expiresAt - now) / 60_000);
+  if (minutes <= 1) return 'about a minute';
+  return `${minutes} minutes`;
+}
+
+/**
  * Polls until somebody answers or the code runs out. Never faster than the
  * interval the control plane asked for: a CLI that polls harder than it was
  * told is one a rate limiter eventually stops answering.
@@ -167,11 +193,12 @@ export async function waitForApproval(
 ): Promise<Collected> {
   const sleep = seams.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const now = seams.now ?? Date.now;
+  const every = pollEvery(offer);
 
   while (now() < offer.expiresAt) {
     const collected = await collect(baseUrl, offer.deviceCode);
     if (collected !== null) return collected;
-    await sleep(offer.intervalSeconds * 1000);
+    await sleep(every);
   }
   throw new EnrolmentRefused(ENROL_REFUSAL.EXPIRED);
 }

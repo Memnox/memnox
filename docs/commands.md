@@ -46,16 +46,34 @@ the first thing this shows you is your own machine, not a sign-in page.
 | `--no-open` | print the code and the approval URL instead of opening a browser |
 | `--no-probe` | do not start MCP servers to ask what they hold |
 
+**One approval, and it is for the machine.** You answer a browser once, when
+this laptop enrols. Every agent on it is then enrolled on the credential that
+approval produced, with no second browser and no second code: `POST
+:ws/machines/:id/agents` is the one door a machine credential opens, and the
+control plane pins that credential to its own machine id, so what it can enrol
+is the agents on the box that was approved and nothing anywhere else. Asking per
+agent was the same decision put five times, and the fifth answer is the one
+nobody gives: a run that opens five tabs is a run that ends half finished, with
+two agents governed and three believed to be.
+
+Each agent still gets its own credential, so revoking one does not silence the
+others, and each remembers which machine vouched for it, so revoking the laptop
+takes them all. Against a control plane too old for that door the device flow
+still runs per agent, and the screen says why a browser opened rather than
+leaving it to explain itself.
+
 For each agent it prints what that agent is and what it can already reach, asks
 what the workspace should call it, and asks whether to put it under Memnox:
 
 ```
-  Claude Code  claude-code
-    id         agt_claude-code
-    config     ~/.claude.json
-    mcp        github, next-devtools
-    can use    shell, filesystem, git, network, mcp
-    can reach  ~/.aws/credentials, /var/run/docker.sock, network
+◇ Claude Code ╭──────────────────────────────────────────────
+│   claude-code 1.2.3
+│   id          agt_claude-code
+│   config      ~/.claude.json
+│   mcp         github (12), next-devtools (4)
+│   can use     shell, filesystem, git, network, mcp
+│   can reach   ~/.aws/credentials, /var/run/docker.sock, network
+│ ╰────────────────────────────────────────────────────────────
 ```
 
 Everything in that block was proved by the scan and none of it is a claim about
@@ -97,6 +115,24 @@ loud.
 **A `y` typed at the name prompt is read as an answer to the next question.**
 Nobody names an agent "y", and taking it would name one "y" and then never ask
 the question the person thought they were answering.
+
+**Every line of the run is on one rail, prompts and enrolment included.**
+Enrolment used to print its own block to stdout while the rest drew a rail on
+stderr, so the one step that can block on a person looked like a different
+command interrupting this one, and anything piping the command received it.
+Paths are printed under `~`, because a column where the first twenty characters
+of every row are identical is a column that wraps for nothing.
+
+Each agent that is onboarded says how it was enrolled:
+
+```
+◇ Claude Code is under Memnox ╭─────────────────────────────
+│   known as    Backend Coder in acme
+│   enrolled    on this machine's own credential, no browser
+│   config      ~/.claude.json
+│   backup      ~/.memnox/agents/backups/agt_claude-code/20260911T200237032Z-eb8595dc-.claude.json
+│ ╰────────────────────────────────────────────────────────────
+```
 
 It ends with a row per agent it offered, including the ones nothing happened to:
 
