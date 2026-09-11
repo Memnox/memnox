@@ -1,6 +1,6 @@
 {
   "name": "@memnox/interceptors",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "The local seams — a PreToolUse hook, a shell wrapper, a git credential helper, an egress proxy and a Docker socket gate — that route what an agent does through Memnox before it happens.",
   "keywords": [
     "hooks",

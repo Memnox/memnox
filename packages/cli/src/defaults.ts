@@ -1,2 +1,2 @@
 /** Must equal this package's version; a test asserts it so a release cannot drift. */
-export const CLI_VERSION = '0.9.0';
+export const CLI_VERSION = '0.9.1';

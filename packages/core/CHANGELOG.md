@@ -1,5 +1,24 @@
 # @memnox/core
 
+## 0.9.1
+
+### Patch Changes
+
+- Keep a workspace id out of sentences, and revoke what offboard says it revokes.
+
+  A control plane that keys workspaces by UUID turned every prompt into
+  `Call it something 789fdf81-0ecc-4d17-a234-464bc0a8ecf4 will recognise`, which
+  is a sentence nobody reads to the end. The id now appears on the lines that
+  state facts, where it can be copied, and prose says the workspace's name where
+  there is one short enough to read and "your workspace" where there is not.
+
+  `memnox agents offboard` restored an agent's config and then failed to revoke
+  its credential, reporting only that it could not. The control plane refuses one
+  machine acting on another's row, and an agent's row is not the laptop's, so the
+  call never had a chance. A machine may now hand back the credentials of agents
+  it enrolled itself, which is the same authority it used to mint them. Nothing
+  else moved: it still cannot beat, sync or pull rules as one of its agents.
+
 ## 0.9.0
 
 ### Minor Changes
