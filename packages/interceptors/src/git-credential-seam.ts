@@ -65,6 +65,27 @@ export class GitCredentialSeam {
   }
 }
 
+/**
+ * The only fields carried out of git's block, and it is an allow list.
+ *
+ * These four are what `remoteOf` needs to name the remote, and a rule matches on
+ * that name. Everything else git sends is dropped unread.
+ *
+ * An allow list rather than a deny list, and the difference is the guarantee.
+ * Dropping `password` and `credential` by name was right for the protocol as it
+ * stood and wrong as a shape: git's credential block is extensible and already
+ * carries `oauth_refresh_token`, which is a long-lived secret under a key nobody
+ * here had heard of. `arguments` reaches the ledger, so a deny list means every
+ * field git adds in a future release is written to disk until somebody notices.
+ * SECURITY.md puts "a credential value reaching a ledger row" in scope, and a
+ * list of what is safe cannot fail that way.
+ *
+ * Today's caller only ever runs `get`, where git has issued nothing yet, so this
+ * is the second line rather than the first. It is here because the first line is
+ * one `if` in a different file.
+ */
+const CARRIED_FIELDS = ['protocol', 'host', 'path', 'username'] as const;
+
 /** git writes one `key=value` per line, terminated by a blank line. */
 export function parseGitInput(input: string): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -73,8 +94,7 @@ export function parseGitInput(input: string): Record<string, string> {
     const separator = line.indexOf('=');
     if (separator <= 0) continue;
     const key = line.slice(0, separator).trim();
-    // Whatever git says about a password stays out of what we carry.
-    if (key === 'password' || key === 'credential') continue;
+    if (!CARRIED_FIELDS.includes(key as (typeof CARRIED_FIELDS)[number])) continue;
     fields[key] = line.slice(separator + 1).trim();
   }
   return fields;
