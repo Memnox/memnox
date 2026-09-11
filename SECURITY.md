@@ -43,8 +43,13 @@ scope, as is a shell line that reaches a binary after the seam denied it.
 
 - **A permissive policy file.** Memnox enforces the rules it is given. A rule set
   that allows something dangerous is a configuration issue.
-- **`--default-effect allow`.** Allowing unmatched actions is opt-in behaviour and
-  documented as such.
+- **An action no rule matches.** Unmatched actions are **allowed**, and this is the
+  default rather than something switched on: `PolicyEngine` and `LocalGate` both fall
+  back to allow, and there is no flag to change it. A runtime that denied everything
+  it had no rule for would deny the first command on the first machine, which is why
+  a new machine also starts in `observe`. Rule sets are therefore deny lists over a
+  permissive floor, and a report that an unruled action ran is that floor working as
+  designed. An action a matching rule *denies* is the one that is in scope, above.
 - **Anything that needs write access to the rules or to `~/.memnox`.** Whoever can
   edit your rule file can edit your shell profile. `docs/threat-model.md` states
   that boundary rather than leaving it to be found.
