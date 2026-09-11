@@ -6,10 +6,10 @@ import { MEMNOX_HOME } from '@memnox/core';
 /**
  * What onboarding an agent did, so it can be undone exactly.
  *
- * Preloop's engine is the part of its flow a person actually feels: it backs up
- * the config, rewrites it, and can put it back. The rewrite is the easy half.
- * The record is what makes `offboard` an undo rather than a second guess at
- * what the file used to say.
+ * This is the part of onboarding a person actually feels: it backs up the
+ * config, rewrites it, and can put it back. The rewrite is the easy half. The
+ * record is what makes `offboard` an undo rather than a second guess at what
+ * the file used to say.
  *
  * Written before the config is touched and removed only after it is restored,
  * so a process killed in the middle leaves a record pointing at a backup that

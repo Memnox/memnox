@@ -149,6 +149,29 @@ export function displayName(
   return defaultName(from === '' ? agent.kind : from);
 }
 
+/**
+ * The workspace as a sentence can carry it, which is not always its id.
+ *
+ * A deployment that names its workspaces sends `acme`, and "In acme" is exactly
+ * the right line. One that keys them by UUID sends thirty-six characters of
+ * hex, and "Call it something 789fdf81-0ecc-4d17-a234-464bc0a8ecf4 will
+ * recognise" is a sentence nobody reads to the end. Which of the two you get is
+ * the control plane's business rather than something this side can fix, so the
+ * rule is about the reader instead: an id belongs on the line that states
+ * facts, where it can be copied, and prose gets a word.
+ *
+ * Length is the test rather than the UUID shape, because the next deployment to
+ * key workspaces on something unreadable will not use a UUID to do it.
+ */
+export function workspaceShown(workspaceId: string): string {
+  const id = workspaceId.trim();
+  if (id === '' || id.length > WORKSPACE_READABLE) return 'your workspace';
+  return id;
+}
+
+/** Long enough for a name somebody chose, short enough to sit inside a sentence. */
+const WORKSPACE_READABLE = 24;
+
 /** True when this agent is still running under whatever the detector called it. */
 export function isDefaultName(names: AgentNames, agent: { id: string }): boolean {
   return names[agent.id] === undefined;

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentSnapshot } from '@memnox/core';
 import { chooseCloudName, registerAgentsCommand } from '../src/commands/agents.command';
 import type { NameAsker } from '../src/agents/name-prompt';
-import { readNames } from '../src/agents/names';
+import { readNames, workspaceShown } from '../src/agents/names';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { runCommand } from './cli-harness';
@@ -449,6 +449,26 @@ describe('the agents on this machine', () => {
 
       expect(chosen.name).toBe('Claude Code');
       expect(out.notes.join('\n')).toContain('control character');
+    });
+  });
+
+  describe('naming the workspace in a sentence', () => {
+    /* A deployment that names its workspaces sends `acme`; one that keys them by
+       UUID sends thirty-six characters of hex, and a prompt built around one is
+       a sentence nobody reads to the end. */
+    it('uses the name where a workspace has one worth reading', () => {
+      expect(workspaceShown('acme')).toBe('acme');
+      expect(workspaceShown('acme-platform-team')).toBe('acme-platform-team');
+    });
+
+    it('says "your workspace" rather than reciting an id at somebody', () => {
+      expect(workspaceShown('789fdf81-0ecc-4d17-a234-464bc0a8ecf4')).toBe(
+        'your workspace',
+      );
+    });
+
+    it('never renders an empty workspace as a hole in the sentence', () => {
+      expect(workspaceShown('   ')).toBe('your workspace');
     });
   });
 

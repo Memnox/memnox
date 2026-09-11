@@ -20,6 +20,7 @@ import {
   readNames,
   resolveAgent,
   setName,
+  workspaceShown,
   type AgentNames,
 } from '../agents/names';
 import {
@@ -385,7 +386,9 @@ export function registerAgentsCommand(
         const { out, style } = context;
         out.line('');
         out.line(`${style.ok('Onboarded')} ${shown} (${record.product})`);
-        out.line(`  ${style.dim('known as')}  ${shown} in ${account.workspaceId}`);
+        out.line(
+          `  ${style.dim('known as')}  ${shown} in ${workspaceShown(account.workspaceId)}`,
+        );
         out.line(`  ${style.dim('config')}    ${record.configPath}`);
         out.line(`  ${style.dim('backup')}    ${record.backupPath}`);
         out.line(`  ${style.dim('machine')}   ${record.machineId}`);
@@ -511,7 +514,9 @@ function sayWhatWillHappen(
   out.line(`${style.bold('ONBOARD')}  ${shown} ${style.dim(`(${kind})`)}`);
   out.line('');
   out.line('  Four things happen, in this order:');
-  out.line(`    1. you say what ${account.workspaceId} should call this agent`);
+  out.line(
+    `    1. you say what ${workspaceShown(account.workspaceId)} should call this agent`,
+  );
   out.line('    2. you approve a credential for it in your browser');
   out.line("    3. this machine copies the agent's config somewhere safe");
   out.line('    4. one server entry, called memnox, is added to it');
@@ -561,8 +566,11 @@ export async function chooseCloudName(
     home,
     agent,
     names,
-    `Call it something ${account.workspaceId} will recognise`,
-    [current, `This is the name ${account.workspaceId} will show for it from now on.`],
+    `Call it something ${workspaceShown(account.workspaceId)} will recognise`,
+    [
+      current,
+      `This is the name ${workspaceShown(account.workspaceId)} will show for it from now on.`,
+    ],
     ask,
   );
   if (chosen.because !== undefined) {

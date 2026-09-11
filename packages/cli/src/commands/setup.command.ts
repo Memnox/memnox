@@ -16,7 +16,13 @@ import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/con
 import { manageable, ONBOARD, onboardAgent, type Manageable } from '../agents/onboard';
 import type { EnrolReporter } from '../agents/enrol-agent';
 import { readRecord } from '../agents/onboarding';
-import { displayName, readNames, setName, type AgentNames } from '../agents/names';
+import {
+  displayName,
+  readNames,
+  setName,
+  workspaceShown,
+  type AgentNames,
+} from '../agents/names';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
 
 /**
@@ -226,7 +232,7 @@ async function offerOne(
     shown: current,
     lines: [],
     gutter: flow.prompt,
-    because: `Call it something ${account.workspaceId} will recognise`,
+    because: `Call it something ${workspaceShown(account.workspaceId)} will recognise`,
   }).catch(() => null);
 
   let name = current;
@@ -272,7 +278,7 @@ async function offerOne(
     return { name, status: STATUS.FAILED, because };
   }
   flow.box(`${name} is under Memnox`, [
-    `${style.dim('known as'.padEnd(LABEL_WIDTH))}${name} in ${account.workspaceId}`,
+    `${style.dim('known as'.padEnd(LABEL_WIDTH))}${name} in ${workspaceShown(account.workspaceId)}`,
     /* Said per agent rather than once at the top, because this is the line that
        makes the run's promise checkable: nobody had to answer anything. */
     `${style.dim('enrolled'.padEnd(LABEL_WIDTH))}${
@@ -432,7 +438,7 @@ function summarize(
   const done = results.filter((each) => each.status === STATUS.ONBOARDED);
   const width = Math.max(...results.map((each) => each.name.length), 'Agent'.length);
 
-  flow.box(`In ${account.workspaceId}`, [
+  flow.box(`In ${workspaceShown(account.workspaceId)}`, [
     style.dim(`${'Agent'.padEnd(width)}  ${'Status'.padEnd(STATUS_WIDTH)}Reason`),
     /* Padded before styling: an escape sequence has width nobody can see but
        padEnd can, and padding after colouring left every column joined up. */

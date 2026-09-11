@@ -21,6 +21,8 @@ import {
 
 const BASE = 'https://cloud.memnox.test';
 const AGENT = 'agt_cursor';
+/** What the control plane enrols that agent as, and the only row it may revoke. */
+const AGENT_MACHINE = 'mch_agent_1';
 
 const account: Account = {
   version: 1,
@@ -264,6 +266,17 @@ describe('offboarding an agent', () => {
     revoked = [];
     vi.stubGlobal('fetch', (async (url: URL | string, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
+        /* Answered the way the control plane answers, rather than 200 for any
+           DELETE at all. A stub that accepts everything hid the fact that the
+           guard refused this call outright, so offboard reported a credential
+           it had never actually taken back. */
+        const agent = String(url).endsWith(`/machines/${AGENT_MACHINE}`);
+        const bearer = (init.headers as Record<string, string> | undefined)?.[
+          'authorization'
+        ];
+        if (!agent || bearer !== `Bearer ${account.token}`) {
+          return new Response('{}', { status: 401 });
+        }
         revoked.push(String(url));
         return new Response('{}', { status: 200 });
       }
