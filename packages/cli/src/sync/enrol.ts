@@ -5,13 +5,15 @@ import { callCloud, CloudUnreachable } from './client';
 import { isEnforcementMode, type Account } from '@memnox/core';
 
 /**
- * Enrolling this machine, the way `npm login` signs you in: the CLI asks, prints
- * a code and a URL, you approve in a browser, and it polls until you have.
+ * Enrolling this machine, the way `npm login` signs you in: the CLI asks, opens
+ * the approval page in a browser, and polls until somebody has answered it.
  *
- * A laptop could use a loopback redirect instead, and the control plane offers
- * one. This flow is used for both because it is the only one that also works on
- * the machines that have no browser to redirect — a CI runner, a container, a
- * server over SSH — and two ways to enrol is one of them nobody tests.
+ * The link the control plane sends carries the code, so on a laptop nobody ever
+ * reads eight characters off one screen to type into another. The code is still
+ * what this is underneath, because that is the half that works on the machines
+ * with no browser to open, which is a CI runner, a container or a server over
+ * SSH. One flow with the browser step skipped rather than two flows, because two
+ * is one of them nobody tests.
  */
 
 interface DeviceOffer {
@@ -196,6 +198,17 @@ export function approvalUrl(
   const said = offered?.verificationUriComplete ?? offered?.verificationUri;
   if (said !== undefined && said !== '') return said;
   return new URL(`/device?code=${encodeURIComponent(userCode)}`, baseUrl).toString();
+}
+
+/**
+ * Whether that address carries the code already, which is what makes opening a
+ * browser enough on its own. Where it does not, somebody has to type the eight
+ * characters into a console they found themselves, and that is the one case
+ * where the code is worth the space on screen.
+ */
+export function pageCarriesCode(offered?: { verificationUriComplete?: string }): boolean {
+  const complete = offered?.verificationUriComplete;
+  return complete !== undefined && complete !== '';
 }
 
 export function accountFrom(

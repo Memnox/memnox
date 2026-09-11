@@ -43,7 +43,7 @@ the first thing this shows you is your own machine, not a sign-in page.
 |---|---|
 | `--url <base>` | the control plane, when it is not the default |
 | `--enforce` | start in enforce rather than observe |
-| `--no-open` | print the approval URL instead of opening a browser |
+| `--no-open` | print the code and the approval URL instead of opening a browser |
 | `--no-probe` | do not start MCP servers to ask what they hold |
 
 For each agent it prints what that agent is and what it can already reach, asks
@@ -659,8 +659,16 @@ anything, and it does nothing at all until `memnox login` has succeeded.
 
 ### `memnox login`
 Connects this machine to a workspace, so it gets the rules that workspace
-publishes. A device-code flow: it prints a code, opens the approval page, and
-waits for somebody with access to approve it.
+publishes. It opens the approval page in a browser and waits for somebody with
+access to approve it there. **Nothing has to be typed:** the link the control
+plane sends carries the code in it, so approving is one click on a page that is
+already showing what is being granted.
+
+Underneath it is a device-code flow, and the code shows on screen in the two
+cases where a browser is not enough: no browser could be opened, which is an
+ordinary CI runner, container or SSH session, or the control plane named no
+console and the address is this CLI's guess. Then somebody types the eight
+characters into a console they open themselves.
 
 **The control plane says where the approval page is**, in the `verificationUri`
 of its answer. It has to: `--url` names an API, and on every deployment with a
@@ -672,7 +680,7 @@ address as a fallback, which is right only where the two share an origin.
 |---|---|
 | `--url <base>` | the control plane, default `https://api.memnox.com` |
 | `--enforce` | start in enforce rather than observe |
-| `--no-open` | print the URL instead of opening a browser |
+| `--no-open` | print the code and the URL instead of opening a browser |
 
 It writes `~/.memnox/account.json`, owner only: the workspace, a machine id, a
 token scoped to this machine, and an Ed25519 private key generated here. **The

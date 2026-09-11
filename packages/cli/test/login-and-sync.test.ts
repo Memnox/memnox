@@ -1,7 +1,7 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readAccount, writeAccount, accountPathFor } from '@memnox/core';
 import {
   applyBundle,
@@ -22,6 +22,11 @@ import {
 } from '@memnox/core';
 import { accountFrom, approvalUrl, machineKeypair } from '../src/sync/enrol';
 import { callCloud, insecureBaseUrl } from '../src/sync/client';
+import { connectMachine } from '../src/sync/connect';
+import { CliContext } from '../src/cli-context';
+import { RecordedOutput } from '../src/cli-output';
+import { Flow } from '../src/flow';
+import { plainStyle } from '../src/style';
 
 const bundle = (over: Partial<Bundle> = {}): Bundle => ({
   hash: 'b1a2c3',
@@ -367,5 +372,110 @@ describe('the transport refuses to downgrade', () => {
     await expect(
       callCloud({ baseUrl: 'http://api.example.com', path: '/v1/x', token: 'secret' }),
     ).rejects.toThrow(/not https/);
+  });
+});
+
+describe('the browser is the approval step', () => {
+  let home: string;
+
+  const BASE = 'https://cloud.memnox.test';
+  const CODE = 'CDFG-HJKM';
+  const PAGE = `https://app.memnox.test/device?code=${CODE}`;
+
+  /** A control plane that hands out a code and has already been approved. */
+  const cloud = (told: boolean) =>
+    ((url: URL | string) => {
+      const at = String(url);
+      const body = at.endsWith('/v1/device/codes')
+        ? {
+            deviceCode: 'dev-1',
+            userCode: CODE,
+            intervalSeconds: 0,
+            expiresAt: Date.now() + 60_000,
+            ...(told
+              ? {
+                  verificationUri: 'https://app.memnox.test/device',
+                  verificationUriComplete: PAGE,
+                }
+              : {}),
+          }
+        : {
+            machineId: 'mch_1',
+            token: 'machine-token',
+            mode: 'observe',
+            workspaceId: 'acme',
+          };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }) as unknown as typeof fetch;
+
+  async function login(
+    opens: boolean | null,
+    told = true,
+  ): Promise<{ out: RecordedOutput; asked: string[] }> {
+    vi.stubGlobal('fetch', cloud(told));
+    const out = new RecordedOutput();
+    const asked: string[] = [];
+    await connectMachine(
+      new CliContext(out, plainStyle),
+      home,
+      { url: BASE, ...(opens === null ? { open: false } : {}) },
+      new Flow(out, plainStyle),
+      {
+        open: (url: string) => {
+          asked.push(url);
+          return opens === true;
+        },
+      },
+    );
+    return { out, asked };
+  }
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'memnox-approve-'));
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await rm(home, { recursive: true, force: true });
+  });
+
+  /* The point of the whole change: the link carries the code, so a person who
+     got a browser has nothing to read off this screen and type into that one. */
+  it('opens the page the control plane named and shows no code', async () => {
+    const { out, asked } = await login(true);
+
+    expect(asked).toEqual([PAGE]);
+    expect(out.notes.join('\n')).toContain(PAGE);
+    /* Not `not.toContain(CODE)`: the link carries it, and that is the point.
+       What must not be there is the code asked for on a line of its own. */
+    expect(out.notes).not.toContain('Your code');
+  });
+
+  /* A container, a CI runner, a server over SSH. Nothing opened, so the eight
+     characters are the only way anybody approves this. */
+  it('falls back to the code when no browser could be opened', async () => {
+    const { out } = await login(false);
+
+    expect(out.notes).toContain('Your code');
+    expect(out.notes).toContain(CODE);
+  });
+
+  /* A control plane with no console configured sends no page, so the address
+     above is this CLI's guess and the code still has to be typed somewhere. */
+  it('shows the code when the address carries none', async () => {
+    const { out } = await login(true, false);
+
+    expect(out.notes).toContain('Your code');
+  });
+
+  it('opens nothing under --no-open, and says the code instead', async () => {
+    const { out, asked } = await login(null);
+
+    expect(asked).toEqual([]);
+    expect(out.notes).toContain('Your code');
   });
 });

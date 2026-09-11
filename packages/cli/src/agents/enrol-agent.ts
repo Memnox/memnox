@@ -1,5 +1,12 @@
 import type { CliOutput } from '../cli-output';
-import { approvalUrl, machineKeypair, requestCode, waitForApproval } from '../sync/enrol';
+import { openBrowser } from '../sync/browser';
+import {
+  approvalUrl,
+  machineKeypair,
+  pageCarriesCode,
+  requestCode,
+  waitForApproval,
+} from '../sync/enrol';
 
 /**
  * An agent, enrolled as an advisory principal of its own.
@@ -8,8 +15,8 @@ import { approvalUrl, machineKeypair, requestCode, waitForApproval } from '../sy
  * admin-only and carries no `@MachineRoute`, so the credential this machine
  * already holds cannot mint another: a machine that could enrol machines could
  * enrol as many as it liked, and enrolment is exactly the act the control plane
- * requires a person for. So onboarding an agent shows a code and waits for
- * somebody to approve it, the same way `memnox login` does for the host.
+ * requires a person for. So onboarding an agent opens the approval page and
+ * waits for somebody to answer it, the same way `memnox login` does for the host.
  *
  * That is the right shape rather than an obstacle. Nothing promotes itself
  * here either: an agent joins because a person said so, and the approval screen
@@ -58,11 +65,19 @@ export async function enrolAgent(
       publicKey,
     );
 
+    const url = approvalUrl(baseUrl, offer.userCode, offer);
+    /* The same as `login`: the link carries the code, so a browser is the whole
+       step. The code is printed only where one could not be opened. */
+    const opened = await openBrowser(url);
+
     out.line('');
-    out.line(`  Approve ${shownAs} with the code ${offer.userCode}`);
-    out.line(`  ${approvalUrl(baseUrl, offer.userCode, offer)}`);
+    out.line(`  Approve ${shownAs} in your browser`);
+    out.line(`  ${url}`);
+    if (!opened || !pageCarriesCode(offer)) {
+      out.line(`  Code ${offer.userCode}`);
+    }
     /* Said before the wait rather than after it, because the alternative is a
-       terminal that has printed a code and then gone silent, which reads as a
+       terminal that has opened a browser and then gone silent, which reads as a
        hang. Naming Ctrl+C as safe is the other half: this is the one point
        where nothing on disk has been touched yet. */
     out.line(

@@ -60,7 +60,7 @@ export function registerSetupCommand(
     )
     .option('--url <base>', 'the control plane', DEFAULT_BASE_URL)
     .option('--enforce', 'start in enforce rather than observe')
-    .option('--no-open', 'print the URL instead of opening a browser')
+    .option('--no-open', 'print the code and the URL instead of opening a browser')
     .option('--no-probe', 'do not start any MCP server to ask what it offers')
     .action(
       async (options: {

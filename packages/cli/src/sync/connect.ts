@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import {
   ENFORCEMENT_MODE,
   loadOrCreateConfig,
@@ -9,6 +8,7 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { Flow } from '../flow';
+import { openBrowser } from './browser';
 import { insecureBaseUrl } from './client';
 import {
   accountFrom,
@@ -16,6 +16,7 @@ import {
   CloudUnreachable,
   EnrolmentRefused,
   machineKeypair,
+  pageCarriesCode,
   requestCode,
   waitForApproval,
   type WaitSeams,
@@ -36,11 +37,14 @@ export const DEFAULT_BASE_URL = 'https://api.memnox.com';
 interface ConnectOptions {
   url: string;
   enforce?: boolean;
-  /** False prints the URL rather than opening a browser, for a machine with none. */
+  /** False prints the URL and the code rather than opening a browser. */
   open?: boolean;
 }
 
-export type ConnectSeams = WaitSeams & { open?: (url: string) => void };
+export type ConnectSeams = WaitSeams & {
+  /** Answers whether a browser actually opened, because the screen turns on it. */
+  open?: (url: string) => Promise<boolean> | boolean;
+};
 
 interface Connected {
   account: Account;
@@ -79,14 +83,24 @@ export async function connectMachine(
 
   const offer = await request(enrolment, keys.publicKey);
   const url = approvalUrl(options.url, offer.userCode, offer);
-  flow.value('Your code', offer.userCode);
-  flow.step('Approve at', url);
 
-  // Nobody is at the keyboard on a CI runner, and waiting for a keypress there
-  // would hang the build rather than enrol the machine.
-  if (options.open !== false && process.stdin.isTTY === true) {
-    await pressEnter();
-    (seams.open ?? openBrowser)(url);
+  /* Straight to the page, because the link the control plane sends carries the
+     code in it: there is nothing for a person to read off one screen and type
+     into another, so asking them to press a key first is a step that exists
+     only to delay the step after it. */
+  const opened = options.open === false ? false : await (seams.open ?? openBrowser)(url);
+
+  if (opened) {
+    flow.step('Approving in your browser', url);
+  } else {
+    flow.step('Approve at', url);
+  }
+
+  /* Only where a browser could not be opened, or where the address carries no
+     code for the page to read. Printing it beside a page that already has it is
+     how somebody ends up typing eight characters nobody asked them for. */
+  if (!opened || !pageCarriesCode(offer)) {
+    flow.value('Your code', offer.userCode);
   }
 
   flow.step('Waiting for approval…');
@@ -139,25 +153,5 @@ async function request(
     }
     if (err instanceof EnrolmentRefused) throw new Error(err.message);
     throw err;
-  }
-}
-
-async function pressEnter(): Promise<void> {
-  const { createInterface } = await import('node:readline/promises');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    await rl.question('Press ENTER to open it in a browser… ');
-  } finally {
-    rl.close();
-  }
-}
-
-/** Best effort, and never fatal: the URL is printed above whatever happens. */
-function openBrowser(url: string): void {
-  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  try {
-    spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
-  } catch {
-    // No browser here, which is ordinary on a server. The URL is on screen.
   }
 }

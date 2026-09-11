@@ -26,7 +26,7 @@ export function registerLoginCommand(
        signed in to exactly one, and that is where it lands. */
     .option('--url <base>', 'the control plane', DEFAULT_BASE_URL)
     .option('--enforce', 'start in enforce rather than observe')
-    .option('--no-open', 'print the URL instead of opening a browser')
+    .option('--no-open', 'print the code and the URL instead of opening a browser')
     .action(async (options: { url: string; enforce?: boolean; open: boolean }) => {
       const { out, style } = context;
       const flow = new Flow(out, style);
