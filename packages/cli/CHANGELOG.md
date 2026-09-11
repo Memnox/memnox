@@ -1,5 +1,14 @@
 # memnox
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [7d23156]
+  - @memnox/core@0.7.1
+  - @memnox/interceptors@0.7.1
+  - @memnox/proxy@0.7.1
+
 ## 0.7.0
 
 ### Minor Changes

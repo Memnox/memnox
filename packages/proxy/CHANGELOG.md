@@ -1,5 +1,12 @@
 # @memnox/proxy
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [7d23156]
+  - @memnox/core@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes
