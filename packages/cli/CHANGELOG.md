@@ -1,8 +1,8 @@
 # memnox
 
-## 0.8.0
+## 0.7.2
 
-### Minor Changes
+### Patch Changes
 
 - Name the agents on this machine, set them up in one command, and cut the front page of `--help` from forty commands to twenty.
 
@@ -11,12 +11,9 @@
   Onboarding now rewrites TOML and YAML as well as JSON, so Codex and Hermes are governable rather than only findable. None of the three reformats a line it did not change, comments survive, and every rewrite is read back and refused unless it still holds every server it held.
 
   Four commands are gone and their work has a home: `diff` is `scan --since`, `autopilot` is `next --agent`, `verify --enforcement` is `doctor --prove`, and `spend` is removed because this machine cannot price a model call. Typing an old one names the new one. Seventeen less common commands still run and keep their own `--help`; they are off the front page rather than gone.
-
-### Patch Changes
-
-- @memnox/core@0.8.0
-- @memnox/proxy@0.8.0
-- @memnox/interceptors@0.8.0
+  - @memnox/core@0.7.2
+  - @memnox/proxy@0.7.2
+  - @memnox/interceptors@0.7.2
 
 ## 0.7.1
 

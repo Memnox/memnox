@@ -1,10 +1,10 @@
 # @memnox/proxy
 
-## 0.8.0
+## 0.7.2
 
 ### Patch Changes
 
-- @memnox/core@0.8.0
+- @memnox/core@0.7.2
 
 ## 0.7.1
 
