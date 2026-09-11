@@ -3,7 +3,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SqliteEventStore, databasePathFor } from '../src/event/sqlite-store';
+import {
+  IMMUTABLE_COLUMNS,
+  RELEASE_COLUMN,
+  SqliteEventStore,
+  databasePathFor,
+} from '../src/event/sqlite-store';
 import { EVENT_SCHEMA_VERSION, type MemnoxEvent } from '../src/event/event';
 
 const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-db-'));
@@ -165,6 +170,91 @@ describe('the event store', () => {
     await db.recordPolicyVersion('abc123', '2026-09-05T00:00:00.000Z', 'policies: []');
     expect(await db.policyVersion('abc123')).toBe('policies: []');
     expect(await db.policyVersion('nothing')).toBeNull();
+    db.close();
+  });
+});
+
+/**
+ * The trigger did not hold what its comment claimed.
+ *
+ * It asked only about `authorizedBy`, so any UPDATE that set it could rewrite
+ * every other column in the same statement. A denied action became an allowed
+ * one, under a different name, for a different reason, and the database raised
+ * nothing. SECURITY.md puts "a recorded event altered without the database
+ * refusing it" in scope, and this was it.
+ */
+describe('what a release may and may not carry with it', () => {
+  /** Reaches past the sink, which is what the trigger exists to stop. */
+  function raw(db: SqliteEventStore): {
+    prepare(sql: string): { run(...args: unknown[]): void };
+  } {
+    return (
+      db as unknown as {
+        db: { prepare(sql: string): { run(...args: unknown[]): void } };
+      }
+    ).db;
+  }
+
+  it('refuses a rewrite that rides along with a release', async () => {
+    const db = await store();
+    await db.append(event({ effect: 'ask' }));
+
+    expect(() =>
+      raw(db)
+        .prepare(
+          `UPDATE events SET authorizedBy = ?, effect = ?, operation = ?, reason = ? WHERE id = ?`,
+        )
+        .run('attacker', 'allow', 'ls', 'nothing to see', 'evt_1'),
+    ).toThrow(/append-only/);
+
+    const row = (await db.query({}))[0];
+    expect(row?.effect).toBe('ask');
+    expect(row?.operation).toBe('github.merge_pull_request');
+    expect(row?.authorizedBy).toBeUndefined();
+    db.close();
+  });
+
+  /* Nullable columns are the ones a `<>` chain would have waved through, since
+     `NULL <> NULL` is NULL rather than true. `IS NOT` is the null-safe form. */
+  it('refuses a rewrite of a column that was empty', async () => {
+    const db = await store();
+    await db.append(event({ effect: 'ask' }));
+
+    expect(() =>
+      raw(db)
+        .prepare(`UPDATE events SET authorizedBy = ?, target = ? WHERE id = ?`)
+        .run('attacker', 'some-other-repository', 'evt_1'),
+    ).toThrow(/append-only/);
+    db.close();
+  });
+
+  it('still lets a held call record who released it', async () => {
+    const db = await store();
+    await db.append(event({ effect: 'ask' }));
+
+    await db.recordAuthorization('evt_1', 'tresor');
+
+    expect((await db.query({}))[0]?.authorizedBy).toBe('tresor');
+    db.close();
+  });
+
+  /**
+   * The trigger names its columns, so a column added by a later migration is
+   * unguarded until somebody remembers. This is the reminder, and it arrives as
+   * a failing test rather than as a hole.
+   */
+  it('guards every column the table actually has', async () => {
+    const db = await store();
+    const columns = (
+      db as unknown as {
+        db: { prepare(sql: string): { all(): { name: string }[] } };
+      }
+    ).db
+      .prepare('PRAGMA table_info(events)')
+      .all()
+      .map((column) => column.name);
+
+    expect([...columns].sort()).toEqual([...IMMUTABLE_COLUMNS, RELEASE_COLUMN].sort());
     db.close();
   });
 });

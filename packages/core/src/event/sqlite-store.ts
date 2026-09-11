@@ -14,6 +14,71 @@ export function databasePathFor(home: string): string {
  * Each migration runs once, in order, inside a transaction. Numbered rather than
  * hashed so a half-applied upgrade is obvious in the table rather than mysterious.
  */
+/**
+ * Every column of `events` except the one a release is allowed to fill in.
+ *
+ * Written out rather than read from `PRAGMA table_info` at runtime, because a
+ * trigger built from whatever the table happens to have would quietly stop
+ * guarding a column somebody added and forgot. `sqlite-store.test.ts` asserts
+ * this list against the real table instead, so the reminder arrives as a failing
+ * test rather than as a gap nobody sees.
+ */
+export const IMMUTABLE_COLUMNS = [
+  'id',
+  'schemaVersion',
+  'at',
+  'sessionId',
+  'agent',
+  'actorType',
+  'principal',
+  'surface',
+  'operation',
+  'target',
+  'class',
+  'effect',
+  'shadowEffect',
+  'mode',
+  'reason',
+  'ruleName',
+  'ruleLayer',
+  'ruleFile',
+  'ruleLine',
+  'altAction',
+  'altResource',
+  'altNote',
+  'policyHash',
+  'argsDigest',
+  'execution',
+  'exitCode',
+  'durationMs',
+  'outputDigest',
+  'costUsd',
+  'bundleHash',
+  'conditionsInForce',
+] as const;
+
+/** The column a held call's release fills in, and the only one that may change. */
+export const RELEASE_COLUMN = 'authorizedBy';
+
+/**
+ * Append-only, enforced by the database rather than by everyone remembering.
+ *
+ * The one legal update is releasing a held call: `authorizedBy` going from null
+ * to a name, once, with nothing else moving.
+ */
+export function appendOnlyTrigger(): string {
+  const unchanged = IMMUTABLE_COLUMNS.map(
+    (column) => `NEW.${column} IS NOT OLD.${column}`,
+  ).join('\n        OR ');
+  return `CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+      WHEN OLD.${RELEASE_COLUMN} IS NOT NULL
+        OR NEW.${RELEASE_COLUMN} IS NULL
+        OR ${unchanged}
+      BEGIN
+        SELECT RAISE(ABORT, 'events are append-only');
+      END;`;
+}
+
 const MIGRATIONS: readonly { version: number; sql: string }[] = [
   {
     version: 1,
@@ -89,6 +154,36 @@ const MIGRATIONS: readonly { version: number; sql: string }[] = [
     version: 3,
     sql: `ALTER TABLE events ADD COLUMN bundleHash TEXT;
           ALTER TABLE events ADD COLUMN conditionsInForce TEXT;`,
+  },
+  {
+    /*
+     * The append-only trigger did not hold what its own comment claimed.
+     *
+     * `WHEN OLD.authorizedBy IS NOT NULL OR NEW.authorizedBy IS NULL` asks only
+     * about that one column, so it let through any UPDATE that happened to set
+     * it. One statement releasing a held call could rewrite the row around it:
+     *
+     *   UPDATE events SET authorizedBy = 'x', effect = 'allow', operation = 'ls'
+     *
+     * passed, and a denied action became an allowed one with a different name
+     * and a different reason. The row a person reads in `memnox why` a year
+     * later is the row this trigger exists to make trustworthy, so the check has
+     * to be that nothing except `authorizedBy` moved, not that `authorizedBy`
+     * moved the right way.
+     *
+     * Recreated here rather than edited into version 1, because a machine that
+     * already has a ledger never re-runs version 1 and would keep the weak
+     * trigger for ever. A fresh database runs both and lands in the same place.
+     *
+     * `IS NOT` rather than `<>`, which is null-safe in SQLite: half these
+     * columns are nullable and `NULL <> NULL` is NULL, so a `<>` chain would
+     * wave through exactly the columns that are usually empty.
+     */
+    version: 4,
+    sql: `
+      DROP TRIGGER IF EXISTS events_no_update;
+      ${appendOnlyTrigger()}
+    `,
   },
 ];
 
