@@ -22,7 +22,27 @@ export interface WrapPlan {
   alreadyWrapped: string[];
 }
 
+/**
+ * Whether this entry is a command we could put a proxy in front of.
+ *
+ * A config file is JSON somebody else wrote, and it is read here through a cast:
+ * `ServerLaunch` says `command` and `args` are always there and an MCP config is
+ * under no obligation to agree. A server declared by URL — `{ type, url, headers }`
+ * — has neither, so `launch.args.includes(...)` threw and took `mcp wrap` and
+ * `mcp unwrap` down with it. That is not an exotic shape: it is what a remote
+ * server looks like, and it is what Memnox's own cloud server is written as, so
+ * the two commands crashed on the entry this product had just added itself.
+ *
+ * Checked rather than chained, the way everything else here is: the absence is the
+ * answer, and an entry with no command to launch is one there is nothing to wrap.
+ */
+function isLaunch(launch: ServerLaunch): boolean {
+  if (typeof launch !== 'object' || launch === null) return false;
+  return typeof launch.command === 'string' && Array.isArray(launch.args);
+}
+
 function isWrapped(launch: ServerLaunch): boolean {
+  if (!isLaunch(launch)) return false;
   return launch.command === PROXY_BINARY || launch.args.includes(WRAP_MARKER);
 }
 
@@ -56,6 +76,9 @@ export function unwrapLaunch(launch: ServerLaunch): ServerLaunch | null {
 export function planWrap(servers: Readonly<Record<string, ServerLaunch>>): WrapPlan {
   const plan: WrapPlan = { wrap: [], alreadyWrapped: [] };
   for (const [name, launch] of Object.entries(servers)) {
+    /* A URL server has no command to put anything in front of. Left exactly as
+       it is rather than rewritten into something that would never start. */
+    if (!isLaunch(launch)) continue;
     if (isWrapped(launch)) {
       plan.alreadyWrapped.push(name);
       continue;
