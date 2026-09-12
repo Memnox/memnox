@@ -50,9 +50,46 @@ export interface DoctorInput {
   surfaces: readonly Surface[];
   /** Tool chains from the scan. Absent when nothing asked the servers what they hold. */
   chains?: readonly AgentChains[];
+  /**
+   * Whether a rule already denies reading a path, and which rule does.
+   *
+   * Without this the doctor reports what the scan can see and nothing else, so
+   * running `memnox protect --apply` and then `memnox doctor` gave back the same
+   * four criticals with the same `fix:` line the person had just applied. The
+   * loop never closed: you did the work and the report could not tell you.
+   *
+   * A function rather than a list of paths, because the answer is the policy
+   * engine's to give. A rule may name `~/.ssh/*` and cover a key it never
+   * mentions, and re-deciding that here would be a second matcher that drifts
+   * from the one the gate uses.
+   *
+   * Absent means nothing is known about rules, which is the honest reading for a
+   * caller that did not load any: every finding then reads as ungoverned.
+   */
+  governedBy?: GovernedBy;
   /** Injected so a report is reproducible and a test is not a coin toss. */
   newId?: () => string;
 }
+
+/** Answers with the name of the rule that denies reading this path, or nothing. */
+export type GovernedBy = (path: string) => string | undefined;
+
+/**
+ * One rung down, never to nothing.
+ *
+ * A rule covers the seams: the shell wrappers, the MCP proxy, the git hooks. It
+ * does not cover a process that never meets one, and `SECURITY.md` is explicit
+ * that `PATH` is advisory. So a governed credential is genuinely safer and is not
+ * sealed, and reporting it as closed would be the one lie this command cannot
+ * afford. The kernel guard is what closes the rest, which is why that is the
+ * step offered next instead of the deny that is already written.
+ */
+const MITIGATED: Record<FindingSeverity, FindingSeverity> = {
+  [FINDING_SEVERITY.CRITICAL]: FINDING_SEVERITY.MEDIUM,
+  [FINDING_SEVERITY.HIGH]: FINDING_SEVERITY.MEDIUM,
+  [FINDING_SEVERITY.MEDIUM]: FINDING_SEVERITY.LOW,
+  [FINDING_SEVERITY.LOW]: FINDING_SEVERITY.LOW,
+};
 
 export interface DoctorReport {
   findings: Finding[];
@@ -88,6 +125,9 @@ function worstOf(findings: readonly Finding[]): number {
  */
 export function runDoctor(input: DoctorInput): DoctorReport {
   const newId = input.newId ?? randomUUID;
+  /* Nothing known about rules reads as nothing governed, which is the honest
+     answer for a caller that loaded none rather than a claim that none exist. */
+  const governedBy = input.governedBy ?? ((): undefined => undefined);
   const findings: Finding[] = [];
 
   for (const resource of input.resources) {
@@ -99,17 +139,31 @@ export function runDoctor(input: DoctorInput): DoctorReport {
        itself, cannot: a `filesystem.read` rule against "postgres production URL"
        matches nothing, and offering it would be a fix that closes no finding. */
     const closable = CLOSABLE_BY_PATH.includes(resource.kind);
+    /* Asked only where a rule could have been written. Nothing denies reads of
+       "the network", so reporting it as ungoverned is not a gap in the rules. */
+    const rule = closable ? governedBy(path) : undefined;
+    const severity = severityOfResource(resource);
     findings.push({
       id,
       kind: FINDING_KIND.SENSITIVE_RESOURCE_REACHABLE,
-      severity: severityOfResource(resource),
-      title: closable
-        ? `${path} is readable by ${resource.reachableBy.length} agent(s)`
-        : `${path} is reachable by ${resource.reachableBy.length} agent(s), and a person decides what to do about it`,
+      severity: rule === undefined ? severity : MITIGATED[severity],
+      title:
+        rule !== undefined
+          ? `${path} is readable by ${resource.reachableBy.length} agent(s), and "${rule}" denies it at the seams`
+          : closable
+            ? `${path} is readable by ${resource.reachableBy.length} agent(s)`
+            : `${path} is reachable by ${resource.reachableBy.length} agent(s), and a person decides what to do about it`,
       agentIds: agentIdsOf(resource.reachableBy),
       resourceId: resource.id,
       evidence: resource.declaredIn ?? path,
-      ...(closable ? { remediation: denyReadStep(id, path, resource.kind) } : {}),
+      /* The deny is written, so offering it again is how a person stops reading
+         this list. What is left is the process that never meets a seam, and the
+         kernel guard is the only thing that closes that. */
+      ...(rule !== undefined
+        ? { remediation: osGuardStep(id) }
+        : closable
+          ? { remediation: denyReadStep(id, path, resource.kind) }
+          : {}),
     });
   }
 
@@ -274,6 +328,8 @@ function exportPaths(input: DoctorInput): ExportPath[] {
 }
 
 const POLICY_DIR = 'policies';
+/** Where the kernel profile is written, under the Memnox home. */
+const GUARD_DIR = 'guard';
 
 /**
  * The credentials that were to hand were the production ones and the work is local.
@@ -374,6 +430,34 @@ function denyReadStep(findingId: string, path: string, kind: ResourceKind): Hard
         : `deny reads of ${path}, naming ${substitute} instead`,
     apply: { path: file, contents, command: `memnox protect --apply hs_${findingId}` },
     revert: { path: file, command: `memnox protect --revert hs_${findingId}` },
+    mode: HARDEN_MODE.ENFORCE,
+  };
+}
+
+/**
+ * What is left once the deny is written.
+ *
+ * A rule is enforced at the seams, so it covers what goes through a wrapper, the
+ * proxy or a hook. A process that calls `open(2)` directly meets none of them, and
+ * the kernel profile is the only thing that reaches it. Offering the deny again
+ * here is how a person learns to stop reading this list; offering the step that
+ * actually closes the remainder is the point of saying anything at all.
+ *
+ * One step for the machine rather than one per path, because the profile is
+ * written from every filesystem rule at once.
+ */
+function osGuardStep(findingId: string): HardenStep {
+  return {
+    id: `hs_${findingId}`,
+    target: HARDEN_TARGET.POLICY,
+    seam: SURFACE_KIND.FILESYSTEM,
+    description:
+      'write the kernel sandbox profile, so a process that skips the seams is stopped too',
+    /* The directory rather than a filename: the profile is `memnox.sb` on macOS
+       and `landlock.json` on Linux, and the command writes whichever this machine
+       takes. Naming one of them here would be wrong on the other. */
+    apply: { path: GUARD_DIR, command: 'memnox protect --os-guard --apply' },
+    revert: { path: GUARD_DIR, command: 'memnox protect --revert' },
     mode: HARDEN_MODE.ENFORCE,
   };
 }

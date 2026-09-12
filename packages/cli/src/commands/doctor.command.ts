@@ -14,6 +14,9 @@ import {
   NodeSnapshotStore,
   rankAgents,
   runDoctor,
+  PolicyEngine,
+  DECISION_EFFECT,
+  type GovernedBy,
   summarizeHealth,
   withToolsFrom,
   type AgentStanding,
@@ -22,6 +25,7 @@ import {
   type MachineReader,
   type SnapshotStore,
 } from '@memnox/core';
+import { policySetInForce } from '../policy-path';
 import type { CliContext } from '../cli-context';
 import { gatherHealth } from '../health-probe';
 import { proveEnforcement, type ProbeContext } from '../verify/enforcement';
@@ -99,10 +103,14 @@ export function registerDoctorCommand(
           discovered.surfaces,
           lastProbed(await buildSnapshots().history()),
         );
+        /* What the rules already close, asked of the engine rather than decided
+           here: a rule may name a directory and cover a key it never mentions,
+           and a second matcher would drift from the one the gate uses. */
         const report = runDoctor({
           resources: discovered.resources,
           reachability: discovered.reachability,
           surfaces,
+          governedBy: await deniesReadsOf(homedir()),
           // From the hydrated surfaces, not the unprobed scan, or this is always empty.
           chains: chainsFor(
             discovered.agents.map((agent) => agent.id),
@@ -251,3 +259,41 @@ function renderWiring(context: CliContext, checks: readonly HealthCheck[]): void
   }
   out.line('');
 }
+
+/**
+ * Whether a rule in force already denies reading a path, and which rule does.
+ *
+ * The whole reason `memnox doctor` can now say "you have closed this": before it,
+ * applying every fix the doctor proposed changed nothing about what the doctor
+ * said next, so the reader had no way to tell a closed finding from an open one.
+ *
+ * A machine with no rules yet answers nothing for every path, which is correct
+ * rather than a failure: nothing is governed because nothing has been written.
+ * A rule set that will not load answers nothing too, and the finding stays at its
+ * full severity, which is the direction to be wrong in.
+ */
+async function deniesReadsOf(home: string): Promise<GovernedBy> {
+  let engine: PolicyEngine;
+  try {
+    const set = await policySetInForce(home);
+    engine = new PolicyEngine(set.policies);
+  } catch {
+    // Unreadable rules are reported by `doctor --wiring`; here they mean ungoverned.
+    return () => undefined;
+  }
+  return (path: string): string | undefined => {
+    const verdict = engine.evaluate(
+      { action: FILESYSTEM_READ, target: path },
+      { agentName: ANY_AGENT },
+    );
+    if (verdict.effect !== DECISION_EFFECT.DENY) return undefined;
+    return verdict.rule?.name ?? verdict.matchedPolicies[0]?.name;
+  };
+}
+
+/* The action a credential finding is about, spelled the way `denyReadStep` writes
+   it, so the question asked here is the one the rule answers. */
+const FILESYSTEM_READ = 'filesystem.read';
+/* Asked for no agent in particular: the finding is that *any* of them can read it,
+   and a rule naming one agent does not close it for the rest. */
+const ANY_AGENT = 'any-agent';
