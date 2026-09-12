@@ -33,7 +33,7 @@ import {
   runOsGuard,
   runPathLine,
 } from '../protect/seam-install';
-import { runForCli, runFromUsage } from '../protect/written-rules';
+import { runAllow, runForCli, runFromUsage } from '../protect/written-rules';
 
 /** An id nobody applied is a typo, and exiting zero on one hides it. */
 const EXIT_NO_SUCH_STEP = 1;
@@ -65,6 +65,10 @@ export function registerProtectCommand(
     )
     .option('--for <name>', 'write rules for one CLI or MCP server only')
     .option(
+      '--allow <action...>',
+      'stop being asked about something you have already approved enough times',
+    )
+    .option(
       '--from-usage <window>',
       'draft ask rules for what was granted and never used, e.g. 30d',
     )
@@ -89,6 +93,7 @@ export function registerProtectCommand(
         apply?: boolean;
         revert?: boolean | string;
         for?: string;
+        allow?: string[];
         fromUsage?: string;
         interceptors?: boolean;
         hooks?: boolean;
@@ -119,6 +124,12 @@ export function registerProtectCommand(
               'Verdicts now bite. "memnox protect --observe" puts it back.',
             );
           }
+          return;
+        }
+        /* Ahead of the interactive branch below, or "--allow x --yes" would be read
+           as the five-domain walk and hand nothing over. */
+        if (options.allow !== undefined) {
+          await runAllow(context, options.allow);
           return;
         }
         if (options.fromUsage !== undefined) {

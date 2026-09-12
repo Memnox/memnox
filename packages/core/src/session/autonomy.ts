@@ -242,3 +242,68 @@ export function describeLevel(level: AutonomyLevel): string {
   };
   return words[level];
 }
+
+/**
+ * Whether one action may stop being asked about, and the sentence for why not.
+ *
+ * The same three tests the recommendation already applies, said once so a screen and
+ * the command under it cannot disagree. Until this existed the screen printed
+ * `memnox protect --allow <action>` under every promotable row, including the ones
+ * whose own reason said they stay supervised, which is a screen arguing with itself.
+ *
+ * A refusal is a sentence rather than a boolean, because "skipped" with no reason is
+ * how somebody concludes the tool is broken and hand-writes the rule anyway.
+ */
+export type HandOverVerdict =
+  | { action: string; ready: true; delegation: Delegation }
+  | { action: string; ready: false; because: string };
+
+export function handOverVerdict(
+  action: string,
+  found: readonly Delegation[],
+  threshold = PROMOTION_THRESHOLD,
+): HandOverVerdict {
+  const seen = found.find((each) => each.action === action);
+  if (seen === undefined) {
+    return {
+      action,
+      ready: false,
+      because: 'nothing has been held for it, so there is no yes to stop asking for',
+    };
+  }
+  /* One no outranks any number of yeses, exactly as the recommendation does. */
+  if (seen.denials > 0) {
+    return {
+      action,
+      ready: false,
+      because: `somebody refused it ${seen.denials} time(s), so it stays a question`,
+    };
+  }
+  if (seen.approvals < threshold) {
+    return {
+      action,
+      ready: false,
+      because: `approved ${seen.approvals} time(s), fewer than the ${threshold} that make it a habit`,
+    };
+  }
+  /* The ceiling, not a preference: destructive and outward things stay decisions
+     however routine they became. */
+  if (seen.recommendation === AUTONOMY.SUPERVISED) {
+    return {
+      action,
+      ready: false,
+      because: `it is ${seen.class}, which stays supervised however routine it became`,
+    };
+  }
+  return { action, ready: true, delegation: seen };
+}
+
+/** The rows on a screen that `--allow` would actually take, so neither names the other wrongly. */
+export function handable(each: Delegation): boolean {
+  return (
+    each.denials === 0 &&
+    each.approvals >= PROMOTION_THRESHOLD &&
+    each.recommendation !== AUTONOMY.ASSIST &&
+    each.recommendation !== AUTONOMY.SUPERVISED
+  );
+}

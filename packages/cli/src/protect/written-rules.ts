@@ -1,11 +1,15 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
   DECISION_EFFECT,
+  delegations,
   discover,
   findUnusedGrants,
   matchesPattern,
+  handOverVerdict,
   NodeMachineReader,
   POLICY_FILE_EXTENSION,
+  readPolicyDocumentFile,
   rollUpUsage,
   TOOL_CLASS,
   TOOL_EFFECT,
@@ -18,6 +22,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { DAY_MS, windowDays } from '../duration';
 import { withEvents } from '../event-store';
+import { resolvePolicyFile } from '../policy-path';
 import { registerPolicyFile } from '../policy-registry';
 
 /**
@@ -183,4 +188,85 @@ export async function runFromUsage(
     // Ask, never deny: unused for a month is not the same as never needed.
     out.note('They are set to ask, not deny — the first real use will simply pause.');
   });
+}
+
+/**
+ * Stop being asked about something you have already said yes to enough times.
+ *
+ * This is the command `memnox next` names under every row it recommends, and until now
+ * it did not exist: the flagship screen ended on a line that exits with "unknown
+ * option". A recommendation nobody can act on is a report, and this product is not one.
+ *
+ * The ledger decides, not the argument. What a person types is the action; whether it
+ * may be handed over is `handOverVerdict`, the same three tests the screen applied when
+ * it recommended the row, so the flag cannot be used to talk the tool into something
+ * the screen would refuse to suggest.
+ */
+export async function runAllow(
+  context: CliContext,
+  actions: readonly string[],
+  exists: (path: string) => boolean = existsSync,
+): Promise<void> {
+  const { out, style } = context;
+  const events = await withEvents(homedir(), (store) => store.query({ limit: 20_000 }));
+  const found = delegations(events);
+  const verdicts = actions.map((action) => handOverVerdict(action, found));
+
+  for (const verdict of verdicts) {
+    if (verdict.ready) continue;
+    out.line(`  ${style.dim('skipped')}  ${verdict.action}`);
+    out.line(`           ${style.dim(verdict.because)}`);
+  }
+
+  const handing = verdicts.filter((verdict) => verdict.ready).map((v) => v.delegation);
+  if (handing.length === 0) {
+    out.line('');
+    out.line('Nothing was handed over.');
+    out.note('Run "memnox next" to see what has been approved often enough.');
+    return;
+  }
+
+  /* Appended to what is already there rather than written over it. Handing one thing
+     over a week is the normal shape of this, and a write that replaced the file would
+     make the second one take back the first. */
+  const path = resolvePolicyFile(undefined, exists);
+  const document = await readPolicyDocumentFile(path);
+  const existing = document?.policies ?? [];
+  const taken = new Set(existing.map((rule) => rule.name));
+
+  const added = handing
+    .filter((each) => !taken.has(allowRuleName(each.action)))
+    .map(
+      (each) =>
+        ({
+          name: allowRuleName(each.action),
+          description: `Handed over after ${each.approvals} approvals and no refusal.`,
+          match: { actions: [each.action] },
+          decision: { effect: DECISION_EFFECT.ALLOW, reason: each.because },
+        }) as unknown as Policy,
+    );
+
+  if (added.length === 0) {
+    out.line('');
+    out.line('Every one of those is already allowed here.');
+    return;
+  }
+
+  await writePolicyDocumentFile(path, {
+    ...(document ?? { version: 1 }),
+    policies: [...existing, ...added],
+  });
+  await registerPolicyFile(homedir(), path);
+
+  out.line('');
+  for (const rule of added) out.line(`  ${style.ok('allow')}  ${rule.match.actions[0]}`);
+  out.line('');
+  out.line(`Wrote ${added.length} allow rule(s) to ${path}.`);
+  // Said out loud, because an allow rule is the one change that widens what may happen.
+  out.note('These now run without asking. Delete the rule to be asked again.');
+}
+
+/** Stable across runs, so handing the same thing over twice adds one rule, not two. */
+function allowRuleName(action: string): string {
+  return `allow-${action.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
 }

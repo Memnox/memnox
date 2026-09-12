@@ -4,6 +4,7 @@ import {
   delegations,
   describeLevel,
   ENFORCEMENT_MODE,
+  handable,
   interruptions,
   loadOrCreateConfig,
   LocalGate,
@@ -15,6 +16,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { withEvents } from '../event-store';
 import { policySetInForce } from '../policy-path';
+import { runAllow } from '../protect/written-rules';
 import {
   renderBoundary,
   wantsBoundary,
@@ -51,49 +53,67 @@ export function registerNextCommand(
     .option('--role <name>', 'the same for a job rather than for a product')
     .option('--roles', 'every job the rules name, and what each may do')
     .option('-f, --file <path>', 'policy file to read the boundary from')
+    .option(
+      '--hand-over',
+      'write the allow rules for everything below that is ready, rather than one at a time',
+    )
     .option('--json', 'machine-readable output')
-    .action(async (options: { since: string; json?: boolean } & BoundaryOptions) => {
-      /* The rules read forwards rather than the ledger read backwards. Same
+    .action(
+      async (
+        options: { since: string; json?: boolean; handOver?: boolean } & BoundaryOptions,
+      ) => {
+        /* The rules read forwards rather than the ledger read backwards. Same
          decision, opposite evidence, so they belong under one verb. */
-      if (wantsBoundary(options)) {
-        await renderBoundary(context, options);
-        return;
-      }
-      const moment = now();
-      const days = Number.parseInt(options.since, 10);
-      const since = new Date(
-        moment.getTime() - (Number.isNaN(days) ? 30 : days) * 24 * 60 * 60_000,
-      ).toISOString();
-      const week = new Date(
-        moment.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60_000,
-      ).toISOString();
+        if (wantsBoundary(options)) {
+          await renderBoundary(context, options);
+          return;
+        }
+        const moment = now();
+        const days = Number.parseInt(options.since, 10);
+        const since = new Date(
+          moment.getTime() - (Number.isNaN(days) ? 30 : days) * 24 * 60 * 60_000,
+        ).toISOString();
+        const week = new Date(
+          moment.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60_000,
+        ).toISOString();
 
-      const events = await withEvents(home(), (store) =>
-        store.query({ since, limit: 20_000 }),
-      );
-      const found = delegations(events);
-      const ready = promotable(found);
-      const asked = interruptions(events, week);
+        const events = await withEvents(home(), (store) =>
+          store.query({ since, limit: 20_000 }),
+        );
+        const found = delegations(events);
+        const ready = promotable(found);
+        const asked = interruptions(events, week);
 
-      const config = await loadOrCreateConfig(home());
-      const rules = await policySetInForce(home());
-      const gate =
-        rules.policies.length === 0
-          ? null
-          : new LocalGate(rules.policies, { agentName: 'agent' });
-      const standing = standingOf({
-        enforcing: config.mode === ENFORCEMENT_MODE.ENFORCE,
-        rules: gate?.rules().length ?? 0,
-        asksInWindow: asked.total,
-        actionsInWindow: events.filter((event) => event.at >= week).length,
-      });
+        const config = await loadOrCreateConfig(home());
+        const rules = await policySetInForce(home());
+        const gate =
+          rules.policies.length === 0
+            ? null
+            : new LocalGate(rules.policies, { agentName: 'agent' });
+        const standing = standingOf({
+          enforcing: config.mode === ENFORCEMENT_MODE.ENFORCE,
+          rules: gate?.rules().length ?? 0,
+          asksInWindow: asked.total,
+          actionsInWindow: events.filter((event) => event.at >= week).length,
+        });
 
-      if (options.json === true) {
-        context.out.json({ standing, promotable: ready, interruptions: asked });
-        return;
-      }
-      render(context, standing, ready, asked, found.length);
-    });
+        /* One command for the whole list, because the list is the point: reading five
+         rows and typing five commands is the manual work this screen exists to end. */
+        if (options.handOver === true) {
+          await runAllow(
+            context,
+            ready.filter(handable).map((each) => each.action),
+          );
+          return;
+        }
+
+        if (options.json === true) {
+          context.out.json({ standing, promotable: ready, interruptions: asked });
+          return;
+        }
+        render(context, standing, ready, asked, found.length);
+      },
+    );
 }
 
 function render(
@@ -117,8 +137,17 @@ function render(
       out.line(`  ${style.ok('+')}  ${each.action}`);
       out.line(`     ${style.dim(each.because)}`);
       out.line(
-        `     ${style.dim(`memnox protect --allow ${each.action}  (or keep being asked)`)}`,
+        `     ${style.dim(
+          handable(each)
+            ? `memnox protect --allow ${each.action}  (or keep being asked)`
+            : 'stays a question: nothing hands this one over',
+        )}`,
       );
+    }
+
+    if (ready.some(handable)) {
+      out.line('');
+      out.line(`  ${style.dim('memnox next --hand-over  writes all of them at once')}`);
     }
   }
 

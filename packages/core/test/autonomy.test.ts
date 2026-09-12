@@ -13,6 +13,8 @@ import {
   PROMOTION_THRESHOLD,
   delegations,
   describeLevel,
+  handable,
+  handOverVerdict,
   interruptions,
   promotable,
   MINIMUM_EVIDENCE,
@@ -188,5 +190,75 @@ describe('what the ladder will not claim without evidence', () => {
       standingOf({ enforcing: true, rules: 4, asksInWindow: 90, actionsInWindow: 100 }),
     ).toBe(AUTONOMY.ASSIST);
     expect(standingOf({ ...clean, enforcing: false })).toBe(AUTONOMY.OBSERVE);
+  });
+});
+
+describe('handOverVerdict', () => {
+  const approvedTimes = (count: number, over: Partial<MemnoxEvent> = {}) =>
+    Array.from({ length: count }, () =>
+      event({ effect: DECISION_EFFECT.ASK, authorizedBy: 'someone', ...over }),
+    );
+
+  it('hands over what was approved enough times and never refused', () => {
+    const found = delegations(approvedTimes(PROMOTION_THRESHOLD));
+    const verdict = handOverVerdict('vercel.deploy-preview', found);
+
+    expect(verdict.ready).toBe(true);
+  });
+
+  it('refuses an action one person said no to, however many said yes', () => {
+    const found = delegations([
+      ...approvedTimes(PROMOTION_THRESHOLD * 4),
+      event({ effect: DECISION_EFFECT.DENY }),
+    ]);
+    const verdict = handOverVerdict('vercel.deploy-preview', found);
+
+    expect(verdict.ready).toBe(false);
+    expect(verdict.ready === false && verdict.because).toContain('refused');
+  });
+
+  it('refuses a destructive action that became routine, because the ceiling holds', () => {
+    const found = delegations(
+      approvedTimes(PROMOTION_THRESHOLD * 4, {
+        operation: 'db.drop-table',
+        class: TOOL_CLASS.DESTRUCTIVE,
+      }),
+    );
+    const verdict = handOverVerdict('db.drop-table', found);
+
+    expect(verdict.ready).toBe(false);
+    expect(verdict.ready === false && verdict.because).toContain('supervised');
+  });
+
+  it('refuses an action below the threshold rather than rounding up to a habit', () => {
+    const found = delegations(approvedTimes(PROMOTION_THRESHOLD - 1));
+    const verdict = handOverVerdict('vercel.deploy-preview', found);
+
+    expect(verdict.ready).toBe(false);
+    expect(verdict.ready === false && verdict.because).toContain('fewer than');
+  });
+
+  it('refuses an action nothing was ever held for, so a typo is not a grant', () => {
+    const verdict = handOverVerdict('never.seen', delegations([]));
+
+    expect(verdict.ready).toBe(false);
+    expect(verdict.ready === false && verdict.because).toContain('nothing has been held');
+  });
+
+  /* The defect this pair exists for: the screen printed "--allow" under every
+     promotable row, supervised ones included, and the command then refused them. */
+  it('agrees with what the screen offers, row for row', () => {
+    const found = delegations([
+      ...approvedTimes(PROMOTION_THRESHOLD),
+      ...approvedTimes(PROMOTION_THRESHOLD, {
+        operation: 'db.drop-table',
+        class: TOOL_CLASS.DESTRUCTIVE,
+      }),
+    ]);
+
+    for (const each of promotable(found)) {
+      expect(handOverVerdict(each.action, found).ready).toBe(handable(each));
+    }
+    expect(promotable(found).filter(handable)).toHaveLength(1);
   });
 });
