@@ -100,8 +100,17 @@ export async function enrolAgent(
   report: EnrolReporter,
   /** What to call it on screen. The id stays the identity the credential is cut for. */
   shownAs: string = agentId,
+  /**
+   * What product it is, sent because the hostname above is not.
+   *
+   * The control plane hashes the hostname, so the id and this are the only
+   * readable answers to which agent a credential belongs to. Without the kind
+   * a workspace lists five names somebody typed and cannot say which of them
+   * is Claude Code.
+   */
+  agentKind?: string,
 ): Promise<EnrolledAgent | EnrolFailure> {
-  const sponsored = await enrolOnThisMachine(sponsor, agentId, shownAs);
+  const sponsored = await enrolOnThisMachine(sponsor, agentId, shownAs, agentKind);
   if ('machineId' in sponsored) return sponsored;
   if (sponsored.outcome === ENROL_FAILED) return sponsored;
 
@@ -116,6 +125,7 @@ export async function enrolAgent(
     report,
     shownAs,
     sponsored.because,
+    agentKind,
   );
 }
 
@@ -140,6 +150,7 @@ async function enrolOnThisMachine(
   sponsor: Sponsor,
   agentId: string,
   shownAs: string,
+  agentKind?: string,
 ): Promise<EnrolledAgent | FallBack | EnrolFailure> {
   let answer: Awaited<ReturnType<typeof callCloud<EnrolledPrincipal>>>;
   try {
@@ -148,7 +159,11 @@ async function enrolOnThisMachine(
       path: `/v1/workspaces/${encodeURIComponent(sponsor.workspaceId)}/machines/${encodeURIComponent(sponsor.machineId)}/agents`,
       method: 'POST',
       token: sponsor.token,
-      body: { agentId, label: shownAs },
+      body: {
+        agentId,
+        label: shownAs,
+        ...(agentKind === undefined ? {} : { agentKind }),
+      },
     });
   } catch (err) {
     /* Unreachable is not "this control plane cannot do it", and a browser
@@ -224,6 +239,7 @@ async function askAPerson(
   report: EnrolReporter,
   shownAs: string,
   because: string,
+  agentKind?: string,
 ): Promise<EnrolledAgent | EnrolFailure> {
   try {
     /* A key is generated and then not sent: an advisory principal signs no
@@ -238,6 +254,10 @@ async function askAPerson(
            plane hashes it. Without this the console shows a hex id and the
            name a person just chose lives only on their laptop. */
         label: shownAs,
+        /* The same two the sponsored door takes, so an agent that had to go
+           through a browser still lands as the product it is. */
+        agentId,
+        ...(agentKind === undefined ? {} : { agentKind }),
         connection: 'mcp',
       },
       publicKey,

@@ -66,6 +66,15 @@ interface EnrolOptions {
    * name here would mean asking for it and then throwing it away.
    */
   label?: string;
+  /**
+   * The agent this credential is for, where it is for one rather than a host.
+   *
+   * Sent with the same two fields the sponsored door takes, because the
+   * hostname beside them is hashed: without these a workspace holds a name
+   * somebody typed and nothing saying which product it belongs to.
+   */
+  agentId?: string;
+  agentKind?: string;
   mode?: string;
   /**
    * `mcp` for an agent enrolled as an advisory principal.
@@ -96,6 +105,8 @@ export async function requestCode(
     body: {
       hostname: options.host ?? hostname(),
       ...(options.label === undefined ? {} : { label: options.label }),
+      ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
+      ...(options.agentKind === undefined ? {} : { agentKind: options.agentKind }),
       /* Omitted for an advisory principal, which signs no bytes there is a key
          to check. The door enforces that split rather than this side. */
       ...(options.connection === 'mcp' ? {} : { publicKey }),

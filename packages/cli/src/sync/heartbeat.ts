@@ -37,6 +37,7 @@ import {
   type PushResult,
 } from './push';
 import { callCloud } from './client';
+import { kindOf, listRecords } from '../agents/onboarding';
 
 /**
  * One pass: pull the rules, send what happened, say you are alive.
@@ -210,6 +211,20 @@ async function beat(
         name: budget.name,
         actions: budget.actions,
         windowHours: windowHoursOf(budget),
+      })),
+      /* Which agent each principal this machine enrolled is for.
+         The control plane hashes the hostname those were keyed on, so an
+         agent onboarded before the enrolment door carried an id is a
+         credential the console cannot join to anything the ledger recorded:
+         the same agent shows up twice, once as a name somebody typed and
+         once as an id nothing governs. This machine wrote both halves into
+         its own onboarding records, so it says so rather than anybody
+         re-enrolling to fix a missing word. Ignored where the link is
+         already set. */
+      agents: (await listRecords(home)).map((record) => ({
+        machineId: record.machineId,
+        agentId: record.agentId,
+        agentKind: kindOf(record),
       })),
       holding: holding.map((each: (typeof holding)[number]) => ({
         id: each.id,

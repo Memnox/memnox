@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '@memnox/core';
 
@@ -26,6 +26,14 @@ export interface OnboardRecord {
   agentId: string;
   /** The product whose config was rewritten, for what a person reads. */
   product: string;
+  /**
+   * The product as the scan names it: `claude-code`, `cursor`, `codex-cli`.
+   *
+   * Apart from `product`, which is what a person reads, because this is what
+   * the control plane is told and what a console draws a mark from. Absent on
+   * a record written before it was kept, where the id still carries it.
+   */
+  agentKind?: string;
   /** The config file that was changed. */
   configPath: string;
   /** Where its previous contents were kept, verbatim. */
@@ -96,6 +104,53 @@ export async function readRecord(
   } catch {
     return null;
   }
+}
+
+/**
+ * Every agent this machine has onboarded and not taken back out.
+ *
+ * Retired records are skipped by their own suffix: an offboarded agent has
+ * had its credential revoked, and reporting it would be this machine claiming
+ * a principal that is gone.
+ *
+ * Unreadable is empty rather than an error. This is read on the sync loop,
+ * and a heartbeat that failed over a half-written file would stop a machine
+ * pulling its rules to fix a name on a screen.
+ */
+export async function listRecords(home: string): Promise<OnboardRecord[]> {
+  let names: string[];
+  try {
+    names = await readdir(agentsDir(home));
+  } catch {
+    return []; // Nothing has been onboarded here.
+  }
+
+  const records: OnboardRecord[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    try {
+      const raw = await readFile(join(agentsDir(home), name), 'utf8');
+      const record = JSON.parse(raw) as OnboardRecord;
+      if (typeof record.agentId === 'string' && typeof record.machineId === 'string') {
+        records.push(record);
+      }
+    } catch {
+      continue; // One unreadable record must not hide the rest.
+    }
+  }
+  return records;
+}
+
+/**
+ * The product an onboarded agent is, from the record or from its own id.
+ *
+ * `agt_claude-code` is the id a scan gives Claude Code, so the kind is in it
+ * for every record written before the field existed. Derived rather than
+ * guessed: the scan builds the id from the kind, so this reverses exactly
+ * what that did.
+ */
+export function kindOf(record: OnboardRecord): string {
+  return record.agentKind ?? record.agentId.replace(/^agt_/, '');
 }
 
 /**

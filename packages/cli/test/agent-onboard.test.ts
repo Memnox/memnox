@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '@memnox/core';
 import { OFFBOARD, ONBOARD, offboardAgent, onboardAgent } from '../src/agents/onboard';
-import { readRecord } from '../src/agents/onboarding';
+import {
+  kindOf,
+  listRecords,
+  readRecord,
+  type OnboardRecord,
+} from '../src/agents/onboarding';
 import type { EnrolReporter } from '../src/agents/enrol-agent';
 import {
   MANAGED_SERVER,
@@ -125,6 +130,8 @@ const ORIGINAL = {
 describe('onboarding an agent', () => {
   let home: string;
   let enrolments: number;
+  /** What was posted to the enrolment door, so a test reads what was sent. */
+  let sent: Record<string, unknown>[];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'memnox-onboard-'));
@@ -135,8 +142,13 @@ describe('onboarding an agent', () => {
       'utf8',
     );
     enrolments = 0;
-    vi.stubGlobal('fetch', (async (url: URL | string) =>
-      deviceFlow(String(url), () => (enrolments += 1))) as typeof fetch);
+    sent = [];
+    vi.stubGlobal('fetch', (async (url: URL | string, init?: RequestInit) => {
+      if (init?.body !== undefined) {
+        sent.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      }
+      return deviceFlow(String(url), () => (enrolments += 1));
+    }) as typeof fetch);
   });
 
   afterEach(async () => {
@@ -157,6 +169,20 @@ describe('onboarding an agent', () => {
     });
   });
 
+  it('says which agent the credential is for, and what product it is', async () => {
+    /* The hostname it goes in beside is hashed on the way in, so these two are
+       the only readable answer to which agent a principal belongs to: without
+       them a workspace holds five names somebody typed and nothing saying
+       which of them is Cursor. */
+    await onboardAgent(home, home, account, AGENT, 'cursor', out(), 'Editor');
+
+    expect(sent[0]).toMatchObject({
+      agentId: AGENT,
+      agentKind: 'cursor',
+      label: 'Editor',
+    });
+  });
+
   it('keeps everything it does not own', async () => {
     /* Losing an agent's own servers or its editor settings would be a far worse
        outcome than not onboarding at all. */
@@ -167,6 +193,39 @@ describe('onboarding an agent', () => {
       ORIGINAL.mcpServers['next-devtools'],
     );
     expect(written.editor).toEqual({ theme: 'dark' });
+  });
+
+  it('keeps the product on the record, so a later beat can report it', async () => {
+    /* An agent onboarded before the enrolment door carried an id leaves a row
+       the console cannot join to anything the ledger recorded, and this is the
+       half that lets the machine say afterwards which agent it was for. */
+    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const record = await readRecord(home, AGENT);
+
+    expect(record?.agentKind).toBe('cursor');
+  });
+
+  it('reads the product out of the id on a record written without one', () => {
+    /* The scan builds `agt_claude-code` from the kind, so this reverses what
+       that did rather than guessing at it. */
+    expect(kindOf({ agentId: 'agt_claude-code' } as OnboardRecord)).toBe('claude-code');
+  });
+
+  it('lists what it has onboarded, so a beat can report every one', async () => {
+    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+
+    const records = await listRecords(home);
+    expect(records.map((record) => record.agentId)).toEqual([AGENT]);
+    expect(records[0]?.machineId).toBe(AGENT_MACHINE);
+  });
+
+  it('lists nothing on a machine that has onboarded nothing', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'memnox-none-'));
+    try {
+      expect(await listRecords(empty)).toEqual([]);
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
   });
 
   it('backs the config up before it writes, verbatim', async () => {

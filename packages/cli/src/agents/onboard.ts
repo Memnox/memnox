@@ -176,6 +176,10 @@ export async function onboardAgent(
     hostOf(home),
     report,
     shownAs,
+    /* The product, because the hostname beside it is hashed on the way in: the
+       workspace would otherwise hold five names somebody typed and nothing
+       saying which of them is Claude Code. */
+    agentKind,
   );
   if ('outcome' in enrolled && enrolled.outcome === ENROL_FAILED) {
     return { outcome: ONBOARD.FAILED, because: enrolled.because };
@@ -192,6 +196,9 @@ export async function onboardAgent(
   const record: OnboardRecord = {
     agentId,
     product: config.product,
+    /* What the control plane is told and what a console draws a mark from,
+       which is not the same string a person reads. */
+    agentKind,
     configPath: config.path,
     backupPath,
     machineId: enrolled.machineId,
