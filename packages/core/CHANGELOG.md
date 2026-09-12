@@ -1,5 +1,39 @@
 # @memnox/core
 
+## 0.10.0
+
+### Minor Changes
+
+- Hand an action over from the screen that recommends it. `memnox next` named
+  `memnox protect --allow <action>` under every row it suggested and that flag did
+  not exist, so the one call to action on the screen this product leads with
+  exited with "unknown option". It exists now, it appends rather than overwriting
+  the rule file, and the ledger decides what it takes rather than the argument: an
+  action somebody refused, or one below the threshold, or one whose class keeps it
+  supervised, is skipped and says why. `memnox next --hand-over` writes the allow
+  rules for everything ready at once, and the screen only prints the command under
+  rows that would actually be accepted.
+
+  An agent's credential now says which agent it is for. The control plane hashes
+  the hostname on the way in, so the id and the product were the only readable
+  answers to that question and neither was being sent: a workspace held five names
+  somebody typed and could not say which of them was Claude Code. A machine also
+  reports what it has already onboarded on its heartbeat, so an agent enrolled
+  before the door carried an id is joined up without anybody re-enrolling.
+
+  A machine is named when it enrols, with the hostname offered rather than taken,
+  because a fleet listing of hex ids is what the hashing left behind. `--name` for
+  a script, the question for a person, and nothing at all where there is nobody to
+  ask. `memnox setup` also reports the scan it took, so the agents a guided run
+  just onboarded reach the console instead of the run finishing by claiming five
+  agents are governed on a page that says there are none.
+
+  Five fixes: `uninstall` puts the MCP servers back rather than explaining how,
+  `mcp wrap` and `unwrap` leave a URL server alone instead of crashing on it,
+  `doctor` says which findings your rules already cover and counts the rules the
+  seams actually load, and `explain` expands a leading tilde so it answers about
+  the file you meant.
+
 ## 0.9.1
 
 ### Patch Changes
