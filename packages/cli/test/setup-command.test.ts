@@ -114,6 +114,8 @@ describe('memnox setup', () => {
     yes?: boolean;
     connected?: boolean;
     interactive?: boolean;
+    /** Whether the scan reached the control plane at the end of the run. */
+    reported?: boolean;
   }
 
   async function run(driven: Driven = {}) {
@@ -129,8 +131,10 @@ describe('memnox setup', () => {
       snapshots: new MemorySnapshots(),
     });
     const connects: number[] = [];
+    const reports: string[] = [];
     return {
       connects,
+      reports,
       ...(await runCommand(
         (program, context) =>
           registerSetupCommand(
@@ -150,6 +154,11 @@ describe('memnox setup', () => {
             async ({ shown }) => driven.names?.[shown] ?? null,
             async () => driven.yes !== false,
             () => driven.interactive !== false,
+            {},
+            async (at: string) => {
+              reports.push(at);
+              return driven.reported !== false;
+            },
           ),
         ['setup', '--no-probe', '--no-open'],
       )),
@@ -233,6 +242,25 @@ describe('memnox setup', () => {
     const record = await readRecord(home, 'agt_claude-code');
     expect(record).not.toBeNull();
     expect(record?.product).toBe('Claude Code');
+  });
+
+  it('reports the scan, so the agents it onboarded reach the console', async () => {
+    /* Onboarding writes credentials and nothing was telling the workspace what
+       these agents are. The Agents page reads a census, so a run that never
+       sent one ended by saying five agents were under Memnox on a page that
+       said there were none. */
+    const { reports } = await run({});
+
+    expect(reports).toHaveLength(1);
+  });
+
+  it('says the page will fill later when the scan could not be sent', async () => {
+    /* Named rather than left for somebody to discover: an empty Agents page
+       after a run that said five agents are governed reads as a broken
+       product rather than as a network that was down. */
+    const { out } = await run({ reported: false });
+
+    expect(out.notes.join('\n')).toContain('next sync');
   });
 
   it('changes nothing for an agent that was refused', async () => {

@@ -24,6 +24,7 @@ import {
   type AgentNames,
 } from '../agents/names';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
+import { onePass } from '../sync/heartbeat';
 
 /**
  * The whole first run, in one command.
@@ -70,6 +71,8 @@ export function registerSetupCommand(
   confirm: Confirm = confirmOnTerminal,
   interactive: () => boolean = () => process.stdin.isTTY === true,
   connectSeams: ConnectSeams = {},
+  /** The one pass that reports a kept scan. Injected so a test needs no ledger. */
+  reportScan: (home: string) => Promise<boolean> = reportOnce,
 ): void {
   program
     .command('setup')
@@ -78,12 +81,17 @@ export function registerSetupCommand(
     )
     .option('--url <base>', 'the control plane', DEFAULT_BASE_URL)
     .option('--enforce', 'start in enforce rather than observe')
+    /* The question is asked on a terminal, so the flag is for everything
+       else. A machine that enrols unnamed is a hex id in the console, which
+       is what a fleet of them was before this. */
+    .option('--name <name>', 'what your workspace calls this machine')
     .option('--no-open', 'print the code and the URL instead of opening a browser')
     .option('--no-probe', 'do not start any MCP server to ask what it offers')
     .action(
       async (options: {
         url: string;
         enforce?: boolean;
+        name?: string;
         open: boolean;
         probe: boolean;
       }) => {
@@ -101,7 +109,10 @@ export function registerSetupCommand(
           options,
           flow,
           connect,
-          connectSeams,
+          /* The machine is named on the same rail and by the same asker the
+             agents are, because it is the same question about a different
+             thing and two prompt styles in one run read as two commands. */
+          { askName: ask, interactive, ...connectSeams },
         );
 
         flow.step('Looking for agents on this machine');
@@ -175,16 +186,32 @@ export function registerSetupCommand(
           results.push(outcome);
         }
 
-        summarize(context, flow, account, results);
+        /* The last step, and the one that was missing: onboarding writes
+           credentials and nothing was telling the workspace what these agents
+           are. The console's Agents page reads a census, so a guided run that
+           never sent one finished by saying five agents were under Memnox on
+           a page that said there were none. Reported through the same pass a
+           sync does, so the cursor that stops a scan being sent twice is the
+           one that already owns that. */
+        const reported = await reportScan(home()).catch(() => false);
+
+        summarize(context, flow, account, results, reported);
       },
     );
+}
+
+/** True when the scan actually reached the control plane. Unreachable is not an error. */
+async function reportOnce(home: string): Promise<boolean> {
+  const pass = await onePass(home);
+  if (pass.unreachable === true) return false;
+  return pass.census !== undefined;
 }
 
 /** Enrolled already, or enrolled now. Either way the rest of the run has one. */
 async function connectedAccount(
   context: CliContext,
   home: string,
-  options: { url: string; enforce?: boolean; open: boolean },
+  options: { url: string; enforce?: boolean; name?: string; open: boolean },
   flow: Flow,
   connect: typeof connectMachine,
   seams: ConnectSeams,
@@ -433,6 +460,7 @@ function summarize(
   flow: Flow,
   account: Account,
   results: readonly Result[],
+  reported: boolean,
 ): void {
   const { style } = context;
   const done = results.filter((each) => each.status === STATUS.ONBOARDED);
@@ -465,6 +493,14 @@ function summarize(
     );
   }
   if (done.length === 0) return;
+  /* Named rather than assumed. An agent this run onboarded reaches the console
+     through the scan it just sent, so a run that could not send one has to say
+     the page will be empty for now instead of leaving somebody to find out. */
+  if (!reported) {
+    flow.hint(
+      'This scan did not reach the control plane, so the Agents page will fill on the next sync.',
+    );
+  }
   /* Said here because this is the moment somebody wonders whether they have
      just handed something more authority than it had. */
   flow.hint('Authority is unchanged: what each may do is still decided on this machine.');

@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import {
   ENFORCEMENT_MODE,
   loadOrCreateConfig,
@@ -7,6 +8,7 @@ import {
   type Account,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
 import { Flow } from '../flow';
 import { openBrowser } from './browser';
 import { insecureBaseUrl } from './client';
@@ -40,11 +42,23 @@ interface ConnectOptions {
   enforce?: boolean;
   /** False prints the URL and the code rather than opening a browser. */
   open?: boolean;
+  /**
+   * What the workspace calls this machine, given rather than asked for.
+   *
+   * For anything that is not a person at a terminal. A script enrolling a
+   * fleet names each box on the command line, and a run with nothing on stdin
+   * sends no name rather than hanging on a question.
+   */
+  name?: string;
 }
 
 export type ConnectSeams = WaitSeams & {
   /** Answers whether a browser actually opened, because the screen turns on it. */
   open?: (url: string) => Promise<boolean> | boolean;
+  /** The same asker the agents are named with, so one prompt style serves both. */
+  askName?: NameAsker;
+  /** Whether anybody can be asked. False asks nothing and enrols unnamed. */
+  interactive?: () => boolean;
 };
 
 interface Connected {
@@ -62,7 +76,7 @@ export async function connectMachine(
   seams: ConnectSeams = {},
 ): Promise<Connected> {
   const { style } = context;
-  const enrolment = {
+  const enrolment: { baseUrl: string; mode?: string; label?: string } = {
     baseUrl: options.url,
     ...(options.enforce === true ? { mode: 'enforce' } : {}),
   };
@@ -79,8 +93,12 @@ export async function connectMachine(
 
   flow.step('Control plane', options.url);
 
+  const named = await nameFor(options, flow, seams);
+
   const keys = machineKeypair();
   flow.step('Machine key generated', 'ed25519, never leaves this machine');
+
+  if (named !== undefined) enrolment.label = named;
 
   const offer = await request(enrolment, keys.publicKey);
   const url = approvalUrl(options.url, offer.userCode, offer);
@@ -132,6 +150,7 @@ export async function connectMachine(
      being local-only, so what it is now bound to has to be visible without
      running a second command to find out. */
   flow.box('Enrolled', [
+    ...(named === undefined ? [] : [`${style.dim('name')}        ${named}`]),
     `${style.dim('machine')}     ${collected.machineId}`,
     `${style.dim('workspace')}   ${collected.workspaceId}`,
     `${style.dim('mode')}        ${collected.mode}`,
@@ -146,8 +165,44 @@ export async function connectMachine(
   };
 }
 
+/**
+ * What this workspace will call this machine, decided before anything is minted.
+ *
+ * **The control plane hashes the hostname and never stores it**, which is
+ * deliberate: a fleet listing that held one would be a directory of where
+ * people work. The cost of that is a console showing a column of hex ids, and
+ * the answer is not to send the hostname anyway but to ask, with the hostname
+ * offered, so what lands in somebody else's database is a name a person read
+ * and agreed to rather than a fact about their laptop we took.
+ *
+ * `--name` for a script, the question for a person, and nothing at all where
+ * there is nobody to ask: a command that blocks on a prompt in CI is one
+ * somebody works around by never running it.
+ */
+async function nameFor(
+  options: ConnectOptions,
+  flow: Flow,
+  seams: ConnectSeams,
+): Promise<string | undefined> {
+  const given = options.name?.trim();
+  if (given !== undefined && given !== '') return given;
+
+  const canAsk = seams.interactive ?? (() => process.stdin.isTTY === true);
+  if (!canAsk()) return undefined;
+
+  const suggested = hostname();
+  const answer = await (seams.askName ?? askOnTerminal)({
+    shown: suggested,
+    lines: [],
+    gutter: flow.prompt,
+    because: 'Call this machine something your workspace will recognise',
+  }).catch(() => null);
+  const wanted = (answer ?? suggested).trim();
+  return wanted === '' ? undefined : wanted;
+}
+
 async function request(
-  enrolment: { baseUrl: string; mode?: string },
+  enrolment: { baseUrl: string; mode?: string; label?: string },
   publicKey: string,
 ): ReturnType<typeof requestCode> {
   try {

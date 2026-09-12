@@ -26,23 +26,34 @@ export function registerLoginCommand(
        signed in to exactly one, and that is where it lands. */
     .option('--url <base>', 'the control plane', DEFAULT_BASE_URL)
     .option('--enforce', 'start in enforce rather than observe')
+    /* Asked for on a terminal, so the flag is for everything else: a script
+       enrolling a fleet names each box rather than leaving the console a
+       column of hex ids. */
+    .option('--name <name>', 'what your workspace calls this machine')
     .option('--no-open', 'print the code and the URL instead of opening a browser')
-    .action(async (options: { url: string; enforce?: boolean; open: boolean }) => {
-      const { out, style } = context;
-      const flow = new Flow(out, style);
-      flow.open('memnox login');
+    .action(
+      async (options: {
+        url: string;
+        enforce?: boolean;
+        name?: string;
+        open: boolean;
+      }) => {
+        const { out, style } = context;
+        const flow = new Flow(out, style);
+        flow.open('memnox login');
 
-      const connected = await connectMachine(context, home(), options, flow, seams);
+        const connected = await connectMachine(context, home(), options, flow, seams);
 
-      flow.close(style.ok('This machine is enrolled.'));
-      flow.hint('It now pulls your workspace rules. Nothing else leaves this machine.');
-      flow.hint('Put your agents to work with "memnox setup".');
-      flow.hint('Take it back off with "memnox logout".');
+        flow.close(style.ok('This machine is enrolled.'));
+        flow.hint('It now pulls your workspace rules. Nothing else leaves this machine.');
+        flow.hint('Put your agents to work with "memnox setup".');
+        flow.hint('Take it back off with "memnox logout".');
 
-      /* The one line a script would read, on stdout and undecorated, while
-         everything above it is commentary on stderr. */
-      out.line(connected.machineId);
-    });
+        /* The one line a script would read, on stdout and undecorated, while
+           everything above it is commentary on stderr. */
+        out.line(connected.machineId);
+      },
+    );
 
   program
     .command('logout')

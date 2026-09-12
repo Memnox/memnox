@@ -1,5 +1,5 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readAccount, writeAccount, accountPathFor } from '@memnox/core';
@@ -477,5 +477,119 @@ describe('the browser is the approval step', () => {
 
     expect(asked).toEqual([]);
     expect(out.notes).toContain('Your code');
+  });
+});
+
+/**
+ * What this workspace calls this machine.
+ *
+ * The control plane hashes the hostname and never stores it, which is what
+ * keeps a fleet listing from being a directory of where people work — and left
+ * every enrolled laptop as a hex id on the one page that says what is
+ * governed. The answer is not to send the hostname anyway: it is to offer it,
+ * and send what a person agreed to.
+ */
+describe('naming the machine at enrolment', () => {
+  let home: string;
+
+  const BASE = 'https://cloud.memnox.test';
+
+  /** The enrolment request, so a test reads what was actually sent. */
+  const cloud = (sent: Record<string, unknown>[]) =>
+    ((url: URL | string, init?: RequestInit) => {
+      const at = String(url);
+      if (at.endsWith('/v1/device/codes')) {
+        sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              deviceCode: 'dev-1',
+              userCode: 'CDFG-HJKM',
+              intervalSeconds: 0,
+              expiresAt: Date.now() + 60_000,
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            machineId: 'mch_1',
+            token: 'machine-token',
+            mode: 'observe',
+            workspaceId: 'acme',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }) as unknown as typeof fetch;
+
+  async function enrol(
+    options: { name?: string } = {},
+    answer: string | null = null,
+    canAsk = true,
+  ): Promise<{ sent: Record<string, unknown>[]; out: RecordedOutput; asked: number }> {
+    const sent: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', cloud(sent));
+    const out = new RecordedOutput();
+    let asked = 0;
+    await connectMachine(
+      new CliContext(out, plainStyle),
+      home,
+      { url: BASE, open: false, ...options },
+      new Flow(out, plainStyle),
+      {
+        open: () => false,
+        interactive: () => canAsk,
+        askName: async ({ shown }) => {
+          asked += 1;
+          /* The asker's own contract: null is "keep what you offered me",
+             which is how pressing Enter reaches this side. */
+          return answer === null ? null : answer === shown ? null : answer;
+        },
+      },
+    );
+    return { sent, out, asked };
+  }
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'memnox-named-'));
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('sends the name a person typed, and says it back', async () => {
+    const { sent, out } = await enrol({}, "Moise's laptop");
+
+    expect(sent[0]?.['label']).toBe("Moise's laptop");
+    expect(out.notes.join('\n')).toContain("Moise's laptop");
+  });
+
+  it('sends the hostname when Enter keeps what was offered', async () => {
+    /* The offer is the hostname, so accepting it is a person agreeing to send
+       it rather than this side taking it. */
+    const { sent } = await enrol();
+
+    expect(typeof sent[0]?.['label']).toBe('string');
+    expect(sent[0]?.['label']).toBe(hostname());
+  });
+
+  it('takes --name without asking anything', async () => {
+    const { sent, asked } = await enrol({ name: 'build-runner-3' });
+
+    expect(asked).toBe(0);
+    expect(sent[0]?.['label']).toBe('build-runner-3');
+  });
+
+  it('asks nothing and sends no name where nobody can be asked', async () => {
+    /* A command that blocks on a prompt in CI is one somebody works around by
+       never running it, and an unnamed machine is still a governed machine. */
+    const { sent, asked } = await enrol({}, null, false);
+
+    expect(asked).toBe(0);
+    expect(sent[0]?.['label']).toBeUndefined();
   });
 });
