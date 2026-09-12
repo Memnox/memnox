@@ -57,6 +57,28 @@ export class CloudUnreachable extends Error {
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /**
+ * Whether these two addresses are the same control plane.
+ *
+ * One answer in one place, because three things ask: a guided run deciding
+ * whether the machine is already where it was pointed, an onboarding record
+ * deciding whether it belongs to the plane in hand, and a test. A trailing
+ * slash and a path under the same origin are not a different deployment, and
+ * two of them disagreeing would mean a machine either re-enrolling every run
+ * or never moving at all.
+ *
+ * Unparseable falls back to the strings, which is how a hand-edited
+ * `account.json` is compared: wrong in the direction of asking rather than in
+ * the direction of acting.
+ */
+export function sameControlPlane(one: string, two: string): boolean {
+  try {
+    return new URL(one).origin === new URL(two).origin;
+  } catch {
+    return one === two;
+  }
+}
+
+/**
  * Refused rather than downgraded.
  *
  * Every call here carries the machine's bearer token, and the bundle it pulls

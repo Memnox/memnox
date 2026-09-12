@@ -525,6 +525,38 @@ The prompt order is name then confirm, and a `y` at the name prompt is read as
 an answer to the next question. The reverse order loses a typed name to a yes/no
 reader, which silently skips the agent and never names it.
 
+**"Already connected" answered a question nobody asked.** `setup` skipped its
+first step whenever `account.json` existed, without looking at where the run was
+pointed, so a laptop enrolled against a control plane on localhost and then run
+against the real one printed the localhost workspace and carried on talking to
+it, `--url` included. Every screen after that named a deployment the person was
+not trying to reach, and the agents were reported as onboarded because the
+records said so, which is the worse half: an onboarding record kept the machine
+it minted and never the plane it minted it on, so it read as proof of work the
+new workspace had never heard of. `workspaceId` and `baseUrl` on the record and
+`onboardedInto` are the fix, and `sameControlPlane` in `sync/client.ts` is the one
+place that decides whether two addresses are the same deployment, because two of
+them disagreeing is a machine that either re-enrols every run or never moves.
+
+Three rules the move itself had to obey. It **asks, and defaults to no**, since
+Enter must not take a laptop off the plane that governs it, which is why
+`Confirm` carries a default at all: the per-agent question is what somebody ran
+the command to do and this one undoes an enrolment. It **hands the agents back
+before it mints anything**, because revoking an agent takes the account that
+sponsored it and enrolling first replaces the only credential that could, which
+would leave live principals in the workspace somebody thought they had left. And
+where the new plane cannot be reached it **says what state it left**: the configs
+are back to their own and the old credential still stands, so running it again is
+the whole recovery and nobody should have to work that out from a stack trace.
+
+A record naming no plane belongs to whichever is asking, because that is every
+record written before the fields existed and guessing the other way would
+re-onboard every agent on every laptop that upgrades. An agent whose record names
+another workspace and which was not handed back, which is what `memnox login
+--url` alone leaves behind, is reported as `elsewhere` rather than onboarded
+over: the rewrite would back up a config already pointed at the other plane,
+which turns `offboard` into a second way to end up there.
+
 **Half the agents it could find were agents it could not govern.** Onboarding
 rewrote JSON only, so Codex (TOML) and Hermes (YAML) were detected, listed and
 refused. `agents/managed-toml.ts` and `agents/managed-yaml.ts` close that, each

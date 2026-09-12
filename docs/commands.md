@@ -153,6 +153,37 @@ With nothing attached to the terminal it stops and names the one-at-a-time
 command instead, because every question below waits on a person and asking them
 with no stdin is a command that hangs.
 
+**Where the run is pointed is part of that question.** A machine enrolled against
+a control plane on `localhost` and then run against the default one is not
+already connected: it holds a credential for a different deployment. The run says
+so, names both addresses, and offers the move. This is the one question here that
+defaults to **no**, because Enter must not take a laptop off the control plane
+that governs it, and with nobody to ask it keeps the enrolment it has and names
+`memnox login --url <base>` instead.
+
+```
+◇ Connected to a different control plane
+│ 789fdf81-0ecc-4d17-a234-464bc0a8ecf4 at http://localhost:3000
+│
+│   This run was pointed at https://api.memnox.com.
+│   Move this machine to https://api.memnox.com?  [y/N]
+```
+
+**A move hands the agents back before it mints anything new.** Revoking an
+agent's credential takes the account that sponsored it, so enrolling first would
+replace the only credential that could do it and leave live principals in the
+workspace somebody thought they had left. Each config goes back to what it said
+before Memnox touched it, and the agents are then offered again for the new
+workspace: a record written against one control plane is not proof the next one
+has that agent. A revocation the old plane did not answer is named with the
+machine id to revoke by hand rather than counted as done.
+
+An agent whose record names another workspace and which was *not* handed back,
+which is the state `memnox login --url` on its own leaves, is reported as
+`elsewhere` rather than onboarded over. Rewriting it would back up a config that
+already points at the other plane, which turns `offboard` into a second way to
+end up there, so the run names `memnox agents offboard <name>` and moves on.
+
 `login`, `agents discover`, `agents name` and `agents onboard` are the same
 steps separately, for when you want one of them.
 

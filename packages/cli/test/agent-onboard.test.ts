@@ -7,6 +7,7 @@ import { OFFBOARD, ONBOARD, offboardAgent, onboardAgent } from '../src/agents/on
 import {
   kindOf,
   listRecords,
+  onboardedInto,
   readRecord,
   type OnboardRecord,
 } from '../src/agents/onboarding';
@@ -203,6 +204,39 @@ describe('onboarding an agent', () => {
     const record = await readRecord(home, AGENT);
 
     expect(record?.agentKind).toBe('cursor');
+  });
+
+  it('keeps the control plane on the record, so a move between planes is visible', async () => {
+    /* A record without it says only that this machine onboarded this agent
+       somewhere, and a laptop moved from localhost to the real control plane
+       then read its own records as proof the new workspace already had them. */
+    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const record = await readRecord(home, AGENT);
+
+    expect(record?.workspaceId).toBe('acme');
+    expect(record?.baseUrl).toBe(BASE);
+  });
+
+  it('belongs to the plane it was written against, and to no other', async () => {
+    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const record = (await readRecord(home, AGENT)) as OnboardRecord;
+
+    expect(onboardedInto(record, account)).toBe(true);
+    /* A trailing slash and a path are the same deployment. Anything else is not,
+       including a workspace of the same name on another one: a seeded `acme` on
+       localhost and an `acme` in the real control plane are different rows with
+       different credentials. */
+    expect(onboardedInto(record, { ...account, baseUrl: `${BASE}/` })).toBe(true);
+    expect(onboardedInto(record, { ...account, baseUrl: 'http://localhost:3000' })).toBe(
+      false,
+    );
+    expect(onboardedInto(record, { ...account, workspaceId: 'other' })).toBe(false);
+  });
+
+  it('reads a record that names no plane as belonging to whichever is asking', () => {
+    /* Every record written before the field existed. Guessing the other way
+       would re-onboard every agent on every laptop that upgrades. */
+    expect(onboardedInto({ agentId: AGENT } as OnboardRecord, account)).toBe(true);
   });
 
   it('reads the product out of the id on a record written without one', () => {

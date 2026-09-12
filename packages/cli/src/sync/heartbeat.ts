@@ -37,7 +37,7 @@ import {
   type PushResult,
 } from './push';
 import { callCloud } from './client';
-import { kindOf, listRecords } from '../agents/onboarding';
+import { kindOf, listRecords, onboardedInto } from '../agents/onboarding';
 
 /**
  * One pass: pull the rules, send what happened, say you are alive.
@@ -221,11 +221,16 @@ async function beat(
          its own onboarding records, so it says so rather than anybody
          re-enrolling to fix a missing word. Ignored where the link is
          already set. */
-      agents: (await listRecords(home)).map((record) => ({
-        machineId: record.machineId,
-        agentId: record.agentId,
-        agentKind: kindOf(record),
-      })),
+      agents: (await listRecords(home))
+        /* This workspace's own, because a machine that has moved control plane
+           still holds the records it wrote against the last one, and those name
+           principals this workspace never minted. */
+        .filter((record) => onboardedInto(record, account))
+        .map((record) => ({
+          machineId: record.machineId,
+          agentId: record.agentId,
+          agentKind: kindOf(record),
+        })),
       holding: holding.map((each: (typeof holding)[number]) => ({
         id: each.id,
         agent: each.request.agent,

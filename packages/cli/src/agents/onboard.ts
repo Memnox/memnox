@@ -202,6 +202,11 @@ export async function onboardAgent(
     configPath: config.path,
     backupPath,
     machineId: enrolled.machineId,
+    /* Which control plane minted it. Without this a record says only that the
+       agent was onboarded somewhere, and a machine that moves plane reads its
+       own records as proof the new workspace already has these agents. */
+    workspaceId: account.workspaceId,
+    baseUrl: account.baseUrl,
     serverName: MANAGED_SERVER,
     onboardedAt: at,
   };

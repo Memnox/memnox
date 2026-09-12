@@ -13,9 +13,17 @@ import { Flow } from '../flow';
 import { underHome } from '../memnox-paths';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/connect';
-import { manageable, ONBOARD, onboardAgent, type Manageable } from '../agents/onboard';
+import {
+  manageable,
+  OFFBOARD,
+  ONBOARD,
+  offboardAgent,
+  onboardAgent,
+  type Manageable,
+} from '../agents/onboard';
 import type { EnrolReporter } from '../agents/enrol-agent';
-import { readRecord } from '../agents/onboarding';
+import { listRecords, onboardedInto, readRecord } from '../agents/onboarding';
+import { sameControlPlane } from '../sync/client';
 import {
   displayName,
   readNames,
@@ -73,6 +81,8 @@ export function registerSetupCommand(
   connectSeams: ConnectSeams = {},
   /** The one pass that reports a kept scan. Injected so a test needs no ledger. */
   reportScan: (home: string) => Promise<boolean> = reportOnce,
+  /** Handing an agent back, for the one case that needs it: a move between planes. */
+  offboard: typeof offboardAgent = offboardAgent,
 ): void {
   program
     .command('setup')
@@ -113,6 +123,9 @@ export function registerSetupCommand(
              agents are, because it is the same question about a different
              thing and two prompt styles in one run read as two commands. */
           { askName: ask, interactive, ...connectSeams },
+          confirm,
+          interactive,
+          offboard,
         );
 
         flow.step('Looking for agents on this machine');
@@ -148,11 +161,24 @@ export function registerSetupCommand(
 
         for (const agent of snapshot.agents) {
           const already = await readRecord(home(), agent.id);
-          if (already !== null) {
+          if (already !== null && onboardedInto(already, account)) {
             results.push({
               name: displayName(names, agent),
               status: STATUS.ALREADY,
               because: 'onboarded earlier',
+            });
+            continue;
+          }
+          if (already !== null) {
+            /* Onboarded into a different workspace, and the credential that
+               could take it back out is one this machine no longer holds. Said
+               rather than onboarded over: the rewrite would back up a config
+               that already points at the other plane, which turns the undo into
+               a second way to end up pointed there. */
+            results.push({
+              name: displayName(names, agent),
+              status: STATUS.ELSEWHERE,
+              because: wherePlane(already),
             });
             continue;
           }
@@ -207,7 +233,17 @@ async function reportOnce(home: string): Promise<boolean> {
   return pass.census !== undefined;
 }
 
-/** Enrolled already, or enrolled now. Either way the rest of the run has one. */
+/**
+ * Enrolled already, or enrolled now. Either way the rest of the run has one.
+ *
+ * **Where the run was pointed is part of the question.** A machine enrolled
+ * against a control plane on localhost and then run against the real one used to
+ * print "Already connected" and carry on talking to localhost, `--url` included:
+ * every screen after it named a workspace the person was not trying to reach,
+ * and the agents were reported as already done because the records said so. An
+ * address that does not match the credential in hand is a different deployment,
+ * so it is said out loud and the move is offered rather than assumed either way.
+ */
 async function connectedAccount(
   context: CliContext,
   home: string,
@@ -215,17 +251,152 @@ async function connectedAccount(
   flow: Flow,
   connect: typeof connectMachine,
   seams: ConnectSeams,
+  confirm: Confirm,
+  interactive: () => boolean,
+  offboard: typeof offboardAgent,
 ): Promise<Account> {
   const existing = await readAccount(home);
-  if (existing !== null) {
+  if (existing === null) {
+    const connected = await connect(context, home, options, flow, seams);
+    /* Said once, here, because it is the promise the rest of the run keeps: a
+       person answered a browser for this machine and will not be asked again. */
+    flow.aside(context.style.dim('That is the only approval this run needs.'));
+    return connected.account;
+  }
+  if (sameControlPlane(existing.baseUrl, options.url)) {
     flow.step('Already connected', `${existing.workspaceId} at ${existing.baseUrl}`);
     return existing;
   }
-  const connected = await connect(context, home, options, flow, seams);
-  /* Said once, here, because it is the promise the rest of the run keeps: a
-     person answered a browser for this machine and will not be asked again. */
-  flow.aside(context.style.dim('That is the only approval this run needs.'));
-  return connected.account;
+  return moveOrStay(context, home, options, flow, connect, seams, {
+    existing,
+    confirm,
+    interactive,
+    offboard,
+  });
+}
+
+/**
+ * The machine is enrolled somewhere else than this run was pointed at.
+ *
+ * Nobody is moved without being asked, and the question defaults to no: a
+ * mistyped Enter must not take somebody's laptop off the control plane it is
+ * governed by. Where there is nobody to ask, the enrolment it has wins and the
+ * command that moves it is named, because a script that silently re-enrolled a
+ * fleet every night is the worse failure of the two.
+ */
+async function moveOrStay(
+  context: CliContext,
+  home: string,
+  options: { url: string; enforce?: boolean; name?: string; open: boolean },
+  flow: Flow,
+  connect: typeof connectMachine,
+  seams: ConnectSeams,
+  from: {
+    existing: Account;
+    confirm: Confirm;
+    interactive: () => boolean;
+    offboard: typeof offboardAgent;
+  },
+): Promise<Account> {
+  const { existing } = from;
+  flow.step(
+    'Connected to a different control plane',
+    `${existing.workspaceId} at ${existing.baseUrl}`,
+  );
+  flow.aside(`This run was pointed at ${options.url}.`);
+
+  if (!from.interactive()) {
+    flow.aside(`Staying on ${existing.baseUrl}, because nobody can be asked.`);
+    flow.hint(`Move it with "memnox login --url ${options.url}".`);
+    return existing;
+  }
+
+  const move = await from
+    .confirm(`${flow.prompt}Move this machine to ${options.url}?`, false)
+    .catch(() => false);
+  if (!move) {
+    flow.aside(`Staying on ${existing.baseUrl}.`);
+    return existing;
+  }
+
+  /* Before the new credential is minted, while the old one is still on disk:
+     revoking an agent takes the account that sponsored it, and enrolling first
+     would replace that account with one that cannot. A move that left five live
+     credentials in the workspace somebody thought they had left is the failure
+     this ordering exists to prevent. */
+  const handed = await handBack(context, flow, home, existing, from.offboard);
+
+  try {
+    const connected = await connect(context, home, options, flow, seams);
+    flow.aside(context.style.dim('That is the only approval this run needs.'));
+    return connected.account;
+  } catch (err) {
+    /* Said rather than left to be worked out from a stack trace. The agents are
+       back to their own configs and the credential on disk is still the old
+       one, so the machine is where it started with nothing governing the agents
+       that were handed back. Running this again is the whole recovery, and
+       somebody has to be told that rather than discovering it tomorrow. */
+    if (handed > 0) {
+      flow.aside(
+        context.style.warn(
+          `${handed === 1 ? '1 agent is' : `${handed} agents are`} back to their own configs and are not under Memnox. Run this again to finish the move.`,
+        ),
+      );
+    }
+    flow.aside(`This machine is still enrolled in ${existing.workspaceId}.`);
+    throw err;
+  }
+}
+
+/**
+ * Every agent the plane being left was holding, handed back to it.
+ *
+ * Each config goes back to what it said before Memnox touched it, so the
+ * onboarding below takes its backup from a file that points at nothing of ours.
+ * Onboarding straight over the old entry would have backed up a config already
+ * pointed at the other plane, and `offboard` would then put somebody back there
+ * rather than where they started.
+ *
+ * A revocation the old plane did not answer is named rather than treated as
+ * done: the config is restored either way, and a credential nobody could take
+ * back is a row in a workspace somebody has to go and revoke by hand.
+ */
+async function handBack(
+  context: CliContext,
+  flow: Flow,
+  home: string,
+  leaving: Account,
+  offboard: typeof offboardAgent,
+): Promise<number> {
+  const held = (await listRecords(home)).filter((record) =>
+    onboardedInto(record, leaving),
+  );
+  if (held.length === 0) return 0;
+
+  flow.step(
+    `Handing ${held.length === 1 ? '1 agent' : `${held.length} agents`} back to ${workspaceShown(leaving.workspaceId)}`,
+  );
+  let handed = 0;
+  for (const record of held) {
+    const result = await offboard(home, leaving, record.agentId).catch(() => null);
+    if (result === null || result.outcome !== OFFBOARD.DONE) {
+      flow.aside(
+        context.style.warn(
+          `${record.product} could not be handed back: ${result?.because ?? 'the attempt failed'}`,
+        ),
+      );
+      continue;
+    }
+    handed += 1;
+    flow.aside(
+      result.revoked === true
+        ? `${record.product} is back to its own config, and its credential is revoked.`
+        : context.style.warn(
+            `${record.product} is back to its own config. ${workspaceShown(leaving.workspaceId)} did not answer, so revoke ${record.machineId} there.`,
+          ),
+    );
+  }
+  return handed;
 }
 
 /**
@@ -443,6 +614,8 @@ const STATUS = {
   ONBOARDED: 'onboarded',
   SKIPPED: 'skipped',
   ALREADY: 'already',
+  /** Onboarded into a control plane that is not the one this run is pointed at. */
+  ELSEWHERE: 'elsewhere',
   CANNOT: 'cannot',
   FAILED: 'failed',
 } as const;
@@ -486,6 +659,12 @@ function summarize(
         ),
   );
 
+  const elsewhere = results.filter((each) => each.status === STATUS.ELSEWHERE);
+  if (elsewhere.length > 0) {
+    flow.hint(
+      `${elsewhere.length} belong to another workspace. Hand one back with "memnox agents offboard <name>", then run this again.`,
+    );
+  }
   const stuck = results.filter((each) => each.status === STATUS.CANNOT);
   if (stuck.length > 0) {
     flow.hint(
@@ -508,24 +687,44 @@ function summarize(
   flow.hint('Take one back out with "memnox agents offboard <name>".');
 }
 
+/** Which control plane a record was written against, for the row that says so. */
+function wherePlane(record: { workspaceId?: string; baseUrl?: string }): string {
+  const which =
+    record.workspaceId === undefined
+      ? 'another workspace'
+      : workspaceShown(record.workspaceId);
+  return record.baseUrl === undefined
+    ? `under ${which}`
+    : `under ${which} at ${record.baseUrl}`;
+}
+
 /** Takes the already-padded word, so the colour never changes the column width. */
 function mark(context: CliContext, status: Result['status'], padded: string): string {
   const { style } = context;
   if (status === STATUS.ONBOARDED) return style.ok(padded);
   if (status === STATUS.FAILED || status === STATUS.CANNOT) return style.warn(padded);
+  if (status === STATUS.ELSEWHERE) return style.warn(padded);
   return style.dim(padded);
 }
 
-/** Yes or no, asked wherever the caller says. Injected, so a test needs no terminal. */
-type Confirm = (question: string) => Promise<boolean>;
+/**
+ * Yes or no, asked wherever the caller says. Injected, so a test needs no terminal.
+ *
+ * The default is the caller's, because the two questions here are not the same
+ * shape. "Put this agent under Memnox" is what somebody ran the command to do,
+ * so Enter is yes; "move this machine to another control plane" undoes an
+ * enrolment and offboards what it was holding, so Enter is no.
+ */
+type Confirm = (question: string, fallback?: boolean) => Promise<boolean>;
 
-const confirmOnTerminal: Confirm = async (question) => {
+const confirmOnTerminal: Confirm = async (question, fallback = true) => {
   const { createInterface } = await import('node:readline/promises');
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = await rl.question(`${question}  [Y/n] `);
-    // Enter means yes: somebody who ran this command came here to say yes.
-    return !answer.trim().toLowerCase().startsWith('n');
+    const answer = await rl.question(`${question}  ${fallback ? '[Y/n]' : '[y/N]'} `);
+    const said = answer.trim().toLowerCase();
+    if (said === '') return fallback;
+    return said.startsWith('y');
   } catch {
     // Ctrl+D, or a stdin that closed. Neither is consent.
     return false;

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '@memnox/core';
+import { sameControlPlane } from '../sync/client';
 
 /**
  * What onboarding an agent did, so it can be undone exactly.
@@ -40,6 +41,18 @@ export interface OnboardRecord {
   backupPath: string;
   /** The machine this agent was enrolled as, so offboard can revoke it. */
   machineId: string;
+  /**
+   * The workspace the credential was minted in, and where it was asked for.
+   *
+   * Kept because a record without them says only that this machine onboarded
+   * this agent *somewhere*. A laptop moved from a control plane on localhost to
+   * the real one then read its own records as proof the agents were already
+   * governed, and reported five agents to a workspace that had never heard of
+   * them. Absent on a record written before the fields existed, which is read
+   * as belonging to whatever plane is asking: there is nothing better to say.
+   */
+  workspaceId?: string;
+  baseUrl?: string;
   /** The server entry that was added, so offboard removes exactly that one. */
   serverName: string;
   onboardedAt: string;
@@ -139,6 +152,34 @@ export async function listRecords(home: string): Promise<OnboardRecord[]> {
     }
   }
   return records;
+}
+
+/**
+ * Whether this record was written against the control plane now in hand.
+ *
+ * An agent onboarded into one workspace is not onboarded into the next one: its
+ * credential was minted there, its config points at that plane's MCP address,
+ * and the only thing that can revoke it is the account that sponsored it. So a
+ * record naming another workspace is reported as what it is rather than as
+ * "already done", which is how a move between planes ended with nothing moved.
+ *
+ * A record naming no plane belongs to this one. That is the answer for every
+ * record written before the field existed, and guessing the other way would
+ * re-onboard every agent on every laptop that upgrades.
+ */
+export function onboardedInto(
+  record: OnboardRecord,
+  account: { baseUrl: string; workspaceId: string },
+): boolean {
+  if (record.workspaceId === undefined) return true;
+  return (
+    record.workspaceId === account.workspaceId &&
+    /* The URL as well as the workspace, because two deployments can hold a
+       workspace of the same name: a seeded `acme` on localhost and an `acme` in
+       the real one are different rows with different credentials. Undefined is
+       an older record, where the workspace was all it kept. */
+    (record.baseUrl === undefined || sameControlPlane(record.baseUrl, account.baseUrl))
+  );
 }
 
 /**

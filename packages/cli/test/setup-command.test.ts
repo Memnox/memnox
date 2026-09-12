@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '@memnox/core';
 import { registerSetupCommand } from '../src/commands/setup.command';
+import type { offboardAgent } from '../src/agents/onboard';
 import { readNames } from '../src/agents/names';
-import { readRecord } from '../src/agents/onboarding';
+import { readRecord, retireRecord } from '../src/agents/onboarding';
 import { runCommand } from './cli-harness';
+import { RecordedOutput } from '../src/cli-output';
 import { FakeMachine, HOME, MemorySnapshots, fakeSeams } from './machine-harness';
 
 /**
@@ -116,6 +118,22 @@ describe('memnox setup', () => {
     interactive?: boolean;
     /** Whether the scan reached the control plane at the end of the run. */
     reported?: boolean;
+    /** Where this run is pointed, which is the plane the account holds unless said. */
+    url?: string;
+    /** What the account on disk was enrolled against, for the move between planes. */
+    enrolledAt?: string;
+    /** The answer to the one question that is not about an agent: whether to move. */
+    move?: boolean;
+    /** A control plane that cannot be reached, for what a half-finished move says. */
+    refuseConnect?: boolean;
+    /** Held by the caller where the run throws, so what it said is still readable. */
+    recorder?: RecordedOutput;
+    /** What handing an agent back to the plane being left does, so no config is touched. */
+    handBack?: (agentId: string) => {
+      outcome: string;
+      revoked?: boolean;
+      because?: string;
+    };
   }
 
   async function run(driven: Driven = {}) {
@@ -123,18 +141,20 @@ describe('memnox setup', () => {
       await mkdir(join(home, '.memnox'), { recursive: true });
       await writeFile(
         join(home, '.memnox', 'account.json'),
-        JSON.stringify(account),
+        JSON.stringify({ ...account, baseUrl: driven.enrolledAt ?? BASE }),
         'utf8',
       );
     }
     const seams = fakeSeams(FakeMachine.from(MACHINE), {
       snapshots: new MemorySnapshots(),
     });
-    const connects: number[] = [];
+    const connects: string[] = [];
     const reports: string[] = [];
+    const handedBack: string[] = [];
     return {
       connects,
       reports,
+      handedBack,
       ...(await runCommand(
         (program, context) =>
           registerSetupCommand(
@@ -142,25 +162,45 @@ describe('memnox setup', () => {
             context,
             () => home,
             () => seams,
-            async () => {
-              connects.push(1);
+            async (_context, _home, options) => {
+              connects.push(options.url);
+              if (driven.refuseConnect === true) {
+                throw new Error(`Could not reach ${options.url}.`);
+              }
               return {
-                account,
+                account: { ...account, baseUrl: options.url },
                 machineId: account.machineId,
                 workspaceId: account.workspaceId,
                 mode: 'observe',
               };
             },
             async ({ shown }) => driven.names?.[shown] ?? null,
-            async () => driven.yes !== false,
+            /* Two questions with one seam: the fallback says which was asked,
+               because only the move between planes defaults to no. */
+            async (_question, fallback) =>
+              fallback === false ? driven.move === true : driven.yes !== false,
             () => driven.interactive !== false,
             {},
             async (at: string) => {
               reports.push(at);
               return driven.reported !== false;
             },
+            async (_home, _leaving, agentId) => {
+              handedBack.push(agentId);
+              const result = driven.handBack?.(agentId) ?? {
+                outcome: 'done',
+                revoked: true,
+              };
+              /* What the real one does, because the rest of the run turns on it:
+                 an agent handed back is one the loop below offers again. */
+              if (result.outcome === 'done') {
+                await retireRecord(home, agentId, '2026-09-12T00:00:00.000Z');
+              }
+              return result as Awaited<ReturnType<typeof offboardAgent>>;
+            },
           ),
-        ['setup', '--no-probe', '--no-open'],
+        ['setup', '--no-probe', '--no-open', '--url', driven.url ?? BASE],
+        driven.recorder,
       )),
     };
   }
@@ -169,6 +209,135 @@ describe('memnox setup', () => {
     const { connects } = await run({ connected: false, yes: false });
 
     expect(connects).toHaveLength(1);
+  });
+
+  describe('when the run is pointed somewhere else than the credential', () => {
+    /* A machine enrolled against a control plane on localhost and then run
+       against the real one used to print "Already connected" and carry on
+       talking to localhost, `--url` included. Every screen after it named a
+       workspace the person was not trying to reach. */
+    const LOCAL = 'http://localhost:3000';
+
+    it('says so rather than carrying on with the credential it has', async () => {
+      const { out } = await run({ enrolledAt: LOCAL, url: BASE, yes: false });
+
+      const text = out.notes.join('\n');
+      expect(text).toContain('different control plane');
+      expect(text).toContain(LOCAL);
+      expect(text).toContain(BASE);
+    });
+
+    it('stays where it is when nobody says to move, and names the command that does', async () => {
+      /* Enter must not take a laptop off the plane that governs it, so this one
+         question defaults to no. */
+      const { connects, out } = await run({ enrolledAt: LOCAL, url: BASE, yes: false });
+
+      expect(connects).toHaveLength(0);
+      expect(out.notes.join('\n')).toContain(`Staying on ${LOCAL}`);
+    });
+
+    it('enrols against the address it was pointed at once somebody says to move', async () => {
+      const { connects } = await run({
+        enrolledAt: LOCAL,
+        url: BASE,
+        move: true,
+        yes: false,
+      });
+
+      expect(connects).toEqual([BASE]);
+    });
+
+    it('hands the agents back to the plane it is leaving before minting anything new', async () => {
+      /* Revoking an agent takes the account that sponsored it, so a move that
+         enrolled first would leave live credentials in the workspace somebody
+         thought they had left. */
+      await run({ enrolledAt: LOCAL, url: BASE, yes: true, names: {} });
+      const { handedBack, connects, out } = await run({
+        enrolledAt: LOCAL,
+        url: BASE,
+        move: true,
+        yes: false,
+      });
+
+      expect(handedBack).toContain('agt_claude-code');
+      expect(connects).toEqual([BASE]);
+      expect(out.notes.join('\n')).toContain('credential is revoked');
+    });
+
+    it('names a credential the old plane would not take back rather than calling it done', async () => {
+      await run({ enrolledAt: LOCAL, url: BASE, yes: true });
+      const { out } = await run({
+        enrolledAt: LOCAL,
+        url: BASE,
+        move: true,
+        yes: false,
+        handBack: () => ({ outcome: 'done', revoked: false }),
+      });
+
+      expect(out.notes.join('\n')).toContain('revoke');
+    });
+
+    it('offers the agents again after a move, because the new workspace has none of them', async () => {
+      /* The records this machine wrote against the old plane are not proof the
+         new one has these agents: the credential was minted there and its
+         config pointed there. */
+      await run({ enrolledAt: LOCAL, url: BASE, yes: true });
+      const { out } = await run({ enrolledAt: LOCAL, url: BASE, move: true, yes: true });
+
+      const text = out.notes.join('\n');
+      expect(text).not.toContain('onboarded earlier');
+      expect(text).toContain('2 agents are under Memnox');
+    });
+
+    it('says the agents are unmanaged when the new plane could not be reached', async () => {
+      /* The half of a failed move somebody would otherwise find out tomorrow:
+         the configs are back to their own and the credential on disk is still
+         the old one, so nothing is governing what was handed back. */
+      await run({ enrolledAt: LOCAL, url: BASE, yes: true });
+      const recorder = new RecordedOutput();
+      /* The error itself travels: the entry point prints it and exits non-zero,
+         which is what a move that did not happen should do. What is under test
+         is the rail beside it. */
+      const said = await run({
+        enrolledAt: LOCAL,
+        url: BASE,
+        move: true,
+        refuseConnect: true,
+        recorder,
+      }).catch((err: unknown) => {
+        expect(String(err)).toContain('Could not reach');
+        return null;
+      });
+
+      const text = recorder.notes.join('\n');
+      expect(said).toBeNull();
+      expect(text).toContain('not under Memnox');
+      expect(text).toContain('Run this again');
+    });
+
+    it('keeps the credential it has when there is nobody to ask', async () => {
+      const { connects, out } = await run({
+        enrolledAt: LOCAL,
+        url: BASE,
+        interactive: false,
+      });
+
+      expect(connects).toHaveLength(0);
+      expect(out.notes.join('\n')).toContain('memnox login --url');
+    });
+
+    it('says an agent belongs to another workspace rather than reporting it done', async () => {
+      /* The state `memnox login --url` leaves behind: the machine has moved and
+         the agents have not. Onboarding over the old entry would back up a
+         config already pointed at the other plane, which turns the undo into a
+         second way to end up there. */
+      await run({ enrolledAt: LOCAL, url: LOCAL, yes: true });
+      const { out } = await run({ url: BASE, yes: false });
+
+      const text = out.notes.join('\n');
+      expect(text).toContain('elsewhere');
+      expect(text).toContain('memnox agents offboard');
+    });
   });
 
   it('does not enrol a second time on a machine that is already connected', async () => {

@@ -11,8 +11,11 @@ interface CliRun {
 export async function runCommand(
   register: (program: Command, context: CliContext) => void,
   args: string[],
+  /* Passed in by the one kind of test that reads the output of a run that threw:
+     what a command said on its way to failing is the thing under test. */
+  recorder: RecordedOutput = new RecordedOutput(),
 ): Promise<CliRun> {
-  const out = new RecordedOutput();
+  const out = recorder;
   const program = new Command();
   register(program, new CliContext(out, plainStyle));
   await program.parseAsync(args, { from: 'user' });
