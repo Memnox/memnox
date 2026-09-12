@@ -13,6 +13,7 @@ const HEALTHY: HealthFacts = {
   rulesPath: 'memnox.policies.toml',
   ruleCount: 5,
   policyVersion: 'a1b2c3',
+  unregisteredRuleFiles: [],
   registeredFiles: ['/work/api/memnox.policies.toml'],
   interceptorsInstalled: ['git', 'rm'],
   interceptorsExpected: ['git', 'rm'],
@@ -220,5 +221,83 @@ describe('what is stopping work for a reason that is not a rule', () => {
   it('says plainly that nothing is held on an ordinary machine', () => {
     expect(check({}, CHECK_NAME.HOLDS)?.state).toBe(CHECK.OK);
     expect(check({}, CHECK_NAME.HOLDS)?.detail).toContain('nothing is paused');
+  });
+});
+
+/**
+ * Two ways this check told somebody they were safe when they were not.
+ *
+ * The count came from the project's own rule file and nothing else, so every rule
+ * `memnox protect --apply` writes into the registry was invisible: a laptop with
+ * four denies actually in force read "no rules, so every action is allowed". And a
+ * file hand-written into the policies directory is loaded by no seam, which looks
+ * identical to one that is.
+ */
+describe('rules the seams load, and files they do not', () => {
+  const withRules = (over: Partial<HealthFacts>) =>
+    checkInstallation({ ...HEALTHY, ...over }).find(
+      (check) => check.name === CHECK_NAME.RULES,
+    ) as ReturnType<typeof checkInstallation>[number];
+
+  it('counts what the registry holds, not only the project file', () => {
+    const check = withRules({
+      rulesPath: 'policies.json',
+      ruleCount: 4,
+      registeredFiles: ['/home/nia/.memnox/policies/deny-ssh.yaml'],
+    });
+
+    expect(check.state).toBe(CHECK.OK);
+    expect(check.detail).toContain('4 rule(s)');
+  });
+
+  /* The sentence this whole check exists to avoid printing wrongly. */
+  it('says every action is allowed only when nothing is in force', () => {
+    expect(withRules({ rulesPath: null, ruleCount: 0 }).detail).toContain(
+      'every action is allowed',
+    );
+    expect(
+      withRules({
+        rulesPath: 'policies.json',
+        ruleCount: 4,
+        registeredFiles: ['/home/nia/.memnox/policies/deny-ssh.yaml'],
+      }).detail,
+    ).not.toContain('every action is allowed');
+  });
+
+  it('names a rule file the registry does not, and how to put it in force', () => {
+    const check = withRules({
+      rulesPath: 'policies.json',
+      ruleCount: 4,
+      registeredFiles: ['/home/nia/.memnox/policies/deny-ssh.yaml'],
+      unregisteredRuleFiles: ['/home/nia/.memnox/policies/mine.yaml'],
+    });
+
+    expect(check.detail).toContain('mine.yaml');
+    expect(check.detail).toContain('registered by nothing');
+    expect(check.detail).toContain('memnox policy use');
+  });
+
+  /* Still ok: what is registered is in force, so this is not a broken machine. */
+  it('stays ok, because the registered rules are still governing', () => {
+    expect(
+      withRules({
+        rulesPath: 'policies.json',
+        ruleCount: 4,
+        registeredFiles: ['/home/nia/.memnox/policies/deny-ssh.yaml'],
+        unregisteredRuleFiles: ['/home/nia/.memnox/policies/mine.yaml'],
+      }).state,
+    ).toBe(CHECK.OK);
+  });
+
+  it('counts the others rather than listing every one', () => {
+    const check = withRules({
+      rulesPath: 'policies.json',
+      ruleCount: 4,
+      registeredFiles: ['/home/nia/.memnox/policies/deny-ssh.yaml'],
+      unregisteredRuleFiles: ['/a/one.yaml', '/a/two.yaml', '/a/three.yaml'],
+    });
+
+    expect(check.detail).toContain('one.yaml');
+    expect(check.detail).toContain('2 more');
   });
 });

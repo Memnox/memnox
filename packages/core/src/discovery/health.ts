@@ -66,6 +66,14 @@ export interface HealthFacts {
    * every seam allows it, and until now nothing said so.
    */
   registeredFiles: string[];
+  /**
+   * Rule files sitting in the policies directory that the registry does not name.
+   *
+   * A file dropped in there looks exactly like one `memnox protect` wrote and is
+   * loaded by nothing, silently, because `policies.json` is what the seams read.
+   * Somebody who hand-writes a rule has every reason to believe it is in force.
+   */
+  unregisteredRuleFiles: string[];
   /** Binaries present in the interceptor directory. */
   interceptorsInstalled: string[];
   /**
@@ -202,6 +210,23 @@ function rulesCheck(facts: HealthFacts): HealthCheck {
       state: CHECK.BROKEN,
       detail: `${facts.ruleCount} rule(s) in ${facts.rulesPath}, registered by nothing — the seams load none of them`,
       fix: `memnox policy use ${facts.rulesPath}`,
+    };
+  }
+  if (facts.unregisteredRuleFiles.length > 0) {
+    /* Still ok: what is registered is in force and this machine is governed. The
+       subject here is the file somebody wrote by hand and believes is working,
+       and believing it is the whole problem — so it is said in the detail, which
+       always renders, rather than as a fix on a check nobody is told to look at.
+
+       Named rather than counted where there is one, because "a file" sends a
+       person to `ls` and the name sends them to the file. */
+    const [first] = facts.unregisteredRuleFiles;
+    const rest = facts.unregisteredRuleFiles.length - 1;
+    const which = rest > 0 ? `${first} and ${String(rest)} more` : String(first);
+    return {
+      name: CHECK_NAME.RULES,
+      state: CHECK.OK,
+      detail: `${facts.ruleCount} rule(s) from ${facts.rulesPath} · v${facts.policyVersion} — ${which} is in the policies directory, registered by nothing, and loads for no seam: "memnox policy use" puts it in force`,
     };
   }
   return {
