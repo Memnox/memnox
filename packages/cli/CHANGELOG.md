@@ -1,5 +1,38 @@
 # memnox
 
+## 0.10.1
+
+### Patch Changes
+
+- `memnox setup` honours the control plane it was pointed at. It skipped its first
+  step whenever a credential existed without looking at the address, so a machine
+  enrolled against a control plane on localhost and then run against the real one
+  printed "Already connected", named the localhost workspace on every screen after
+  it, and ignored `--url` while doing it. The agents came out worse: an onboarding
+  record kept the machine it minted and never the plane it minted it on, so records
+  written against one deployment read as proof the next one already had those
+  agents, and a move between the two onboarded nothing.
+
+  An address that does not match the credential in hand is now a different
+  deployment, said out loud with both of them on screen, and the move is offered.
+  That question defaults to no, because Enter must not take a laptop off the
+  control plane that governs it, and with nobody to ask it keeps the enrolment it
+  has and names `memnox login --url <base>`. A move hands the agents back to the
+  plane it is leaving before it mints anything new, since revoking an agent takes
+  the account that sponsored it: enrolling first would replace the only credential
+  that could and leave live principals in a workspace somebody thought they had
+  left. Where the new plane cannot be reached it says what state it left behind,
+  because running it again is the whole recovery and nobody should have to work
+  that out from a stack trace.
+
+  Onboarding records carry the workspace and the address they were written against,
+  `memnox setup` reports an agent that belongs to another workspace as `elsewhere`
+  rather than onboarding over it, and a heartbeat no longer reports principals a
+  previous control plane minted.
+  - @memnox/core@0.10.1
+  - @memnox/proxy@0.10.1
+  - @memnox/interceptors@0.10.1
+
 ## 0.10.0
 
 ### Minor Changes
