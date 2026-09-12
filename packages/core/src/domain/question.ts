@@ -126,7 +126,32 @@ function usage(problem: string): QuestionParse {
   };
 }
 
-export function parseQuestion(raw: string): QuestionParse {
+/**
+ * A leading `~` is the home directory, expanded here rather than left to match
+ * nothing.
+ *
+ * Rules name absolute paths, because that is what a seam hands the gate: nothing
+ * types `~` at a kernel. So a question asked the way a person writes a home path
+ * used to answer "no rule matched" about a file that was in fact denied, which is
+ * the worst possible direction for a command whose whole job is telling somebody
+ * whether they are covered.
+ *
+ * `home` is passed in rather than read, because this file is domain and domain
+ * imports nothing. Without it the value is left exactly as typed: no home is a
+ * reason to answer about `~/.ssh` literally, not a reason to guess at one.
+ *
+ * `~user` is deliberately not expanded. This knows one home and inventing another
+ * person's would be a guess, so it stays a literal and matches nothing, which is
+ * the honest answer.
+ */
+export function expandHome(value: string, home: string | undefined): string {
+  if (home === undefined || home === '') return value;
+  if (value === '~') return home;
+  if (!value.startsWith('~/')) return value;
+  return `${home}${value.slice(1)}`;
+}
+
+export function parseQuestion(raw: string, home?: string): QuestionParse {
   const words = raw
     .replace(/[?"']/g, ' ')
     .split(/\s+/)
@@ -145,7 +170,7 @@ export function parseQuestion(raw: string): QuestionParse {
   }
 
   const agent = kept.slice(0, verbAt).join(' ');
-  const resource = kept.slice(verbAt + 1).join(' ');
+  const resource = expandHome(kept.slice(verbAt + 1).join(' '), home);
 
   if (agent === '') return usage('Name the agent the question is about.');
   if (resource === '') return usage('Name what the agent would be acting on.');

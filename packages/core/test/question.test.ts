@@ -66,3 +66,50 @@ describe('the question grammar', () => {
     }
   });
 });
+
+/**
+ * A rule names an absolute path, because that is what a seam hands the gate.
+ * Asked with a `~`, `memnox explain` used to answer "no rule matched" about a
+ * file that was in fact denied — the worst direction for the one command whose
+ * job is telling somebody whether they are covered.
+ */
+describe('a home path asked the way a person writes it', () => {
+  const HOME = '/Users/nia';
+
+  it('expands a leading tilde to the home it was given', () => {
+    const { question } = parseQuestion('can cursor read ~/.ssh/id_ed25519', HOME);
+
+    expect(question?.resource).toBe('/Users/nia/.ssh/id_ed25519');
+  });
+
+  it('expands a bare tilde', () => {
+    expect(parseQuestion('can cursor read ~', HOME).question?.resource).toBe(HOME);
+  });
+
+  it('leaves an absolute path exactly as it was', () => {
+    const { question } = parseQuestion('can cursor read /etc/hosts', HOME);
+
+    expect(question?.resource).toBe('/etc/hosts');
+  });
+
+  /* No home is a reason to answer about the literal text, not to guess at one. */
+  it('leaves the tilde alone when no home was given', () => {
+    expect(parseQuestion('can cursor read ~/.ssh/id_ed25519').question?.resource).toBe(
+      '~/.ssh/id_ed25519',
+    );
+  });
+
+  /* This knows one home. Inventing another person's would be a guess, so it stays
+     a literal and matches nothing, which is the honest answer. */
+  it('does not invent another user’s home', () => {
+    expect(
+      parseQuestion('can cursor read ~root/.ssh/id_rsa', HOME).question?.resource,
+    ).toBe('~root/.ssh/id_rsa');
+  });
+
+  it('does not touch a tilde that is not leading', () => {
+    expect(parseQuestion('can cursor read /tmp/a~b', HOME).question?.resource).toBe(
+      '/tmp/a~b',
+    );
+  });
+});

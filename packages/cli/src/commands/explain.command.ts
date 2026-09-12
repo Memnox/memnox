@@ -217,7 +217,7 @@ export function registerExplainCommand(
 
       // A sentence is a question; a bare word is a capability. Nothing is inferred.
       if (subject.trim().includes(' ')) {
-        const { question, error } = parseQuestion(subject);
+        const { question, error } = parseQuestion(subject, homedir());
         if (question === undefined) throw new Error(error);
 
         const rules = await policySetInForce(homedir(), options.file);
