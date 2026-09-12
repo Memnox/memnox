@@ -190,28 +190,7 @@ export function registerMcpCommand(
     .command('unwrap')
     .description('Put every MCP server back the way it was')
     .action(async () => {
-      const configs = await readConfigs(home(), project());
-      let restored = 0;
-
-      for (const file of configs) {
-        const { restore } = planUnwrap(file.servers);
-        if (restore.length === 0) continue;
-
-        context.out.line(file.path);
-        for (const each of restore) {
-          context.out.line(`  ${each.name}  proxy → ${each.after.command}`);
-        }
-        restored += restore.length;
-
-        const next = { ...file.servers };
-        const changed: Record<string, ServerLaunch> = {};
-        for (const each of restore) {
-          next[each.name] = each.after;
-          changed[each.name] = each.after;
-        }
-        await writeConfig(home(), file, next, changed);
-      }
-
+      const restored = await unwrapEveryServer(home(), project(), context);
       context.out.line('');
       context.out.line(
         restored === 0
@@ -219,4 +198,46 @@ export function registerMcpCommand(
           : `${restored} server(s) restored. Restart your agent.`,
       );
     });
+}
+
+/**
+ * Puts every wrapped server back, and answers how many.
+ *
+ * Lifted out of the subcommand so `uninstall` can call the same code rather than
+ * print an instruction. Leaving a person to run a second command was the trap:
+ * `uninstall` removed the interceptors, said "nothing of Memnox is left", and left
+ * three agent configs invoking `memnox-mcp-proxy`. Remove the package after that
+ * and every wrapped server fails to start, with the command that would fix it
+ * gone from the machine.
+ *
+ * The original command is read out of the wrapped entry rather than out of the
+ * backup, which is what lets this run after `--purge` has deleted the backups.
+ */
+export async function unwrapEveryServer(
+  home: string,
+  project: string,
+  context: CliContext,
+): Promise<number> {
+  const configs = await readConfigs(home, project);
+  let restored = 0;
+
+  for (const file of configs) {
+    const { restore } = planUnwrap(file.servers);
+    if (restore.length === 0) continue;
+
+    context.out.line(file.path);
+    for (const each of restore) {
+      context.out.line(`  ${each.name}  proxy → ${each.after.command}`);
+    }
+    restored += restore.length;
+
+    const next = { ...file.servers };
+    const changed: Record<string, ServerLaunch> = {};
+    for (const each of restore) {
+      next[each.name] = each.after;
+      changed[each.name] = each.after;
+    }
+    await writeConfig(home, file, next, changed);
+  }
+  return restored;
 }

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { Command, Help } from 'commander';
 import { masthead } from './banner';
 import type { CliContext } from './cli-context';
@@ -30,7 +31,7 @@ import { registerEnvCommand } from './commands/env.command';
 import { registerDaemonCommand } from './commands/daemon.command';
 import { registerUninstallCommand } from './commands/uninstall.command';
 import { registerRunCommand } from './commands/run.command';
-import { registerMcpCommand } from './commands/mcp.command';
+import { registerMcpCommand, unwrapEveryServer } from './commands/mcp.command';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerSyncCommand } from './commands/sync.command';
@@ -90,7 +91,12 @@ export function buildProgram(context: CliContext): Command {
   registerExplainCommand(program, context);
   registerProtectCommand(program, context);
   registerRunCommand(program, context);
-  registerUninstallCommand(program, context);
+  /* Wired rather than left optional: without it `uninstall` printed an
+     instruction and left the agent configs calling a proxy the next `npm
+     uninstall` removes. Undoing what we did is uninstall's job, not homework. */
+  registerUninstallCommand(program, context, {
+    unwrap: () => unwrapEveryServer(homedir(), process.cwd(), context),
+  });
   registerFreezeCommand(program, context);
   registerLockCommand(program, context);
   registerResumeCommand(program, context);

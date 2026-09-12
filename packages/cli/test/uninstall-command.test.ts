@@ -132,3 +132,50 @@ describe('what purge can honestly claim', () => {
     expect(out.text).toContain('probably committed');
   });
 });
+
+/**
+ * The trap this closes.
+ *
+ * `uninstall` removed the interceptors, printed "Nothing of Memnox is left on
+ * this machine", and left the agent configs invoking `memnox-mcp-proxy`. Remove
+ * the package after that and every wrapped server fails to start, with the
+ * command that would put them back gone from the machine. Undoing what we did is
+ * this command's job, not homework left for somebody who has already decided to
+ * stop using it.
+ */
+describe('what uninstall puts back on its own', () => {
+  it('unwraps rather than telling somebody to', async () => {
+    const { home, repo } = await machine();
+    const unwrap = vi.fn(async () => 3);
+
+    const { text } = await run(['uninstall'], home, repo, unwrap);
+
+    expect(unwrap).toHaveBeenCalledOnce();
+    expect(text).toContain('Restored 3 MCP server(s).');
+    expect(text).not.toContain('Run "memnox mcp unwrap"');
+  });
+
+  /* Unwrap runs before the delete, because the wrapped entry is in the config and
+     the backups are under the directory --purge removes. */
+  it('unwraps before it deletes the home it might have needed', async () => {
+    const { home, repo } = await machine();
+    await mkdir(join(home, '.memnox'), { recursive: true });
+    const order: string[] = [];
+    const unwrap = vi.fn(async () => {
+      order.push(existsSync(join(home, '.memnox')) ? 'home-present' : 'home-gone');
+      return 1;
+    });
+
+    await run(['uninstall', '--purge'], home, repo, unwrap);
+
+    expect(order).toEqual(['home-present']);
+  });
+
+  it('still says how when it has no way to unwrap', async () => {
+    const { home, repo } = await machine();
+
+    expect((await run(['uninstall'], home, repo)).notes.join('\n')).toContain(
+      'memnox mcp unwrap',
+    );
+  });
+});
