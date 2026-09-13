@@ -35,6 +35,19 @@ export type HoldOutcome = (typeof HOLD_OUTCOME)[keyof typeof HOLD_OUTCOME];
 /** Seconds. Long enough to read the prompt, short enough that a walk-away ends. */
 export const DEFAULT_HOLD_TIMEOUT_MS = 120_000;
 
+/**
+ * The window when there is no terminal, so the only possible answerer is somewhere else.
+ *
+ * Two minutes is right for somebody already looking at the prompt and wrong for a
+ * machine nobody is sitting at: the question has to reach a person who is not there
+ * yet, and the answer has to travel back. Measured against a running daemon, a person
+ * who clicked approve with a minute to spare still watched the agent be refused. The
+ * product's own remote ask, `memnox_request_approval`, already defaults to thirty
+ * minutes for exactly this reason; this is the same judgement, kept shorter because a
+ * shell command is blocked while it waits.
+ */
+export const DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS = 10 * 60_000;
+
 export interface HoldRequest {
   sessionId: string;
   agent: string;
@@ -55,10 +68,36 @@ export interface HoldAsked {
   command?: string;
 }
 
+/**
+ * Returned instead of an answer when a prompt put the question to somebody and nothing
+ * came back before the deadline.
+ *
+ * Additive on purpose: a prompt that only ever returns `null` keeps meaning "there was
+ * nobody to ask at all", which is a different thing and has to read differently. Until
+ * this existed `TIMED_OUT` was declared, documented as reading differently, and
+ * produced by nothing — so an agent whose approver was simply slow was told the same
+ * sentence as one a person had refused.
+ */
+export interface HoldUnanswered {
+  unanswered: typeof HOLD_OUTCOME.TIMED_OUT;
+}
+
+export function isUnanswered(
+  value: HoldAsked | HoldUnanswered | null,
+): value is HoldUnanswered {
+  return value !== null && 'unanswered' in value;
+}
+
 /** Where the question is actually asked. Injected, so tests need no terminal. */
 export interface HoldPrompt {
-  /** Null when there is nobody to ask — no TTY, or a non-interactive run. */
-  ask(request: HoldRequest, timeoutMs: number): Promise<HoldAsked | null>;
+  /**
+   * Null when there was nobody to ask — no TTY, or a non-interactive run. A
+   * `HoldUnanswered` when somebody could have answered and nobody did in time.
+   */
+  ask(
+    request: HoldRequest,
+    timeoutMs: number,
+  ): Promise<HoldAsked | HoldUnanswered | null>;
 }
 
 export interface HoldResult {
@@ -103,7 +142,7 @@ export class HoldService {
       };
     }
 
-    let asked: HoldAsked | null;
+    let asked: HoldAsked | HoldUnanswered | null;
     try {
       asked = await this.prompt.ask(request, this.timeoutMs);
     } catch {
@@ -113,6 +152,8 @@ export class HoldService {
     }
 
     if (asked === null) return { outcome: HOLD_OUTCOME.UNATTENDED };
+    // Waited on, and nothing came back: refused either way, said as the thing it was.
+    if (isUnanswered(asked)) return { outcome: asked.unanswered };
     const answer = asked.answer;
     if (answer === HOLD_ANSWER.DENY) {
       return { outcome: HOLD_OUTCOME.DENIED, answer };

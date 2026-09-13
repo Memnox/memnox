@@ -1,10 +1,14 @@
 import {
   DEFAULT_HOLD_TIMEOUT_MS,
+  DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS,
   HOLD_ANSWER,
+  HOLD_OUTCOME,
   HoldService,
+  isUnanswered,
   type HoldAsked,
   type HoldPrompt,
   type HoldRequest,
+  type HoldUnanswered,
 } from './hold';
 import { PendingApprovals, waitForAnswer } from './pending';
 import { TtyHoldPrompt } from './tty-prompt';
@@ -36,7 +40,10 @@ export interface RoutedPromptDeps {
 export class RoutedHoldPrompt implements HoldPrompt {
   constructor(private readonly deps: RoutedPromptDeps) {}
 
-  async ask(request: HoldRequest, timeoutMs: number): Promise<HoldAsked | null> {
+  async ask(
+    request: HoldRequest,
+    timeoutMs: number,
+  ): Promise<HoldAsked | HoldUnanswered | null> {
     const now = this.deps.now ?? Date.now;
     const askedAt = new Date(now()).toISOString();
 
@@ -65,7 +72,11 @@ export class RoutedHoldPrompt implements HoldPrompt {
     /* Cleared either way. A record that outlived its question is one somebody answers
        later, for a command that stopped running an hour ago. */
     await this.deps.approvals.clear(pending.id);
-    return answer;
+    /* The record was raised, so somebody could have answered this and nobody did. That
+       is a timeout, and it must not reach the agent wearing the words of the rule that
+       asked — a person who approved a minute too late would otherwise read that their
+       approval was a refusal. */
+    return answer ?? { unanswered: HOLD_OUTCOME.TIMED_OUT };
   }
 
   /** Writes the terminal's answer to the file too, so the record says who decided. */
@@ -76,7 +87,9 @@ export class RoutedHoldPrompt implements HoldPrompt {
     id: string,
   ): Promise<HoldAsked | null> {
     const asked = await tty.ask(request, timeoutMs);
-    if (asked === null) return null;
+    /* A terminal that ran out of time is this route giving nothing, not an answer: the
+       remote one may still be about to arrive, and `first` is waiting on both. */
+    if (asked === null || isUnanswered(asked)) return null;
     await this.deps.approvals.answer(
       id,
       asked.answer,
@@ -167,6 +180,11 @@ export function holdFor(deps: {
       ...(deps.interactive ? { tty: new TtyHoldPrompt() } : {}),
       ...(deps.announce === undefined ? {} : { announce: deps.announce }),
     }),
-    deps.timeoutMs ?? DEFAULT_HOLD_TIMEOUT_MS,
+    /* How long is worth waiting depends on who can answer. Somebody at the keyboard is
+       already reading it; somebody elsewhere has to be found first, and their answer
+       has to travel back. One window for both meant the remote half could not finish
+       inside it. */
+    deps.timeoutMs ??
+      (deps.interactive ? DEFAULT_HOLD_TIMEOUT_MS : DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS),
   );
 }

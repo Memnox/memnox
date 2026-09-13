@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import {
   CloudLeases,
   GitRegionReader,
+  holderPid,
   holdFor,
   LeaseGate,
   LeaseRegistry,
@@ -79,15 +80,18 @@ export function buildLeases(cwd: string = process.cwd()): SeamLeases | undefined
       region: (path) => new GitRegionReader(root).read(path),
       now: () => new Date().toISOString(),
     }),
-    holder: {
-      agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
-      /* The session `memnox run` set. Without one, every command would be its own
-         session and a lease would never survive to the next line. */
-      sessionId: process.env[SESSION_VAR] ?? `ses_pid_${process.ppid}`,
-      /* The agent, not this wrapper. A wrapper exits the moment its command does, so
-         holding its own pid would mark every lease abandoned as soon as it was taken. */
-      pid: process.ppid,
-    },
+    holder: (() => {
+      /* The agent, not this wrapper — but never init, which a reparented seam would
+         otherwise name and which no lease can ever be reclaimed from. */
+      const owner = holderPid(process.ppid, process.pid);
+      return {
+        agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
+        /* The session `memnox run` set. Without one, every command would be its own
+           session and a lease would never survive to the next line. */
+        sessionId: process.env[SESSION_VAR] ?? `ses_pid_${owner}`,
+        pid: owner,
+      };
+    })(),
     repositoryRoot: root,
     isDirectory: (path: string) => {
       try {

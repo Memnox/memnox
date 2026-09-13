@@ -6,6 +6,8 @@ import { RoutedHoldPrompt } from '../src/gate/routed-prompt';
 import { PendingApprovals } from '../src/gate/pending';
 import {
   HOLD_ANSWER,
+  DEFAULT_HOLD_TIMEOUT_MS,
+  DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS,
   HOLD_OUTCOME,
   HoldService,
   type HoldAsked,
@@ -99,7 +101,11 @@ describe('a held call is written down before anybody is asked', () => {
       pollMs: POLL_MS,
     });
 
-    expect(await prompt.ask(request, IMPATIENT_MS)).toBeNull();
+    /* Not null: null is "there was nobody to ask", and a question that was written
+       down and waited on is a different thing. The agent reads the two differently. */
+    expect(await prompt.ask(request, IMPATIENT_MS)).toEqual({
+      unanswered: HOLD_OUTCOME.TIMED_OUT,
+    });
     // A record that outlived its question is one somebody answers an hour too late.
     expect(await approvals.list(new Date().toISOString())).toEqual([]);
   });
@@ -165,7 +171,7 @@ describe('what the seams now get', () => {
     expect((await holding).outcome).toBe(HOLD_OUTCOME.ALLOWED);
   }, 30_000);
 
-  it('reports nobody answering as unattended rather than as a refusal', async () => {
+  it('reports nobody answering as a timeout rather than as a refusal', async () => {
     const approvals = new PendingApprovals(await home());
     const service = new HoldService(
       new RoutedHoldPrompt({
@@ -174,6 +180,33 @@ describe('what the seams now get', () => {
       }),
       IMPATIENT_MS,
     );
-    expect((await service.hold(request)).outcome).toBe(HOLD_OUTCOME.UNATTENDED);
+    /* Refused either way, and never as somebody's denial. Timed out rather than
+       unattended, because this machine could be asked and was: an approver who was
+       merely slow must not reach the agent wearing the words of a person who said no. */
+    expect((await service.hold(request)).outcome).toBe(HOLD_OUTCOME.TIMED_OUT);
+  });
+});
+
+/**
+ * Two minutes is right for somebody already reading the prompt and wrong for a machine
+ * nobody is sitting at: the question has to reach a person who is not there yet and the
+ * answer has to travel back. One window for both meant the remote half could not finish
+ * inside it.
+ */
+describe('how long a held call waits', () => {
+  it('gives a terminal the short window, since somebody is already looking', () => {
+    expect(DEFAULT_HOLD_TIMEOUT_MS).toBe(120_000);
+  });
+
+  it('gives an unattended machine longer, because the answer has to travel', () => {
+    expect(DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS).toBeGreaterThan(DEFAULT_HOLD_TIMEOUT_MS);
+  });
+
+  it('leaves room for the round trip the answer actually makes', () => {
+    /* Both legs ride the heartbeat, so the window has to hold a trip up, a person, and
+       a trip back. Measured at a minute each way before this changed, which consumed
+       the whole of the old window and left nobody any time to read it. */
+    const roundTripMs = 2 * 60_000;
+    expect(DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS).toBeGreaterThan(roundTripMs);
   });
 });
