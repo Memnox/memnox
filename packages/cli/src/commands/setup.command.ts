@@ -221,17 +221,12 @@ export function registerSetupCommand(
            the workspace's rules unless somebody keeps a terminal open, so the
            run would end saying the agents were under Memnox while `scan` on the
            next line said none of their capabilities was governed. */
-        flow.step('Putting this machine in the path of what they do');
         const wired = await wireMachine(home(), process.cwd(), wiringSeams);
-        flow.value('Interceptors', `${wired.interceptors} installed`);
-        flow.value('Rules', `${wired.rules} written`);
-        flow.value(
-          'Daemon',
-          wired.daemon === WIRED.DONE
-            ? 'started by this machine'
-            : wired.daemon === WIRED.UNSUPPORTED
-              ? 'no service manager here, run "memnox daemon" yourself'
-              : 'not started, see "memnox daemon --status"',
+        /* One line rather than four headings: the counts are the point and each
+           one on its own rung read as four separate things having happened. */
+        flow.step(
+          'Wired this machine',
+          `${wired.interceptors} interceptors, ${wired.rules} rules, ${daemonWord(wired)}`,
         );
 
         /* The last step, and the one that was missing: onboarding writes
@@ -771,6 +766,13 @@ function summarize(
     'This machine is watching, not stopping. "memnox doctor --wiring" shows what is in the path, and "memnox config set mode enforce" turns it on when you have read a week of it.',
   );
   flow.hint('Take all of it back out with "memnox uninstall".');
+}
+
+/** The daemon half of the wiring line, in the words the summary will use again. */
+function daemonWord(wired: Wiring): string {
+  if (wired.daemon === WIRED.DONE) return 'daemon installed';
+  if (wired.daemon === WIRED.UNSUPPORTED) return 'no service manager here';
+  return 'daemon not started';
 }
 
 /** Which control plane a record was written against, for the row that says so. */
