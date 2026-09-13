@@ -289,3 +289,38 @@ describe('a session that ends holds nothing', () => {
     expect((await registry.held(NOW.toISOString())).map((l) => l.path)).toEqual(['docs']);
   });
 });
+
+/**
+ * The note was printed whether or not anything was in that directory, so a run with no
+ * wrappers installed reported that shell and git commands were being gated and then
+ * gated none of them. It is the screen somebody reads before walking away.
+ */
+describe('what memnox run says is wired', () => {
+  async function runWith(installed: readonly string[]): Promise<RecordedOutput> {
+    const out = new RecordedOutput();
+    const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
+    registerRunCommand(program, new CliContext(out, plainStyle), {
+      start: (async () => 0) as never,
+      home: () => HOME,
+      newId: () => 'ses_test',
+      onPath: () => true,
+      interceptorsIn: () => installed,
+      milestones: (() => new FakeMilestones()) as never,
+    });
+    await program.parseAsync(['run', '--no-milestone', '--', 'claude'], { from: 'user' });
+    return out;
+  }
+
+  it('counts what is actually there', async () => {
+    const out = await runWith(['git', 'rm', 'curl']);
+    expect(out.notes.join('\n')).toContain('3 on PATH from');
+  });
+
+  it('says so plainly when none are installed, and names the fix', async () => {
+    const said = (await runWith([])).notes.join('\n');
+    expect(said).toContain('none installed, so shell and git commands are not gated');
+    expect(said).toContain('memnox protect --interceptors');
+    // The one thing it must never do is claim a seam it does not have.
+    expect(said).not.toContain('on PATH from');
+  });
+});

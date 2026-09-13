@@ -451,6 +451,21 @@ export class SqliteEventStore implements EventSink {
     return row.n;
   }
 
+  /**
+   * How many recorded verdicts did not simply proceed.
+   *
+   * The number behind "should this machine enforce yet". In observe every rule is
+   * matched and nothing is refused, so this is exactly the work that would have
+   * stopped — counted here rather than walked, because `doctor` runs while
+   * somebody waits and a full scan of the ledger is the wrong price for one line.
+   */
+  async countWithheld(): Promise<number> {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM events WHERE effect <> 'allow'")
+      .get() as { n: number };
+    return row.n;
+  }
+
   close(): void {
     this.db.close();
   }

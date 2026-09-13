@@ -22,14 +22,17 @@ import {
   spendReport,
   SqliteEventStore,
   type MemnoxEvent,
+  readAccount,
   type HealthFacts,
 } from '@memnox/core';
 import {
   askDaemon,
+  INTERCEPT_BINARY,
   interceptorDirFor,
   realPath,
   resolveReal,
 } from '@memnox/interceptors';
+import { serviceState } from './daemon/service';
 import { POLICY_FILES } from './policy-path';
 import { policyRegistryPath } from './policy-registry';
 
@@ -221,10 +224,12 @@ export async function gatherHealth(
     socket && (await askDaemon(home, { action: 'health.ping', timeoutMs: 300 })) !== null;
 
   let ledgerEvents: number | null = null;
+  let wouldHaveStopped = 0;
   let ledgerError: string | undefined;
   try {
     const store = SqliteEventStore.forHome(home);
     ledgerEvents = await store.count();
+    wouldHaveStopped = await store.countWithheld();
     store.close();
   } catch (err) {
     ledgerError = err instanceof Error ? err.message : String(err);
@@ -256,10 +261,14 @@ export async function gatherHealth(
     interceptorsExpected: presentBinaries(home, env),
     // First wins on PATH, so anything before us means the real binary is found first.
     interceptorDirFirstOnPath: installed.length > 0 && path.indexOf(ours) === 0,
+    interceptBinaryFound: interceptBinaryOn(realPath(env['PATH'] ?? '', home)),
     ...(await proxyWiring(home, dir)),
     daemonSocket: socket,
     daemonAnswered: answered,
+    enrolled: (await readAccount(home)) !== null,
+    daemonStartsItself: serviceState(home).installed,
     ledgerEvents,
+    wouldHaveStopped,
     ...(ledgerError === undefined ? {} : { ledgerError }),
   };
 }
@@ -277,6 +286,22 @@ async function readLedger(home: string): Promise<MemnoxEvent[]> {
     // A ledger that will not open is already reported by its own check.
     return [];
   }
+}
+
+/**
+ * Whether the binary every wrapper execs can be found on PATH.
+ *
+ * Walked here rather than through `resolveReal`, which refuses this one name on
+ * purpose: it is the guard that stops a wrapper resolving to the interceptor and
+ * spawning itself without end. Asking it about `memnox-intercept` gets `null`
+ * every time, which reads as "missing" and is the wrong answer about the one
+ * binary whose absence breaks all sixteen of them.
+ */
+function interceptBinaryOn(path: string): boolean {
+  return path
+    .split(delimiter)
+    .filter((entry) => entry !== '')
+    .some((entry) => existsSync(join(entry, INTERCEPT_BINARY)));
 }
 
 /**

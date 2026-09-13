@@ -87,14 +87,33 @@ export interface HealthFacts {
   interceptorsExpected: string[];
   /** True when the interceptor directory is ahead of the real binaries on PATH. */
   interceptorDirFirstOnPath: boolean;
+  /**
+   * Whether the one binary every wrapper execs can actually be found.
+   *
+   * A wrapper is three lines ending in `exec "memnox-intercept" "git" "$@"`, so
+   * the whole directory depends on that name resolving. When it does not, every
+   * wrapped command exits 127 and the agent is told `git: not found` — which is
+   * worse than ungoverned, and which a count of installed files cannot see.
+   */
+  interceptBinaryFound: boolean;
   /** MCP servers found, and how many are routed through the proxy. */
   mcpServers: number;
   mcpWrapped: number;
   /** Whether the daemon socket exists, and whether it answered. */
   daemonSocket: boolean;
   daemonAnswered: boolean;
+  /** True when this machine is enrolled, so a heartbeat is something it owes. */
+  enrolled: boolean;
+  /** True when the machine starts the daemon itself, rather than a person doing it. */
+  daemonStartsItself: boolean;
   /** Null when the database will not open; otherwise how many rows it holds. */
   ledgerEvents: number | null;
+  /**
+   * Recorded verdicts that did not simply proceed. In observe this is the work
+   * that would have been stopped, which is the reading the decision to enforce
+   * is supposed to be made on and which nothing was putting in front of anybody.
+   */
+  wouldHaveStopped: number;
   ledgerError?: string;
   /** Sessions the breaker is holding. Each one runs nothing until somebody lifts it. */
   pausedSessions: number;
@@ -172,11 +191,26 @@ function configCheck(facts: HealthFacts): HealthCheck {
     };
   }
   if (facts.mode === 'observe') {
+    /* "Once the verdicts look right" was the whole instruction, and nothing ever
+       said whether they did. A machine can sit in observe for a month governing
+       nothing while every row on this screen stays green, because observe is the
+       correct default. The count is the reading somebody was told to take. */
+    if (facts.wouldHaveStopped === 0) {
+      return {
+        name: CHECK_NAME.CONFIG,
+        state: CHECK.OK,
+        detail:
+          facts.ledgerEvents === null || facts.ledgerEvents === 0
+            ? 'mode is observe, and nothing has run under it yet'
+            : `mode is observe, and none of ${facts.ledgerEvents} recorded action(s) would have been stopped`,
+        fix: 'memnox run -- <agent>, and read it again in a week',
+      };
+    }
     return {
       name: CHECK_NAME.CONFIG,
       state: CHECK.OK,
-      detail: 'mode is observe — verdicts are recorded and nothing is denied',
-      fix: 'memnox protect --enforce, once the verdicts look right',
+      detail: `mode is observe, and ${facts.wouldHaveStopped} recorded verdict(s) would have stopped something`,
+      fix: 'read them with "memnox timeline --only deny", then "memnox config set mode enforce"',
     };
   }
   return { name: CHECK_NAME.CONFIG, state: CHECK.OK, detail: `mode is ${facts.mode}` };
@@ -257,6 +291,16 @@ function interceptorCheck(facts: HealthFacts): HealthCheck {
       fix: 'memnox protect --interceptors',
     };
   }
+  /* Checked after the count, because this is the failure the count hides: the
+     files are all there and every one of them is a command that cannot run. */
+  if (!facts.interceptBinaryFound) {
+    return {
+      name: CHECK_NAME.INTERCEPTORS,
+      state: CHECK.BROKEN,
+      detail: `${facts.interceptorsInstalled.length} installed, but "memnox-intercept" is not on PATH, so each one exits 127`,
+      fix: 'reinstall the CLI, then "memnox protect --interceptors"',
+    };
+  }
   return {
     name: CHECK_NAME.INTERCEPTORS,
     state: CHECK.OK,
@@ -322,11 +366,27 @@ function proxyCheck(facts: HealthFacts): HealthCheck {
 
 function daemonCheck(facts: HealthFacts): HealthCheck {
   if (!facts.daemonSocket) {
-    // Optional by design: an interceptor with no daemon evaluates in process.
+    /* Optional for enforcement: an interceptor with no daemon evaluates in process.
+       Not optional once this machine is enrolled, because the daemon is also the only
+       thing that pulls the workspace's rules and sends what happened. A workspace that
+       told somebody "it pulls on its own, about once a minute" was describing a loop
+       that ran only while a terminal stayed open, and a machine that quietly stopped
+       syncing looks exactly like one with nothing to report. */
+    if (facts.enrolled && !facts.daemonStartsItself) {
+      return {
+        name: CHECK_NAME.DAEMON,
+        state: CHECK.INERT,
+        detail:
+          'nothing starts it, so this machine pulls no rules and sends nothing until somebody runs it',
+        fix: 'memnox daemon --install',
+      };
+    }
     return {
       name: CHECK_NAME.DAEMON,
       state: CHECK.OK,
-      detail: 'not running; interceptors evaluate in process, which is the same rules',
+      detail: facts.daemonStartsItself
+        ? 'not running just now; the machine starts it and interceptors evaluate in process meanwhile'
+        : 'not running; interceptors evaluate in process, which is the same rules',
       fix: 'memnox daemon, if you want them to pay a connect instead of a file read',
     };
   }
