@@ -6,6 +6,7 @@ import {
   hasTag,
   matchVerb,
   UNKNOWN_VERB,
+  verbForAction,
   VERB_TAG,
 } from '../src/verbs/verb-table';
 import { verbTableFor, verbTableNames, VERB_TABLES } from '../src/verbs/tables';
@@ -136,5 +137,39 @@ describe('the seed tables', () => {
         expect(source.startsWith('~') || /^[A-Z_]+$/.test(source)).toBe(true);
       }
     }
+  });
+
+  it('reads a short flag as a cluster, so -fdx is the -fd rule and not unknown', () => {
+    const table = verbTableFor('git') as never;
+    for (const line of ['clean -fd .', 'clean -fdx .', 'clean -xfd .']) {
+      expect(classOf(table, argv(line)).class).toBe('destructive');
+    }
+    // Case still separates them: `-d` is the safe delete and `-D` is the forced one.
+    expect(classOf(table, argv('branch -d feature'))).toBe(UNKNOWN_VERB);
+    expect(classOf(table, argv('branch -D feature')).class).toBe('destructive');
+  });
+
+  it("matches a flag's value against the flag, not against the next positional", () => {
+    const table = verbTableFor('gh') as never;
+    expect(classOf(table, argv('api -X DELETE /repos/x/y')).class).toBe('destructive');
+    // The same call without the verb stays a read, or every `gh api` would be refused.
+    expect(classOf(table, argv('api /repos/x/y')).class).toBe('read');
+  });
+});
+
+/**
+ * An action name is not argv. Splitting it back on `-` matched the wrong verb, so a
+ * repository deletion was annotated with the note belonging to the plain read.
+ */
+describe('finding the verb an action name came from', () => {
+  it('picks the verb that produces that exact name', () => {
+    expect(verbForAction('gh.api-x-delete', verbTableFor)?.class).toBe('destructive');
+    expect(verbForAction('gh.api', verbTableFor)?.class).toBe('read');
+    expect(verbForAction('git.clean-fd', verbTableFor)?.class).toBe('destructive');
+  });
+
+  it('answers null for a name no table produces', () => {
+    expect(verbForAction('git.unknown', verbTableFor)).toBeNull();
+    expect(verbForAction('nonsense', verbTableFor)).toBeNull();
   });
 });

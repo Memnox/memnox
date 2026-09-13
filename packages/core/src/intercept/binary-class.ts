@@ -5,6 +5,7 @@
  */
 
 import { verbTableNames } from '../verbs/tables';
+import { TOOL_CLASS } from '../discovery/classify';
 import { BROWSER_LAUNCHERS } from '../discovery/browser';
 
 export const COMMAND_CLASS = {
@@ -181,6 +182,115 @@ function classifyGit(args: readonly string[]): BinaryVerdict {
     class: COMMAND_CLASS.NORMAL,
     ...(target === '' ? {} : { target }),
     because: `git ${sub}`,
+  };
+}
+
+/**
+ * Binaries whose whole job is to hand a file's contents to whoever asked, and the
+ * arguments of theirs that are not files.
+ *
+ * Without these a `filesystem.read` rule matched nothing any seam ever produced: the
+ * deny that `scan`, `explain` and `doctor` all promise about `~/.ssh/id_ed25519` was
+ * written, registered, reported in force, and fired on nothing. `cat` is the command
+ * an agent reaches for, so it is the one the rule has to see.
+ *
+ * They stay out of `CLASSIFIERS` on purpose. That map decides which wrappers go on
+ * PATH, and putting `cat` behind a node process would tax every read an agent makes
+ * for a gate the shell seam already applies. What skips the seams is the kernel
+ * guard's job, which is what `doctor` has always said.
+ */
+const READER_VALUE_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  head: ['-n', '-c', '--lines', '--bytes'],
+  tail: ['-n', '-c', '--lines', '--bytes'],
+  grep: ['-e', '-f', '-m', '--regexp', '--file'],
+  rg: ['-e', '-f', '-m', '--regexp', '--file'],
+  od: ['-N', '-j', '-t'],
+  xxd: ['-l', '-s', '-c'],
+};
+
+/** Readers whose leading positional is not a file: `grep <pattern> <file...>`. */
+const PATTERN_FIRST = new Set(['grep', 'rg']);
+
+const READERS = new Set([
+  'cat',
+  'head',
+  'tail',
+  'less',
+  'more',
+  'nl',
+  'tac',
+  'strings',
+  'xxd',
+  'od',
+  'base64',
+  'grep',
+  'rg',
+  'cp',
+]);
+
+export function isReader(binary: string): boolean {
+  return READERS.has(binary);
+}
+
+/**
+ * Absolute, because a rule names an absolute path and a command names whatever was
+ * convenient. `~` and `$HOME` are expanded and a relative path is resolved against the
+ * directory the command ran in, so `cat .ssh/id_ed25519` and `cat ~/.ssh/id_ed25519`
+ * reach the same rule rather than one of them slipping past it.
+ */
+function absolutePath(candidate: string, env: NodeJS.ProcessEnv): string {
+  const home = env['HOME'] ?? env['USERPROFILE'];
+  let path = candidate;
+  if (home !== undefined) {
+    if (path === '~') path = home;
+    else if (path.startsWith('~/')) path = `${home}/${path.slice(2)}`;
+    else if (path.startsWith('$HOME/')) path = `${home}/${path.slice(6)}`;
+  }
+  if (path.startsWith('/')) return path;
+
+  const cwd = env['PWD'];
+  if (cwd === undefined) return path;
+  return `${cwd.replace(/\/$/, '')}/${path.replace(/^\.\//, '')}`;
+}
+
+export interface ReaderVerdict {
+  action: string;
+  /** A read, so nothing here ever takes a lease or reads as a conflict. */
+  class: typeof TOOL_CLASS.READ;
+  target?: string;
+  /** Every file named, because a rule that only saw the first would miss
+      `cat README ~/.ssh/id_ed25519` — which is one argument away from no gate at all. */
+  targets: readonly string[];
+  because: string;
+}
+
+/** Null when this binary does not read files for a living. */
+export function classifyReader(
+  binary: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = {},
+): ReaderVerdict | null {
+  if (!READERS.has(binary)) return null;
+
+  const valueFlags = new Set(READER_VALUE_FLAGS[binary] ?? []);
+  const positional = positionalArgs(args, valueFlags);
+  /* `cp a b` writes to `b`, and the read that matters is the source — which is how a
+     credential leaves a machine that denied `cat`. The destination is the last one. */
+  const files =
+    binary === 'cp'
+      ? positional.slice(0, -1)
+      : PATTERN_FIRST.has(binary)
+        ? positional.slice(1)
+        : positional;
+
+  const targets = files.map((file) => absolutePath(file, env));
+  const first = targets[0];
+  return {
+    action: 'filesystem.read',
+    class: TOOL_CLASS.READ,
+    ...(first === undefined ? {} : { target: first }),
+    targets,
+    because: `${binary} reads the file it is given`,
   };
 }
 

@@ -1,4 +1,4 @@
-import { classifyBinary, COMMAND_CLASS } from './binary-class';
+import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
 import { inspectSql, isDatabaseClient, nonLocalHost, SQL_RISK, statementIn } from './sql';
 import {
   actionForCommand,
@@ -24,6 +24,12 @@ export interface ResolvedAction {
   because: string;
   /** What it operates on: a host, a path, a branch. Never a payload. */
   target?: string;
+  /**
+   * Every path this command names, when it names more than one. A caller that rules on
+   * `target` alone rules on the first file of `cat README ~/.ssh/id_ed25519` and lets
+   * the second through, so anything gating a read walks this instead.
+   */
+  targets?: readonly string[];
   /** What to do instead, when the table names something. */
   alternative?: string;
 }
@@ -66,6 +72,20 @@ export function resolveAction(
     };
   }
 
+  /* Before the generic classifiers, which have no opinion about a reader at all. A
+     `filesystem.read` rule is the one thing every screen promises about a credential
+     file, so this is where that promise becomes an action a gate can match. */
+  const reading = classifyReader(binary, args, env);
+  if (reading !== null) {
+    return {
+      action: reading.action,
+      class: reading.class,
+      because: reading.because,
+      ...(reading.target === undefined ? {} : { target: reading.target }),
+      targets: reading.targets,
+    };
+  }
+
   const generic = classifyBinary(binary, args);
   if (generic !== null) {
     return {
@@ -81,6 +101,24 @@ export function resolveAction(
     class: COMMAND_CLASS.NORMAL,
     because: binary,
   };
+}
+
+/**
+ * Every target one resolved command has to be ruled on, in order.
+ *
+ * A reader names all of its files, so `cat README ~/.ssh/id_ed25519` is two rulings and
+ * the deny on the second is reached. Ruling on `target` alone stopped at the README,
+ * which put the whole credential gate one argument away from being bypassed. Exported
+ * because the shell seam and `policy test` must agree about this or a rule proven on
+ * one would quietly not fire on the other.
+ */
+export function targetsRuledOn(
+  resolved: Pick<ResolvedAction, 'target' | 'targets'>,
+  fallback?: string,
+): readonly (string | undefined)[] {
+  if (resolved.targets !== undefined && resolved.targets.length > 0)
+    return resolved.targets;
+  return [resolved.target ?? fallback];
 }
 
 /** Kept so a caller with only a name can still ask what it would resolve to. */

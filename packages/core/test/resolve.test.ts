@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAction } from '../src/intercept/resolve';
+import { takesLease } from '../src/coordination/writes';
 
 const argv = (line: string): string[] => line.split(' ').filter((w) => w !== '');
 const resolve = (line: string, env: NodeJS.ProcessEnv = {}) => {
@@ -57,5 +58,54 @@ describe('resolving one command line', () => {
 
   it('is deterministic — the same line always resolves the same way', () => {
     expect(resolve('git push --force')).toEqual(resolve('git push --force'));
+  });
+});
+
+/**
+ * A credential rule names `filesystem.read`, and until these existed no seam ever
+ * produced that action — so the deny every screen promises about `~/.ssh/id_ed25519`
+ * was registered, reported in force, and matched nothing anybody could type.
+ */
+describe('commands that read a file', () => {
+  const env = { HOME: '/Users/me', PWD: '/work/app' };
+
+  it('resolves a reader to filesystem.read on the path it was given', () => {
+    const read = resolve('cat ~/.ssh/id_ed25519', env);
+    expect(read.action).toBe('filesystem.read');
+    expect(read.class).toBe('read');
+    expect(read.target).toBe('/Users/me/.ssh/id_ed25519');
+  });
+
+  it('names every file, so a second argument cannot carry one past the rule', () => {
+    expect(resolve('cat README ~/.npmrc', env).targets).toEqual([
+      '/work/app/README',
+      '/Users/me/.npmrc',
+    ]);
+  });
+
+  it('resolves a relative path against where the command ran', () => {
+    expect(
+      resolve('cat .ssh/id_ed25519', { HOME: '/Users/me', PWD: '/Users/me' }).targets,
+    ).toEqual(['/Users/me/.ssh/id_ed25519']);
+  });
+
+  it('skips the value of a flag, so a line count is never read as a file', () => {
+    expect(resolve('head -n 5 ~/.npmrc', env).targets).toEqual(['/Users/me/.npmrc']);
+  });
+
+  it('skips a search pattern, since grep puts it where a file would be', () => {
+    expect(resolve('grep secret ~/.aws/credentials', env).targets).toEqual([
+      '/Users/me/.aws/credentials',
+    ]);
+  });
+
+  it('takes the source of a copy, which is how a credential leaves a machine', () => {
+    expect(resolve('cp ~/.ssh/id_ed25519 /tmp/x', env).targets).toEqual([
+      '/Users/me/.ssh/id_ed25519',
+    ]);
+  });
+
+  it('is a read, so nothing here ever takes a lease or reads as a conflict', () => {
+    expect(takesLease(String(resolve('cat ~/.npmrc', env).class))).toBe(false);
   });
 });

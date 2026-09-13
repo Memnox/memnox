@@ -66,20 +66,51 @@ function wordMatches(word: string, argument: string | undefined): boolean {
   return argument.startsWith(prefix);
 }
 
+/**
+ * Where a pattern's flag sits in argv, or -1. A short flag is matched against the
+ * letters of a cluster rather than the whole word, because `-fdx` and `-xfd` are the
+ * forms people actually type and `argv.includes('-fd')` saw neither — so the deny rule
+ * fired on `git clean -fd` and let the strictly more destructive `git clean -fdx` past.
+ * Long flags stay exact: `--force` and `--force-with-lease` are different commands.
+ */
+function flagIndexIn(flag: string, argv: readonly string[]): number {
+  if (flag.startsWith('--')) return argv.indexOf(flag);
+
+  const wanted = [...flag.slice(1)];
+  return argv.findIndex(
+    (argument) =>
+      /^-[A-Za-z]+$/.test(argument) &&
+      wanted.every((letter) => argument.includes(letter)),
+  );
+}
+
 function matchesPattern(pattern: string, argv: readonly string[]): boolean {
   const words = pattern.split(/\s+/).filter((word) => word !== '');
   let index = 0;
+  /* Where the flag we just matched sits, so the word after it is read as that flag's
+     value. Without this `api -X DELETE **` compared `DELETE` against the positional at
+     `index` — which is the flag itself — so no pattern with a flag value ever matched
+     and `gh api -X DELETE` was classified a read. */
+  let valueOf = -1;
 
   for (const word of words) {
     if (word === '**') return true;
     if (word === '*') {
       if (index >= argv.length) return false;
       index += 1;
+      valueOf = -1;
       continue;
     }
     // A flag may appear anywhere after the subcommand, which is how people type them.
     if (word.startsWith('-')) {
-      if (!argv.includes(word)) return false;
+      const at = flagIndexIn(word, argv);
+      if (at === -1) return false;
+      valueOf = at;
+      continue;
+    }
+    if (valueOf !== -1) {
+      if (!wordMatches(word, argv[valueOf + 1])) return false;
+      valueOf = -1;
       continue;
     }
     if (!wordMatches(word, argv[index])) return false;
@@ -190,6 +221,28 @@ export function hasTag(verb: Verb, tag: VerbTag): boolean {
 }
 
 /**
+ * The verb an action name came from, found by asking which verb produces that name.
+ *
+ * Never by splitting the name back into argv: `verbAction` drops the dashes, so
+ * `gh.api-x-delete` split on `-` is `api x delete`, which matches the plain `api **`
+ * read and made the timeline annotate a repository deletion "read unless -X says
+ * otherwise". `git.clean-fd` became `clean fd`, which matched nothing at all and was
+ * labelled "no verb table entry covers this" beside the rule that had just denied it.
+ */
+export function verbForAction(
+  action: string,
+  tableFor: (name: string) => VerbTable | null,
+): Verb | null {
+  const dot = action.indexOf('.');
+  if (dot <= 0) return null;
+  const table = tableFor(action.slice(0, dot));
+  if (table === null) return null;
+
+  const cli = action.slice(0, dot);
+  return table.verbs.find((each) => verbAction(cli, each) === action) ?? null;
+}
+
+/**
  * A command glob for one Memnox action, from the table the evaluator itself reads.
  *
  * `git.push-force` is our name for it; `git push --force*` is what a command-level deny
@@ -201,14 +254,9 @@ export function commandGlobFor(
   action: string,
   tableFor: (name: string) => VerbTable | null,
 ): string | null {
-  const dot = action.indexOf('.');
-  if (dot <= 0) return null;
-  const cli = action.slice(0, dot);
-  const table = tableFor(cli);
-  if (table === null) return null;
-
-  const verb = table.verbs.find((each) => verbAction(cli, each) === action);
-  if (verb === undefined) return null;
+  const verb = verbForAction(action, tableFor);
+  if (verb === null) return null;
+  const cli = action.slice(0, action.indexOf('.'));
   // `**` means "and the rest", which is exactly what a trailing glob says.
   const pattern = verb.match.replace(/\s*\*\*\s*$/, '').trim();
   return pattern === '' ? `${cli}*` : `${cli} ${pattern}*`;
