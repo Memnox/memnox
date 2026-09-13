@@ -1,7 +1,13 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { concurrentWork, overlappingWork, type WorkObservation } from '@memnox/core';
+import {
+  concurrentWork,
+  overlappingWork,
+  takesLease,
+  type WorkObservation,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { DAY_MS, windowDays } from '../duration';
 import { withEvents } from '../event-store';
 
@@ -23,6 +29,7 @@ export function registerCollisionsCommand(
     .option('--days <n>', 'how far back to look', String(DEFAULT_WINDOW_DAYS))
     .option('--json', 'machine-readable output')
     .action(async (options: { days: string; json?: boolean }) => {
+      if (options.json !== true) context.flow.open('memnox collisions');
       const days = windowDays(options.days, '--days');
       const moment = now().toISOString();
       const since = new Date(now().getTime() - days * DAY_MS).toISOString();
@@ -37,8 +44,13 @@ export function registerCollisionsCommand(
             agentName: event.agent,
             target: event.target as string,
             at: event.at,
-            // Only a write can collide; two agents reading one file is not a problem.
-            writing: event.class !== 'read',
+            /* Only a write can collide; two agents reading one file is not a problem.
+               Asked of the same function the lease gate asks, because anything else
+               was a second opinion: `class !== 'read'` counted `unknown` as a write,
+               so two `git rev-parse` reads were reported as two agents fighting over a
+               file called "rev-parse". A conflict nobody is having is worse than no
+               report, since it is the screen that asks somebody to stop working. */
+            writing: takesLease(event.class),
           }));
 
         const concurrent = concurrentWork(observations, { now: moment });
@@ -52,9 +64,9 @@ export function registerCollisionsCommand(
           return;
         }
 
-        const { out, style } = context;
+        const { flow } = context;
         if (concurrent.length === 0 && overlapping.length === 0) {
-          out.line(
+          flow.close(
             events.length === 0
               ? 'Nothing recorded yet, so there is nothing to compare.'
               : `No collisions in the last ${days} day(s).`,
@@ -63,33 +75,34 @@ export function registerCollisionsCommand(
         }
 
         if (concurrent.length > 0) {
-          out.line('');
-          out.line(style.bold('TWO AGENTS IN ONE FILE'));
-          out.line('');
-          for (const collision of concurrent) {
-            out.line(`  ${style.warn('!')}  ${collision.target}`);
-            for (const agent of collision.agents) {
-              const doing = agent.writing ? 'writing' : 'reading';
-              out.line(`     ${agent.agentName}  ${doing}  ${style.dim(agent.at)}`);
-            }
-          }
+          flow.list(
+            'Two agents in one file',
+            concurrent.map((collision) => ({
+              tone: TONE.WARN,
+              text: collision.target,
+              detail: collision.agents.map(
+                (agent) =>
+                  `${agent.agentName}  ${agent.writing ? 'writing' : 'reading'}  ${agent.at}`,
+              ),
+            })),
+          );
         }
 
         if (overlapping.length > 0) {
-          out.line('');
-          out.line(style.bold('TWO AGENTS BUILDING ONE THING'));
-          out.line('');
-          for (const overlap of overlapping) {
-            const names = overlap.agents.map((each) => each.agentName).join(' and ');
-            out.line(
-              `  ${style.warn('!')}  ${names}  ${style.dim(`since ${overlap.since}`)}`,
-            );
-            out.line(`     ${style.dim(overlap.sharedTargets.join(', '))}`);
-          }
+          flow.list(
+            'Two agents building one thing',
+            overlapping.map((overlap) => ({
+              tone: TONE.WARN,
+              text: `${overlap.agents.map((each) => each.agentName).join(' and ')}, since ${overlap.since}`,
+              detail: [overlap.sharedTargets.join(', ')],
+            })),
+          );
         }
-        out.line('');
+        flow.close(
+          `${concurrent.length} file(s) contended, ${overlapping.length} overlapping piece(s) of work.`,
+        );
         // Refereeing this would be a claim about somebody's work that nothing here can make.
-        out.note('Reported, not refereed — which one should stop is your call.');
+        flow.hint('Reported, not refereed: which one should stop is your call.');
       });
     });
 }

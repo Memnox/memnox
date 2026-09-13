@@ -3,9 +3,9 @@ import type { Command } from 'commander';
 import { writeFile } from 'node:fs/promises';
 import {
   buildBundle,
-  classOf,
   DECISION_EFFECT,
   generateKeys,
+  verbForAction,
   verbTableFor,
   loadOrCreateConfig,
   type DecisionEffect,
@@ -26,26 +26,31 @@ const ONLY: Readonly<Record<string, DecisionEffect[]>> = {
   blocked: [DECISION_EFFECT.DENY, DECISION_EFFECT.ASK],
 };
 
-function line(context: CliContext, event: MemnoxEvent): string {
+/** One action, as the cells of a timeline row. */
+function cells(context: CliContext, event: MemnoxEvent): string[] {
   const { style } = context;
-  const time = event.at.slice(11, 19);
-  const mark = style.symbol(event.effect);
   const what =
     event.target === undefined ? event.operation : `${event.operation} ${event.target}`;
+  /* Empty rather than a styled empty string: colour codes wrapped around
+     nothing still print, and a trailing one shows as a stray escape. */
   const outcome =
     event.exitCode === undefined || event.exitCode === 0
       ? ''
-      : style.dim(` exit ${event.exitCode}`);
-  // "preview" and "production" are the words that make a deploy line readable.
-  const note = verbNote(event.operation);
-  return `  ${time}  ${mark}${style.effect(event.effect, event.effect.padEnd(5))}  ${what}${note}${outcome}`;
+      : style.dim(`exit ${event.exitCode}`);
+  return [
+    event.at.slice(11, 19),
+    `${style.symbol(event.effect)}${style.effect(event.effect, event.effect)}`,
+    // "preview" and "production" are the words that make a deploy line readable.
+    `${what}${verbNote(event.operation)}`,
+    outcome,
+  ];
 }
 
 function render(context: CliContext, events: readonly MemnoxEvent[]): void {
-  const { out, style } = context;
+  const { flow } = context;
   if (events.length === 0) {
-    out.line('Nothing recorded yet.');
-    out.note('Wrap an agent with "memnox mcp wrap", then use it.');
+    flow.close('Nothing recorded yet.');
+    flow.hint('Wrap an agent with "memnox mcp wrap", then use it.');
     return;
   }
 
@@ -59,12 +64,14 @@ function render(context: CliContext, events: readonly MemnoxEvent[]): void {
 
   for (const [sessionId, rows] of sessions) {
     const first = rows[0] as MemnoxEvent;
-    out.line('');
-    out.line(style.bold(`${first.agent}  ${sessionId}  ${first.at.slice(0, 10)}`));
-    for (const event of rows) out.line(line(context, event));
+    flow.table(
+      `${first.agent}  ${sessionId}  ${first.at.slice(0, 10)}`,
+      ['Time', '', 'Action', ''],
+      rows.map((event) => cells(context, event)),
+    );
   }
-  out.line('');
-  out.line(`${events.length} action(s) across ${sessions.size} session(s).`);
+  flow.close(`${events.length} action(s) across ${sessions.size} session(s).`);
+  flow.hint('One of them end to end: "memnox trace <id>".');
 }
 
 export function registerTimelineCommand(
@@ -93,6 +100,7 @@ export function registerTimelineCommand(
         export?: string;
         out?: string;
       }) => {
+        if (options.export === undefined) context.flow.open('memnox timeline');
         if (options.only !== undefined && ONLY[options.only] === undefined) {
           throw new Error(
             `--only takes one of: ${Object.keys(ONLY).join(', ')}. Got "${options.only}".`,
@@ -108,6 +116,11 @@ export function registerTimelineCommand(
           const events = await store.query(filter);
 
           if (options.export === 'bundle') {
+            /* The bundle is the answer and a caller redirects it, so the rail
+               moves to stderr rather than being drawn through the middle of
+               what somebody is about to hand an auditor. */
+            context.flow.commentary();
+            context.flow.open('memnox timeline --export bundle');
             await writeBundle(context, events, filter, options.out, now());
             return;
           }
@@ -138,6 +151,8 @@ export function registerPurgeCommand(
     .option('--days <n>', 'override the configured retention for this run')
     .option('--dry-run', 'say what would go and delete nothing')
     .action(async (options: { days?: string; dryRun?: boolean }) => {
+      const { flow } = context;
+      flow.open('memnox purge');
       const config = await loadOrCreateConfig(home());
       const days =
         options.days === undefined ? config.retentionDays : Number(options.days);
@@ -149,26 +164,29 @@ export function registerPurgeCommand(
       await withEvents(home(), async (store) => {
         if (options.dryRun === true) {
           const doomed = await store.query({ until: cutoff });
-          context.out.line(
-            `${doomed.length} event(s) are older than ${days} days. Nothing was deleted.`,
-          );
+          flow.rows('Would drop', [
+            { label: 'older than', value: `${days} days, before ${cutoff}` },
+            { label: 'events', value: String(doomed.length) },
+          ]);
+          flow.close('Nothing was deleted.');
+          flow.hint('Run it without --dry-run to drop them.');
           return;
         }
         const dropped = await store.pruneBefore(cutoff);
-        context.out.line(`${dropped} event(s) older than ${days} days dropped.`);
+        flow.rows('Dropped', [
+          { label: 'older than', value: `${days} days, before ${cutoff}` },
+          { label: 'events', value: String(dropped) },
+        ]);
+        flow.close(`${dropped} event(s) older than ${days} days dropped.`);
       });
     });
 }
 
 /** The verb table's own note, so a timeline says which kind of deploy it was. */
 function verbNote(operation: string): string {
-  const [cli, rest] = operation.split('.', 2);
-  if (cli === undefined || rest === undefined) return '';
-  const table = verbTableFor(cli);
-  if (table === null) return '';
-
-  const verb = classOf(table, rest.split('-'));
-  return verb.note === undefined ? '' : `  (${verb.note})`;
+  const verb = verbForAction(operation, verbTableFor);
+  if (verb === null || verb.note === undefined) return '';
+  return `  (${verb.note})`;
 }
 
 /**
@@ -207,12 +225,20 @@ async function writeBundle(
   });
 
   const bundle = `${JSON.stringify(header, null, 2)}\n\n${body}\n`;
+  const { flow } = context;
   if (out === undefined) {
     context.out.line(bundle);
+    flow.close(`${header.events} event(s), signed.`);
+    for (const each of excluded) flow.hint(`not included: ${each}`);
     return;
   }
   await writeFile(out, bundle, { encoding: 'utf8', mode: 0o600 });
-  context.out.line(`Wrote ${header.events} event(s) to ${out}.`);
-  context.out.note(`Check it with "memnox verify ${out}".`);
-  for (const each of excluded) context.out.note(`  not included: ${each}`);
+  flow.rows('Written', [
+    { label: 'file', value: out },
+    { label: 'events', value: String(header.events) },
+    { label: 'covers', value: `${header.range.from} to ${header.range.to}` },
+  ]);
+  flow.close(`${header.events} event(s), signed.`);
+  flow.hint(`Check it with "memnox verify ${out}".`);
+  for (const each of excluded) flow.hint(`not included: ${each}`);
 }

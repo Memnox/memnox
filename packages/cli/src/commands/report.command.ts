@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import { operationsReport, recommendation, type OperationsReport } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { withEvents } from '../event-store';
 
 /**
@@ -38,71 +39,77 @@ export function registerReportCommand(
         context.out.json(report);
         return;
       }
+      context.flow.open('memnox report');
       render(context, report);
     });
 }
 
 function render(context: CliContext, report: OperationsReport): void {
-  const { out, style } = context;
+  const { flow, style } = context;
 
   if (report.actions === 0) {
-    out.line('Nothing was recorded in that window.');
-    out.note('Run an agent under "memnox run" first.');
+    flow.close('Nothing was recorded in that window.');
+    flow.hint('Run an agent under "memnox run" first.');
     return;
   }
 
-  out.line('');
-  out.line(style.bold('AGENT OPERATIONS'));
-  out.line('');
-  row(context, 'Agents', String(report.agents));
-  row(context, 'Sessions', String(report.sessions));
-  row(context, 'Actions', String(report.actions));
-  row(context, 'Succeeded', String(report.succeeded));
-  row(context, 'Failed', String(report.failed));
-  row(context, 'Blocked', String(report.blocked));
-  row(context, 'Held', String(report.held));
-  row(context, 'Redone', String(report.retries));
-
-  /* The line people act on. Absent rather than zero when nobody reported a cost:
-     this machine cannot price a model call, and a $0.00 would read as a fact. */
-  if (report.spentUsd === null) {
-    row(context, 'Spend', 'nobody reported any — "memnox spend <usd>" records it');
-  } else {
-    row(context, 'Spend', `$${report.spentUsd.toFixed(2)}`);
-    if (report.wastedUsd !== null && report.wastedUsd > 0) {
-      row(
-        context,
-        'Wasted',
-        style.warn(`$${report.wastedUsd.toFixed(2)} went on work that was redone`),
-      );
-    }
-  }
-
-  if (report.busiest !== null) {
-    out.line('');
-    row(context, 'Busiest', `${report.busiest.agent} (${report.busiest.actions})`);
-  }
+  flow.rows('What the agents did', [
+    { label: 'agents', value: String(report.agents) },
+    { label: 'sessions', value: String(report.sessions) },
+    { label: 'actions', value: String(report.actions) },
+    { label: 'succeeded', value: String(report.succeeded) },
+    { label: 'failed', value: String(report.failed) },
+    { label: 'blocked', value: String(report.blocked) },
+    { label: 'held', value: String(report.held) },
+    { label: 'redone', value: String(report.retries) },
+    /* The line people act on. Absent rather than zero when nobody reported a
+       cost: this machine cannot price a model call, and a $0.00 would read as
+       a fact. It names the seam rather than a command, because `memnox spend`
+       was removed for exactly the reason this row exists and pointing at it
+       sent people to a word that answers "nothing here". */
+    {
+      label: 'spend',
+      value:
+        report.spentUsd === null
+          ? 'nobody reported any, and a cost rides on the event that had one'
+          : `$${report.spentUsd.toFixed(2)}`,
+    },
+    ...(report.wastedUsd !== null && report.wastedUsd > 0
+      ? [
+          {
+            label: 'wasted',
+            value: style.warn(
+              `$${report.wastedUsd.toFixed(2)} went on work that was redone`,
+            ),
+          },
+        ]
+      : []),
+    ...(report.busiest === null
+      ? []
+      : [
+          {
+            label: 'busiest',
+            value: `${report.busiest.agent} (${report.busiest.actions})`,
+          },
+        ]),
+  ]);
 
   if (report.waste.length > 0) {
-    out.line('');
-    out.line(style.bold('WHERE THE WORK WENT TWICE'));
-    out.line('');
-    for (const each of report.waste) {
-      out.line(
-        `  ${style.warn('!')}  ${each.action}  ${each.failures} failures of ${each.attempts}`,
-      );
-    }
+    flow.list(
+      'Where the work went twice',
+      report.waste.map((each) => ({
+        tone: TONE.WARN,
+        text: each.action,
+        detail: [`${each.failures} failures of ${each.attempts}`],
+      })),
+    );
   }
 
   /* No footnote about spend: the row above already says either the figure or that
      nobody reported one. This said "nothing here can price a model call" under a
      line that had just printed $5.60, which is the screen arguing with itself. */
-  out.line('');
+  flow.close(`${report.actions} action(s) across ${report.sessions} session(s).`);
 
   const advice = recommendation(report);
-  if (advice !== null) out.note(advice);
-}
-
-function row(context: CliContext, label: string, value: string): void {
-  context.out.line(`  ${label.padEnd(12)}${value}`);
+  if (advice !== null) flow.hint(advice);
 }
