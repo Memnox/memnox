@@ -72,10 +72,13 @@ export async function connectMachine(
   context: CliContext,
   home: string,
   options: ConnectOptions,
-  flow: Flow,
   seams: ConnectSeams = {},
 ): Promise<Connected> {
-  const { style } = context;
+  /* The run's own rail, not one passed in. Enrolment is a step inside a larger
+     command, since `login` does only this and `setup` does it first, and taking
+     the rail from the context is what puts both of them on the same gutter
+     without either having to hand one over. */
+  const { flow } = context;
   const enrolment: { baseUrl: string; mode?: string; label?: string } = {
     baseUrl: options.url,
     ...(options.enforce === true ? { mode: 'enforce' } : {}),
@@ -149,12 +152,12 @@ export async function connectMachine(
   /* Shown because nobody asked for it: this is the moment the machine stops
      being local-only, so what it is now bound to has to be visible without
      running a second command to find out. */
-  flow.box('Enrolled', [
-    ...(named === undefined ? [] : [`${style.dim('name')}        ${named}`]),
-    `${style.dim('machine')}     ${collected.machineId}`,
-    `${style.dim('workspace')}   ${collected.workspaceId}`,
-    `${style.dim('mode')}        ${collected.mode}`,
-    `${style.dim('credential')}  ${accountPathFor(home)}`,
+  flow.rows('Enrolled', [
+    ...(named === undefined ? [] : [{ label: 'name', value: named }]),
+    { label: 'machine', value: collected.machineId },
+    { label: 'workspace', value: collected.workspaceId },
+    { label: 'mode', value: collected.mode },
+    { label: 'credential', value: accountPathFor(home) },
   ]);
 
   return {

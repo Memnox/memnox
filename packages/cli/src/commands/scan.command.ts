@@ -71,6 +71,11 @@ export function registerScanCommand(
         if (unrecognized.length > 0) {
           throw new Error(unknownCommand(program, unrecognized[0] as string));
         }
+        /* One rail for every shape this command takes, opened here rather than
+           in each renderer below: `--tools`, `--mcp`, `--usage` and `--since`
+           are all this same command answering a narrower question, and a rail
+           per branch would read as four commands wearing one name. */
+        if (options.json !== true) context.flow.open('memnox scan');
         const seams = buildSeams(cwd());
         /* Before the scan, because a comparison takes its own later side and a
            second scan here would be the machine read twice for one question. */
@@ -85,8 +90,13 @@ export function registerScanCommand(
         });
         if (options.share === true) {
           const card = shareCardFor(inventoryOf(report, snapshot.takenAt));
-          if (options.json === true) context.out.json(card);
-          else context.out.line(renderShareCard(card));
+          if (options.json === true) {
+            context.out.json(card);
+            return;
+          }
+          /* The card is the answer and it is meant to be pasted somewhere
+             else, so nothing of ours is drawn through the middle of it. */
+          context.out.line(renderShareCard(card));
           return;
         }
         if (options.usage !== undefined) {

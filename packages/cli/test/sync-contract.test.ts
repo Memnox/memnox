@@ -21,7 +21,7 @@ const BUNDLE_HASH = '866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6
 
 import { applyBundle, pullBundle, type Bundle } from '../src/sync/bundle';
 import type { Account } from '@memnox/core';
-import { censusFrom } from '../src/sync/census';
+import { censusFrom, type CensusDecisions } from '../src/sync/census';
 import { fitting } from '../src/sync/push';
 
 /**
@@ -49,7 +49,7 @@ interface Contract {
   heartbeatReply: { mode: string; modeApplied: string };
   events: { events: Record<string, unknown>[] };
   snapshot: EnvironmentSnapshot;
-  census: { events: Record<string, unknown>[] };
+  census: { decided: CensusDecisions; events: Record<string, unknown>[] };
 }
 
 async function contract(): Promise<Contract> {
@@ -228,17 +228,56 @@ describe('the census this machine sends', () => {
   it('names every agent and everything each one reaches', async () => {
     const { snapshot, census } = await contract();
 
-    expect(censusFrom(snapshot)).toEqual(census.events);
+    expect(censusFrom(snapshot, census.decided)).toEqual(census.events);
   });
 
   it('keys a row per scan, so the same agent seen again is not read as a resend', async () => {
-    const { snapshot } = await contract();
+    const { snapshot, census } = await contract();
     const later = { ...snapshot, takenAt: new Date().toISOString() };
 
-    const before = censusFrom(snapshot).map((row) => row['dedupKey']);
-    const after = censusFrom(later).map((row) => row['dedupKey']);
+    const before = censusFrom(snapshot, census.decided).map((row) => row['dedupKey']);
+    const after = censusFrom(later, census.decided).map((row) => row['dedupKey']);
 
     expect(after).not.toEqual(before);
+  });
+
+  /* The scan is the same machine either way: naming an agent changes nothing
+     about what it can reach. A key built from the scan alone therefore carried
+     the new answer under the old key, where the control plane dropped it as a
+     redelivery and the console went on printing the name from last week. */
+  it('keys a row on the answer too, so a renamed agent is not read as a resend', async () => {
+    const { snapshot, census } = await contract();
+    const renamed: CensusDecisions = {
+      ...census.decided,
+      names: { ...census.decided.names, 'claude-code': 'Backend' },
+    };
+
+    const before = censusFrom(snapshot, census.decided).map((row) => row['dedupKey']);
+    const after = censusFrom(snapshot, renamed).map((row) => row['dedupKey']);
+
+    expect(after).not.toEqual(before);
+  });
+
+  /* An agent somebody was offered here and said no to is still on the machine
+     and still in the census, because it can still reach everything it could
+     before. What travels with it is the answer, so the console stops asking a
+     question that has been answered. */
+  it('carries the no somebody gave, and the name they chose', async () => {
+    const { snapshot, census } = await contract();
+
+    const rows = censusFrom(snapshot, census.decided).filter(
+      (row) => row['kind'] === 'agent.reported',
+    );
+    const payloads = rows.map((row) => row['payload'] as Record<string, unknown>);
+
+    expect(payloads.map((each) => each['agentId'])).toEqual([
+      'claude-code',
+      'claude-desktop',
+    ]);
+    expect(payloads[1]?.['label']).toBe('Desk Claude');
+    expect(payloads[1]?.['declinedAt']).toBe(Date.parse('2025-09-04T15:40:00.000Z'));
+    /* Nobody was asked about this one, which is not the same answer as no. */
+    expect(payloads[0]).not.toHaveProperty('declinedAt');
   });
 });
 

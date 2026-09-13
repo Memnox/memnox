@@ -6,6 +6,7 @@ import {
   type SeamProof,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 
 /**
  * Does anything actually refuse?
@@ -17,8 +18,15 @@ import type { CliContext } from '../cli-context';
  * exactly this next.
  */
 
+/** The seam column, so the state beside it lines up down the page. */
 const SEAM_WIDTH = 12;
-const STATE_WIDTH = 14;
+
+/** What a proof came back as, in the vocabulary the rail draws things in. */
+function toneOf(state: SeamProof['state']): (typeof TONE)[keyof typeof TONE] {
+  if (state === PROOF.ENFORCED) return TONE.OK;
+  if (state === PROOF.NOT_ENFORCED) return TONE.WARN;
+  return TONE.DIM;
+}
 
 /**
  * What each seam did when it was asked to refuse.
@@ -32,40 +40,31 @@ export async function renderEnforcement(
   context: CliContext,
   proofs: readonly SeamProof[],
 ): Promise<void> {
-  const { out, style } = context;
-  out.line('');
-  out.line(style.bold('DOES ANYTHING ACTUALLY REFUSE'));
-  out.line('');
+  const { flow, style } = context;
 
-  for (const proof of proofs) {
-    const label = describeProof(proof.state);
-    const shown =
-      proof.state === PROOF.ENFORCED
-        ? style.ok(label.padEnd(STATE_WIDTH))
-        : proof.state === PROOF.NOT_ENFORCED
-          ? style.warn(label.padEnd(STATE_WIDTH))
-          : style.dim(label.padEnd(STATE_WIDTH));
-    out.line(`  ${proof.seam.padEnd(SEAM_WIDTH)}${shown}${proof.detail}`);
-    if (proof.next !== undefined) {
-      out.line(`  ${''.padEnd(SEAM_WIDTH + STATE_WIDTH)}${style.dim(`→ ${proof.next}`)}`);
-    }
-  }
+  flow.list(
+    'Does anything actually refuse',
+    proofs.map((proof) => ({
+      tone: toneOf(proof.state),
+      text: `${proof.seam.padEnd(SEAM_WIDTH)}${describeProof(proof.state)}  ${proof.detail}`,
+      detail: [proof.next === undefined ? undefined : `→ ${proof.next}`],
+    })),
+  );
 
   const { enforced, asked, failed } = summarizeProof(proofs);
-  out.line('');
   if (asked === 0) {
-    out.line('Nothing was in place to ask, so nothing was proved.');
+    flow.close('Nothing was in place to ask, so nothing was proved.');
   } else {
-    out.line(
+    flow.close(
       failed === 0
-        ? `${enforced} of ${asked} seam(s) asked to refuse did.`
+        ? style.ok(`${enforced} of ${asked} seam(s) asked to refuse did.`)
         : style.warn(
             `${failed} of ${asked} seam(s) were in place and let the action through.`,
           ),
     );
   }
   // Read config; this ran one. Both, because they answer different questions.
-  out.note(
+  flow.hint(
     '"memnox doctor --wiring" reads the configuration; this attempted the action.',
   );
   if (enforcementFailed(proofs)) process.exitCode = 1;

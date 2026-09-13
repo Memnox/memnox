@@ -40,11 +40,11 @@ describe('memnox --tools', () => {
   it('groups by effect and counts what changes external state', async () => {
     const { out } = await tools(() => new StubLister({ github: GITHUB_TOOLS }));
 
-    expect(out.text).toContain('DESTRUCTIVE');
+    expect(out.text).toContain('destructive');
     expect(out.text).toContain('delete_branch');
-    expect(out.text).toContain('WRITE');
+    expect(out.text).toContain('write');
     expect(out.text).toContain('merge_pull_request');
-    expect(out.text).toContain('READ');
+    expect(out.text).toContain('read');
     expect(out.text).toContain('list_repositories');
     expect(out.text).toContain('5 of 8 change external state');
   });
@@ -65,7 +65,7 @@ describe('memnox --tools', () => {
         }),
     );
 
-    expect(out.text).toContain('READ');
+    expect(out.text).toContain('read');
     expect(out.text).toContain('annotation');
     expect(out.text).toContain('Nothing here is known to change external state.');
   });
@@ -82,7 +82,7 @@ describe('memnox --tools', () => {
         }),
     );
 
-    expect(out.text).toContain('UNKNOWN');
+    expect(out.text).toContain('unknown');
     expect(out.text).toContain('1 could not be classified');
     expect(out.text).toContain('Nothing here is known to change external state.');
   });

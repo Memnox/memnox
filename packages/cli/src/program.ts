@@ -85,6 +85,14 @@ export function buildProgram(context: CliContext): Command {
     masthead(context.out, context.style);
   });
 
+  /* And the rail closed once, below every command, for the same reason. A
+     command that returns early, because nothing was found or nobody is logged
+     in or it named a refusal and stopped, would otherwise leave the gutter open
+     under the last thing it said; a run that never opened one draws nothing. */
+  program.hook('postAction', () => {
+    context.flow.end();
+  });
+
   registerScanCommand(program, context);
   registerSetupCommand(program, context);
   registerAgentsCommand(program, context);

@@ -45,7 +45,7 @@ describe('memnox freeze', () => {
     expect(out.text).toContain('freeze:payments');
     expect(out.text).toContain('INC-421');
     // Ending on its own is the whole reason this is not a policy edit.
-    expect(out.notes.join('\n')).toContain('lifts itself');
+    expect(out.text).toContain('lifts at');
   });
 
   it('produces a label the engine already matches on', async () => {
@@ -76,7 +76,7 @@ describe('memnox freeze', () => {
     await run(['freeze', 'payments', '--reason', 'x'], dir);
     const out = await run(['freeze', '--lift'], dir);
 
-    expect(out.text).toContain('Lifted freeze:payments');
+    expect(out.text).toContain('freeze:payments');
     // Lifted, not deleted: what was frozen and when is part of the record.
     expect((await readOverlays(dir))[0]?.liftedAt).toBeDefined();
     expect(stateLabelsOf(await readOverlays(dir), NOW.toISOString())).toEqual([]);

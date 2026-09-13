@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadPolicySet, readPolicyRegistry, type PolicySet } from '@memnox/core';
 import type { CliContext } from './cli-context';
+import { TONE } from './flow';
 import { policyRegistryPath } from './policy-registry';
 
 /** TOML is what new files are written as; a YAML file somebody already has still counts. */
@@ -58,13 +59,24 @@ export async function policySetInForce(
   return loadPolicySet(await policyFilesInForce(homeDir, explicit));
 }
 
-/** What did not load, said out loud: a missing rule must never be a silent one. */
+/**
+ * What did not load, said out loud: a missing rule must never be a silent one.
+ *
+ * On the caller's own rail rather than loose beside it, because this is a thing
+ * that happened during the run it interrupts, and a reader meeting it off the
+ * rail reads it as a second command having spoken.
+ */
 export function sayWhatDidNotLoad(context: CliContext, set: PolicySet): void {
-  for (const broken of set.unreadable) {
-    const count = broken.issues.length;
-    context.out.note(
-      `${broken.file} would not load — ${count} problem${count === 1 ? '' : 's'}, so its rules are not in force.`,
-    );
-    context.out.note(`  fix them with "memnox policy check --fix ${broken.file}"`);
-  }
+  if (set.unreadable.length === 0) return;
+  context.flow.list(
+    'Not in force',
+    set.unreadable.map((broken) => ({
+      tone: TONE.WARN,
+      text: `${broken.file} would not load, so its rules are not in force`,
+      detail: [
+        `${broken.issues.length} problem${broken.issues.length === 1 ? '' : 's'}`,
+        `fix them with "memnox policy check --fix ${broken.file}"`,
+      ],
+    })),
+  );
 }

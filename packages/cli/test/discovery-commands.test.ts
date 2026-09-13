@@ -30,7 +30,7 @@ describe('memnox (scan)', () => {
       ['scan'],
     );
 
-    expect(out.text).toContain('AI AGENTS');
+    expect(out.text).toContain('agents');
     expect(out.text).toContain('claude-code');
     expect(out.text).toContain('.aws/credentials');
     // The gap is the reason anybody keeps reading, so it is the closing line.
@@ -177,7 +177,7 @@ describe('memnox doctor', () => {
       ['doctor'],
     );
 
-    expect(out.text).toContain('CRITICAL');
+    expect(out.text).toContain('critical');
     expect(out.text).toContain(`${HOME}/.aws/credentials`);
     expect(out.text).toContain('Nothing here compares this machine to another.');
   });
@@ -219,7 +219,7 @@ describe('memnox protect', () => {
       ['protect'],
     );
 
-    expect(out.text).toContain('PROPOSED');
+    expect(out.text).toContain('Proposed');
     expect(out.text).toContain('undo: memnox protect --revert');
     expect(out.text).toContain('Nothing was changed.');
     expect(machine.paths).not.toContain('harden-state.json');
