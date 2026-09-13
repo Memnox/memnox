@@ -20,6 +20,10 @@ const HEALTHY: HealthFacts = {
   interceptorDirFirstOnPath: true,
   mcpServers: 2,
   mcpWrapped: 2,
+  interceptBinaryFound: true,
+  wouldHaveStopped: 0,
+  enrolled: false,
+  daemonStartsItself: false,
   daemonSocket: true,
   daemonAnswered: true,
   ledgerEvents: 41,
@@ -83,10 +87,56 @@ describe('the checks that catch a machine that only looks governed', () => {
     expect(config?.fix).toContain('--observe');
   });
 
-  it('treats observe as fine, and still names the next step', () => {
-    const config = check({ mode: 'observe' }, CHECK_NAME.CONFIG);
+  /*
+   * "Once the verdicts look right" was the whole instruction, and nothing said
+   * whether they did. A machine can sit in observe for a month governing nothing
+   * while every row stays green, because observe is the correct default.
+   */
+  it('treats observe as fine, and sends somebody to read what it caught', () => {
+    const config = check(
+      { mode: 'observe', ledgerEvents: 40, wouldHaveStopped: 14 },
+      CHECK_NAME.CONFIG,
+    );
     expect(config?.state).toBe(CHECK.OK);
-    expect(config?.fix).toContain('--enforce');
+    expect(config?.detail).toContain('14');
+    expect(config?.fix).toContain('timeline --only deny');
+    expect(config?.fix).toContain('enforce');
+  });
+
+  it('does not tell a machine with no readings to enforce on them', () => {
+    /* Enforcing on nothing is the opposite of the advice this mode exists for,
+       so the step named here is the one that produces something to read. */
+    const config = check(
+      { mode: 'observe', ledgerEvents: 0, wouldHaveStopped: 0 },
+      CHECK_NAME.CONFIG,
+    );
+    expect(config?.state).toBe(CHECK.OK);
+    expect(config?.fix).not.toContain('enforce');
+    expect(config?.fix).toContain('memnox run');
+  });
+
+  it('says so when plenty ran and none of it would have been stopped', () => {
+    const config = check(
+      { mode: 'observe', ledgerEvents: 120, wouldHaveStopped: 0 },
+      CHECK_NAME.CONFIG,
+    );
+    expect(config?.detail).toContain('120');
+    expect(config?.detail).toContain('none');
+  });
+
+  it('breaks when the wrappers are there and the binary they exec is not', () => {
+    /* The failure a count cannot see: every file present, every command exits 127
+       and the agent is told `git: not found`. */
+    const interceptors = check(
+      {
+        interceptorsInstalled: ['git', 'rm'],
+        interceptorsExpected: ['git', 'rm'],
+        interceptBinaryFound: false,
+      },
+      CHECK_NAME.INTERCEPTORS,
+    );
+    expect(interceptors?.state).toBe(CHECK.BROKEN);
+    expect(interceptors?.detail).toContain('127');
   });
 
   it('flags a missing interceptor rather than counting the ones that are there', () => {

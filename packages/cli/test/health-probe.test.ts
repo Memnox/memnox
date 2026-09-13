@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -30,5 +30,31 @@ describe('what the doctor expects to be wrapped', () => {
     expect(facts.waitingApprovals).toBe(0);
     expect(facts.heldLeases).toBe(0);
     expect(facts.spentBudgets).toEqual([]);
+  });
+});
+
+/**
+ * The binary every wrapper execs.
+ *
+ * A wrapper is three lines ending in `exec "memnox-intercept" "git" "$@"`, so the
+ * whole directory depends on that name resolving. Asked through `resolveReal` the
+ * answer is always "missing": that function refuses this one name on purpose, to
+ * stop a wrapper resolving to the interceptor and spawning itself without end. So
+ * the probe walks PATH itself, and this is the test that would have caught it
+ * reporting all sixteen broken on a machine where they were fine.
+ */
+describe('whether the interceptor binary can be found', () => {
+  it('finds it when a PATH entry holds it', async () => {
+    const bin = await mkdtemp(join(tmpdir(), 'memnox-bin-'));
+    await writeFile(join(bin, 'memnox-intercept'), '#!/bin/sh\n', { mode: 0o755 });
+
+    const facts = await gatherHealth(await home(), await home(), { PATH: bin });
+    expect(facts.interceptBinaryFound).toBe(true);
+  });
+
+  it('says so when no PATH entry holds it', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'memnox-bin-'));
+    const facts = await gatherHealth(await home(), await home(), { PATH: empty });
+    expect(facts.interceptBinaryFound).toBe(false);
   });
 });
