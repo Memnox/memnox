@@ -52,6 +52,21 @@ const HEARTBEAT_MS = 60_000;
 /** Where it backs off to while the control plane is unreachable. */
 const BACKOFF_MS = 15 * 60_000;
 
+/**
+ * How long this waits while an agent is stopped on a question.
+ *
+ * The heartbeat is the only transport a held call has, in both directions, so a fixed
+ * minute between passes cost up to a minute for the question to travel up and another
+ * for the answer to come back — against a hold window of two, which left a person no
+ * time at all to read it. Measured: somebody clicked approve with fifty-nine seconds
+ * to spare and the agent was refused a second after the window closed.
+ *
+ * Nothing else changes cadence. This is the one case where a person is already waiting
+ * on the other end, so the round trip is worth spending requests on; every other beat
+ * stays at a minute.
+ */
+const HELD_POLL_MS = 2_000;
+
 export interface Pass {
   pull?: PullResult;
   push?: PushResult;
@@ -357,6 +372,38 @@ interface LoopSeams {
   sleep?: (ms: number) => Promise<void>;
   pass?: (home: string) => Promise<Pass>;
   log?: (message: string) => void;
+  /** Injected so a test states what is held rather than writing files to say it. */
+  holding?: (home: string) => Promise<number>;
+}
+
+/** How many calls this machine is stopped on. Local, so it costs no request to ask. */
+async function heldHere(home: string): Promise<number> {
+  try {
+    return (await new PendingApprovals(home).list(new Date().toISOString())).length;
+  } catch {
+    // No queue is the same answer as an empty one, and neither is worth a fast loop.
+    return 0;
+  }
+}
+
+/**
+ * Waits until the next pass is due, or until an agent on this machine stops on a
+ * question — whichever comes first.
+ *
+ * Leaving early is what carries the question up in seconds instead of whenever the
+ * next beat happened to fall, and coming back at `HELD_POLL_MS` while one is still
+ * held is what brings the answer down inside the window the agent is waiting in.
+ */
+async function until(
+  home: string,
+  idleMs: number,
+  sleep: (ms: number) => Promise<void>,
+  holding: (home: string) => Promise<number>,
+): Promise<void> {
+  for (let left = idleMs; left > 0; left -= HELD_POLL_MS) {
+    await sleep(Math.min(HELD_POLL_MS, left));
+    if ((await holding(home)) > 0) return;
+  }
 }
 
 /**
@@ -386,6 +433,12 @@ export async function syncLoop(
       seams.log?.('this machine has been revoked; the rules it holds still apply');
       return;
     }
-    await sleep(result.unreachable === true ? BACKOFF_MS : HEARTBEAT_MS);
+    /* A control plane that cannot be reached is waited out whole: polling fast for an
+       answer that has nowhere to come from spends requests and changes nothing. */
+    if (result.unreachable === true) {
+      await sleep(BACKOFF_MS);
+      continue;
+    }
+    await until(home, HEARTBEAT_MS, sleep, seams.holding ?? heldHere);
   }
 }
