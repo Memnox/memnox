@@ -95,7 +95,7 @@ describe('memnox mcp wrap', () => {
     const once = await readFile(join(home, '.claude.json'), 'utf8');
 
     const out = await run(['mcp', 'wrap'], home);
-    expect(out.notes.join('\n')).toContain('already wrapped');
+    expect(out.text).toContain('is already wrapped');
     expect(await readFile(join(home, '.claude.json'), 'utf8')).toBe(once);
   });
 

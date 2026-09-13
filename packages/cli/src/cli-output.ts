@@ -42,10 +42,3 @@ export class RecordedOutput implements CliOutput {
     return this.lines.join('\n');
   }
 }
-
-/** The gutter every detail view aligns on, so `why` and `explain` read as one product. */
-const LABEL_WIDTH = 14;
-
-export function row(out: CliOutput, label: string, value: string): void {
-  out.line(`  ${label.padEnd(LABEL_WIDTH)}${value}`);
-}

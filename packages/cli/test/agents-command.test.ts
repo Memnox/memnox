@@ -109,7 +109,7 @@ describe('the agents on this machine', () => {
       const { out } = await run(['agents', 'list'], seams);
 
       expect(out.text).toContain('not been scanned');
-      expect(out.notes.join('\n')).toContain('memnox agents discover');
+      expect(out.text).toContain('memnox agents discover');
     });
 
     it('says plainly when a scan found nothing', async () => {
@@ -117,7 +117,7 @@ describe('the agents on this machine', () => {
 
       const { out } = await run(['agents', 'list'], seams);
 
-      expect(out.text).toContain('No agents found');
+      expect(out.text).toContain('no agents found');
     });
 
     it('reads the kept scan rather than taking a fresh one', async () => {
@@ -162,7 +162,7 @@ describe('the agents on this machine', () => {
 
       const { out } = await run(['agents', 'status', 'backend coder'], seams);
 
-      expect(out.text).toContain('BACKEND CODER');
+      expect(out.text).toContain('Backend Coder');
     });
 
     it('refuses a name another agent already answers to', async () => {
@@ -173,7 +173,7 @@ describe('the agents on this machine', () => {
 
       const { out } = await run(['agents', 'name', 'cursor', 'Backend'], seams);
 
-      expect(out.notes.join('\n')).toContain('agt_claude-code is already called');
+      expect(out.text).toContain('agt_claude-code is already called');
       expect((await readNames(home))['agt_cursor']).toBeUndefined();
     });
 
@@ -182,7 +182,7 @@ describe('the agents on this machine', () => {
 
       const { out } = await run(['agents', 'name', 'claude-code', 'a\nb'], seams);
 
-      expect(out.notes.join('\n')).toContain('control character');
+      expect(out.text).toContain('control character');
     });
 
     it('puts the detected name back when asked to clear one', async () => {
@@ -201,7 +201,7 @@ describe('the agents on this machine', () => {
       const { out } = await run(['agents', 'name', 'claude-code'], seams);
 
       expect(out.text).toContain('is called "Claude Code"');
-      expect(out.notes.join('\n')).toContain('detector');
+      expect(out.text).toContain('detector');
     });
   });
 
@@ -276,7 +276,7 @@ describe('the agents on this machine', () => {
         seams,
       );
 
-      expect(out.notes.join('\n')).toContain('no agent called "nowhere"');
+      expect(out.text).toContain('no agent called "nowhere"');
     });
 
     it('names the next thing to do', async () => {
@@ -347,7 +347,7 @@ describe('the agents on this machine', () => {
       const { out } = await run(['agents', 'onboard', 'claude-code'], seams);
 
       expect(out.text).toContain('Not logged in');
-      expect(out.notes.join('\n')).toContain('memnox login');
+      expect(out.text).toContain('memnox login');
     });
   });
 
@@ -378,6 +378,8 @@ describe('the agents on this machine', () => {
       ask: NameAsker = async () => null,
     ) => {
       const context = new CliContext(new RecordedOutput());
+      // The rail is the command's to open, and this drives one step of it.
+      context.flow.open('memnox agents onboard');
       const chosen = await chooseCloudName(
         context,
         home,
@@ -448,7 +450,7 @@ describe('the agents on this machine', () => {
       const { chosen, out } = await choose({}, true, async () => 'a\nb');
 
       expect(chosen.name).toBe('Claude Code');
-      expect(out.notes.join('\n')).toContain('control character');
+      expect(out.text).toContain('control character');
     });
   });
 
@@ -481,7 +483,7 @@ describe('the agents on this machine', () => {
       const { out } = await run(['agents', 'control'], seams);
 
       expect(out.text).toContain('Not logged in');
-      expect(out.notes.join('\n')).toContain('memnox login');
+      expect(out.text).toContain('memnox login');
     });
   });
 });

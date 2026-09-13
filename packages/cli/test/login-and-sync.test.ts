@@ -25,7 +25,7 @@ import { callCloud, insecureBaseUrl } from '../src/sync/client';
 import { connectMachine } from '../src/sync/connect';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
-import { Flow } from '../src/flow';
+
 import { plainStyle } from '../src/style';
 
 const bundle = (over: Partial<Bundle> = {}): Bundle => ({
@@ -420,11 +420,15 @@ describe('the browser is the approval step', () => {
     vi.stubGlobal('fetch', cloud(told));
     const out = new RecordedOutput();
     const asked: string[] = [];
+    const context = new CliContext(out, plainStyle);
+    /* The rail is the caller's to open, exactly as `login` opens it: on stderr,
+       because the machine id on stdout is what a script reads. */
+    context.flow.commentary();
+    context.flow.open('memnox login');
     await connectMachine(
-      new CliContext(out, plainStyle),
+      context,
       home,
       { url: BASE, ...(opens === null ? { open: false } : {}) },
-      new Flow(out, plainStyle),
       {
         open: (url: string) => {
           asked.push(url);
@@ -534,11 +538,13 @@ describe('naming the machine at enrolment', () => {
     vi.stubGlobal('fetch', cloud(sent));
     const out = new RecordedOutput();
     let asked = 0;
+    const context = new CliContext(out, plainStyle);
+    context.flow.commentary();
+    context.flow.open('memnox login');
     await connectMachine(
-      new CliContext(out, plainStyle),
+      context,
       home,
       { url: BASE, open: false, ...options },
-      new Flow(out, plainStyle),
       {
         open: () => false,
         interactive: () => canAsk,

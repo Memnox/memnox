@@ -27,7 +27,7 @@ describe('memnox config', () => {
   it('shows the change it made, so the terminal is the receipt', async () => {
     const dir = await home();
     const out = await run(['config', 'set', 'mode', 'enforce'], dir);
-    expect(out.text).toContain('mode: observe → enforce');
+    expect(out.text).toContain('observe → enforce');
     expect((await run(['config', 'get', 'mode'], dir)).text.trim()).toBe('enforce');
   });
 

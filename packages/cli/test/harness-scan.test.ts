@@ -51,7 +51,7 @@ describe('memnox scan, with a harness on the machine', () => {
       ['scan'],
     );
 
-    expect(out.text).toContain('HARNESSES');
+    expect(out.text).toContain('harnesses');
     expect(out.text).toContain('hermes');
     expect(out.text).toContain('ruflo');
     // Two roles under Ruflo plus Hermes' own row: the roster is not three agents.
@@ -76,10 +76,10 @@ describe('memnox scan, with a harness on the machine', () => {
       ['scan'],
     );
 
-    expect(out.text).toContain('COMBINED CAPABILITY');
+    expect(out.text).toContain('Combined capability');
     expect(out.text).toContain('customer data can leave, in one session');
     expect(out.text).toContain('crm.read_customer');
-    expect(out.notes).toContain(
+    expect(out.text).toContain(
       'Each of these tools is ordinary. Holding all of them is the path.',
     );
   });
@@ -116,7 +116,7 @@ describe('memnox explain <harness>', () => {
     expect(out.text).toContain('claude-code');
     expect(out.text).toContain('deployer, planner');
     // Memnox governs underneath it; it does not claim to replace what it enforces.
-    expect(out.notes.join('\n')).toContain('Memnox governs what it reaches underneath');
+    expect(out.text).toContain('Memnox governs what it reaches underneath');
   });
 
   it('shows the chain a harness can complete, from the last saved scan', async () => {
@@ -144,7 +144,7 @@ describe('memnox explain <harness>', () => {
       ['explain', 'hermes'],
     );
 
-    expect(out.notes.join('\n')).toContain('No scan here has asked the servers');
+    expect(out.text).toContain('no scan here has asked the servers');
   });
 });
 
@@ -162,13 +162,13 @@ describe('memnox explain <agent>', () => {
       ['explain', 'cursor'],
     );
 
-    expect(out.text).toContain('cursor  · agent');
+    expect(out.text).toContain('cursor, agent');
     expect(out.text).toContain('github');
     expect(out.text).toContain('holds one, which reaches everything you can');
     // Roles and hooks belong to a harness; printing them empty implies Cursor could have had them.
     expect(out.text).not.toContain('Roles');
     expect(out.text).not.toContain('Hooks');
-    expect(out.notes.join('\n')).not.toContain('enforces its own tool policy');
+    expect(out.text).not.toContain('enforces its own tool policy');
   });
 });
 
@@ -198,7 +198,7 @@ describe('what the scan names, explain can answer', () => {
        what somebody is looking at when they decide what to type. */
     const named = new Set<string>();
     for (const line of out.text.split('\n')) {
-      const row = /^(AI AGENTS|MCP SERVERS|TOOLS)\s{2,}(.+)$/.exec(line.trim());
+      const row = /^(agents|mcp servers|tools)\s{2,}(.+)$/.exec(line.trim());
       if (row === null) continue;
       for (const name of (row[2] ?? '').split(',')) {
         const cleaned = name.trim();
@@ -224,6 +224,6 @@ describe('what the scan names, explain can answer', () => {
       ['explain', 'crm'],
     );
     expect(out.text).toContain('MCP server');
-    expect(out.text).toContain('Declared by');
+    expect(out.text).toContain('declared by');
   });
 });

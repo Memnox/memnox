@@ -62,6 +62,6 @@ describe('memnox doctor --prove', () => {
   it('says which question it answered, because doctor answers a different one', async () => {
     const { out } = await verify(proofs(PROOF.ENFORCED));
 
-    expect(out.notes.join('\n')).toContain('this attempted the action');
+    expect(out.text).toContain('this attempted the action');
   });
 });

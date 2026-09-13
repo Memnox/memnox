@@ -76,7 +76,7 @@ describe('memnox claims', () => {
   it('says plainly that unsupported is not a finding of dishonesty', async () => {
     const home = await machine('I deployed it to staging.', []);
     const { out } = await claims(home, ['claims', 'ses_1']);
-    expect(out.notes.join(' ')).toContain('not that it did not happen');
+    expect(out.text).toContain('not that it did not happen');
   });
 
   it('reads a file when there is no transcript', async () => {
