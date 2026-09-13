@@ -36,6 +36,13 @@ export function registerEnvCommand(
       if (!FORMATS.includes(options.format as Format)) {
         throw new Error(`--format takes one of: ${FORMATS.join(', ')}`);
       }
+      /* The lines themselves are the answer and go to stdout, because this is
+         the one command whose output is meant to be pasted into a unit file or
+         run through `eval`. So the rail moves out of the way rather than being
+         dropped: what to do with the lines is worth saying, and it must not
+         end up inside what somebody sources. */
+      context.flow.commentary();
+      context.flow.open('memnox env');
 
       const directory = interceptorDirFor(home());
       const pairs: [string, string][] = [
@@ -56,37 +63,43 @@ function render(
   format: Format,
   pairs: readonly [string, string][],
 ): void {
-  const { out } = context;
+  const { out, flow } = context;
 
   if (format === 'systemd') {
+    flow.step('For a systemd unit', `${pairs.length} variables, below`);
     /* PATH is expanded by hand: systemd does not run a shell, so `$PATH` in a unit
        file is the literal four characters and the interceptors would be the whole
        path — which is an agent that can run nothing at all. */
     for (const [key, value] of pairs) {
       out.line(`Environment="${key}=${expand(key, value)}"`);
     }
-    out.note('Put these in the [Service] section, then: systemctl daemon-reload');
-    out.note('The interceptors must be readable by the user the unit runs as.');
+    flow.close('Put these in the [Service] section.');
+    flow.hint('Then: systemctl daemon-reload');
+    flow.hint('The interceptors must be readable by the user the unit runs as.');
     /* The expansion is this shell's PATH. Generated on a laptop and pasted onto a
        server, it names binaries that are not there — so say where to run it. */
-    out.note(
+    flow.hint(
       "Run this on the machine and as the user the agent runs as; PATH is this shell's.",
     );
     return;
   }
 
   if (format === 'docker') {
+    flow.step('For a Dockerfile', `${pairs.length} variables, below`);
     for (const [key, value] of pairs) out.line(`ENV ${key}=${expand(key, value)}`);
     // The directory lives in the home the interceptors were installed into.
-    out.note('The image also needs ~/.memnox: mount it, or install inside the image.');
-    out.note(
+    flow.close('Add these to the image.');
+    flow.hint('It also needs ~/.memnox: mount it, or install inside the image.');
+    flow.hint(
       "PATH here is this shell's; check it names binaries the image actually has.",
     );
     return;
   }
 
+  flow.step('For a shell', `${pairs.length} variables, below`);
   for (const [key, value] of pairs) out.line(`export ${key}="${value}"`);
-  out.note('Source this before starting the agent, or use "memnox run" instead.');
+  flow.close('Source this before starting the agent.');
+  flow.hint('Or use "memnox run", which sets all of it for one command.');
 }
 
 /** `$PATH` means nothing outside a shell, so it is resolved before it is printed. */

@@ -8,6 +8,7 @@ import {
   type EventQuery,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { withEvents } from '../event-store';
 import { transcriptPathFor } from '../memnox-paths';
 
@@ -34,6 +35,7 @@ export function registerClaimsCommand(
     .option('--json', 'machine-readable output')
     .action(
       async (session: string | undefined, options: { file?: string; json?: boolean }) => {
+        if (options.json !== true) context.flow.open('memnox claims');
         const text = await readText(home(), session, options.file);
         if (text === null) {
           throw new Error(
@@ -74,33 +76,42 @@ async function readText(
   }
 }
 
+/** Supported, contradicted, or neither, and the vocabulary keeps the three apart. */
+function toneOf(claim: CheckedClaim): (typeof TONE)[keyof typeof TONE] {
+  if (claim.verdict === CLAIM_VERDICT.SUPPORTED) return TONE.OK;
+  if (claim.verdict === CLAIM_VERDICT.CONTRADICTED) return TONE.WARN;
+  return TONE.DIM;
+}
+
 function render(context: CliContext, checked: readonly CheckedClaim[]): void {
-  const { out, style } = context;
+  const { flow, style } = context;
   if (checked.length === 0) {
-    out.line('Nothing in that text reads as a claim about what was done.');
+    flow.close('Nothing in that text reads as a claim about what was done.');
     return;
   }
 
   const contradicted = checked.filter(
     (claim) => claim.verdict === CLAIM_VERDICT.CONTRADICTED,
   );
-  for (const claim of checked) {
-    const mark =
-      claim.verdict === CLAIM_VERDICT.SUPPORTED
-        ? style.ok('/')
-        : claim.verdict === CLAIM_VERDICT.CONTRADICTED
-          ? style.warn('!')
-          : style.dim('?');
-    out.line(`  ${mark}  ${claim.kind}: ${claim.said}`);
-    out.line(`     ${style.dim(claim.because)}`);
-  }
+  flow.list(
+    'What was said, against what was recorded',
+    checked.map((claim) => ({
+      tone: toneOf(claim),
+      text: `${claim.kind}: ${claim.said}`,
+      detail: [claim.because],
+    })),
+  );
 
   if (contradicted.length > 0) {
-    out.note(
-      `${contradicted.length} claim(s) the record contradicts. "memnox why" on the failing action says more.`,
+    flow.close(
+      style.warn(
+        `${contradicted.length} claim(s) the record contradicts, of ${checked.length}.`,
+      ),
     );
+    flow.hint('"memnox why" on the failing action says more.');
     return;
   }
+  flow.close(`${checked.length} claim(s) checked, none contradicted.`);
   // Said plainly, because "unsupported" is not "untrue" and reading it as one is the risk.
-  out.note('Unsupported means nothing here recorded it, not that it did not happen.');
+  flow.hint('Unsupported means nothing here recorded it, not that it did not happen.');
 }

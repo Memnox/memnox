@@ -16,6 +16,7 @@ import {
   type ServerLaunch,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { backupPathFor } from '../memnox-paths';
 import { onPath } from '../on-path';
 
@@ -132,6 +133,8 @@ export function registerMcpCommand(
     .description('Repoint every MCP server at the proxy, keeping a backup')
     .option('--dry-run', 'print what would change and write nothing')
     .action(async (options: { dryRun?: boolean }) => {
+      const { flow, style } = context;
+      flow.open('memnox mcp wrap');
       if (options.dryRun !== true && !proxyOnPath(resolveBinary)) {
         throw new Error(
           `"${PROXY_BINARY}" is not on PATH, so wrapping would stop your agents starting at all.\n` +
@@ -140,31 +143,33 @@ export function registerMcpCommand(
       }
       const configs = await readConfigs(home(), project());
       if (configs.length === 0) {
-        context.out.line('No MCP config on this machine, so there is nothing to wrap.');
+        flow.close('No MCP config on this machine, so there is nothing to wrap.');
         return;
       }
 
       let wrapped = 0;
       for (const file of configs) {
         const plan = planWrap(file.servers);
-        for (const each of plan.alreadyWrapped) {
-          context.out.note(`${file.path}: ${each} is already wrapped`);
-        }
-        if (plan.wrap.length === 0) continue;
+        if (plan.wrap.length === 0 && plan.alreadyWrapped.length === 0) continue;
 
-        context.out.line(file.path);
-        for (const each of plan.wrap) {
-          context.out.line(`  ${each.name}  ${each.before.command} → proxy`);
-        }
-        // A URL upstream has no command line to repoint, and saying so beats silence.
-        for (const each of file.urlOnly) {
-          context.out.note(
-            `${file.path}: ${each} is declared by URL, so it is left alone`,
-          );
-        }
+        flow.list(file.path, [
+          ...plan.wrap.map((each) => ({
+            tone: TONE.OK,
+            text: `${each.name}  ${each.before.command} → proxy`,
+          })),
+          ...plan.alreadyWrapped.map((each) => ({
+            tone: TONE.DIM,
+            text: `${each} is already wrapped`,
+          })),
+          // A URL upstream has no command line to repoint, and saying so beats silence.
+          ...file.urlOnly.map((each) => ({
+            tone: TONE.DIM,
+            text: `${each} is declared by URL, so it is left alone`,
+          })),
+        ]);
         wrapped += plan.wrap.length;
 
-        if (options.dryRun === true) continue;
+        if (options.dryRun === true || plan.wrap.length === 0) continue;
         const next = { ...file.servers };
         const changed: Record<string, ServerLaunch> = {};
         for (const each of plan.wrap) {
@@ -174,29 +179,33 @@ export function registerMcpCommand(
         await writeConfig(home(), file, next, changed);
       }
 
-      context.out.line('');
       if (options.dryRun === true) {
-        context.out.line(`${wrapped} server(s) would be wrapped. Nothing was changed.`);
+        flow.close(`${wrapped} server(s) would be wrapped. Nothing was changed.`);
         return;
       }
-      context.out.line(
+      flow.close(
         wrapped === 0
           ? 'Every server was already wrapped.'
-          : `${wrapped} server(s) wrapped. Restart your agent, then "memnox mcp unwrap" to undo.`,
+          : style.ok(`${wrapped} server(s) wrapped.`),
       );
+      if (wrapped > 0) {
+        flow.hint('Restart your agent, then "memnox mcp unwrap" to undo.');
+      }
     });
 
   mcp
     .command('unwrap')
     .description('Put every MCP server back the way it was')
     .action(async () => {
+      const { flow, style } = context;
+      flow.open('memnox mcp unwrap');
       const restored = await unwrapEveryServer(home(), project(), context);
-      context.out.line('');
-      context.out.line(
+      flow.close(
         restored === 0
           ? 'Nothing here was wrapped, so nothing was changed.'
-          : `${restored} server(s) restored. Restart your agent.`,
+          : style.ok(`${restored} server(s) restored.`),
       );
+      if (restored > 0) flow.hint('Restart your agent.');
     });
 }
 
@@ -225,10 +234,13 @@ export async function unwrapEveryServer(
     const { restore } = planUnwrap(file.servers);
     if (restore.length === 0) continue;
 
-    context.out.line(file.path);
-    for (const each of restore) {
-      context.out.line(`  ${each.name}  proxy → ${each.after.command}`);
-    }
+    context.flow.list(
+      file.path,
+      restore.map((each) => ({
+        tone: TONE.OK,
+        text: `${each.name}  proxy → ${each.after.command}`,
+      })),
+    );
     restored += restore.length;
 
     const next = { ...file.servers };

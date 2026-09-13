@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { MEMNOX_HOME } from '@memnox/core';
 
@@ -10,9 +10,14 @@ import { MEMNOX_HOME } from '@memnox/core';
  * So the name is a second field over the top: the id is what everything stores
  * and the name is what everything prints, and the two never compete.
  *
- * Names are local. A machine that renames its own agents and then reports the
- * rename would be asking the control plane to hold one person's vocabulary for
- * a fleet, and the next machine calling a different agent "Backend" would win.
+ * A name is chosen for a workspace and travels to it as a label, because the
+ * alternative is a console listing `agt_claude-desktop` beside an agent a
+ * person has already named. What never travels is authority: a label is what a
+ * row is printed as, and the id is what every row is keyed on, so two machines
+ * disagreeing about what to call an agent is two labels rather than two agents.
+ *
+ * Chosen for a workspace, so `forgetNames` runs when a machine moves to another
+ * one, and that function says why a name carries no workspace stamp of its own.
  */
 
 const AGENTS_DIR = 'agents';
@@ -122,6 +127,30 @@ export async function setName(
   if (!checked.ok || checked.name === undefined) return checked;
   await writeNames(home, { ...names, [agentId]: checked.name });
   return checked;
+}
+
+/**
+ * Every name on this machine, forgotten.
+ *
+ * For a move between control planes, and nothing else. The prompt asks for a
+ * name the workspace will recognise, so these are one workspace's vocabulary:
+ * a laptop that moved from a control plane on localhost to the real one kept
+ * offering "Moise claude" as the name the new workspace knew it by, which was
+ * a name nobody there had ever seen. There is nothing better to fall back to
+ * than what the detector proved, and that is what `displayName` answers once
+ * this has run.
+ *
+ * Names are not stamped with the workspace they were chosen in, the way an
+ * onboarding record is, because there is no second answer to keep: an agent
+ * has one name on one machine, and a person moving plane is renaming it for
+ * the plane they are moving to.
+ */
+export async function forgetNames(home: string): Promise<number> {
+  const names = await readNames(home);
+  const count = Object.keys(names).length;
+  if (count === 0) return 0;
+  await rm(namesPath(home), { force: true });
+  return count;
 }
 
 export async function clearName(home: string, agentId: string): Promise<boolean> {

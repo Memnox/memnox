@@ -8,9 +8,8 @@ import {
   type EnvironmentChange,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { scanMachine, type ScanSeams } from '../machine-scan';
-
-const NAME_WIDTH = 26;
 
 /**
  * Configuration drift as an event rather than a mystery.
@@ -71,10 +70,10 @@ export async function renderDrift(
       return;
     }
     // A first run has nothing to compare against, and inventing one would be worse.
-    context.out.line('No earlier scan to compare against, so this one is the baseline.');
-    context.out.line(
-      context.style.dim('Run "memnox scan --since yesterday" after something changes.'),
+    context.flow.close(
+      'No earlier scan to compare against, so this one is the baseline.',
     );
+    context.flow.hint('Run "memnox scan --since yesterday" after something changes.');
     return;
   }
 
@@ -85,49 +84,52 @@ export async function renderDrift(
   if (options.json === true) {
     context.out.json({ baseline: before.takenAt, changes, failing });
   } else {
-    render(context, before.takenAt, changes);
+    render(context, before.takenAt, changes, failing, options.failOn);
   }
 
-  if (failing.length > 0) {
-    context.out.note(`${failing.length} change(s) matched --fail-on ${options.failOn}:`);
-    for (const change of failing) {
-      context.out.note(`  ${change.subject} ${change.name}: ${change.detail}`);
-    }
-    process.exitCode = 1;
-  }
+  if (failing.length > 0) process.exitCode = 1;
 }
 
 function render(
   context: CliContext,
   baselineAt: string,
   changes: readonly EnvironmentChange[],
+  failing: readonly EnvironmentChange[],
+  failOn: string | undefined,
 ): void {
-  const { out, style } = context;
-  out.line(style.bold('CHANGES SINCE') + '  ' + style.dim(baselineAt));
-  out.line('');
+  const { flow, style } = context;
 
   if (changes.length === 0) {
-    out.line('  Nothing moved.');
+    flow.close(`Nothing moved since ${baselineAt}.`);
     return;
   }
 
-  for (const change of changes) {
-    const widens = change.direction === CHANGE_DIRECTION.WIDENS;
-    const mark = widens ? style.warn('+') : '-';
-    // Padded before styling: an escape sequence has width nobody can see but padEnd can.
-    const label = `${change.name} «${change.subject}»`.padEnd(NAME_WIDTH);
-    out.line(`  ${mark} ${label}  ${change.detail}`);
-    if (change.grantedBy !== undefined) {
-      out.line(`      ${style.dim(change.grantedBy)}`);
-    }
+  flow.list(
+    `Changes since ${baselineAt}`,
+    changes.map((change) => ({
+      tone: change.direction === CHANGE_DIRECTION.WIDENS ? TONE.WARN : TONE.DIM,
+      text: `${change.name} «${change.subject}»  ${change.detail}`,
+      detail: [change.grantedBy],
+    })),
+  );
+
+  if (failing.length > 0) {
+    flow.list(
+      `Matched --fail-on ${failOn ?? ''}`,
+      failing.map((change) => ({
+        tone: TONE.WARN,
+        text: `${change.subject} ${change.name}: ${change.detail}`,
+      })),
+    );
   }
 
   const { widens, narrows } = summarizeChanges(changes);
-  out.line('');
-  out.line(
-    style.dim(
-      `${widens} ${widens === 1 ? 'change widens' : 'changes widen'} authority, ` +
-        `${narrows} ${narrows === 1 ? 'narrows' : 'narrow'} it`,
-    ),
+  flow.close(
+    widens === 0
+      ? `${narrows} ${narrows === 1 ? 'change narrows' : 'changes narrow'} authority, and none widens it.`
+      : style.warn(
+          `${widens} ${widens === 1 ? 'change widens' : 'changes widen'} authority, ` +
+            `${narrows} ${narrows === 1 ? 'narrows' : 'narrow'} it.`,
+        ),
   );
 }

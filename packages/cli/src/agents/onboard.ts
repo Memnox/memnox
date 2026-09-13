@@ -16,6 +16,7 @@ import {
   withoutManagedServer,
 } from './managed-server';
 import { jsonServersKey } from './managed-json';
+import { undecline } from './declined';
 import {
   backupPathFor,
   readRecord,
@@ -224,6 +225,11 @@ export async function onboardAgent(
     return { outcome: ONBOARD.UNSUPPORTED, because: rewritten.because ?? '' };
   }
   await writeFile(config.path, rewritten.next, 'utf8');
+
+  /* Whatever this machine last said about the agent, it says the opposite now.
+     Here rather than in the guided run, so a `memnox agents onboard` next week
+     clears a no from today and the census stops reporting one. */
+  await undecline(home, agentId);
 
   return {
     outcome: ONBOARD.DONE,

@@ -1,6 +1,6 @@
 {
  "version": 1,
- "note": "The wire between memnox-runtime and memnox-cloud, by example: the bundle a machine is sent, the heartbeat it reports and what comes back, the batch it posts for what it did, and the census it posts for what it can do. This file is the original; memnox-cloud/docs/sync-contract.json is a verbatim copy. Change one and copy it across whole, so a diff between the two stays empty. A test in each repository asserts its own side against this, because the two were written against each other's documentation rather than against each other, and every field name that drifted did so silently. `heartbeat.mode` is what the machine is running and `heartbeatReply.mode` is what the workspace has set: they differ here on purpose, because that is the state a graduation passes through and the one both halves have to render honestly.",
+ "note": "The wire between memnox-runtime and memnox-cloud, by example: the bundle a machine is sent, the heartbeat it reports and what comes back, the batch it posts for what it did, and the census it posts for what it can do, which carries what somebody on the machine decided about each agent: the name they chose and whether they said no to it. This file is the original; memnox-cloud/docs/sync-contract.json is a verbatim copy. Change one and copy it across whole, so a diff between the two stays empty. A test in each repository asserts its own side against this, because the two were written against each other's documentation rather than against each other, and every field name that drifted did so silently. `heartbeat.mode` is what the machine is running and `heartbeatReply.mode` is what the workspace has set: they differ here on purpose, because that is the state a graduation passes through and the one both halves have to render honestly.",
  "bundle": {
   "hash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
   "policies": [
@@ -172,6 +172,11 @@
     "kind": "claude-code",
     "version": "2.1",
     "surfaces": []
+   },
+   {
+    "id": "claude-desktop",
+    "kind": "claude-desktop",
+    "surfaces": []
    }
   ],
   "servers": [
@@ -202,17 +207,39 @@
   ]
  },
  "census": {
+  "decided": {
+   "names": {
+    "claude-desktop": "Desk Claude"
+   },
+   "declined": {
+    "claude-desktop": "2025-09-04T15:40:00.000Z"
+   }
+  },
   "events": [
    {
     "kind": "agent.reported",
-    "dedupKey": "agent:claude-code@2025-09-04T15:33:20.000Z",
+    "dedupKey": "agent:claude-code@2025-09-04T15:33:20.000Z:e648511cfde8",
     "subjectId": "claude-code",
     "actorType": "automation",
     "occurredAt": 1757000000000,
     "payload": {
      "agentId": "claude-code",
      "kind": "claude-code",
-     "version": "2.1"
+     "version": "2.1",
+     "label": "Claude Code"
+    }
+   },
+   {
+    "kind": "agent.reported",
+    "dedupKey": "agent:claude-desktop@2025-09-04T15:33:20.000Z:528b3b470723",
+    "subjectId": "claude-desktop",
+    "actorType": "automation",
+    "occurredAt": 1757000000000,
+    "payload": {
+     "agentId": "claude-desktop",
+     "kind": "claude-desktop",
+     "label": "Desk Claude",
+     "declinedAt": 1757000400000
     }
    },
    {

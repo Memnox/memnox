@@ -1,9 +1,4 @@
-import {
-  renderFields,
-  reviewServers,
-  type DiscoveryReport,
-  type ServerReview,
-} from '@memnox/core';
+import { reviewServers, type DiscoveryReport, type ServerReview } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 
 /** What one server declares, asks for and can reach — read before it is trusted. */
@@ -27,18 +22,16 @@ export function renderServerReview(
     context.out.json(match);
     return;
   }
-  context.out.line('');
-  context.out.line(context.style.bold(match.server));
-  context.out.line('');
-  context.out.line(renderFields(fieldsFor(match)));
-  context.out.line('');
+  context.flow.rows(match.server, fieldsFor(match));
   // Zero tools on a server nobody started means unknown, never harmless.
   if (match.unprobed) {
-    context.out.note(
-      'This server was never started, so its tools are unknown, not absent.',
+    context.flow.close('This server was never started.');
+    context.flow.hint(
+      'Its tools are unknown, not absent. Run without --no-probe to ask it.',
     );
-    context.out.note('Run without --no-probe to ask it.');
+    return;
   }
+  context.flow.close(`${match.tools} tool(s), ${match.destructive} of them destructive.`);
 }
 
 function fieldsFor(review: ServerReview): { label: string; value: string }[] {

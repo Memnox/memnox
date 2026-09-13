@@ -14,6 +14,7 @@ import {
   withToolsFrom,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import {
   defaultSeams,
   readState,
@@ -110,6 +111,13 @@ export function registerProtectCommand(
         if (options.observe === true && options.enforce === true) {
           throw new Error('Pick one: --observe or --enforce, not both.');
         }
+        /* One rail for every shape of this command. `protect` is a dozen
+           different acts behind one verb, from setting a mode to writing rules
+           to installing a seam to putting it all back, and each of them reports
+           through a helper in `protect/`. Opening it here is what makes those helpers draw on the
+           same gutter rather than each printing loose. */
+        const { flow } = context;
+        flow.open('memnox protect');
         if (options.observe === true || options.enforce === true) {
           const mode =
             options.enforce === true
@@ -118,12 +126,23 @@ export function registerProtectCommand(
           const home = homedir();
           const config = await loadOrCreateConfig(home);
           await saveConfig(home, { ...config, mode });
-          context.out.line(`mode: ${config.mode} → ${mode}`);
-          if (mode === ENFORCEMENT_MODE.ENFORCE) {
-            context.out.note(
-              'Verdicts now bite. "memnox protect --observe" puts it back.',
-            );
-          }
+          flow.rows('Mode', [
+            { label: 'was', value: config.mode },
+            { label: 'now', value: mode },
+            {
+              label: 'means',
+              value:
+                mode === ENFORCEMENT_MODE.ENFORCE
+                  ? 'verdicts bite'
+                  : 'verdicts are recorded and nothing is denied',
+            },
+          ]);
+          flow.close(`This machine is in ${mode}.`);
+          flow.hint(
+            mode === ENFORCEMENT_MODE.ENFORCE
+              ? '"memnox protect --observe" puts it back.'
+              : '"memnox protect --enforce" makes verdicts bite.',
+          );
           return;
         }
         /* Ahead of the interactive branch below, or "--allow x --yes" would be read
@@ -164,7 +183,7 @@ export function registerProtectCommand(
           await runNative(context, options.revertNative === true);
           return;
         }
-        const { out, style } = context;
+        const { style } = context;
         const seams = buildSeams();
         const now = new Date().toISOString();
 
@@ -176,7 +195,7 @@ export function registerProtectCommand(
             (step) => step.appliedAt !== undefined && step.revertedAt === undefined,
           );
           if (applied.length === 0) {
-            out.line(
+            flow.close(
               'Nothing to revert: no harden step has been applied on this machine.',
             );
             return;
@@ -187,9 +206,14 @@ export function registerProtectCommand(
           const named = typeof options.revert === 'string' ? options.revert : null;
           const chosen = named === null ? applied : applied.filter((s) => s.id === named);
           if (named !== null && chosen.length === 0) {
-            out.line(`No applied step with id ${named}.`);
-            out.note('');
-            for (const step of applied) out.note(`  ${step.id}  ${step.description}`);
+            flow.list(
+              `No applied step with id ${named}. These are applied`,
+              applied.map((step) => ({
+                tone: TONE.DIM,
+                text: `${step.id}  ${step.description}`,
+              })),
+            );
+            flow.close(`Nothing was reverted, because ${named} names no applied step.`);
             process.exitCode = EXIT_NO_SUCH_STEP;
             return;
           }
@@ -203,11 +227,15 @@ export function registerProtectCommand(
             ...untouched,
             ...results.map((result) => result.step),
           ]);
-          for (const result of results) {
-            out.line(
-              `  ${result.changed ? style.ok('reverted') : style.dim('skipped ')}  ${result.step.description}`,
-            );
-          }
+          flow.list(
+            'Reverted',
+            results.map((result) => ({
+              tone: result.changed ? TONE.OK : TONE.DIM,
+              text: `${result.changed ? 'reverted' : 'skipped '}  ${result.step.description}`,
+            })),
+          );
+          const changed = results.filter((result) => result.changed).length;
+          flow.close(`${changed} step(s) put back.`);
           return;
         }
 
@@ -233,25 +261,26 @@ export function registerProtectCommand(
         const plan = planHardening(proposed);
 
         if (plan.steps.length === 0) {
-          out.line('Nothing to close: the doctor found nothing with a change behind it.');
+          flow.close(
+            'Nothing to close: the doctor found nothing with a change behind it.',
+          );
           return;
         }
 
-        out.line(style.bold(options.apply === true ? 'APPLYING' : 'PROPOSED'));
-        out.line('');
-        plan.steps.forEach((step, index) => {
-          out.line(`  ${index + 1}. ${step.description}`);
-          /* The undo is printed before anything runs, never after. No id while
-           proposing: nothing is applied yet, so an id here names a step that does
-           not exist and reverts nothing when a reader copies it. */
-          out.line(`     ${style.dim('undo: memnox protect --revert')}`);
-        });
-        out.line('');
-
         if (options.apply !== true) {
-          out.line(
-            `Nothing was changed. Run ${style.bold('memnox protect --apply')} to write these.`,
+          flow.list(
+            'Proposed',
+            plan.steps.map((step, index) => ({
+              tone: TONE.PLAIN,
+              text: `${index + 1}. ${step.description}`,
+              /* The undo is printed before anything runs, never after. No id while
+                 proposing: nothing is applied yet, so an id here names a step that
+                 does not exist and reverts nothing when a reader copies it. */
+              detail: ['undo: memnox protect --revert'],
+            })),
           );
+          flow.close(`${plan.steps.length} step(s) proposed. Nothing was changed.`);
+          flow.hint('Run "memnox protect --apply" to write these.');
           return;
         }
 
@@ -268,19 +297,30 @@ export function registerProtectCommand(
          home and registered none of them, so every step reported `applied` and the
          runtime went on answering "no policy matched" for the file it had protected. */
         await registerApplied(seams, applied);
-        for (const result of results) {
-          if (result.error !== undefined) {
-            out.note(`could not apply ${result.step.id}: ${result.error}`);
-            continue;
-          }
-          out.line(`  ${style.ok('applied')}  ${result.step.description}`);
-          // Real once applied, and the only id a revert can take.
-          out.line(
-            `            ${style.dim(`undo just this: memnox protect --revert ${result.step.id}`)}`,
-          );
-        }
-        out.line('');
-        out.line(`Put it all back with ${style.bold('memnox protect --revert')}.`);
+        flow.list(
+          'Applied',
+          results.map((result) =>
+            result.error === undefined
+              ? {
+                  tone: TONE.OK,
+                  text: `applied  ${result.step.description}`,
+                  // Real once applied, and the only id a revert can take.
+                  detail: [`undo just this: memnox protect --revert ${result.step.id}`],
+                }
+              : {
+                  tone: TONE.WARN,
+                  text: `could not apply  ${result.step.description}`,
+                  detail: [result.error],
+                },
+          ),
+        );
+        const failed = results.filter((result) => result.error !== undefined).length;
+        flow.close(
+          failed === 0
+            ? style.ok(`${applied.length} step(s) applied.`)
+            : style.warn(`${applied.length} applied, ${failed} could not be.`),
+        );
+        flow.hint('Put it all back with "memnox protect --revert".');
       },
     );
 }

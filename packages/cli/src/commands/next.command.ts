@@ -14,6 +14,7 @@ import {
   type Delegation,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { withEvents } from '../event-store';
 import { policySetInForce } from '../policy-path';
 import { runAllow } from '../protect/written-rules';
@@ -62,6 +63,10 @@ export function registerNextCommand(
       async (
         options: { since: string; json?: boolean; handOver?: boolean } & BoundaryOptions,
       ) => {
+        /* One rail for both halves of the verb, opened before either branch
+           chooses which question it is answering. */
+        if (options.json !== true) context.flow.open('memnox next');
+
         /* The rules read forwards rather than the ledger read backwards. Same
          decision, opposite evidence, so they belong under one verb. */
         if (wantsBoundary(options)) {
@@ -123,62 +128,54 @@ function render(
   asked: { total: number; byAction: { action: string; count: number }[] },
   seen: number,
 ): void {
-  const { out, style } = context;
+  const { flow, style } = context;
 
-  out.line('');
-  out.line(style.bold('WHERE YOU ARE'));
-  out.line(`  ${standing} — ${describeLevel(standing)}`);
+  flow.rows('Where you are', [{ label: standing, value: describeLevel(standing) }]);
 
   if (ready.length > 0) {
-    out.line('');
-    out.line(style.bold('WHAT YOU COULD HAND OVER'));
-    out.line('');
-    for (const each of ready) {
-      out.line(`  ${style.ok('+')}  ${each.action}`);
-      out.line(`     ${style.dim(each.because)}`);
-      out.line(
-        `     ${style.dim(
+    flow.list(
+      'What you could hand over',
+      ready.map((each) => ({
+        tone: TONE.OK,
+        text: each.action,
+        detail: [
+          each.because,
           handable(each)
             ? `memnox protect --allow ${each.action}  (or keep being asked)`
             : 'stays a question: nothing hands this one over',
-        )}`,
-      );
-    }
-
-    if (ready.some(handable)) {
-      out.line('');
-      out.line(`  ${style.dim('memnox next --hand-over  writes all of them at once')}`);
-    }
+        ],
+      })),
+    );
   }
 
   if (asked.total > 0) {
-    out.line('');
-    out.line(
-      style.bold('WHAT INTERRUPTED YOU') +
-        style.dim(`  ${asked.total} times in ${DEFAULT_WINDOW_DAYS} days`),
+    flow.table(
+      `What interrupted you, ${asked.total} times in ${DEFAULT_WINDOW_DAYS} days`,
+      ['Times', 'Action'],
+      asked.byAction.slice(0, 5).map((each) => [String(each.count), each.action]),
     );
-    out.line('');
-    for (const each of asked.byAction.slice(0, 5)) {
-      out.line(`  ${String(each.count).padStart(4)}  ${each.action}`);
-    }
   }
 
-  out.line('');
   if (ready.length === 0 && seen === 0) {
     // Nothing has been asked yet, which is not the same as nothing being delegable.
-    out.line('Nothing has been held for you yet, so there is nothing to hand over.');
-    out.note('Run an agent under "memnox run" for a few days first.');
+    flow.close('Nothing has been held for you yet, so there is nothing to hand over.');
+    flow.hint('Run an agent under "memnox run" for a few days first.');
     return;
   }
   if (ready.length === 0) {
-    out.line(
+    flow.close(
       `${seen} action(s) have been held for you, and none has been approved often enough to be a habit yet.`,
     );
     return;
   }
   /* A count, never hours: "six hours a week you could get back" is a number nobody can
      check, on a screen somebody is being asked to act on. */
-  out.line(
-    `${ready.length} thing(s) you have already said yes to enough times that being asked again is the tool wasting your attention.`,
+  flow.close(
+    style.ok(
+      `${ready.length} thing(s) you have already said yes to enough times that being asked again is the tool wasting your attention.`,
+    ),
   );
+  if (ready.some(handable)) {
+    flow.hint('memnox next --hand-over   writes all of them at once');
+  }
 }

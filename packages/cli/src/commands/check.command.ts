@@ -37,15 +37,16 @@ export function registerCheckCommand(
     .option('-a, --agent <name>', 'agent the rules are matched against', 'agent')
     .action(async (intent: string, options: { agent: string }) => {
       const preflight = preflightFor(intent, process.env);
-      const { out } = context;
+      const { flow } = context;
+      flow.open('memnox check');
 
       if (preflight.unrecognized !== undefined) {
-        out.line(preflight.unrecognized);
+        flow.close(preflight.unrecognized);
         process.exitCode = 1;
         return;
       }
       if (preflight.actions.length === 0) {
-        out.line('Nothing on this machine does that, so there is nothing to decide.');
+        flow.close('Nothing on this machine does that, so there is nothing to decide.');
         return;
       }
 
@@ -96,7 +97,7 @@ function render(
   preflight: Preflight,
   rulings: readonly Ruling[],
 ): void {
-  const { out, style } = context;
+  const { flow, style } = context;
   const stopped = rulings.filter(
     (ruling) => ruling.verdict.effect !== DECISION_EFFECT.ALLOW,
   );
@@ -105,11 +106,9 @@ function render(
      as is printed — a wrong reading has to be visible rather than mysterious. */
   if (preflight.kind === INTENT_KIND.PHRASE) {
     const subject = preflight.subject === undefined ? '' : ` · ${preflight.subject}`;
-    out.line(style.dim(`read as: ${preflight.verb ?? '?'}${subject}`));
-    out.line('');
+    flow.step('Read as', `${preflight.verb ?? '?'}${subject}`);
   }
 
-  const width = Math.max(...rulings.map((ruling) => ruling.action.length)) + 2;
   const shown = [...rulings].sort(
     (a, b) => (ORDER[a.verdict.effect] ?? 3) - (ORDER[b.verdict.effect] ?? 3),
   );
@@ -117,23 +116,20 @@ function render(
      per row it pushed the actions off the left of anybody's attention. */
   const reasons = new Set(rulings.map((ruling) => ruling.verdict.reason));
   const shared = reasons.size === 1 ? [...reasons][0] : undefined;
-  for (const ruling of shown) {
-    const effect = ruling.verdict.effect;
-    const label =
-      effect === DECISION_EFFECT.DENY
-        ? style.warn('deny ')
-        : effect === DECISION_EFFECT.ASK
-          ? style.warn('ask  ')
-          : style.dim('allow');
-    const reason = shared === undefined ? style.dim(ruling.verdict.reason) : '';
-    out.line(`  ${label}  ${ruling.action.padEnd(width)}${reason}`.trimEnd());
-  }
-  if (shared !== undefined) {
-    out.line('');
-    out.line(`  ${style.dim(shared)}`);
-  }
+  /* The reason column only where the reasons differ. One reason for the whole
+     list is a footnote, and a column header with nothing under it is a promise
+     with nothing behind it. */
+  flow.table(
+    'What would happen, and nothing was run to find out',
+    shared === undefined ? ['', 'Action', 'Reason'] : ['', 'Action'],
+    shown.map((ruling) => [
+      style.effect(ruling.verdict.effect, ruling.verdict.effect),
+      ruling.action,
+      ...(shared === undefined ? [ruling.verdict.reason] : []),
+    ]),
+  );
+  if (shared !== undefined) flow.aside(style.dim(shared));
 
-  out.line('');
   if (stopped.length === 0) {
     /* An unruled action is not a permitted one. Reporting eleven of them as "nothing
        would stop" is the comfortable lie: no rule covers them, which is a different
@@ -142,28 +138,28 @@ function render(
       (ruling) => ruling.verdict.matchedPolicies.length === 0,
     ).length;
     if (unruled === rulings.length) {
-      out.line(
+      flow.close(
         `Nothing here would stop, and no rule covers any of it. ${rulings.length} action(s) checked.`,
       );
-      out.line(
-        `  ${style.dim('memnox protect')}   put the dangerous ones behind ask or deny`,
-      );
+      flow.hint('memnox protect   puts the dangerous ones behind ask or deny');
       return;
     }
-    out.line(
+    flow.close(
       unruled === 0
         ? `Nothing here would stop. ${rulings.length} action(s) checked.`
         : `Nothing here would stop. ${rulings.length} action(s) checked, ${unruled} of them covered by no rule.`,
     );
     return;
   }
-  out.line(
-    `${stopped.length} of ${rulings.length} would stop, and nothing was run to find out.`,
+  flow.close(
+    style.warn(
+      `${stopped.length} of ${rulings.length} would stop, and nothing was run to find out.`,
+    ),
   );
   const frozen = stopped.find((ruling) =>
     /freez|frozen|incident/i.test(ruling.verdict.reason),
   );
   if (frozen !== undefined) {
-    out.line(`  ${style.dim('memnox freeze --lift')}   when the incident is over`);
+    flow.hint('memnox freeze --lift   when the incident is over');
   }
 }

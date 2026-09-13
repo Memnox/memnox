@@ -8,6 +8,7 @@ import {
   type Milestone,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { NodeGit, NodeWorktree } from '../node-git';
 
 interface RewindOptions {
@@ -42,12 +43,13 @@ export function registerRewindCommand(
     .action(async (options: RewindOptions) => {
       const milestones = build(cwd());
       const moment = now();
+      context.flow.open('memnox rewind');
       try {
         await act(context, milestones, options, moment);
       } catch (err) {
         // A refusal is an answer with a reason, not a stack trace.
         if (err instanceof RewindRefused) {
-          context.out.line(context.style.warn(err.message));
+          context.flow.close(context.style.warn(err.message));
           process.exitCode = 1;
           return;
         }
@@ -62,7 +64,7 @@ async function act(
   options: RewindOptions,
   moment: string,
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow, style } = context;
 
   if (options.forget !== undefined) {
     const keep =
@@ -71,7 +73,7 @@ async function act(
       throw new Error('--forget takes a whole number of milestones to keep, at least 1');
     }
     const dropped = await milestones.forget(keep);
-    out.line(`Forgot ${dropped.length} milestone(s). The newest is never dropped.`);
+    flow.close(`Forgot ${dropped.length} milestone(s). The newest is never dropped.`);
     return;
   }
 
@@ -81,29 +83,47 @@ async function act(
       reason: MILESTONE_REASON.MANUAL,
       ...(options.note === undefined ? {} : { note: options.note }),
     });
-    out.line(`${taken.id}  ${taken.files} file(s) kept`);
+    flow.rows('Kept', [
+      { label: 'milestone', value: taken.id },
+      { label: 'files', value: String(taken.files) },
+      ...(options.note === undefined ? [] : [{ label: 'note', value: options.note }]),
+    ]);
+    flow.close(`The working tree is kept as ${taken.id}.`);
+    flow.hint(`Come back to it with "memnox rewind --to ${taken.id}".`);
     return;
   }
 
   if (options.list === true) {
     const found = await milestones.list();
     if (found.length === 0) {
-      out.line('No milestones here yet. One is taken when "memnox run" starts an agent.');
+      flow.close('No milestones here yet.');
+      flow.hint('One is taken when "memnox run" starts an agent.');
       return;
     }
-    for (const milestone of found) out.line(`  ${describeMilestone(milestone, moment)}`);
+    flow.list(
+      'Milestones',
+      found.map((milestone) => ({
+        tone: TONE.DIM,
+        text: describeMilestone(milestone, moment),
+      })),
+    );
+    flow.close(`${found.length} milestone(s), newest first.`);
+    flow.hint('Go back to one with "memnox rewind --to <id>".');
     return;
   }
 
   const target = await resolve(milestones, options.to);
   const { restored, kept } = await milestones.restore(target.id, moment);
 
-  out.line(`Working tree back to ${restored.id}, taken ${restored.takenAt}.`);
-  out.line('');
-  // Said before anything else, because the first question after a rewind is "and my work?"
-  out.line(`  What it replaced is kept as ${style.bold(kept.id)}.`);
-  out.line(`  ${style.dim(`memnox rewind --to ${kept.id}`)}   undoes this`);
-  out.note('Only files moved. No commit, no branch and no stash was touched.');
+  flow.rows('Restored', [
+    { label: 'back to', value: `${restored.id}, taken ${restored.takenAt}` },
+    // Said before anything else, because the first question after a rewind is
+    // "and my work?"
+    { label: 'your work', value: `kept as ${kept.id}` },
+    { label: 'undo this', value: `memnox rewind --to ${kept.id}` },
+  ]);
+  flow.close(style.ok(`Working tree back to ${restored.id}.`));
+  flow.hint('Only files moved. No commit, no branch and no stash was touched.');
 }
 
 async function resolve(milestones: Milestones, id?: string): Promise<Milestone> {

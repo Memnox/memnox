@@ -9,6 +9,7 @@ import {
   PendingApprovals,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 
 /**
  * A held call, answered from somewhere other than the terminal it started in. Locally
@@ -35,16 +36,22 @@ export function registerApprovalsCommand(
         context.out.json(pending);
         return;
       }
+      const { flow } = context;
+      flow.open('memnox approvals');
       if (pending.length === 0) {
-        context.out.line('Nothing is waiting.');
+        flow.close('Nothing is waiting.');
         return;
       }
       if (options.flat === true) {
-        for (const each of pending) {
-          context.out.line(`  ${describePending(each, moment)}`);
-        }
-        context.out.line('');
-        context.out.line(`  memnox approve <id>   or   memnox deny <id>`);
+        flow.list(
+          'Waiting',
+          pending.map((each) => ({
+            tone: TONE.WARN,
+            text: describePending(each, moment),
+          })),
+        );
+        flow.close(`${pending.length} call(s) waiting.`);
+        flow.hint('memnox approve <id>   or   memnox deny <id>');
         return;
       }
 
@@ -52,19 +59,28 @@ export function registerApprovalsCommand(
          tool that asks about each separately is one people turn off — at which point
          it protects nothing. */
       const groups = groupPending(pending);
-      for (const group of groups) {
-        const first = group.members[0];
-        if (first === undefined) continue;
-        context.out.line(`  ${first.id}  ${describeGroup(group)}`);
-        // What is actually covered, always shown: a group answered blind is worse than five prompts.
-        for (const line of groupDetail(group)) {
-          context.out.line(`  ${context.style.dim(line)}`);
-        }
-      }
-      context.out.line('');
-      context.out.line(`  memnox approve <id>   or   memnox deny <id>`);
+      flow.list(
+        'Waiting',
+        groups.flatMap((group) => {
+          const first = group.members[0];
+          if (first === undefined) return [];
+          return [
+            {
+              tone: TONE.WARN,
+              text: `${first.id}  ${describeGroup(group)}`,
+              // What is actually covered, always shown: a group answered blind
+              // is worse than five prompts.
+              detail: groupDetail(group),
+            },
+          ];
+        }),
+      );
+      flow.close(
+        `${pending.length} call(s) waiting, in ${groups.length} kind(s) of work.`,
+      );
+      flow.hint('memnox approve <id>   or   memnox deny <id>');
       if (groups.some((group) => group.members.length > 1)) {
-        context.out.line(`  add --group to answer for every call of that kind at once`);
+        flow.hint('add --group to answer for every call of that kind at once');
       }
     });
 
@@ -80,6 +96,9 @@ export function registerApprovalsCommand(
         const approvals = new PendingApprovals(home());
         const moment = now().toISOString();
 
+        const { flow, style } = context;
+        flow.open(`memnox ${name}`);
+
         if (options.group === true) {
           const answered = await answerGroup(approvals, id, answer, who(), moment);
           if (answered === null) {
@@ -87,7 +106,12 @@ export function registerApprovalsCommand(
               `Nothing is waiting under "${id}". It may have timed out. Try "memnox approvals".`,
             );
           }
-          context.out.line(`${said} ${answered} call(s) of that kind.`);
+          flow.rows(said, [
+            { label: 'kind', value: `every call waiting like ${id}` },
+            { label: 'calls', value: String(answered) },
+            { label: 'by', value: who() },
+          ]);
+          flow.close(style.ok(`${said} ${answered} call(s) of that kind.`));
           return;
         }
 
@@ -101,12 +125,21 @@ export function registerApprovalsCommand(
         if ('alreadyAnswered' in outcome) {
           const already = outcome.alreadyAnswered;
           // Two people reaching for the same approval is ordinary, not an error.
-          context.out.line(
-            `Already ${already.answer} by ${already.answeredBy ?? 'somebody'} at ${already.answeredAt ?? 'some point'}.`,
-          );
+          flow.rows('Already answered', [
+            { label: 'call', value: id },
+            { label: 'answer', value: already.answer ?? 'answered' },
+            { label: 'by', value: already.answeredBy ?? 'somebody' },
+            { label: 'at', value: already.answeredAt ?? 'some point' },
+          ]);
+          flow.close('Somebody else got there first, which is ordinary.');
           return;
         }
-        context.out.line(`${said} ${id}. The call is released on the waiting side.`);
+        flow.rows(said, [
+          { label: 'call', value: id },
+          { label: 'by', value: who() },
+          { label: 'at', value: moment },
+        ]);
+        flow.close(style.ok(`${said} ${id}. The call is released on the waiting side.`));
       });
   }
 }

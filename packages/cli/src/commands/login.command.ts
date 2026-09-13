@@ -1,7 +1,6 @@
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { CliContext } from '../cli-context';
-import { Flow } from '../flow';
 import { forgetAccount, readAccount } from '@memnox/core';
 import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/connect';
 
@@ -38,19 +37,19 @@ export function registerLoginCommand(
         name?: string;
         open: boolean;
       }) => {
-        const { out, style } = context;
-        const flow = new Flow(out, style);
+        const { out, style, flow } = context;
+        /* The one line a script reads is the machine id on stdout, so the rail
+           is commentary here rather than the answer. */
+        flow.commentary();
         flow.open('memnox login');
 
-        const connected = await connectMachine(context, home(), options, flow, seams);
+        const connected = await connectMachine(context, home(), options, seams);
 
         flow.close(style.ok('This machine is enrolled.'));
         flow.hint('It now pulls your workspace rules. Nothing else leaves this machine.');
         flow.hint('Put your agents to work with "memnox setup".');
         flow.hint('Take it back off with "memnox logout".');
 
-        /* The one line a script would read, on stdout and undecorated, while
-           everything above it is commentary on stderr. */
         out.line(connected.machineId);
       },
     );
@@ -59,15 +58,20 @@ export function registerLoginCommand(
     .command('logout')
     .description('Forget the credential. Rules already pulled stay in force')
     .action(async () => {
+      const { flow } = context;
+      flow.open('memnox logout');
       const had = await forgetAccount(home());
-      context.out.line(had ? 'Logged out. The credential is gone.' : 'Not logged in.');
-      if (!had) return;
+      if (!had) {
+        flow.close('Not logged in, so there was nothing to forget.');
+        return;
+      }
+      flow.close('Logged out. The credential is gone.');
       /* Said plainly, because the opposite would be worse: logging out of a
          laptop must not quietly stop governing it. */
-      context.out.note(
+      flow.hint(
         'The rules already pulled are still enforced, and are no longer refreshed.',
       );
-      context.out.note('Revoke this machine in the console to end the enrolment.');
+      flow.hint('Revoke this machine in the console to end the enrolment.');
     });
 
   program
@@ -75,14 +79,16 @@ export function registerLoginCommand(
     .description('Which workspace this machine is enrolled in, if any')
     .option('--json', 'machine-readable output')
     .action(async (options: { json?: boolean }) => {
+      const { flow } = context;
+      if (options.json !== true) flow.open('memnox whoami');
       const account = await readAccount(home());
       if (account === null) {
         if (options.json === true) {
           context.out.json({ enrolled: false });
           return;
         }
-        context.out.line('Not logged in. This machine talks to nothing.');
-        context.out.note('Connect it with "memnox login".');
+        flow.close('Not logged in. This machine talks to nothing.');
+        flow.hint('Connect it with "memnox login".');
         return;
       }
       if (options.json === true) {
@@ -96,10 +102,12 @@ export function registerLoginCommand(
         });
         return;
       }
-      const { out } = context;
-      out.line(`workspace   ${account.workspaceId}`);
-      out.line(`machine     ${account.machineId}`);
-      out.line(`control     ${account.baseUrl}`);
-      out.line(`since       ${account.enrolledAt}`);
+      flow.rows('Enrolled', [
+        { label: 'workspace', value: account.workspaceId },
+        { label: 'machine', value: account.machineId },
+        { label: 'control', value: account.baseUrl },
+        { label: 'since', value: account.enrolledAt },
+      ]);
+      flow.close(`This machine belongs to ${account.workspaceId}.`);
     });
 }

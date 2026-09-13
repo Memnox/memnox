@@ -79,15 +79,12 @@ export async function askForNames<T extends { id: string; kind: string }>(
   detailOf: (agent: T) => string,
   ask: NameAsker,
 ): Promise<Named[]> {
-  const { out, style } = context;
+  const { flow, style } = context;
   if (agents.length === 0) return [];
 
-  out.line('');
-  out.line(style.bold('WHAT DO YOU WANT TO CALL THEM'));
-  out.line(
-    style.dim(
-      `  Memnox prints the name you choose everywhere afterwards. Up to ${NAME_LIMIT} characters.`,
-    ),
+  flow.step(
+    'What do you want to call them',
+    `Memnox prints the name you choose everywhere afterwards. Up to ${NAME_LIMIT} characters.`,
   );
 
   const given: Named[] = [];
@@ -99,6 +96,7 @@ export async function askForNames<T extends { id: string; kind: string }>(
     const wanted = await ask({
       shown: before,
       lines: [before, detailOf(agent)],
+      gutter: flow.prompt,
       because: 'Name it',
     }).catch(() => null);
     if (wanted === null) continue;
@@ -108,8 +106,8 @@ export async function askForNames<T extends { id: string; kind: string }>(
       /* Said and skipped rather than asked again. A loop here is a scan that
          cannot be finished by pressing Enter, and `memnox agents name` is one
          command away. */
-      out.note(
-        style.warn(`  Kept "${before}": ${checked.because ?? 'that name was refused'}`),
+      flow.aside(
+        style.warn(`Kept "${before}": ${checked.because ?? 'that name was refused'}`),
       );
       continue;
     }

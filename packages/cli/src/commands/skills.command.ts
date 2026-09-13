@@ -18,6 +18,7 @@ import {
 } from '@memnox/core';
 import { NodeMachineReader } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 
 /**
  * What an agent runs on that nobody wrote in a config: skills it taught itself, and
@@ -42,6 +43,7 @@ export function registerSkillsCommand(
     .option('--accept [name]', 'accept one definition as reviewed, or all of them')
     .option('--json', 'machine-readable output')
     .action(async (options: { accept?: boolean | string; json?: boolean }) => {
+      if (options.json !== true) context.flow.open('memnox skills');
       const machine = reader();
       const found = await discoverDefinitions(machine);
       const accepted = await readAcceptedSkills(home());
@@ -56,7 +58,9 @@ export function registerSkillsCommand(
           throw new Error(`Nothing called "${String(options.accept)}".`);
 
         await writeAcceptedSkills(home(), merge(accepted, wanted, now().toISOString()));
-        context.out.line(`Accepted ${wanted.length} definition(s).`);
+        context.flow.close(
+          `Accepted ${wanted.length} definition(s) as reviewed by ${userInfo().username}.`,
+        );
         return;
       }
 
@@ -95,9 +99,9 @@ const NEW_SHOWN = 12;
 const ARRIVAL_SHOWN = 4;
 
 function render(context: CliContext, findings: readonly SkillFinding[]): void {
-  const { out, style } = context;
+  const { flow, style } = context;
   if (findings.length === 0) {
-    out.line('No agent skills or definitions found on this machine.');
+    flow.close('No agent skills or definitions found on this machine.');
     return;
   }
 
@@ -113,51 +117,57 @@ function render(context: CliContext, findings: readonly SkillFinding[]): void {
   for (const arrival of arrivals) renderArrival(context, arrival);
 
   if (held.length > 0) {
-    out.line('');
-    out.line(style.bold('HELD') + style.dim('  reaches further than what you accepted'));
-    out.line('');
-    for (const skill of held) {
-      out.line(`  ${style.warn('!')}  ${describeSkill(skill)}`);
-      out.line(`     ${style.dim(skill.path)}`);
-    }
+    flow.list(
+      'Held: reaches further than what you accepted',
+      held.map((skill) => ({
+        tone: TONE.WARN,
+        text: describeSkill(skill),
+        detail: [skill.path],
+      })),
+    );
   }
 
   if (fresh.length > 0) {
-    out.line('');
-    out.line(style.bold('NEW'));
-    out.line('');
     /* The ones that name a tool first, and the rest counted. Seventy rows is not a
        screen anybody reads, and the sixty that name nothing this knows are the sixty
        there is nothing to decide about. */
     const ordered = [...fresh].sort((a, b) => b.reaches.length - a.reaches.length);
-    for (const skill of ordered.slice(0, NEW_SHOWN)) {
-      out.line(`  ${style.dim('+')}  ${describeSkill(skill)}`);
-    }
     const rest = ordered.length - NEW_SHOWN;
-    if (rest > 0) {
-      const quiet = ordered.slice(NEW_SHOWN).filter((each) => each.reaches.length === 0);
-      out.line(
-        `  ${style.dim(`… and ${rest} more, ${quiet.length} of which name no tool this knows`)}`,
-      );
-      out.note('"memnox skills --json" lists every one.');
-    }
+    const quiet = ordered.slice(NEW_SHOWN).filter((each) => each.reaches.length === 0);
+    flow.list('New', [
+      ...ordered.slice(0, NEW_SHOWN).map((skill) => ({
+        tone: TONE.DIM,
+        text: describeSkill(skill),
+      })),
+      ...(rest > 0
+        ? [
+            {
+              tone: TONE.DIM,
+              text: `… and ${rest} more, ${quiet.length} of which name no tool this knows`,
+              detail: ['"memnox skills --json" lists every one'],
+            },
+          ]
+        : []),
+    ]);
   }
 
   const heldCount = held.length + arrived.size;
   const known = findings.length - heldCount - fresh.length;
   const agents = findings.filter((each) => each.kind === DEFINITION_KIND.AGENT).length;
-  out.line('');
-  out.line(
-    `${findings.length} definition(s), ${agents} installed rather than self-written; ` +
-      `${known} unchanged since you last looked.`,
+  flow.close(
+    heldCount === 0
+      ? `${findings.length} definition(s), ${agents} installed rather than self-written; ${known} unchanged since you last looked.`
+      : style.warn(
+          `${heldCount} of ${findings.length} definition(s) are held; ${known} unchanged since you last looked.`,
+        ),
   );
   if (heldCount > 0 || fresh.length > 0) {
-    out.note('"memnox skills --accept <name>" records that you have looked at one.');
+    flow.hint('"memnox skills --accept <name>" records that you have looked at one.');
   }
   /* A name in a document is evidence, never proof. Saying so is the difference between
      a finding somebody can act on and one they learn to ignore. A grant is not in that
      category: the file states it, so it is said as a fact and kept on its own line. */
-  out.note('A skill naming a tool is evidence it may use it, not proof that it does.');
+  flow.hint('A skill naming a tool is evidence it may use it, not proof that it does.');
 }
 
 /**
@@ -165,30 +175,29 @@ function render(context: CliContext, findings: readonly SkillFinding[]): void {
  * names are four examples, because nobody decides anything from the other three hundred.
  */
 function renderArrival(context: CliContext, arrival: Arrival): void {
-  const { out, style } = context;
+  const { flow } = context;
   const total = arrival.definitions.length;
-  out.line('');
-  out.line(
-    style.bold('HELD') + style.dim('  a roster arrived at once, and nobody read it'),
-  );
-  out.line('');
-  out.line(
-    `  ${style.warn('!')}  ${total} new ${arrival.agent} definitions in one directory`,
-  );
-  out.line(`     ${style.dim(arrival.root)}`);
-  if (arrival.inheriting > 0) {
-    out.line(
-      `     ${style.warn(`${arrival.inheriting} of them declare no tools, so each inherits every tool in the session`)}`,
-    );
-  }
   const named = [...arrival.definitions]
     .sort((a, b) => b.reaches.length - a.reaches.length)
     .slice(0, ARRIVAL_SHOWN);
-  for (const one of named) {
-    out.line(`     ${style.dim(`${one.name} — ${describeGrant(one.grant)}`)}`);
-  }
-  if (total > ARRIVAL_SHOWN) {
-    out.line(`     ${style.dim(`… and ${total - ARRIVAL_SHOWN} more`)}`);
-  }
-  out.note(`"memnox skills --accept" records that you have looked at all ${total}.`);
+
+  flow.list('Held: a roster arrived at once, and nobody read it', [
+    {
+      tone: TONE.WARN,
+      text: `${total} new ${arrival.agent} definitions in one directory`,
+      detail: [
+        arrival.root,
+        arrival.inheriting > 0
+          ? `${arrival.inheriting} of them declare no tools, so each inherits every tool in the session`
+          : undefined,
+        ...named.map((one) => `${one.name}: ${describeGrant(one.grant)}`),
+        total > ARRIVAL_SHOWN ? `… and ${total - ARRIVAL_SHOWN} more` : undefined,
+      ],
+    },
+  ]);
+  flow.aside(
+    context.style.dim(
+      `"memnox skills --accept" records that you have looked at all ${total}.`,
+    ),
+  );
 }

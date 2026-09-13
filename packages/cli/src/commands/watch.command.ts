@@ -19,6 +19,7 @@ import {
   type SkillFinding,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import type { CredentialFinding, DiscoveryReport } from '@memnox/core';
 import {
   defaultScanSeams,
@@ -79,6 +80,8 @@ export function registerWatchCommand(
         json?: boolean;
         probe: boolean;
       }) => {
+        const { flow } = context;
+        if (options.json !== true) flow.open('memnox watch');
         const seams = buildSeams(cwd());
         const interval = Number(options.interval);
         if (!Number.isFinite(interval) || interval <= 0) {
@@ -89,6 +92,10 @@ export function registerWatchCommand(
           throw new Error('--cycles must be a number');
         }
 
+        /* One rail for the whole watch, and one only. A watch runs for hours
+           and reports when something arrives, so a rail per cycle would be a
+           header every minute and a closing line that never comes: the steps
+           below are what arrived, in order, on one gutter. */
         // The interval is the backstop, not the mechanism.
         const between = waiter();
         let baseline = await seams.snapshots.latest();
@@ -124,16 +131,23 @@ export function registerWatchCommand(
             arrived.length === 0
           )
             continue;
-          for (const login of logins) {
-            context.out.line(
-              `  ${context.style.warn('!')} ${login.kind} logged in — ${login.path}`,
+          if (logins.length > 0) {
+            flow.list(
+              'Logged in',
+              logins.map((login) => ({
+                tone: TONE.WARN,
+                text: `${login.kind} logged in`,
+                detail: [login.path, 'memnox protect --for <cli>'],
+              })),
             );
-            context.out.line(`      ${context.style.dim('memnox protect --for <cli>')}`);
           }
           reportDefinitions(context, arrived, options.json === true);
           await report(context, seams, snapshot, changes, updates, options.json === true);
         }
         between.close();
+        flow.close(
+          `Watched ${Number.isFinite(cycles) ? `${cycles} cycle(s)` : 'until stopped'}.`,
+        );
       },
     );
 }
@@ -179,29 +193,35 @@ function reportDefinitions(
     context.out.line(JSON.stringify({ definitions: arrived }));
     return;
   }
-  const { out, style } = context;
+  const { flow } = context;
   const arrivals = bulkArrivals(arrived);
   const grouped = new Set(
     arrivals.flatMap((each) => each.definitions.map((one) => one.id)),
   );
   for (const arrival of arrivals) {
-    out.line('');
-    out.line(style.warn('⚠ A ROSTER ARRIVED'));
-    out.line('');
-    out.line(
-      `  ${arrival.definitions.length} new ${arrival.agent} definitions in ${arrival.root}`,
-    );
-    if (arrival.inheriting > 0) {
-      out.line(
-        `  ${style.warn(`${arrival.inheriting} declare no tools, so each inherits every tool in the session`)}`,
-      );
-    }
-    out.line(`      ${style.dim('memnox skills')}`);
+    flow.list('A roster arrived', [
+      {
+        tone: TONE.WARN,
+        text: `${arrival.definitions.length} new ${arrival.agent} definitions in ${arrival.root}`,
+        detail: [
+          arrival.inheriting > 0
+            ? `${arrival.inheriting} declare no tools, so each inherits every tool in the session`
+            : undefined,
+          'memnox skills',
+        ],
+      },
+    ]);
   }
-  for (const one of arrived) {
-    if (grouped.has(one.id)) continue;
-    out.line(`  ${style.warn('!')} ${describeSkill(one)}`);
-    out.line(`      ${style.dim('memnox skills')}`);
+  const loose = arrived.filter((one) => !grouped.has(one.id));
+  if (loose.length > 0) {
+    flow.list(
+      'Arrived',
+      loose.map((one) => ({
+        tone: TONE.WARN,
+        text: describeSkill(one),
+        detail: ['memnox skills'],
+      })),
+    );
   }
 }
 
@@ -219,15 +239,26 @@ async function report(
     return;
   }
 
-  for (const update of updates) {
-    context.out.line(`  ${context.style.warn('!')} ${describeUpdate(update)}`);
+  const { flow } = context;
+  if (updates.length > 0) {
+    flow.list(
+      'Updated itself',
+      updates.map((update) => ({ tone: TONE.WARN, text: describeUpdate(update) })),
+    );
   }
   // The alert first, then the detail: what to do about it is the line people need.
-  for (const alert of alerts) {
-    context.out.line(`  ${context.style.warn('!')} ${alert.headline}`);
-    context.out.line(`      ${context.style.dim(alert.next)}`);
+  if (alerts.length > 0) {
+    flow.list(
+      'Worth looking at',
+      alerts.map((alert) => ({
+        tone: TONE.WARN,
+        text: alert.headline,
+        detail: [alert.next],
+      })),
+    );
   }
 
+  const plain: EnvironmentChange[] = [];
   for (const change of changes) {
     if (
       change.subject === CHANGE_SUBJECT.SERVER &&
@@ -236,7 +267,16 @@ async function report(
       await reportServer(context, seams, snapshot, change);
       continue;
     }
-    reportPlainly(context, change);
+    plain.push(change);
+  }
+  if (plain.length > 0) {
+    flow.list(
+      `Changed at ${snapshot.takenAt}`,
+      plain.map((change) => ({
+        tone: change.direction === CHANGE_DIRECTION.WIDENS ? TONE.WARN : TONE.DIM,
+        text: `${change.name} «${change.subject}»  ${change.detail}`,
+      })),
+    );
   }
 }
 
@@ -247,7 +287,7 @@ async function reportServer(
   snapshot: EnvironmentSnapshot,
   change: EnvironmentChange,
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow, style } = context;
   const server = snapshot.servers.find((each) => each.name === change.name);
   const tools = server === undefined ? [] : server.tools;
   const coverage = await rulesCovering(
@@ -255,41 +295,32 @@ async function reportServer(
     tools.map((tool) => tool.name),
   );
 
-  out.line('');
-  out.line(style.warn('⚠ NEW MCP SERVER'));
-  out.line('');
-  out.line(`  ${style.bold(change.name)}`);
-  out.line('');
-  out.line(`  ${change.detail}`);
-  out.line('');
-  out.line(
-    coverage.covered.length === 0
-      ? '  No rule covers any of them.'
-      : `  ${coverage.covered.length} of ${tools.length} covered by a rule.`,
-  );
-  /* A file that would not load might have covered these, so the count above is a floor
-     rather than a total. Saying which is the difference between a number and a guess. */
-  if (coverage.unreadable.length > 0) {
-    const broken = coverage.unreadable.length;
-    out.line(
-      style.warn(
-        `  ${broken} rule file${broken === 1 ? '' : 's'} would not load, so that is a floor.`,
-      ),
-    );
-    out.line(`  ${style.dim('run "memnox policy check" to see which')}`);
-  }
-  if (change.grantedBy !== undefined) {
-    out.line('');
-    out.line(`  ${style.dim(`«added by ${change.grantedBy}»`)}`);
-  }
-  out.line('');
-}
-
-function reportPlainly(context: CliContext, change: EnvironmentChange): void {
-  const { out, style } = context;
-  const widens = change.direction === CHANGE_DIRECTION.WIDENS;
-  const mark = widens ? style.warn('+') : '-';
-  out.line(`${mark} ${change.name} «${change.subject}»  ${change.detail}`);
+  flow.rows(`New MCP server: ${change.name}`, [
+    { label: 'brings', value: change.detail },
+    {
+      label: 'covered',
+      value:
+        coverage.covered.length === 0
+          ? style.warn('no rule covers any of them')
+          : `${coverage.covered.length} of ${tools.length} covered by a rule`,
+    },
+    /* A file that would not load might have covered these, so the count above
+       is a floor rather than a total. Saying which is the difference between a
+       number and a guess. */
+    ...(coverage.unreadable.length === 0
+      ? []
+      : [
+          {
+            label: '',
+            value: style.warn(
+              `${coverage.unreadable.length} rule file${coverage.unreadable.length === 1 ? '' : 's'} would not load, so that is a floor. Run "memnox policy check".`,
+            ),
+          },
+        ]),
+    ...(change.grantedBy === undefined
+      ? []
+      : [{ label: 'added by', value: change.grantedBy }]),
+  ]);
 }
 
 /** Credentials present now that were not there last cycle. A login is an event. */
