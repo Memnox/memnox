@@ -4,6 +4,7 @@ import {
   overlappingWork,
   type WorkObservation,
 } from '../src/ledger/collision';
+import { takesLease } from '../src/coordination/writes';
 
 const NOW = '2026-08-31T12:00:00.000Z';
 
@@ -128,5 +129,24 @@ describe('overlappingWork', () => {
     );
 
     expect(found).toEqual([]);
+  });
+});
+
+/**
+ * The one predicate. `collisions` asked `class !== 'read'` and so counted `unknown` as
+ * a write: two `git rev-parse` reads were reported as two agents fighting over a file
+ * called "rev-parse". A conflict nobody is having is worse than no report, because it
+ * is the screen that asks somebody to stop working.
+ */
+describe('which classes can collide', () => {
+  it('counts a write and a destructive action', () => {
+    expect(takesLease('write')).toBe(true);
+    expect(takesLease('destructive')).toBe(true);
+  });
+
+  it('never counts a read, and never counts a class nobody named', () => {
+    expect(takesLease('read')).toBe(false);
+    expect(takesLease('unknown')).toBe(false);
+    expect(takesLease('normal')).toBe(false);
   });
 });
