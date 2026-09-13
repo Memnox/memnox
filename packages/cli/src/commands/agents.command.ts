@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import { readAccount, type Account, type SnapshotAgent } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { onePass } from '../sync/heartbeat';
 import {
@@ -76,6 +77,8 @@ export function registerAgentsCommand(
         name?: string[];
         probe?: boolean;
       }) => {
+        const { flow } = context;
+        if (options.json !== true) flow.open('memnox agents discover');
         const { snapshot } = await scanMachine(seams(), {
           probe: options.probe !== false,
         });
@@ -88,8 +91,7 @@ export function registerAgentsCommand(
         names = await applyNameFlags(context, home(), snapshot.agents, names, given);
 
         if (options.json !== true) {
-          heading(context, `Found ${count(snapshot.agents)} on this machine.`);
-          describe(context, snapshot.agents, names);
+          describe(context, `Found ${count(snapshot.agents)}`, snapshot.agents, names);
         }
 
         if (asking && snapshot.agents.length > 0) {
@@ -103,12 +105,13 @@ export function registerAgentsCommand(
           );
           if (renamed.length > 0) {
             names = await readNames(home());
-            context.out.line('');
-            for (const each of renamed) {
-              context.out.line(
-                `  ${context.style.ok('named')} ${each.from} is now "${each.to}"`,
-              );
-            }
+            flow.list(
+              'Named',
+              renamed.map((each) => ({
+                tone: TONE.OK,
+                text: `${each.from} is now "${each.to}"`,
+              })),
+            );
           }
         }
 
@@ -123,26 +126,24 @@ export function registerAgentsCommand(
           context.out.json({ agents: withNames(snapshot.agents, names), reported });
           return;
         }
-        if (snapshot.agents.length > 0) {
-          context.out.line('');
-          context.out.line(
-            `  ${context.style.dim('rename one')}   memnox agents name <agent> <name>`,
-          );
-          context.out.line(
-            `  ${context.style.dim('put to work')}  memnox agents onboard <agent>`,
-          );
-        }
-        if (account === null) {
-          context.out.note(
-            'Nothing has left this machine. Connect it with "memnox login".',
-          );
-          return;
-        }
-        context.out.note(
-          reported
-            ? 'Reported to the control plane.'
-            : 'Could not reach the control plane; the scan is kept here and goes with the next sync.',
+        flow.close(
+          account === null
+            ? `${count(snapshot.agents)} here, and nothing has left this machine.`
+            : reported
+              ? `${count(snapshot.agents)} here, reported to the control plane.`
+              : `${count(snapshot.agents)} here, kept for the next sync.`,
         );
+        if (account === null) {
+          flow.hint('Connect this machine with "memnox login".');
+        } else if (!reported) {
+          flow.hint(
+            'Could not reach the control plane; the scan goes with the next sync.',
+          );
+        }
+        if (snapshot.agents.length > 0) {
+          flow.hint('rename one    memnox agents name <agent> <name>');
+          flow.hint('put to work   memnox agents onboard <agent>');
+        }
       },
     );
 
@@ -151,6 +152,8 @@ export function registerAgentsCommand(
     .description('What this machine hosts, from the last scan')
     .option('--json', 'machine-readable output')
     .action(async (options: { json?: boolean }) => {
+      const { flow } = context;
+      if (options.json !== true) flow.open('memnox agents list');
       /* The kept scan, never a fresh one. A scan starts every MCP server it
          finds and takes seconds; listing is the thing somebody runs twice in a
          row, and making it the expensive one is how it stops being run. */
@@ -160,8 +163,8 @@ export function registerAgentsCommand(
           context.out.json({ agents: [] });
           return;
         }
-        context.out.line('This machine has not been scanned yet.');
-        context.out.note('Run "memnox agents discover".');
+        flow.close('This machine has not been scanned yet.');
+        flow.hint('Run "memnox agents discover".');
         return;
       }
       const names = await readNames(home());
@@ -172,9 +175,9 @@ export function registerAgentsCommand(
         });
         return;
       }
-      heading(context, `${count(snapshot.agents)} on this machine.`);
       await describeWithWork(context, home(), snapshot.agents, names);
-      context.out.note(`from the scan taken ${snapshot.takenAt}`);
+      flow.close(`${count(snapshot.agents)} on this machine.`);
+      flow.hint(`from the scan taken ${snapshot.takenAt}`);
     });
 
   agents
@@ -188,6 +191,8 @@ export function registerAgentsCommand(
         wanted: string | undefined,
         options: { clear?: boolean; json?: boolean },
       ) => {
+        const { flow, style } = context;
+        if (options.json !== true) flow.open('memnox agents name');
         const found = await hosted(agent, seams, home);
         if (found === null) {
           notFound(context, agent, options.json === true);
@@ -203,9 +208,9 @@ export function registerAgentsCommand(
             context.out.json({ agent: found.id, name: after, cleared });
             return;
           }
-          context.out.line(
+          flow.close(
             cleared
-              ? `${context.style.ok('cleared')} ${found.id} is "${after}" again`
+              ? style.ok(`${found.id} is "${after}" again.`)
               : `${found.id} was never renamed, so it is still "${after}".`,
           );
           return;
@@ -220,10 +225,10 @@ export function registerAgentsCommand(
             });
             return;
           }
-          context.out.line(`${found.id} is called "${before}"`);
-          context.out.note(
+          flow.close(`${found.id} is called "${before}".`);
+          flow.hint(
             isDefaultName(names, found)
-              ? 'That is what the detector called it. Give it your own name by typing one after this command.'
+              ? 'That is what the detector called it. Type a name after this command to give it your own.'
               : 'That is the name you gave it. "--clear" puts the detected one back.',
           );
           return;
@@ -235,8 +240,8 @@ export function registerAgentsCommand(
             context.out.json({ agent: found.id, name: before, refused: written.refused });
             return;
           }
-          context.out.line(context.style.warn(`Did not rename ${before}.`));
-          context.out.note(written.because ?? 'that name was refused');
+          flow.close(style.warn(`Did not rename ${before}.`));
+          flow.hint(written.because ?? 'that name was refused');
           process.exitCode = 1;
           return;
         }
@@ -244,9 +249,8 @@ export function registerAgentsCommand(
           context.out.json({ agent: found.id, name: written.name, was: before });
           return;
         }
-        context.out.line(
-          `${context.style.ok('named')} ${before} is now "${written.name}"`,
-        );
+        flow.close(style.ok(`${before} is now "${written.name}".`));
+        flow.hint('Your workspace sees that name from the next sync.');
       },
     );
 
@@ -255,6 +259,8 @@ export function registerAgentsCommand(
     .description('What is known about one agent on this machine')
     .option('--json', 'machine-readable output')
     .action(async (agent: string, options: { json?: boolean }) => {
+      const { flow, style } = context;
+      if (options.json !== true) flow.open('memnox agents status');
       const snapshot = await seams().snapshots.latest();
       const names = await readNames(home());
       const found =
@@ -276,40 +282,40 @@ export function registerAgentsCommand(
         });
         return;
       }
-      const { out, style } = context;
-      out.line('');
-      out.line(style.bold(displayName(names, found).toUpperCase()));
-      out.line(`  ${style.dim('id')}        ${found.id}`);
-      out.line(`  ${style.dim('product')}   ${found.kind}${version(found)}`);
-      out.line(
-        `  ${style.dim('working')}   ${
-          record === null ? 'not onboarded' : `onboarded ${record.onboardedAt}`
-        }`,
-      );
-      out.line('');
-      out.line(style.bold('  WHAT IT CAN REACH, AND WHO GRANTED IT'));
-      if (found.surfaces.length === 0) {
-        out.line(`  ${style.dim('nothing this scan could prove')}`);
-      }
+      const shown = displayName(names, found);
+      flow.rows(shown, [
+        { label: 'id', value: found.id },
+        { label: 'product', value: `${found.kind}${version(found)}` },
+        {
+          label: 'working',
+          value:
+            record === null
+              ? style.warn('not onboarded')
+              : style.ok(`onboarded ${record.onboardedAt}`),
+        },
+      ]);
+
       /* The file that proved each surface, rather than a count of them. A
          number says how much this agent can reach; the path says who granted
          it, which is the half somebody can act on. */
-      const kindWidth = Math.max(
-        ...found.surfaces.map((surface) => surface.kind.length),
-        0,
-      );
-      for (const surface of found.surfaces) {
-        out.line(
-          `  ${surface.kind.padEnd(kindWidth)}  ${style.dim(surface.detectedFrom)}`,
+      if (found.surfaces.length === 0) {
+        flow.step('What it can reach', 'nothing this scan could prove');
+      } else {
+        flow.table(
+          'What it can reach, and who granted it',
+          ['Surface', 'Proved by'],
+          found.surfaces.map((surface) => [surface.kind, surface.detectedFrom]),
         );
       }
-      out.line('');
-      out.line(
-        `  ${style.dim(
-          record === null
-            ? `memnox agents onboard ${quoted(displayName(names, found))}`
-            : `memnox agents offboard ${quoted(displayName(names, found))}`,
-        )}`,
+      flow.close(
+        record === null
+          ? `${shown} is on this machine and not under Memnox.`
+          : style.ok(`${shown} is under Memnox.`),
+      );
+      flow.hint(
+        record === null
+          ? `memnox agents onboard ${quoted(shown)}`
+          : `memnox agents offboard ${quoted(shown)}`,
       );
     });
 
@@ -320,6 +326,8 @@ export function registerAgentsCommand(
     .option('--json', 'machine-readable output')
     .action(
       async (agent: string | undefined, options: { json?: boolean; name?: string }) => {
+        const { flow, style } = context;
+        if (options.json !== true) flow.open('memnox agents onboard');
         let names = await readNames(home());
         if (agent === undefined) {
           await offerCandidates(context, home(), seams, names, options.json === true);
@@ -331,8 +339,8 @@ export function registerAgentsCommand(
             context.out.json({ outcome: ONBOARD.NO_ACCOUNT });
             return;
           }
-          context.out.line('Not logged in, so there is nothing to onboard into.');
-          context.out.note('Connect this machine with "memnox login".');
+          flow.close('Not logged in, so there is nothing to onboard into.');
+          flow.hint('Connect this machine with "memnox login".');
           return;
         }
         const found = await hosted(agent, seams, home);
@@ -375,36 +383,37 @@ export function registerAgentsCommand(
           return;
         }
         if (result.outcome !== ONBOARD.DONE || result.record === undefined) {
-          context.out.line('');
-          context.out.line(context.style.warn(`Did not onboard ${shown}.`));
-          context.out.note(result.because ?? 'no reason given');
-          context.out.note('Nothing on this machine was changed.');
+          flow.close(style.warn(`Did not onboard ${shown}.`));
+          flow.hint(result.because ?? 'no reason given');
+          flow.hint('Nothing on this machine was changed.');
           process.exitCode = 1;
           return;
         }
         const record = result.record;
-        const { out, style } = context;
-        out.line('');
-        out.line(`${style.ok('Onboarded')} ${shown} (${record.product})`);
-        out.line(
-          `  ${style.dim('known as')}  ${shown} in ${workspaceShown(account.workspaceId)}`,
-        );
-        out.line(`  ${style.dim('config')}    ${record.configPath}`);
-        out.line(`  ${style.dim('backup')}    ${record.backupPath}`);
-        out.line(`  ${style.dim('machine')}   ${record.machineId}`);
-        out.line(
-          `  ${style.dim('enrolled')}  ${
-            result.approvedInBrowser === true
-              ? 'approved in your browser'
-              : "on this machine's own credential"
-          }`,
-        );
-        out.line(`  ${style.dim('undo')}      memnox agents offboard ${quoted(shown)}`);
+        flow.rows(`${shown} is under Memnox`, [
+          {
+            label: 'known as',
+            value: `${shown} in ${workspaceShown(account.workspaceId)}`,
+          },
+          { label: 'product', value: record.product },
+          { label: 'config', value: record.configPath },
+          { label: 'backup', value: record.backupPath },
+          { label: 'machine', value: record.machineId },
+          {
+            label: 'enrolled',
+            value:
+              result.approvedInBrowser === true
+                ? 'approved in your browser'
+                : "on this machine's own credential",
+          },
+        ]);
+        flow.close(style.ok(`${shown} is under Memnox.`));
         /* Said plainly, because onboarding an agent is the moment somebody
          wonders whether it has just been given permission to do more. */
-        out.note(
+        flow.hint(
           'Authority is unchanged: what this agent may do is still decided on this machine.',
         );
+        flow.hint(`Take it back out with "memnox agents offboard ${quoted(shown)}".`);
       },
     );
 
@@ -413,9 +422,11 @@ export function registerAgentsCommand(
     .description("Put an agent's config back and take its credential away")
     .option('--json', 'machine-readable output')
     .action(async (agent: string, options: { json?: boolean }) => {
+      const { flow, style } = context;
+      if (options.json !== true) flow.open('memnox agents offboard');
       const account = await readAccount(home());
       if (account === null) {
-        context.out.line('Not logged in, so nothing here was onboarded.');
+        flow.close('Not logged in, so nothing here was onboarded.');
         return;
       }
       const names = await readNames(home());
@@ -429,28 +440,32 @@ export function registerAgentsCommand(
         return;
       }
       if (result.outcome === OFFBOARD.NOT_ONBOARDED) {
-        context.out.line(result.because ?? `${shown} is not onboarded.`);
+        flow.close(result.because ?? `${shown} is not onboarded.`);
         return;
       }
       if (result.outcome === OFFBOARD.FAILED) {
-        context.out.line(context.style.warn(`Could not fully offboard ${shown}.`));
-        context.out.note(result.because ?? 'no reason given');
+        flow.close(style.warn(`Could not fully offboard ${shown}.`));
+        flow.hint(result.because ?? 'no reason given');
         process.exitCode = 1;
         return;
       }
-      context.out.line(`${context.style.ok('Offboarded')} ${shown}`);
-      context.out.note(
-        result.restoredFromBackup === true
-          ? `config restored from ${result.record?.backupPath ?? 'its backup'}`
-          : 'no backup was found, so only the Memnox entry was removed',
-      );
-      context.out.note(
-        result.revoked === true
-          ? 'its credential has been revoked'
-          : context.style.warn(
-              'its credential could not be revoked; revoke the machine in the console',
-            ),
-      );
+      flow.rows(`${shown} is out`, [
+        {
+          label: 'config',
+          value:
+            result.restoredFromBackup === true
+              ? `restored from ${result.record?.backupPath ?? 'its backup'}`
+              : 'no backup was found, so only the Memnox entry was removed',
+        },
+        {
+          label: 'credential',
+          value:
+            result.revoked === true
+              ? 'revoked'
+              : style.warn('could not be revoked; revoke the machine in the console'),
+        },
+      ]);
+      flow.close(style.ok(`${shown} is back to its own config.`));
     });
 
   agents
@@ -458,10 +473,12 @@ export function registerAgentsCommand(
     .description('Collect what an operator has said to the agents on this machine')
     .option('--json', 'machine-readable output')
     .action(async (agent: string | undefined, options: { json?: boolean }) => {
+      const { flow, style } = context;
+      if (options.json !== true) flow.open('memnox agents control');
       const account = await readAccount(home());
       if (account === null) {
-        context.out.line('Not logged in, so nobody can have said anything.');
-        context.out.note('Connect this machine with "memnox login".');
+        flow.close('Not logged in, so nobody can have said anything.');
+        flow.hint('Connect this machine with "memnox login".');
         return;
       }
 
@@ -482,12 +499,12 @@ export function registerAgentsCommand(
         return;
       }
       if (revoked) {
-        context.out.line(context.style.warn('This machine has been revoked.'));
-        context.out.note('Run "memnox login" to enrol it again.');
+        flow.close(style.warn('This machine has been revoked.'));
+        flow.hint('Run "memnox login" to enrol it again.');
         return;
       }
       if (collected.length === 0) {
-        context.out.line('Nothing has been said to the agents on this machine.');
+        flow.close('Nothing has been said to the agents on this machine.');
         return;
       }
       await deliver(context, account, collected);
@@ -509,20 +526,21 @@ function sayWhatWillHappen(
   kind: string,
   account: Account,
 ): void {
-  const { out, style } = context;
-  out.line('');
-  out.line(`${style.bold('ONBOARD')}  ${shown} ${style.dim(`(${kind})`)}`);
-  out.line('');
-  out.line('  Four things happen, in this order:');
-  out.line(
-    `    1. you say what ${workspaceShown(account.workspaceId)} should call this agent`,
-  );
-  out.line('    2. you approve a credential for it in your browser');
-  out.line("    3. this machine copies the agent's config somewhere safe");
-  out.line('    4. one server entry, called memnox, is added to it');
-  out.line('');
-  out.line(
-    `  ${style.dim('It does not change what this agent is allowed to do, and it is reversible.')}`,
+  const { flow, style } = context;
+  flow.rows(`Onboarding ${shown}`, [
+    { label: 'product', value: kind },
+    {
+      label: '1',
+      value: `you say what ${workspaceShown(account.workspaceId)} should call this agent`,
+    },
+    { label: '2', value: 'you approve a credential for it in your browser' },
+    { label: '3', value: "this machine copies the agent's config somewhere safe" },
+    { label: '4', value: 'one server entry, called memnox, is added to it' },
+  ]);
+  flow.aside(
+    style.dim(
+      'It does not change what this agent is allowed to do, and it is reversible.',
+    ),
   );
 }
 
@@ -553,7 +571,7 @@ export async function chooseCloudName(
   if (options.name !== undefined) {
     const written = await setName(home, agent.id, options.name);
     if (written.ok && written.name !== undefined) return { name: written.name };
-    context.out.note(
+    context.flow.aside(
       context.style.warn(
         `Kept "${current}": ${written.because ?? 'that name was refused'}.`,
       ),
@@ -574,7 +592,7 @@ export async function chooseCloudName(
     ask,
   );
   if (chosen.because !== undefined) {
-    context.out.note(context.style.warn(`Kept "${current}": ${chosen.because}.`));
+    context.flow.aside(context.style.warn(`Kept "${current}": ${chosen.because}.`));
   }
   return { name: chosen.name };
 }
@@ -585,16 +603,23 @@ async function deliver(
   account: Account,
   commands: readonly ControlCommand[],
 ): Promise<void> {
+  context.flow.list(
+    'What an operator has said',
+    commands.map((command) => ({
+      tone: TONE.OK,
+      text: `${command.issuedBy} to ${command.agentId}: ${command.message}`,
+      detail: [`${command.issuedAt} · ${command.id}`],
+    })),
+  );
   for (const command of commands) {
-    context.out.line(
-      `${context.style.ok(command.issuedBy)} to ${command.agentId}: ${command.message}`,
-    );
-    context.out.note(`${command.issuedAt} · ${command.id}`);
     /* Received, which is all this can honestly claim. Acting on it is whoever
        is at the agent, and a receipt saying otherwise would put a word in the
        record that nothing here did. */
     await acknowledgeControl(account, command.agentId, command.id, { ok: true });
   }
+  context.flow.close(
+    `${commands.length} message(s), marked received. Acting on them is yours.`,
+  );
 }
 
 /** One agent this machine hosts, by name, id, bare id or product. */
@@ -642,21 +667,21 @@ async function applyNameFlags(
   for (const raw of given) {
     const parsed = parseNameFlag(raw);
     if (parsed === null) {
-      context.out.note(
+      context.flow.aside(
         context.style.warn(`Ignored --name ${raw}: it has to read agent=name.`),
       );
       continue;
     }
     const found = resolveAgent(agents, current, parsed.query);
     if (found === null) {
-      context.out.note(
+      context.flow.aside(
         context.style.warn(`Ignored --name ${raw}: no agent called "${parsed.query}".`),
       );
       continue;
     }
     const written = await setName(home, found.id, parsed.name);
     if (!written.ok || written.name === undefined) {
-      context.out.note(
+      context.flow.aside(
         context.style.warn(`Ignored --name ${raw}: ${written.because ?? 'refused'}.`),
       );
       continue;
@@ -674,14 +699,15 @@ async function offerCandidates(
   names: AgentNames,
   asJson: boolean,
 ): Promise<void> {
+  const { flow } = context;
   const snapshot = await seams().snapshots.latest();
   if (snapshot === null || snapshot.agents.length === 0) {
     if (asJson) {
       context.out.json({ agents: [] });
       return;
     }
-    context.out.line('This machine has not been scanned yet.');
-    context.out.note('Run "memnox agents discover".');
+    flow.close('This machine has not been scanned yet.');
+    flow.hint('Run "memnox agents discover".');
     return;
   }
   const rows = [];
@@ -698,16 +724,16 @@ async function offerCandidates(
   }
   const waiting = rows.filter((row) => !row.onboarded);
   if (waiting.length === 0) {
-    context.out.line('Every agent on this machine is already onboarded.');
+    flow.close('Every agent on this machine is already onboarded.');
     return;
   }
-  heading(context, 'Name one of these:');
-  for (const row of waiting)
-    context.out.line(`  ${row.name}  ${context.style.dim(row.id)}`);
-  context.out.line('');
-  context.out.line(
-    `  ${context.style.dim(`memnox agents onboard ${quoted(waiting[0]?.name ?? '<agent>')}`)}`,
+  flow.table(
+    'Waiting to be put to work',
+    ['Agent', 'Id'],
+    waiting.map((row) => [row.name, row.id]),
   );
+  flow.close(`${waiting.length} agent(s) are not under Memnox.`);
+  flow.hint(`memnox agents onboard ${quoted(waiting[0]?.name ?? '<agent>')}`);
 }
 
 function notFound(context: CliContext, agent: string, asJson: boolean): void {
@@ -715,14 +741,8 @@ function notFound(context: CliContext, agent: string, asJson: boolean): void {
     context.out.json({ agent: null });
     return;
   }
-  context.out.line(`No agent called "${agent}" was found on this machine.`);
-  context.out.note('Run "memnox agents list" to see what is here.');
-}
-
-function heading(context: CliContext, text: string): void {
-  context.out.line('');
-  context.out.line(context.style.bold(text));
-  context.out.line('');
+  context.flow.close(`No agent called "${agent}" was found on this machine.`);
+  context.flow.hint('Run "memnox agents list" to see what is here.');
 }
 
 function count(agents: readonly SnapshotAgent[]): string {
@@ -731,23 +751,19 @@ function count(agents: readonly SnapshotAgent[]): string {
 
 function describe(
   context: CliContext,
+  title: string,
   agents: readonly SnapshotAgent[],
   names: AgentNames,
 ): void {
   if (agents.length === 0) {
-    context.out.line('No agents found on this machine.');
+    context.flow.step(title, 'no agents found on this machine');
     return;
   }
-  const width = columnWidth(agents, names);
-  for (const agent of agents) {
-    const shown = displayName(names, agent).padEnd(width);
-    context.out.line(`  ${shown}  ${context.style.dim(surfacesOf(agent))}`);
-  }
-}
-
-/** The widest reach column, so the state beside it lines up down the page. */
-function reachWidth(agents: readonly SnapshotAgent[]): number {
-  return Math.max(...agents.map((agent) => surfacesOf(agent).length), 0);
+  context.flow.table(
+    title,
+    ['Agent', 'Reaches'],
+    agents.map((agent) => [displayName(names, agent), surfacesOf(agent)]),
+  );
 }
 
 /** The same rows, plus whether each is actually working under Memnox yet. */
@@ -758,26 +774,19 @@ async function describeWithWork(
   names: AgentNames,
 ): Promise<void> {
   if (agents.length === 0) {
-    context.out.line('No agents found on this machine.');
+    context.flow.step('On this machine', 'no agents found');
     return;
   }
-  const width = columnWidth(agents, names);
-  const reach = reachWidth(agents);
+  const rows: string[][] = [];
   for (const agent of agents) {
     const onboarded = (await readRecord(home, agent.id)) !== null;
-    const shown = displayName(names, agent).padEnd(width);
-    // Padded before styling: an escape sequence has width nobody can see but padEnd can.
-    const surfaces = surfacesOf(agent).padEnd(reach);
-    context.out.line(
-      `  ${shown}  ${context.style.dim(surfaces)}` +
-        `  ${onboarded ? context.style.ok('onboarded') : context.style.dim('not onboarded')}`,
-    );
+    rows.push([
+      displayName(names, agent),
+      surfacesOf(agent),
+      onboarded ? context.style.ok('onboarded') : context.style.dim('not onboarded'),
+    ]);
   }
-}
-
-/** Padded before styling: an escape sequence has width nobody can see but padEnd can. */
-function columnWidth(agents: readonly SnapshotAgent[], names: AgentNames): number {
-  return Math.max(...agents.map((agent) => displayName(names, agent).length), 0);
+  context.flow.table('On this machine', ['Agent', 'Reaches', 'Working'], rows);
 }
 
 /**
@@ -812,25 +821,24 @@ function version(agent: SnapshotAgent): string {
 }
 
 /**
- * What enrolment says while it runs, as plain lines.
+ * The one question enrolment can ask, drawn on the same rail as the rest.
  *
- * Commentary rather than payload: a person reads it, and `--json` callers and
- * pipes must receive the result and nothing else. It used to go to stdout,
- * which put an approval prompt in the middle of whatever was being piped.
+ * On the rail rather than loose beside it: this is the step that blocks on a
+ * person, and it used to go to stdout, which put an approval prompt in the
+ * middle of whatever was being piped. `setup` draws the identical block, from
+ * the identical shape, because it is the identical question.
  */
 function reportOn(context: CliContext): EnrolReporter {
-  const { out, style } = context;
+  const { flow } = context;
   return {
     approve: ({ what, url, code, because, deadline }) => {
-      out.note('');
-      out.note(`Approve ${what} in your browser`);
-      out.note(`  ${url}`);
-      if (code !== undefined) out.note(`  Code ${style.accent(code)}`);
-      out.note(`  ${style.dim(because)}`);
-      out.note(
-        style.dim(
-          `  Waiting for you to answer it, for ${deadline}. Ctrl+C stops, and nothing will change.`,
-        ),
+      flow.step(`Approve ${what} in your browser`, url);
+      if (code !== undefined) flow.value('Your code', code);
+      /* The reason first. Nothing before this said a browser would be needed,
+         so one opening with no sentence in front of it reads as a surprise. */
+      flow.aside(because);
+      flow.aside(
+        `Waiting for you to answer it, for ${deadline}. Ctrl+C stops, and nothing will change.`,
       );
     },
   };

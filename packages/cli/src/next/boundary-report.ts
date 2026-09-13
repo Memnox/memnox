@@ -16,6 +16,7 @@ import {
   type Boundary,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
 
 /**
@@ -125,80 +126,83 @@ function render(
   radius: BlastRadius,
   role?: string,
 ): void {
-  const { out, style } = context;
+  const { flow, style } = context;
 
-  out.line('');
-  out.line(
-    style.bold(
-      role === undefined
-        ? `${boundary.agent.toUpperCase()} AUTOPILOT`
-        : `${role.toUpperCase()} — WHAT THIS JOB MAY DO`,
-    ),
-  );
-  /* A role outlives the product holding it: a rule about "deployer" keeps holding when
-     the team swaps Claude Code for Codex, which a rule about an agent cannot. */
-  if (role !== undefined) {
-    out.line(style.dim('  a job, not a product — whichever agent is enrolled under it'));
-  }
-
-  band(context, 'Runs on its own', inBand(boundary, BAND.AUTOMATIC), style.ok('+'));
-  band(context, 'Waits for you', inBand(boundary, BAND.NEEDS_APPROVAL), style.warn('?'));
-  band(context, 'Never', inBand(boundary, BAND.NEVER), style.warn('x'));
+  band(context, 'Runs on its own', inBand(boundary, BAND.AUTOMATIC), TONE.OK);
+  band(context, 'Waits for you', inBand(boundary, BAND.NEEDS_APPROVAL), TONE.WARN);
+  band(context, 'Never', inBand(boundary, BAND.NEVER), TONE.WARN);
 
   if (boundary.ungoverned.length > 0) {
-    out.line('');
-    out.line(
-      style.bold('NO RULE AT ALL') +
-        style.dim(`  ${boundary.ungoverned.length} capabilities`),
+    /* Not filed under "runs on its own": an unruled capability is not a permitted
+       one, and putting it in the allowed band would be the screen telling a
+       comfortable lie. */
+    flow.list(`No rule at all, ${boundary.ungoverned.length} capabilities`, [
+      ...boundary.ungoverned.slice(0, BAND_SHOWN).map((action) => ({
+        tone: TONE.DIM,
+        text: action,
+      })),
+      ...(boundary.ungoverned.length > BAND_SHOWN
+        ? [
+            {
+              tone: TONE.DIM,
+              text: `and ${boundary.ungoverned.length - BAND_SHOWN} more`,
+            },
+          ]
+        : []),
+    ]);
+    flow.aside(
+      style.dim(
+        'These are not allowed or refused. Nothing has an opinion about them yet.',
+      ),
     );
-    out.line('');
-    for (const action of boundary.ungoverned.slice(0, 8)) {
-      out.line(`  ${style.dim(action)}`);
-    }
-    if (boundary.ungoverned.length > 8) {
-      out.line(`  ${style.dim(`and ${boundary.ungoverned.length - 8} more`)}`);
-    }
-    /* Not filed under "runs on its own": an unruled capability is not a permitted one,
-       and putting it in the allowed band would be the screen telling a comfortable lie. */
-    out.note('These are not allowed or refused. Nothing has an opinion about them yet.');
   }
 
   const ready = readyToEnable(radius);
-  out.line('');
-  out.line(style.bold('IF THIS RUNS UNATTENDED'));
-  out.line(
-    `  ${radius.automatic} run on their own, ${radius.needsApproval} wait for you, ${radius.never} never run.`,
-  );
-  out.line(`  ${radius.ungoverned} have no rule.`);
-  out.line('');
-  out.line(
+  flow.rows('If this runs unattended', [
+    { label: 'on its own', value: String(radius.automatic) },
+    { label: 'waits', value: String(radius.needsApproval) },
+    { label: 'never', value: String(radius.never) },
+    { label: 'no rule', value: String(radius.ungoverned) },
+    /* A role outlives the product holding it: a rule about "deployer" keeps
+       holding when the team swaps Claude Code for Codex, which a rule about an
+       agent cannot. */
+    ...(role === undefined
+      ? []
+      : [
+          {
+            label: 'a job',
+            value: 'not a product, so whichever agent is enrolled under it',
+          },
+        ]),
+  ]);
+  flow.close(
     ready.ready
-      ? style.ok(`  Ready: ${ready.because}`)
-      : style.warn(`  Not ready: ${ready.because}`),
+      ? style.ok(`Ready: ${ready.because}`)
+      : style.warn(`Not ready: ${ready.because}`),
   );
   if (!ready.ready) {
-    out.note(
+    flow.hint(
       '"memnox protect --yes" writes a baseline that closes the destructive ones.',
     );
   }
 }
 
+/** Enough of a band to recognise it, and never enough to scroll. */
+const BAND_SHOWN = 12;
+
 function band(
   context: CliContext,
   title: string,
   entries: readonly { action: string; because: string }[],
-  mark: string,
+  tone: (typeof TONE)[keyof typeof TONE],
 ): void {
   if (entries.length === 0) return;
-  context.out.line('');
-  context.out.line(context.style.bold(title.toUpperCase()));
-  context.out.line('');
-  for (const entry of entries.slice(0, 12)) {
-    context.out.line(`  ${mark}  ${entry.action}`);
-  }
-  if (entries.length > 12) {
-    context.out.line(`  ${context.style.dim(`and ${entries.length - 12} more`)}`);
-  }
+  context.flow.list(`${title}, ${entries.length}`, [
+    ...entries.slice(0, BAND_SHOWN).map((entry) => ({ tone, text: entry.action })),
+    ...(entries.length > BAND_SHOWN
+      ? [{ tone: TONE.DIM, text: `and ${entries.length - BAND_SHOWN} more` }]
+      : []),
+  ]);
 }
 
 /**
@@ -216,11 +220,11 @@ async function renderWorkforce(
   asJson: boolean,
 ): Promise<void> {
   const roles = rolesIn([...policies]);
-  const { out, style } = context;
+  const { flow } = context;
 
   if (roles.length === 0) {
-    out.line('No rule here names a job, so there is no workforce to show.');
-    out.note(
+    flow.close('No rule here names a job, so there is no workforce to show.');
+    flow.hint(
       'Add `roles: ["deployer"]` to a rule, then run an agent with --role deployer.',
     );
     return;
@@ -245,19 +249,16 @@ async function renderWorkforce(
     return;
   }
 
-  out.line('');
-  out.line(style.bold('THE JOBS THESE RULES NAME'));
-  out.line('');
-  const width = Math.max(...standings.map((each) => each.role.length)) + 2;
-  for (const standing of standings) {
-    out.line(
-      `  ${standing.role.padEnd(width)}` +
-        `${style.ok(String(standing.automatic).padStart(3))} on its own  ` +
-        `${style.warn(String(standing.needsApproval).padStart(3))} asked  ` +
-        `${style.warn(String(standing.never).padStart(3))} never`,
-    );
-  }
-  out.line('');
-  out.line(`  ${style.dim('memnox next --role <name>')}   what one of them may do`);
-  out.line('');
+  flow.table(
+    'The jobs these rules name',
+    ['Job', 'On its own', 'Asked', 'Never'],
+    standings.map((standing) => [
+      standing.role,
+      String(standing.automatic),
+      String(standing.needsApproval),
+      String(standing.never),
+    ]),
+  );
+  flow.close(`${standings.length} job(s) named by these rules.`);
+  flow.hint('memnox next --role <name>   what one of them may do');
 }

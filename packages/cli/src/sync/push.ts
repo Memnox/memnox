@@ -10,7 +10,9 @@ import {
 } from '@memnox/core';
 import type { EnvironmentSnapshot, Finding, SkillFinding } from '@memnox/core';
 import type { Account } from '@memnox/core';
-import { censusFrom } from './census';
+import { censusFrom, decisionDigest, type CensusDecisions } from './census';
+import { readNames } from '../agents/names';
+import { readDeclined } from '../agents/declined';
 import { findingsFrom } from './findings';
 import { skillChangesFrom } from './skills';
 import { callCloud } from './client';
@@ -55,6 +57,16 @@ interface Cursor {
   lastPushAt?: string;
   /** `takenAt` of the newest scan already sent, so one scan is sent once. */
   censusThrough?: string;
+  /**
+   * What this machine had decided about its own agents when that scan was sent.
+   *
+   * The scan's `takenAt` is not enough on its own, because naming an agent or
+   * saying no to one changes nothing about the machine a scan describes. A
+   * cursor that watched only the scan therefore held the decision back until
+   * something else on the laptop changed, which for a laptop that has just been
+   * set up is nothing at all.
+   */
+  censusDecided?: string;
   /** The same, for what that scan *found*. Kept apart: a census can land and a
    *  findings post be refused, and one cursor would then hide the findings for
    *  ever behind a census that had already been sent. */
@@ -355,12 +367,21 @@ export async function pushCensus(
   snapshot: EnvironmentSnapshot | null,
 ): Promise<PushResult> {
   if (snapshot === null) return { outcome: PUSH_OUTCOME.NOTHING };
+  const decided: CensusDecisions = {
+    names: await readNames(home),
+    declined: await readDeclined(home),
+  };
+  const digest = decisionDigest(decided);
   const cursor = await readCursor(home);
-  if (cursor.censusThrough !== undefined && cursor.censusThrough >= snapshot.takenAt) {
+  if (
+    cursor.censusThrough !== undefined &&
+    cursor.censusThrough >= snapshot.takenAt &&
+    cursor.censusDecided === digest
+  ) {
     return { outcome: PUSH_OUTCOME.NOTHING };
   }
 
-  const rows = censusFrom(snapshot);
+  const rows = censusFrom(snapshot, decided);
   if (rows.length === 0) return { outcome: PUSH_OUTCOME.NOTHING };
 
   for (let at = 0; at < rows.length; at += MAX_POST) {
@@ -368,7 +389,7 @@ export async function pushCensus(
     if (result.outcome !== PUSH_OUTCOME.SENT) return result;
   }
 
-  await mergeCursor(home, { censusThrough: snapshot.takenAt });
+  await mergeCursor(home, { censusThrough: snapshot.takenAt, censusDecided: digest });
   return { outcome: PUSH_OUTCOME.SENT, sent: rows.length, duplicates: 0 };
 }
 

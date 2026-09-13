@@ -10,6 +10,7 @@ import {
   writeOverlays,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { minutesFrom } from '../duration';
 
 /**
@@ -34,6 +35,8 @@ export function registerFreezeCommand(
         subject: string | undefined,
         options: { for: string; reason?: string; lift?: boolean | string },
       ) => {
+        const { flow, style } = context;
+        flow.open('memnox freeze');
         const moment = now().toISOString();
         const overlays = await readOverlays(home());
 
@@ -45,26 +48,44 @@ export function registerFreezeCommand(
               : active;
 
           if (wanted.length === 0) {
-            context.out.line('Nothing is frozen right now.');
+            flow.close('Nothing is frozen right now.');
             return;
           }
           for (const overlay of wanted) overlay.liftedAt = moment;
           await writeOverlays(home(), overlays);
-          for (const overlay of wanted) {
-            context.out.line(`Lifted ${overlay.kind}:${overlay.subject}`);
-          }
+          flow.list(
+            'Lifted',
+            wanted.map((overlay) => ({
+              tone: TONE.OK,
+              text: `${overlay.kind}:${overlay.subject}`,
+              detail: [overlay.reason],
+            })),
+          );
+          flow.close(
+            `${wanted.length === 1 ? '1 freeze is' : `${wanted.length} freezes are`} lifted.`,
+          );
           return;
         }
 
         if (subject === undefined) {
           const active = inForce(overlays, moment);
           if (active.length === 0) {
-            context.out.line('Nothing is frozen right now.');
+            flow.close('Nothing is frozen right now.');
+            flow.hint('Freeze something with "memnox freeze <subject> --for 2h".');
             return;
           }
-          for (const overlay of active) {
-            context.out.line(`  ${describeOverlay(overlay, moment)}`);
-          }
+          flow.list(
+            'In force',
+            active.map((overlay) => ({
+              tone: TONE.WARN,
+              text: describeOverlay(overlay, moment),
+              detail: [`lifts itself at ${overlay.validUntil}`],
+            })),
+          );
+          flow.close(
+            `${active.length === 1 ? '1 freeze is' : `${active.length} freezes are`} in force.`,
+          );
+          flow.hint('End one early with "memnox freeze --lift <id>".');
           return;
         }
 
@@ -81,10 +102,19 @@ export function registerFreezeCommand(
         overlays.push(overlay);
         await writeOverlays(home(), overlays);
 
-        context.out.line(describeOverlay(overlay, moment));
-        // It ends by itself, which is the whole reason this is not a policy edit.
-        context.out.note(`It lifts itself at ${overlay.validUntil}.`);
-        context.out.note(`A rule matching state "freeze:${subject}" now bites.`);
+        flow.rows('Frozen', [
+          { label: 'what', value: describeOverlay(overlay, moment) },
+          { label: 'because', value: overlay.reason },
+          // It ends by itself, which is the whole reason this is not a policy edit.
+          { label: 'lifts at', value: overlay.validUntil },
+          {
+            label: 'rule',
+            value: `anything matching state "freeze:${subject}" now bites`,
+          },
+        ]);
+        flow.close(style.warn(`${subject} is frozen.`));
+        flow.hint('It lifts itself; nothing has to remember to.');
+        flow.hint('End it early with "memnox freeze --lift".');
       },
     );
 }

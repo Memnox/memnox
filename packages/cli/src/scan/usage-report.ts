@@ -7,6 +7,7 @@ import {
   type DiscoveryReport,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { DAY_MS, windowDays } from '../duration';
 import { withEvents } from '../event-store';
 
@@ -51,22 +52,23 @@ export async function renderUsage(
       return;
     }
 
-    const { out, style } = context;
-    out.line('');
-    out.line(style.bold(`GRANTED AGAINST USED — last ${days} days`));
-    out.line('');
+    const { flow, style } = context;
     if (events.length === 0) {
-      out.line('  Nothing was recorded in that window, so nothing can be called unused.');
-      out.note('Wrap an agent with "memnox mcp wrap" and use it for a few days first.');
+      flow.close('Nothing was recorded in that window, so nothing can be called unused.');
+      flow.hint('Wrap an agent with "memnox mcp wrap" and use it for a few days first.');
       return;
     }
 
-    out.line(
-      `  ${granted.length} granted    ${usage.length} used    ${unused.length} never touched`,
-    );
-    if (unused.length === 0) return;
+    flow.rows(`Granted against used, last ${days} days`, [
+      { label: 'granted', value: String(granted.length) },
+      { label: 'used', value: String(usage.length) },
+      { label: 'never touched', value: String(unused.length) },
+    ]);
+    if (unused.length === 0) {
+      flow.close(`${granted.length} grant(s), every one of them used.`);
+      return;
+    }
 
-    out.line('');
     const external = unused.filter((grant) =>
       report.surfaces.some((surface) =>
         (surface.tools ?? []).some(
@@ -77,16 +79,25 @@ export async function renderUsage(
       ),
     );
     if (external.length > 0) {
-      out.line(
-        `  ${style.warn('!')} ${external.length} unused tool(s) can change external state:`,
+      flow.list(
+        `${external.length} unused tool(s) can change external state`,
+        external.slice(0, EXTERNAL_SHOWN).map((grant) => ({
+          tone: TONE.WARN,
+          text: grant.action,
+          detail: [grant.grantedVia],
+        })),
       );
-      for (const grant of external.slice(0, 10)) {
-        out.line(`      ${grant.action}  (${grant.grantedVia})`);
-      }
     }
-    out.line('');
-    out.line(
-      `  ${style.dim('memnox protect')}  propose rules for what is not being used`,
+    flow.close(
+      external.length === 0
+        ? `${unused.length} grant(s) were never touched.`
+        : style.warn(
+            `${unused.length} grant(s) were never touched, ${external.length} of which change external state.`,
+          ),
     );
+    flow.hint('memnox protect   proposes rules for what is not being used');
   });
 }
+
+/** Enough to make the point without the block becoming the screen. */
+const EXTERNAL_SHOWN = 10;

@@ -33,7 +33,7 @@ import {
   type VerbTable,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { row } from '../cli-output';
+import { TONE } from '../flow';
 import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { gatherHealth } from '../health-probe';
@@ -42,26 +42,27 @@ import { loginPathConfigured } from '../protect/shell-profile';
 
 /** Every field is read off a scan, so the chain is evidence rather than a guess. */
 function renderTrace(context: CliContext, trace: CapabilityTrace): void {
-  const { out, style } = context;
-  out.line('');
-  out.line(style.bold(trace.tool));
-  out.line('');
-  row(context.out, 'server', trace.server);
-  row(context.out, 'declared', trace.grantedBy);
-  row(context.out, 'class', `${trace.effect} — ${classifyActionClass(trace.tool).class}`);
-  row(
-    context.out,
-    'reached by',
-    trace.reachedBy.length === 0
-      ? 'no agent here launches it'
-      : trace.reachedBy.join(', '),
-  );
-  row(
-    context.out,
-    'first seen',
-    trace.firstSeen ?? 'at least as long as the kept scans go back',
-  );
-  out.line('');
+  const { flow } = context;
+  flow.rows(trace.tool, [
+    { label: 'server', value: trace.server },
+    { label: 'declared', value: trace.grantedBy },
+    {
+      label: 'class',
+      value: `${trace.effect}, ${classifyActionClass(trace.tool).class}`,
+    },
+    {
+      label: 'reached by',
+      value:
+        trace.reachedBy.length === 0
+          ? 'no agent here launches it'
+          : trace.reachedBy.join(', '),
+    },
+    {
+      label: 'first seen',
+      value: trace.firstSeen ?? 'at least as long as the kept scans go back',
+    },
+  ]);
+  flow.close(`${trace.tool} comes from ${trace.server}.`);
 }
 
 interface Answer {
@@ -146,16 +147,15 @@ function renderAnswer(
   question: ParsedQuestion,
   answer: Answer,
 ): void {
-  const { out, style } = context;
-  out.line('');
-  out.line(style.bold(`can ${question.agent} ${question.verb} ${question.resource}?`));
-  out.line('');
-  row(context.out, 'Technically', answer.technically);
-  row(context.out, 'Runtime', answer.runtime);
-  row(context.out, 'Policy', answer.policy);
-  out.line('');
+  const { flow } = context;
+  flow.rows(`Can ${question.agent} ${question.verb} ${question.resource}?`, [
+    { label: 'technically', value: answer.technically },
+    { label: 'runtime', value: answer.runtime },
+    { label: 'policy', value: answer.policy },
+  ]);
+  flow.close(answer.policy);
   // The fourth row is the cloud's, and an empty row is better than an invented one.
-  out.note(
+  flow.hint(
     'What the organization intended is not on this disk, so it is not answered here.',
   );
 }
@@ -171,6 +171,10 @@ export function registerExplainCommand(
     .option('--json', 'machine-readable output')
     .option('-f, --file <path>', 'policy file (default: whichever exists)')
     .action(async (subject: string, options: { json?: boolean; file?: string }) => {
+      /* One rail for every shape of the answer. `explain` takes an agent, a CLI,
+         a server, a tool or a whole sentence, and every one of those is this
+         command answering the same question about a different noun. */
+      if (options.json !== true) context.flow.open('memnox explain');
       const seams = buildSeams(cwd());
       const { report, snapshot } = await scanMachine(seams, { probe: false });
 
@@ -255,8 +259,11 @@ export function registerExplainCommand(
         if (near.length === 0) {
           throw new Error(`Nothing here provides "${subject}". Run "memnox scan".`);
         }
-        context.out.line(`No capability is named exactly "${subject}". Close matches:`);
-        for (const each of near) context.out.line(`  ${each.server}.${each.tool}`);
+        context.flow.list(
+          `Nothing is named exactly "${subject}". Close matches`,
+          near.map((each) => ({ tone: TONE.DIM, text: `${each.server}.${each.tool}` })),
+        );
+        context.flow.close(`${near.length} close match(es).`);
         return;
       }
 
@@ -296,59 +303,56 @@ function renderCli(
     return;
   }
 
-  const { out, style } = context;
-  const authenticated = cli.via !== undefined;
-  out.line('');
-  out.line(
-    `${style.bold(cli.name)}  ${style.dim(authenticated ? '· authenticated CLI' : '· installed CLI')}`,
-  );
-  out.line('');
-
+  const { flow, style } = context;
   const agents = report.agents.map((agent) => agent.kind);
-  row(
-    context.out,
-    'Reachable by',
-    agents.length === 0 ? 'no agent here' : agents.join(', '),
+  flow.rows(
+    `${cli.name}, ${cli.via === undefined ? 'an installed CLI' : 'an authenticated CLI'}`,
+    [
+      {
+        label: 'reachable by',
+        value: agents.length === 0 ? 'no agent here' : agents.join(', '),
+      },
+      /* "Nothing here is logged in" is a different claim from "this cannot reach
+       anything", and the verbs below are true either way, because a
+       credential can arrive tomorrow without the table changing. */
+      {
+        label: 'credential',
+        value:
+          cli.via ?? 'none found here, so the table below is what it could do with one',
+      },
+      ...(cli.detail === undefined ? [] : [{ label: '', value: cli.detail }]),
+      // A guess from a name stays a guess all the way into the screen.
+      ...(cli.productionLooking === undefined
+        ? []
+        : [
+            {
+              label: '',
+              value: style.warn(`"${cli.productionLooking}" is named like production`),
+            },
+          ]),
+    ],
   );
-  /* "Nothing here is logged in" is a different claim from "this cannot reach
-     anything", and the verbs below are true either way — a credential can arrive
-     tomorrow without the table changing. */
-  row(
-    context.out,
-    'Credential',
-    cli.via ?? 'none found here — the table below is what it could do with one',
-  );
-  if (cli.detail !== undefined) row(context.out, '', cli.detail);
-  if (cli.productionLooking !== undefined) {
-    // A guess from a name stays a guess all the way into the screen.
-    row(
-      context.out,
-      '',
-      style.warn(`"${cli.productionLooking}" is named like production`),
-    );
-  }
-  out.line('');
-  out.line('  Can');
 
-  const width = Math.max(...table.verbs.map((verb) => verb.match.length)) + 2;
-  for (const verb of table.verbs) {
-    const tags = [
-      verb.class,
-      ...(hasTag(verb, VERB_TAG.PRODUCTION) ? ['production'] : []),
-      ...(hasTag(verb, VERB_TAG.SECRETS) ? ['secrets'] : []),
-    ].join(' · ');
-    const marked = verb.class === 'destructive' ? style.warn(tags) : style.dim(tags);
-    out.line(`    ${verb.match.padEnd(width)}${marked}`);
-    if (verb.note !== undefined) {
-      out.line(`    ${''.padEnd(width)}${style.dim(verb.note)}`);
-    }
-  }
-
-  out.line('');
-  out.line(
-    `  ${style.dim(`memnox protect --for ${cli.name}`)}   put the dangerous ones behind ask or deny`,
+  flow.table(
+    'What it can do',
+    ['Verb', 'Class'],
+    table.verbs.flatMap((verb) => {
+      const tags = [
+        verb.class,
+        ...(hasTag(verb, VERB_TAG.PRODUCTION) ? ['production'] : []),
+        ...(hasTag(verb, VERB_TAG.SECRETS) ? ['secrets'] : []),
+      ].join(' · ');
+      const marked = verb.class === 'destructive' ? style.warn(tags) : style.dim(tags);
+      return [
+        [verb.match, marked],
+        ...(verb.note === undefined ? [] : [['', style.dim(verb.note)]]),
+      ];
+    }),
   );
-  out.line('');
+  flow.close(`${table.verbs.length} verb(s) the gate recognises for ${cli.name}.`);
+  flow.hint(
+    `memnox protect --for ${cli.name}   put the dangerous ones behind ask or deny`,
+  );
 }
 
 /**
@@ -376,77 +380,78 @@ function renderAgent(
     return;
   }
 
-  const { out, style } = context;
+  const { flow, style } = context;
   const what = harness === null ? 'agent' : 'harness, runs other agents';
-  out.line('');
-  out.line(`${style.bold(agent.kind)}  ${style.dim(`· ${what}`)}`);
-  out.line('');
-
-  // Only a harness has these three, and printing them empty for Cursor would imply
-  // Cursor might have had them.
-  if (harness !== null) {
-    row(
-      context.out,
-      'Runs',
-      harness.runtimes.length === 0
-        ? 'nothing this scan could name'
-        : harness.runtimes.join(', '),
-    );
-    row(
-      context.out,
-      'Roles',
-      harness.roles.length === 0
-        ? 'none defined on this disk'
-        : `${harness.roles.length} — ${harness.roles.join(', ')}`,
-    );
-    row(
-      context.out,
-      'Hooks',
-      harness.hooks.length === 0
-        ? 'none installed into another product'
-        : harness.hooks.join(', '),
-    );
-    if (harness.federated) {
-      row(
-        context.out,
-        'Federated',
-        style.warn('works with agents on machines this scan cannot see'),
-      );
-    }
-  }
-
   const coverage = coverageFor(agent.kind, agent.id, report.surfaces, facts);
   const own = report.surfaces.filter((surface) => surface.agentId === agent.id);
-  row(context.out, 'Declared in', agent.configPaths.join(', '));
-  row(context.out, 'Surfaces', [...new Set(own.map((each) => each.kind))].join(', '));
-
   const servers = [
     ...new Set(own.flatMap((surface) => (surface.servers ?? []).map((s) => s.name))),
   ];
-  row(
-    context.out,
-    'MCP servers',
-    servers.length === 0 ? 'none declared in its config' : servers.join(', '),
-  );
   // The shell is why a tool list understates a coding agent, so it is said out loud.
   const viaShell = report.reachability.find(
     (each) => each.agentId === agent.id,
   )?.viaShell;
-  if (viaShell === true) {
-    row(context.out, 'Shell', 'holds one, which reaches everything you can');
-  }
+
+  flow.rows(`${agent.kind}, ${what}`, [
+    // Only a harness has these three, and printing them empty for Cursor would
+    // imply Cursor might have had them.
+    ...(harness === null
+      ? []
+      : [
+          {
+            label: 'runs',
+            value:
+              harness.runtimes.length === 0
+                ? 'nothing this scan could name'
+                : harness.runtimes.join(', '),
+          },
+          {
+            label: 'roles',
+            value:
+              harness.roles.length === 0
+                ? 'none defined on this disk'
+                : `${harness.roles.length}: ${harness.roles.join(', ')}`,
+          },
+          {
+            label: 'hooks',
+            value:
+              harness.hooks.length === 0
+                ? 'none installed into another product'
+                : harness.hooks.join(', '),
+          },
+          ...(harness.federated
+            ? [
+                {
+                  label: 'federated',
+                  value: style.warn('works with agents on machines this scan cannot see'),
+                },
+              ]
+            : []),
+        ]),
+    { label: 'declared in', value: agent.configPaths.join(', ') },
+    { label: 'surfaces', value: [...new Set(own.map((each) => each.kind))].join(', ') },
+    {
+      label: 'mcp servers',
+      value: servers.length === 0 ? 'none declared in its config' : servers.join(', '),
+    },
+    ...(viaShell === true
+      ? [{ label: 'shell', value: 'holds one, which reaches everything you can' }]
+      : []),
+  ]);
 
   if (combined.length > 0) {
-    out.line('');
-    out.line('  Combined capability');
-    for (const capability of combined) {
-      out.line(`    ${style.warn(capability.consequence)}`);
-      out.line(`    ${style.dim(describeCombined(capability))}`);
-    }
+    flow.list(
+      'Combined capability',
+      combined.map((capability) => ({
+        tone: TONE.WARN,
+        text: capability.consequence,
+        detail: [describeCombined(capability)],
+      })),
+    );
   } else if (last === null) {
-    out.line('');
-    out.note(
-      'No scan here has asked the servers, so no chain is shown. Run "memnox scan --save".',
+    flow.step(
+      'Combined capability',
+      'no scan here has asked the servers, so no chain is shown. Run "memnox scan --save"',
     );
   }
 
@@ -454,30 +459,30 @@ function renderAgent(
      what would close the rest. Per agent, because a wrapped Claude Code and an
      unwrapped Cursor average out to a number nobody can act on. */
   const { held, total } = coverageSummary(coverage);
-  out.line('');
-  out.line(
-    `  Governed by  ${held === total ? style.ok(`all ${total} seam(s)`) : style.warn(`${held} of ${total} seam(s)`)}`,
+  flow.list(
+    `Governed by ${held} of ${total} seam(s)`,
+    coverage
+      .filter((seam) => seam.state !== SEAM_STATE.NOT_HELD)
+      .map((seam) => ({
+        tone: seam.state === SEAM_STATE.HELD ? TONE.OK : TONE.WARN,
+        text: `${seam.surface}  ${seam.detail}`,
+        detail: [seam.next === undefined ? undefined : `→ ${seam.next}`],
+      })),
   );
-  const width = Math.max(...coverage.map((each) => each.surface.length)) + 2;
-  for (const seam of coverage) {
-    if (seam.state === SEAM_STATE.NOT_HELD) continue;
-    const mark = seam.state === SEAM_STATE.HELD ? style.ok('✓') : style.warn('!');
-    out.line(`    ${mark}  ${seam.surface.padEnd(width)}${seam.detail}`);
-    if (seam.next !== undefined) {
-      out.line(`       ${''.padEnd(width)}${style.dim(`→ ${seam.next}`)}`);
-    }
-  }
 
-  out.line('');
+  flow.close(
+    held === total
+      ? style.ok(`${agent.kind} is held by all ${total} seam(s).`)
+      : style.warn(`${agent.kind} is held by ${held} of ${total} seam(s).`),
+  );
   /* A harness already filters its own tools and is right to. What it cannot see is
      the other harness on the same disk, the credentials underneath, and the shell
      they share. Said only for a harness: it is not true of Cursor. */
   if (harness !== null) {
-    out.note(
+    flow.hint(
       `${agent.kind} enforces its own tool policy. Memnox governs what it reaches underneath.`,
     );
   }
-  out.line('');
 }
 
 /** The tools this agent reached in the last probed scan, and what they add up to. */
@@ -593,40 +598,37 @@ function renderServer(
     return;
   }
 
-  const { out, style } = context;
-  out.line('');
-  out.line(`${style.bold(server.name)}  ${style.dim('· MCP server')}`);
-  out.line('');
-  row(
-    out,
-    'Declared by',
-    server.agents.length === 0 ? 'no agent here' : server.agents.join(', '),
-  );
-  for (const path of server.detectedFrom) row(out, 'From', path);
-  if (server.env.length > 0) {
+  const { flow, style } = context;
+  flow.rows(`${server.name}, an MCP server`, [
+    {
+      label: 'declared by',
+      value: server.agents.length === 0 ? 'no agent here' : server.agents.join(', '),
+    },
+    ...server.detectedFrom.map((path) => ({ label: 'from', value: path })),
     // Names only: what a config hands a server, never the value behind it.
-    row(out, 'Credentials', server.env.join(', '));
-  }
+    ...(server.env.length === 0
+      ? []
+      : [{ label: 'credentials', value: server.env.join(', ') }]),
+  ]);
 
-  out.line('');
   if (!server.probed) {
     /* "Not asked yet" is a different claim from "holds nothing", and explain never
        starts anybody's server to find out. */
-    out.line('  No tools recorded — nothing has asked this server what it holds.');
-    out.note('"memnox scan" starts it and asks; this command never does.');
+    flow.close('No tools recorded, because nothing has asked this server what it holds.');
+    flow.hint('"memnox scan" starts it and asks; this command never does.');
     return;
   }
 
-  out.line('  Holds');
-  const width = Math.max(...server.tools.map((tool) => tool.name.length)) + 2;
-  for (const tool of server.tools) {
-    const marked =
-      tool.effect === 'destructive' ? style.warn(tool.effect) : style.dim(tool.effect);
-    out.line(`    ${tool.name.padEnd(width)}${marked}`);
-  }
-  out.line('');
-  out.line(
-    `  ${style.dim(`memnox protect --for ${server.name}`)}   put the dangerous ones behind ask or deny`,
+  flow.table(
+    'Holds',
+    ['Tool', 'Effect'],
+    server.tools.map((tool) => [
+      tool.name,
+      tool.effect === 'destructive' ? style.warn(tool.effect) : style.dim(tool.effect),
+    ]),
   );
-  out.line('');
+  flow.close(`${server.tools.length} tool(s) on ${server.name}.`);
+  flow.hint(
+    `memnox protect --for ${server.name}   put the dangerous ones behind ask or deny`,
+  );
 }

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import type { Command } from 'commander';
 import type { MemnoxEvent } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import type { FlowRow } from '../flow';
 import { withEvents } from '../event-store';
 import { transcriptPathFor } from '../memnox-paths';
 
@@ -24,6 +25,9 @@ export function registerTraceCommand(
     .description('One action end to end: the rule, the outcome, and what it printed')
     .option('--json', 'machine-readable output')
     .action(async (id: string, options: { json?: boolean }) => {
+      /* Before the lookup, not after it: a refusal is the likeliest thing this
+         command says, and one printed loose reads as a crash. */
+      if (options.json !== true) context.flow.open('memnox trace');
       await withEvents(home(), async (store) => {
         const rows = await store.query({ limit: 5000 });
         const event = rows.find((row) => row.id === id || row.id.startsWith(id));
@@ -43,34 +47,37 @@ export function registerTraceCommand(
 }
 
 function render(context: CliContext, event: MemnoxEvent): void {
-  const { out, style } = context;
-  const rows: [string, string | undefined][] = [
-    ['action', event.operation],
-    ['target', event.target],
-    ['agent', event.agent],
-    ['session', event.sessionId],
-    ['at', event.at],
-    ['decision', `${event.effect}${event.mode === 'observe' ? ' (observing)' : ''}`],
-    ['reason', event.reason],
-    ['rule', event.rule === undefined ? undefined : ruleOf(event)],
-    ['exit', event.exitCode === undefined ? undefined : String(event.exitCode)],
-    ['took', event.durationMs === undefined ? undefined : `${event.durationMs} ms`],
-    ['approved by', event.authorizedBy],
+  const { flow, style } = context;
+  const at = (label: string, value: string | undefined): FlowRow | undefined =>
+    value === undefined || value === '' ? undefined : { label, value };
+
+  flow.rows(event.operation, [
+    at('target', event.target),
+    at('agent', event.agent),
+    at('session', event.sessionId),
+    at('at', event.at),
+    at(
+      'decision',
+      style.effect(
+        event.effect,
+        `${event.effect}${event.mode === 'observe' ? ' (observing)' : ''}`,
+      ),
+    ),
+    at('reason', event.reason),
+    at('rule', event.rule === undefined ? undefined : ruleOf(event)),
+    at('exit', event.exitCode === undefined ? undefined : String(event.exitCode)),
+    at('took', event.durationMs === undefined ? undefined : `${event.durationMs} ms`),
+    at('approved by', event.authorizedBy),
     // The digest, not the arguments: an argument list is where a secret would be.
-    ['args', event.argsDigest],
-    ['output', event.outputDigest],
-  ];
-  const shown = rows.filter(([, value]) => value !== undefined && value !== '');
-  const width = Math.max(...shown.map(([label]) => label.length));
-  for (const [label, value] of shown) {
-    out.line(`  ${style.dim(label.padEnd(width))}  ${value ?? ''}`);
-  }
+    at('args', event.argsDigest),
+    at('output', event.outputDigest),
+  ]);
 }
 
 function ruleOf(event: MemnoxEvent): string {
   const rule = event.rule;
   if (rule === undefined) return '';
-  const where = rule.file === undefined ? '' : ` — ${rule.file}`;
+  const where = rule.file === undefined ? '' : `, ${rule.file}`;
   return `${rule.name}${where}`;
 }
 
@@ -84,15 +91,19 @@ async function renderStreams(
   event: MemnoxEvent,
   home: string,
 ): Promise<void> {
-  const { out, style } = context;
-  if (event.sessionId === undefined) return;
+  const { flow } = context;
+  if (event.sessionId === undefined) {
+    flow.close(closing(context, event));
+    return;
+  }
 
   let contents: string;
   try {
     contents = await readFile(transcriptPathFor(home, event.sessionId), 'utf8');
   } catch {
-    out.line('');
-    out.note(
+    // No transcript kept for that session, which is the default and not a failure.
+    flow.close(closing(context, event));
+    flow.hint(
       'No stream recorded for this session. Start the agent with "memnox run --transcript" to keep one.',
     );
     return;
@@ -100,9 +111,14 @@ async function renderStreams(
 
   const lines = contents.split('\n').filter((line) => line !== '');
   const tail = lines.slice(-TRANSCRIPT_LINES);
-  out.line('');
-  out.line(
-    style.dim(`  what the session printed (last ${tail.length} of ${lines.length})`),
+  flow.box(`What the session printed, last ${tail.length} of ${lines.length}`, tail);
+  flow.close(closing(context, event));
+}
+
+/** The verdict and what it was about, in the one spelling the whole CLI uses. */
+function closing(context: CliContext, event: MemnoxEvent): string {
+  return context.style.effect(
+    event.effect,
+    `${event.effect.toUpperCase()}  ${event.operation}`,
   );
-  for (const line of tail) out.line(`  ${style.dim('│')} ${line}`);
 }
