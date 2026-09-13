@@ -163,9 +163,48 @@ describe('the loop the daemon runs', () => {
       sleep: async (ms) => {
         slept.push(ms);
       },
+      holding: async () => 0,
     });
 
-    expect(slept).toHaveLength(3);
+    /* Three passes, an idle minute between each. Counted as time rather than as calls,
+       because an idle wait is served in slices so a question raised inside one does not
+       have to wait out the rest of it. */
+    expect(slept.reduce((total, ms) => total + ms, 0)).toBe(3 * 60_000);
+  });
+
+  it('comes back quickly while an agent is stopped on a question', async () => {
+    const slept: number[] = [];
+    let left = 2;
+
+    await syncLoop('/home', () => left-- > 0, {
+      pass: passes([{}, {}]),
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      // Somebody is waiting on the other end of this, on both legs.
+      holding: async () => 1,
+    });
+
+    /* Seconds, not a minute. The question travels up on the next pass and the answer
+       comes back on the one after, so a minute each way did not fit in the window the
+       agent waits in — a person who approved with a minute to spare was still refused. */
+    expect(slept).toEqual([2_000, 2_000]);
+  });
+
+  it('waits a held call out whole when the control plane cannot be reached', async () => {
+    const slept: number[] = [];
+    let left = 1;
+
+    await syncLoop('/home', () => left-- > 0, {
+      pass: passes([{ unreachable: true }]),
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      holding: async () => 1,
+    });
+
+    // Polling fast for an answer that has nowhere to come from spends requests only.
+    expect(slept).toEqual([15 * 60_000]);
   });
 
   /* The one thing that stops it. Everything else is a laptop with its lid shut,
