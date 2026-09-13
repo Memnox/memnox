@@ -5,11 +5,13 @@ import {
   DEFAULT_LEASE_MINUTES,
   LEASE_OUTCOME,
   LeaseRegistry,
+  holderPid,
   describeLease,
   SESSION_VAR,
   normalizeLeasePath,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { minutesFrom } from '../duration';
 import { NodeGit } from '../node-git';
 
@@ -47,21 +49,27 @@ export function registerLockCommand(
       ) => {
         const moment = now().toISOString();
         const registry = new LeaseRegistry(home());
+        /* The shell, not this command. A lease is held while somebody works, and
+           this process exits the moment it has printed, so holding its own pid
+           made every hand-taken lease abandoned before the next command could see
+           it, and `lock --list` answered "nothing is held" one line after taking one.
+           Never init, though: that owner outlives everything and so can never be
+           found dead, which turns a stale lease into a wait nothing can end. */
+        const owner = holderPid(process.ppid, process.pid);
         const holder = {
           agent: options.agent,
           /* The session `memnox run` set, so a lease taken by hand and one taken at the
              seam belong to the same run and renew each other instead of colliding. */
-          sessionId: process.env[SESSION_VAR] ?? `ses_pid_${process.ppid}`,
-          /* The shell, not this command. A lease is held while somebody works, and
-             this process exits the moment it has printed — so holding its own pid
-             made every hand-taken lease abandoned before the next command could see
-             it, and `lock --list` answered "nothing is held" one line after taking one. */
-          pid: process.ppid,
+          sessionId: process.env[SESSION_VAR] ?? `ses_pid_${owner}`,
+          pid: owner,
         };
+
+        const { flow, style } = context;
+        flow.open('memnox lock');
 
         if (options.forget === true) {
           const dropped = await registry.forget(moment);
-          context.out.line(
+          flow.close(
             dropped === 0 ? 'Nothing to forget.' : `Forgot ${dropped} finished leases.`,
           );
           return;
@@ -77,23 +85,30 @@ export function registerLockCommand(
               `${options.release} belongs to another session. Take it with --agent and a reason, or wait.`,
             );
           }
-          context.out.line(`Released ${options.release}.`);
+          flow.close(style.ok(`Released ${options.release}.`));
           return;
         }
 
         if (options.list === true || path === undefined) {
           const held = await registry.held(moment);
           if (held.length === 0) {
-            context.out.line('Nothing is held right now.');
+            flow.close('Nothing is held right now.');
+            flow.hint('Hold a path with "memnox lock <path>".');
             return;
           }
-          for (const lease of held) {
-            context.out.line(`  ${lease.id}  ${describeLease(lease, moment)}`);
-            // What the holder has been doing is the half that ends the argument.
-            for (const note of lease.activity.slice(-3)) {
-              context.out.line(`    ${context.style.dim(note)}`);
-            }
-          }
+          flow.list(
+            'Held on this machine',
+            held.map((lease) => ({
+              tone: TONE.WARN,
+              text: `${lease.id}  ${describeLease(lease, moment)}`,
+              // What the holder has been doing is the half that ends the argument.
+              detail: lease.activity.slice(-ACTIVITY_SHOWN),
+            })),
+          );
+          flow.close(
+            `${held.length === 1 ? '1 path is' : `${held.length} paths are`} held.`,
+          );
+          flow.hint('Let one go with "memnox lock --release <id>".');
           return;
         }
 
@@ -127,18 +142,34 @@ export function registerLockCommand(
           throw new Error(`${path} is not a path a lease can be reasoned about.`);
         }
         if (result.outcome === LEASE_OUTCOME.HELD_BY_ANOTHER) {
-          context.out.line(describeLease(result.holding, moment));
-          for (const note of result.holding.activity.slice(-3)) {
-            context.out.line(`  ${context.style.dim(note)}`);
-          }
-          context.out.note(`It expires at ${result.holding.expiresAt} on its own.`);
+          flow.list('Held by somebody else', [
+            {
+              tone: TONE.WARN,
+              text: describeLease(result.holding, moment),
+              detail: [
+                ...result.holding.activity.slice(-ACTIVITY_SHOWN),
+                `it expires at ${result.holding.expiresAt} on its own`,
+              ],
+            },
+          ]);
           throw new Error(`${scope} is held by somebody else.`);
         }
 
-        context.out.line(`Holding ${result.lease.path === '' ? '.' : result.lease.path}`);
-        context.out.note(`${result.lease.id}, until ${result.lease.expiresAt}.`);
+        flow.rows('Holding', [
+          { label: 'path', value: result.lease.path === '' ? '.' : result.lease.path },
+          { label: 'lease', value: result.lease.id },
+          { label: 'until', value: result.lease.expiresAt },
+          { label: 'agent', value: options.agent },
+        ]);
+        flow.close(
+          style.ok(`Holding ${result.lease.path === '' ? '.' : result.lease.path}.`),
+        );
         // Every lease expires. Saying so here is what stops anybody relying on one.
-        context.out.note('It expires on its own; nothing waits for ever on it.');
+        flow.hint('It expires on its own; nothing waits for ever on it.');
+        flow.hint('Let it go early with "memnox lock --release".');
       },
     );
 }
+
+/** Enough of what a holder has been doing to end an argument, and never a log. */
+const ACTIVITY_SHOWN = 3;

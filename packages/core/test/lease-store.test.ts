@@ -207,3 +207,15 @@ describe('what lands on disk', () => {
     expect(await new LeaseRegistry(where, living).all()).toEqual([]);
   });
 });
+
+describe('whether a holder is still there', () => {
+  it('never calls init alive, so a lease recorded against it is reclaimable', () => {
+    // It outlives everything, so treating it as alive made such a lease permanent.
+    expect(processAlive(1)).toBe(false);
+    expect(processAlive(0)).toBe(false);
+  });
+
+  it('still sees this process', () => {
+    expect(processAlive(process.pid)).toBe(true);
+  });
+});
