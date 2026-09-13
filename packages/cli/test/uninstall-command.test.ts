@@ -43,8 +43,9 @@ describe('memnox uninstall', () => {
 
     const out = await run(['uninstall'], home, repo);
 
-    expect(out.text).toContain('interceptor(s)');
+    expect(out.text).toContain('Interceptors');
     expect(out.text).toContain('pre-push and pre-commit');
+    expect(out.text).toContain('Removed the interceptors');
   });
 
   it('keeps the rules and history unless asked to purge, and says where they are', async () => {
@@ -54,7 +55,8 @@ describe('memnox uninstall', () => {
 
     const out = await run(['uninstall'], home, repo);
 
-    expect(out.text).toContain('still in');
+    expect(out.text).toContain('Still here');
+    expect(out.text).toContain(join(home, '.memnox'));
     expect(out.text).toContain('--purge');
     expect(await readdir(join(home, '.memnox'))).toContain('config.toml');
   });
@@ -66,7 +68,7 @@ describe('memnox uninstall', () => {
     const out = await run(['uninstall', '--purge'], home, repo);
 
     expect(out.text).toContain('Nothing of Memnox is left');
-    expect(out.notes.join('\n')).toContain('PATH');
+    expect(out.text).toContain('PATH');
     await expect(readdir(join(home, '.memnox'))).rejects.toThrow();
   });
 
@@ -74,20 +76,16 @@ describe('memnox uninstall', () => {
     const { home, repo } = await machine();
     const unwrap = vi.fn(async () => 2);
 
-    expect((await run(['uninstall'], home, repo, unwrap)).text).toContain(
-      'Restored 2 MCP server(s)',
-    );
-    expect((await run(['uninstall'], home, repo)).notes.join('\n')).toContain(
-      'memnox mcp unwrap',
-    );
+    expect((await run(['uninstall'], home, repo, unwrap)).text).toContain('restored 2');
+    expect((await run(['uninstall'], home, repo)).text).toContain('memnox mcp unwrap');
   });
 
   it('is safe on a machine where nothing was ever installed', async () => {
     const { home, repo } = await machine();
     const out = await run(['uninstall'], home, repo);
 
-    expect(out.text).toContain('No interceptors were installed.');
-    expect(out.text).toContain('No Memnox git hooks');
+    expect(out.text).toContain('none were installed');
+    expect(out.text).toContain('none of ours in this repository');
   });
 });
 
@@ -101,7 +99,7 @@ describe('what a fresh install must not inherit', () => {
     await mkdir(pendingDirFor(home), { recursive: true });
 
     const out = await run(['uninstall'], home, home);
-    expect(out.text).toContain('Cleared 2');
+    expect(out.text).toContain('cleared 2 held or paused item(s)');
     expect(existsSync(pauseDirFor(home))).toBe(false);
   });
 
@@ -151,8 +149,8 @@ describe('what uninstall puts back on its own', () => {
     const { text } = await run(['uninstall'], home, repo, unwrap);
 
     expect(unwrap).toHaveBeenCalledOnce();
-    expect(text).toContain('Restored 3 MCP server(s).');
-    expect(text).not.toContain('Run "memnox mcp unwrap"');
+    expect(text).toContain('restored 3');
+    expect(text).not.toContain('memnox mcp unwrap');
   });
 
   /* Unwrap runs before the delete, because the wrapped entry is in the config and
@@ -174,8 +172,6 @@ describe('what uninstall puts back on its own', () => {
   it('still says how when it has no way to unwrap', async () => {
     const { home, repo } = await machine();
 
-    expect((await run(['uninstall'], home, repo)).notes.join('\n')).toContain(
-      'memnox mcp unwrap',
-    );
+    expect((await run(['uninstall'], home, repo)).text).toContain('memnox mcp unwrap');
   });
 });

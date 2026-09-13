@@ -9,7 +9,7 @@ import {
   type SnapshotAgent,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { Flow } from '../flow';
+import type { Flow, FlowRow } from '../flow';
 import { underHome } from '../memnox-paths';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
 import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/connect';
@@ -26,13 +26,16 @@ import { listRecords, onboardedInto, readRecord } from '../agents/onboarding';
 import { sameControlPlane } from '../sync/client';
 import {
   displayName,
+  forgetNames,
   readNames,
   setName,
   workspaceShown,
   type AgentNames,
 } from '../agents/names';
+import { declineAgent, forgetDeclined } from '../agents/declined';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
 import { onePass } from '../sync/heartbeat';
+import { wireMachine, WIRED, type Wiring, type WiringSeams } from '../setup-wiring';
 
 /**
  * The whole first run, in one command.
@@ -83,6 +86,8 @@ export function registerSetupCommand(
   reportScan: (home: string) => Promise<boolean> = reportOnce,
   /** Handing an agent back, for the one case that needs it: a move between planes. */
   offboard: typeof offboardAgent = offboardAgent,
+  /** Injected so a test never installs a wrapper, a rule file or a service. */
+  wiringSeams: WiringSeams = {},
 ): void {
   program
     .command('setup')
@@ -105,8 +110,7 @@ export function registerSetupCommand(
         open: boolean;
         probe: boolean;
       }) => {
-        const { style } = context;
-        const flow = new Flow(context.out, style);
+        const { flow } = context;
         flow.open('memnox setup');
 
         /* Step one, and skipped when it is already done. Re-running the device
@@ -212,6 +216,24 @@ export function registerSetupCommand(
           results.push(outcome);
         }
 
+        /* Consent is not wiring. Until this runs no wrapper is in the path of
+           any command, no rule has an opinion about anything, and nothing pulls
+           the workspace's rules unless somebody keeps a terminal open, so the
+           run would end saying the agents were under Memnox while `scan` on the
+           next line said none of their capabilities was governed. */
+        flow.step('Putting this machine in the path of what they do');
+        const wired = await wireMachine(home(), process.cwd(), wiringSeams);
+        flow.value('Interceptors', `${wired.interceptors} installed`);
+        flow.value('Rules', `${wired.rules} written`);
+        flow.value(
+          'Daemon',
+          wired.daemon === WIRED.DONE
+            ? 'started by this machine'
+            : wired.daemon === WIRED.UNSUPPORTED
+              ? 'no service manager here, run "memnox daemon" yourself'
+              : 'not started, see "memnox daemon --status"',
+        );
+
         /* The last step, and the one that was missing: onboarding writes
            credentials and nothing was telling the workspace what these agents
            are. The console's Agents page reads a census, so a guided run that
@@ -221,7 +243,7 @@ export function registerSetupCommand(
            one that already owns that. */
         const reported = await reportScan(home()).catch(() => false);
 
-        summarize(context, flow, account, results, reported);
+        summarize(context, flow, account, results, reported, wired);
       },
     );
 }
@@ -257,7 +279,7 @@ async function connectedAccount(
 ): Promise<Account> {
   const existing = await readAccount(home);
   if (existing === null) {
-    const connected = await connect(context, home, options, flow, seams);
+    const connected = await connect(context, home, options, seams);
     /* Said once, here, because it is the promise the rest of the run keeps: a
        person answered a browser for this machine and will not be asked again. */
     flow.aside(context.style.dim('That is the only approval this run needs.'));
@@ -327,7 +349,8 @@ async function moveOrStay(
   const handed = await handBack(context, flow, home, existing, from.offboard);
 
   try {
-    const connected = await connect(context, home, options, flow, seams);
+    const connected = await connect(context, home, options, seams);
+    await forgetVocabulary(context, flow, home);
     flow.aside(context.style.dim('That is the only approval this run needs.'));
     return connected.account;
   } catch (err) {
@@ -400,6 +423,35 @@ async function handBack(
 }
 
 /**
+ * The names and the answers the plane that was left was holding.
+ *
+ * Both are about a workspace rather than about a machine. "Call it something
+ * your workspace will recognise" asked for a name for the plane this machine is
+ * leaving, and "put it under Memnox" was answered about that plane's authority,
+ * so carrying either into the next workspace offers somebody a decision
+ * somebody else made about somewhere else. A laptop moved from a control plane
+ * on localhost kept offering "Moise claude" as the name the new workspace knew
+ * it by, and it had never heard of it.
+ *
+ * After the new credential is in hand, never before: a move that failed leaves
+ * the machine where it started, and it should keep what it knew there.
+ */
+async function forgetVocabulary(
+  context: CliContext,
+  flow: Flow,
+  home: string,
+): Promise<void> {
+  const names = await forgetNames(home).catch(() => 0);
+  const declined = await forgetDeclined(home).catch(() => 0);
+  if (names === 0 && declined === 0) return;
+  flow.aside(
+    context.style.dim(
+      'Agent names and answers here were for the workspace you left, so this asks again.',
+    ),
+  );
+}
+
+/**
  * One agent: what it reaches, what to call it, and whether to put it to work.
  *
  * In that order, because each answer needs the one above it. Somebody deciding
@@ -455,6 +507,12 @@ async function offerOne(
     () => false,
   );
   if (!yes) {
+    /* Written down rather than left in the terminal. The agent is still on this
+       machine and still in the scan, so without this the census reported it to
+       the workspace as an agent nobody had ever been asked about, and the
+       console put it in the queue of things waiting for a decision that had
+       just been made. */
+    await declineAgent(home, agent.id);
     flow.aside(style.dim(`${name} was left alone.`));
     return { name, status: STATUS.SKIPPED, because: 'you said no' };
   }
@@ -475,17 +533,22 @@ async function offerOne(
     flow.aside(style.warn(`Did not onboard ${name}: ${because}`));
     return { name, status: STATUS.FAILED, because };
   }
-  flow.box(`${name} is under Memnox`, [
-    `${style.dim('known as'.padEnd(LABEL_WIDTH))}${name} in ${workspaceShown(account.workspaceId)}`,
+  flow.rows(`${name} is under Memnox`, [
+    {
+      label: 'known as',
+      value: `${name} in ${workspaceShown(account.workspaceId)}`,
+    },
     /* Said per agent rather than once at the top, because this is the line that
        makes the run's promise checkable: nobody had to answer anything. */
-    `${style.dim('enrolled'.padEnd(LABEL_WIDTH))}${
-      result.approvedInBrowser === true
-        ? 'approved in your browser'
-        : "on this machine's own credential, no browser"
-    }`,
-    `${style.dim('config'.padEnd(LABEL_WIDTH))}${underHome(result.record.configPath, home)}`,
-    `${style.dim('backup'.padEnd(LABEL_WIDTH))}${underHome(result.record.backupPath, home)}`,
+    {
+      label: 'enrolled',
+      value:
+        result.approvedInBrowser === true
+          ? 'approved in your browser'
+          : "on this machine's own credential, no browser",
+    },
+    { label: 'config', value: underHome(result.record.configPath, home) },
+    { label: 'backup', value: underHome(result.record.backupPath, home) },
   ]);
   return { name, status: STATUS.ONBOARDED };
 }
@@ -531,9 +594,11 @@ function describeAgent(
   config: Manageable,
 ): void {
   const { style } = context;
-  const rows: string[] = [style.dim(`${agent.kind}${version(agent)}`)];
+  const rows: FlowRow[] = [
+    { label: '', value: style.dim(`${agent.kind}${version(agent)}`) },
+  ];
   const put = (label: string, value: string): void => {
-    rows.push(`${style.dim(label.padEnd(LABEL_WIDTH))}${value}`);
+    rows.push({ label, value });
   };
 
   put('id', agent.id);
@@ -559,12 +624,10 @@ function describeAgent(
 
   for (const line of reachOf(agent, report, home)) put(line.label, line.value);
   if (config.because !== undefined) {
-    rows.push(style.warn(`cannot manage: ${config.because}`));
+    put('cannot manage', style.warn(config.because));
   }
-  flow.box(displayName(names, agent), rows);
+  flow.rows(displayName(names, agent), rows);
 }
-
-const LABEL_WIDTH = 12;
 
 /**
  * What this agent can already reach, in the words the scan proved.
@@ -626,30 +689,29 @@ interface Result {
   because?: string;
 }
 
-const STATUS_WIDTH = 11;
-
 function summarize(
   context: CliContext,
   flow: Flow,
   account: Account,
   results: readonly Result[],
   reported: boolean,
+  wired: Wiring,
 ): void {
   const { style } = context;
   const done = results.filter((each) => each.status === STATUS.ONBOARDED);
-  const width = Math.max(...results.map((each) => each.name.length), 'Agent'.length);
 
-  flow.box(`In ${workspaceShown(account.workspaceId)}`, [
-    style.dim(`${'Agent'.padEnd(width)}  ${'Status'.padEnd(STATUS_WIDTH)}Reason`),
-    /* Padded before styling: an escape sequence has width nobody can see but
-       padEnd can, and padding after colouring left every column joined up. */
-    ...results.map(
-      (each) =>
-        `${each.name.padEnd(width)}  ` +
-        `${mark(context, each.status, each.status.padEnd(STATUS_WIDTH))}` +
-        style.dim(each.because ?? ''),
-    ),
-  ]);
+  flow.table(
+    `In ${workspaceShown(account.workspaceId)}`,
+    ['Agent', 'Status', 'Reason'],
+    results.map((each) => [
+      each.name,
+      /* Coloured, never padded here: `Flow.table` pads every column to its own
+         widest cell, and an escape sequence has a width nobody can see and
+         `padEnd` can. */
+      mark(context, each.status, each.status),
+      style.dim(each.because ?? ''),
+    ]),
+  );
 
   flow.close(
     done.length === 0
@@ -683,8 +745,32 @@ function summarize(
   /* Said here because this is the moment somebody wonders whether they have
      just handed something more authority than it had. */
   flow.hint('Authority is unchanged: what each may do is still decided on this machine.');
-  flow.hint('Write the rules that decide it with "memnox protect".');
-  flow.hint('Take one back out with "memnox agents offboard <name>".');
+
+  /* Counted rather than claimed. "You are set up" is the sentence this product
+     cannot afford to be wrong about, and a machine with no wrapper in the path
+     of anything is one where every rule below is a rule about nothing. */
+  if (wired.interceptors === 0) {
+    flow.hint(
+      'No interceptors are installed, so nothing is gated yet. "memnox protect --interceptors" fixes it.',
+    );
+  } else {
+    flow.hint(
+      `${wired.interceptors} interceptors and ${wired.rules} rules are in place. They bite when you start an agent with "memnox run -- <agent>".`,
+    );
+  }
+  if (wired.daemon !== WIRED.DONE) {
+    /* Without it the rules this workspace publishes never arrive, and a question
+       raised on a machine nobody is sitting at never reaches anybody. */
+    flow.hint(
+      wired.daemonNote === undefined
+        ? 'Nothing starts the daemon, so rules are not pulled on their own. "memnox daemon --install" hands it to the machine.'
+        : `The daemon would not start (${wired.daemonNote}). "memnox daemon --status" says where it stands.`,
+    );
+  }
+  flow.hint(
+    'This machine is watching, not stopping. "memnox doctor --wiring" shows what is in the path, and "memnox config set mode enforce" turns it on when you have read a week of it.',
+  );
+  flow.hint('Take all of it back out with "memnox uninstall".');
 }
 
 /** Which control plane a record was written against, for the row that says so. */
@@ -698,13 +784,13 @@ function wherePlane(record: { workspaceId?: string; baseUrl?: string }): string 
     : `under ${which} at ${record.baseUrl}`;
 }
 
-/** Takes the already-padded word, so the colour never changes the column width. */
-function mark(context: CliContext, status: Result['status'], padded: string): string {
+/** The status word in the colour its meaning calls for; the table does the padding. */
+function mark(context: CliContext, status: Result['status'], word: string): string {
   const { style } = context;
-  if (status === STATUS.ONBOARDED) return style.ok(padded);
-  if (status === STATUS.FAILED || status === STATUS.CANNOT) return style.warn(padded);
-  if (status === STATUS.ELSEWHERE) return style.warn(padded);
-  return style.dim(padded);
+  if (status === STATUS.ONBOARDED) return style.ok(word);
+  if (status === STATUS.FAILED || status === STATUS.CANNOT) return style.warn(word);
+  if (status === STATUS.ELSEWHERE) return style.warn(word);
+  return style.dim(word);
 }
 
 /**

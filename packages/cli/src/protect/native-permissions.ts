@@ -20,6 +20,7 @@ import {
   type Policy,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE, type FlowItem } from '../flow';
 import { resolvePolicyFile } from '../policy-path';
 
 /**
@@ -146,6 +147,8 @@ export async function runNative(
   }
 
   const policies = reverting ? [] : await rulesToWrite();
+  const { flow } = context;
+  const done: FlowItem[] = [];
   let written = 0;
 
   for (const { target, path } of present) {
@@ -157,9 +160,13 @@ export async function runNative(
       try {
         JSON.parse(raw);
       } catch {
-        context.out.note(
-          `${path} is not plain JSON, so it was left alone — ${target.product} is governed at the seams instead.`,
-        );
+        done.push({
+          tone: TONE.DIM,
+          text: `${target.product} was left alone`,
+          detail: [
+            `${path} is not plain JSON, so ${target.product} is governed at the seams instead`,
+          ],
+        });
         continue;
       }
     }
@@ -167,19 +174,30 @@ export async function runNative(
 
     if (reverting) {
       await writeFile(path, target.revert(raw), 'utf8');
-      context.out.line(`Took our rules back out of ${target.product}.`);
+      done.push({
+        tone: TONE.OK,
+        text: `Took our rules back out of ${target.product}`,
+        detail: [path],
+      });
       written += 1;
       continue;
     }
 
     const result = target.apply(raw, policies);
     await writeFile(path, result.text, 'utf8');
-    context.out.line(`${target.product}: wrote ${result.summary} into ${path}.`);
-    // Anything that could not be written is named, or somebody trusts a rule that is not there.
-    for (const each of result.untranslated) {
-      context.out.note(`  not written: ${each.policy} — ${each.because}`);
-    }
-    for (const note of result.notes ?? []) context.out.note(`  ${note}`);
+    done.push({
+      tone: TONE.OK,
+      text: `${target.product}: wrote ${result.summary}`,
+      detail: [
+        path,
+        // Anything that could not be written is named, or somebody trusts a
+        // rule that is not there.
+        ...result.untranslated.map(
+          (each) => `not written: ${each.policy}, because ${each.because}`,
+        ),
+        ...(result.notes ?? []),
+      ],
+    });
     written += 1;
   }
 
@@ -188,7 +206,13 @@ export async function runNative(
       'Every permission file found was unreadable, so nothing was changed.',
     );
   }
-  if (!reverting) context.out.note('Undo with "memnox protect --revert-native".');
+  flow.list(reverting ? 'Reverted' : "Written into each agent's own file", done);
+  flow.close(
+    reverting
+      ? `Took our rules back out of ${written} agent(s).`
+      : `Wrote our rules into ${written} agent(s).`,
+  );
+  if (!reverting) flow.hint('Undo with "memnox protect --revert-native".');
 }
 
 async function rulesToWrite(): Promise<Policy[]> {

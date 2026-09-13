@@ -49,13 +49,13 @@ export async function runInteractive(
   takeRecommended: boolean,
   ask: DomainAsker,
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow } = context;
   const answers = takeRecommended
     ? recommendedAnswers()
     : new Map<PolicyDomain, DecisionEffect>();
 
   if (!takeRecommended) {
-    out.line(style.bold('What should the agents on this machine be allowed to do?'));
+    flow.step('What should the agents on this machine be allowed to do?');
     for (const choice of DOMAIN_CHOICES) {
       answers.set(
         choice.domain,
@@ -69,11 +69,11 @@ export async function runInteractive(
   await writePolicyDocumentFile(path, { version: 1, policies });
   await registerPolicyFile(homedir(), path);
 
-  out.line('');
-  for (const [domain, effect] of answers) {
-    out.line(`  ${domain.padEnd(12)}${effect}`);
-  }
-  out.line('');
-  out.line(`Wrote ${policies.length} rule(s) to ${path}.`);
-  out.note('Open it — it is yours to edit. Test one with "memnox policy test".');
+  flow.table(
+    `Written to ${path}`,
+    ['Domain', 'Effect'],
+    [...answers].map(([domain, effect]) => [domain, effect]),
+  );
+  flow.close(`Wrote ${policies.length} rule(s) to ${path}.`);
+  flow.hint('Open it: it is yours to edit. Test one with "memnox policy test".');
 }
