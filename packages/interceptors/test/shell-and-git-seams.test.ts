@@ -193,3 +193,142 @@ describe('the git credential seam', () => {
     expect(stub.seen[0]?.target).toBeUndefined();
   });
 });
+
+/**
+ * The seam decided and then said nothing, so `why`, `timeline`, `report` and `next`
+ * each answered "nothing has been decided on this machine yet" about a machine that
+ * had spent the afternoon refusing things.
+ */
+describe('what the shell seam hands back to be recorded', () => {
+  it('names the action that drove the verdict, not the shell it arrived through', async () => {
+    const gate = new LocalGate(
+      [
+        {
+          name: 'no-force-push',
+          match: { actions: ['git.push-force'] },
+          decision: { effect: DECISION_EFFECT.DENY, reason: 'history is shared' },
+        },
+      ] as never,
+      { agentName: 'agent' },
+    );
+    const outcome = await new ShellSeam({
+      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+    }).gate(['git push --force origin main']);
+
+    expect(outcome.run).toBeUndefined();
+    // `next` counts capabilities, so a row saying only `shell.execute` teaches it nothing.
+    expect(outcome.decision.action).toBe('git.push-force');
+    expect(outcome.decision.effect).toBe(DECISION_EFFECT.DENY);
+    expect(outcome.decision.rule).toBe('no-force-push');
+  });
+
+  it('marks a hold that a person allowed, which is what a hand-over is counted from', async () => {
+    const gate = new LocalGate(
+      [
+        {
+          name: 'ask-first',
+          match: { actions: ['git.commit'] },
+          decision: { effect: DECISION_EFFECT.ASK, reason: 'somebody else sees it' },
+        },
+      ] as never,
+      { agentName: 'agent' },
+    );
+    const outcome = await new ShellSeam({
+      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      hold: {
+        hold: async () => ({ outcome: 'allowed', answeredBy: 'somebody' }),
+      } as never,
+    }).gate(['git commit -m fix']);
+
+    expect(outcome.run).toEqual(['git commit -m fix']);
+    expect(outcome.decision.asked).toBe(true);
+    expect(outcome.decision.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+
+  it('records an allow too, or the ledger only ever holds bad news', async () => {
+    const outcome = await new ShellSeam({
+      authorizer: as(new StubAuthorizer(allow)),
+    }).gate(['npm', 'test']);
+    expect(outcome.decision.effect).toBe(DECISION_EFFECT.ALLOW);
+  });
+});
+
+describe('a command naming more than one file', () => {
+  it('rules on every one, so a second argument cannot carry a credential past', async () => {
+    const gate = new LocalGate(
+      [
+        {
+          name: 'no-key-reads',
+          match: { actions: ['filesystem.read'], targets: ['/Users/me/.ssh/**'] },
+          decision: { effect: DECISION_EFFECT.DENY, reason: 'that is a credential' },
+        },
+      ] as never,
+      { agentName: 'agent' },
+    );
+    const seam = new ShellSeam({
+      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      env: { HOME: '/Users/me', PWD: '/work' },
+    });
+
+    // The denied path is second, which is exactly where it used to go unseen.
+    const hidden = await seam.gate(['cat README ~/.ssh/id_ed25519']);
+    expect(hidden.run).toBeUndefined();
+    expect(hidden.decision.effect).toBe(DECISION_EFFECT.DENY);
+
+    // And an ordinary read still runs, or nobody keeps this turned on.
+    expect((await seam.gate(['cat README'])).run).toEqual(['cat README']);
+  });
+});
+
+/**
+ * Every non-allow came back as the reason the rule gave for asking, so a refusal, a
+ * slow approver and a machine with nobody to ask all produced one sentence — and the
+ * one it read as was "the rule refused you". A person who approved a minute too late
+ * watched their agent report that the rule had denied it.
+ */
+describe('what an agent is told when a hold does not end in yes', () => {
+  const askRule = [
+    {
+      name: 'ask-first',
+      match: { actions: ['git.commit'] },
+      decision: {
+        effect: DECISION_EFFECT.ASK,
+        reason: 'somebody else sees the result',
+        alternative: { action: 'git', note: 'open a PR instead' },
+      },
+    },
+  ];
+
+  const seamWith = (outcome: string): ShellSeam =>
+    new ShellSeam({
+      authorizer: new RealAuthorizer({
+        gate: new LocalGate(askRule as never, { agentName: 'agent' }),
+        log: () => {},
+      }),
+      hold: { hold: async () => ({ outcome }) } as never,
+    });
+
+  it('says a person refused it', async () => {
+    const out = await seamWith('denied').gate(['git commit -m fix']);
+    expect(out.message).toContain('A person denied');
+    // The way forward still rides along, or the refusal is a dead end.
+    expect(out.message).toContain('open a PR instead');
+  });
+
+  it('says nobody answered, which is not the same as being refused', async () => {
+    const out = await seamWith('timed-out').gate(['git commit -m fix']);
+    expect(out.message).toContain('Nobody answered in time');
+    expect(out.message).not.toContain('A person denied');
+  });
+
+  it('says there was nobody to ask, and names how to fix that', async () => {
+    const out = await seamWith('unattended').gate(['git commit -m fix']);
+    expect(out.message).toContain('no terminal to ask at');
+    expect(out.message).toContain('memnox run');
+  });
+
+  it('records what happened, so why reads the same as the agent was told', async () => {
+    const out = await seamWith('timed-out').gate(['git commit -m fix']);
+    expect(out.decision.reason).toContain('Nobody answered in time');
+  });
+});
