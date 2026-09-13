@@ -18,6 +18,7 @@ import {
   interceptorDirFor,
 } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { guardProfilePath, landlockRulesetPath } from '../memnox-paths';
 import {
   addToProfile,
@@ -37,30 +38,31 @@ import { resolvePolicyFile } from '../policy-path';
 export async function runInterceptors(context: CliContext): Promise<void> {
   const home = homedir();
   const report = await installInterceptors(home, INTERCEPT_BINARY);
-  const { out, style } = context;
+  const { flow } = context;
 
-  out.line(`Installed ${report.installed.length} interceptor(s) in ${report.directory}`);
-  out.line(`  ${report.installed.join(', ')}`);
-  /* Named rather than silently skipped: a rule written for a CLI this machine does not
-     have is not broken, and somebody installing it later needs to know to re-run this. */
-  if (report.absent.length > 0) {
-    out.line('');
-    out.line(
-      `  ${style.dim(`not on this machine, so not wrapped: ${report.absent.join(', ')}`)}`,
-    );
-    out.line(`  ${style.dim('install one of those later and run this again')}`);
-  }
-  out.line('');
-  out.line('They only bite when that directory comes first on PATH:');
-  out.line(`  ${style.bold('memnox run -- <your agent>')}   sets it for that agent`);
+  flow.rows('Installed', [
+    { label: 'where', value: report.directory },
+    { label: 'wrapped', value: report.installed.join(', ') },
+    /* Named rather than silently skipped: a rule written for a CLI this machine
+       does not have is not broken, and somebody installing it later needs to know
+       to re-run this. */
+    ...(report.absent.length === 0
+      ? []
+      : [
+          {
+            label: 'not here',
+            value: `${report.absent.join(', ')}, so install one later and run this again`,
+          },
+        ]),
+  ]);
+  flow.close(`${report.installed.length} interceptor(s) installed.`);
+  flow.hint('They only bite when that directory comes first on PATH:');
+  flow.hint('memnox run -- <your agent>   sets it for that agent');
   /* The second line is the only way to reach an editor opened from a dock icon: it
      takes its environment from the login shell, never from a process we start. */
-  out.line(
-    `  ${style.bold('memnox protect --path')}          writes it into your shell profile`,
-  );
-  out.line(`  ${style.dim(report.pathLine)}   or paste that yourself`);
-  out.line('');
-  out.note(
+  flow.hint('memnox protect --path        writes it into your shell profile');
+  flow.hint(`${report.pathLine}   or paste that yourself`);
+  flow.hint(
     `Undo with "memnox uninstall". Nothing outside ${interceptorDirFor(home)} was touched.`,
   );
 }
@@ -71,21 +73,24 @@ export async function runInterceptors(context: CliContext): Promise<void> {
  * `.git`, so it is installed per repository and never machine-wide.
  */
 export async function runHooks(context: CliContext, repoDir: string): Promise<void> {
-  const { out, style } = context;
+  const { flow } = context;
   const report = await installGitHooks(repoDir);
 
   if (report.installed.length === 0 && report.skipped.length === 0) {
-    out.line(`No git repository at ${repoDir}, so there is nowhere to put a hook.`);
+    flow.close(`No git repository at ${repoDir}, so there is nowhere to put a hook.`);
     return;
   }
-  for (const hook of report.installed) out.line(`${style.ok('installed')}  ${hook}`);
-  // A hook somebody else wrote is never overwritten; theirs is the one that matters.
-  for (const hook of report.skipped) {
-    out.line(`${style.warn('kept')}       ${hook} — yours, left alone`);
-  }
-  out.line('');
-  out.line('A blocked push now stops even when the interceptors are not on PATH.');
-  out.note('Undo with "memnox uninstall".');
+  flow.list('Git hooks', [
+    ...report.installed.map((hook) => ({ tone: TONE.OK, text: `installed  ${hook}` })),
+    // A hook somebody else wrote is never overwritten; theirs is the one that matters.
+    ...report.skipped.map((hook) => ({
+      tone: TONE.DIM,
+      text: `kept  ${hook}, because it is yours`,
+    })),
+  ]);
+  flow.close(`${report.installed.length} hook(s) installed in ${repoDir}.`);
+  flow.hint('A blocked push now stops even when the interceptors are not on PATH.');
+  flow.hint('Undo with "memnox uninstall".');
 }
 
 /**
@@ -99,7 +104,7 @@ export async function runOsGuard(
   /** Injected so a test can point it at a symlinked home, which is the whole bug. */
   home: string = homedir(),
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow } = context;
   const support = guardFor(process.platform, release());
 
   const file = resolvePolicyFile();
@@ -109,38 +114,47 @@ export async function runOsGuard(
   const plan = guardPlanFrom(await loadPoliciesFromFile(file), home, [repoDir]);
   const denied = plan.policy.denyRead.length + plan.policy.denyWrite.length;
   if (denied === 0) {
-    out.line('No filesystem rule denies a path, so there is nothing to hand the kernel.');
+    flow.close(
+      'No filesystem rule denies a path, so there is nothing to hand the kernel.',
+    );
     return;
   }
 
+  let path: string;
   if (support.guard === OS_GUARD.SEATBELT) {
-    const path = guardProfilePath(home);
+    path = guardProfilePath(home);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await writeFile(path, seatbeltProfile(throughSymlinks(plan.policy)), {
       encoding: 'utf8',
       mode: 0o600,
     });
-    out.line(`Wrote a seatbelt profile covering ${denied} path(s) to ${path}`);
-    out.line('');
-    out.line(
-      `  ${style.bold('memnox run -- <your agent>')}   starts it inside the sandbox`,
-    );
   } else if (support.guard === OS_GUARD.LANDLOCK) {
     const ruleset = landlockRuleset(plan.policy);
-    const path = landlockRulesetPath(home);
+    path = landlockRulesetPath(home);
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     await writeFile(path, `${JSON.stringify(ruleset, null, 2)}\n`, {
       encoding: 'utf8',
       mode: 0o600,
     });
-    out.line(`Wrote a Landlock ruleset covering ${denied} path(s) to ${path}`);
   } else {
-    out.line(`No kernel guard here: ${support.because}`);
+    flow.close(`No kernel guard here: ${support.because}`);
     return;
   }
 
-  for (const pattern of plan.skipped) {
-    out.note(`the kernel cannot express "${pattern}" — the interceptors still cover it`);
+  flow.rows('Written', [
+    { label: 'guard', value: support.guard },
+    { label: 'file', value: path },
+    { label: 'covers', value: `${denied} path(s)` },
+    /* What it cannot express is printed, because a guard quietly covering less
+       than the rules do is worse than no guard at all. */
+    ...plan.skipped.map((pattern) => ({
+      label: 'cannot express',
+      value: `"${pattern}", so the interceptors still cover it`,
+    })),
+  ]);
+  flow.close(`A ${support.guard} guard covers ${denied} path(s).`);
+  if (support.guard === OS_GUARD.SEATBELT) {
+    flow.hint('memnox run -- <your agent>   starts it inside the sandbox');
   }
 }
 
@@ -156,21 +170,24 @@ export async function runPathLine(
   const home = homedir();
   const shell = env['SHELL'] ?? 'zsh';
   const candidates = profilesFor(shell, home);
-  const { out, style } = context;
+  const { flow } = context;
 
   if (reverting) {
-    let removed = 0;
+    const removed: string[] = [];
     for (const path of candidates) {
       const edit = await removeFromProfile(path);
-      if (edit.state === 'removed') {
-        out.line(`Took our line back out of ${path}.`);
-        removed += 1;
-      }
+      if (edit.state === 'removed') removed.push(path);
     }
-    if (removed === 0)
-      out.line('No Memnox line in any profile here, so nothing changed.');
-    else
-      out.note('Open a new terminal, or restart your editor, for that to take effect.');
+    if (removed.length === 0) {
+      flow.close('No Memnox line in any profile here, so nothing changed.');
+      return;
+    }
+    flow.list(
+      'Taken back out',
+      removed.map((path) => ({ tone: TONE.OK, text: path })),
+    );
+    flow.close(`Removed our line from ${removed.length} profile(s).`);
+    flow.hint('Open a new terminal, or restart your editor, for that to take effect.');
     return;
   }
 
@@ -180,14 +197,15 @@ export async function runPathLine(
   const edit = await addToProfile(target, blockFor(shell, home));
 
   if (edit.state === 'unchanged') {
-    out.line(`${target} already has our line, so nothing changed.`);
+    flow.close(`${target} already has our line, so nothing changed.`);
     return;
   }
-  out.line(`Added the interceptor directory to PATH in ${target}:`);
-  out.line(`  ${style.dim(pathLineFor(shell, home))}`);
-  out.line('');
-  out.line('Open a new terminal, or restart your editor, for that to take effect.');
-  out.note(
+  flow.rows('Added to PATH', [
+    { label: 'profile', value: target },
+    { label: 'line', value: pathLineFor(shell, home) },
+  ]);
+  flow.close('Open a new terminal, or restart your editor, for that to take effect.');
+  flow.hint(
     'Undo with "memnox protect --revert-path". Nothing outside our markers is touched.',
   );
 }

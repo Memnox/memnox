@@ -22,6 +22,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { profilesFor, removeFromProfile } from '../protect/shell-profile';
 import { POLICY_FILES } from '../policy-path';
+import { uninstallService } from '../daemon/service';
 
 interface UninstallDeps {
   home?: () => string;
@@ -29,6 +30,8 @@ interface UninstallDeps {
   /** Unwrapping is the MCP command's job; injected so this stays testable. */
   unwrap?: () => Promise<number>;
   now?: () => Date;
+  /** Injected so a test never asks the real service manager to stop anything. */
+  unservice?: typeof uninstallService;
 }
 
 /**
@@ -90,80 +93,114 @@ export function registerUninstallCommand(
     .action(async (options: { purge?: boolean }) => {
       const home = (deps.home ?? homedir)();
       const dir = (deps.dir ?? cwd)();
-      const { out } = context;
+      const { flow, style } = context;
+      flow.open('memnox uninstall');
+
+      const taken: string[] = [];
 
       const interceptors = await removeInterceptors(home);
-      out.line(
+      flow.step(
+        'Interceptors',
         interceptors.length === 0
-          ? 'No interceptors were installed.'
-          : `Removed ${interceptors.length} interceptor(s) from ${interceptorDirFor(home)}.`,
+          ? 'none were installed'
+          : `removed ${interceptors.length} from ${interceptorDirFor(home)}`,
       );
+      if (interceptors.length > 0) taken.push('the interceptors');
+
+      /* Taken out before the wrappers, because it is the one piece that restarts
+         itself: a service left loaded would keep a daemon alive against a machine
+         this command has just stripped, and `setup` installs one now, so an
+         uninstall that skipped it would leave the thing most able to outlive it. */
+      const service = await (deps.unservice ?? uninstallService)(home);
+      flow.step(
+        'Daemon',
+        !service.state.supported || service.state.path === ''
+          ? 'nothing was starting it'
+          : service.warning === undefined
+            ? 'stopped, and this machine no longer starts it'
+            : `file removed, but it would not stop (${service.warning})`,
+      );
+      if (service.state.supported && service.state.path !== '') {
+        taken.push('the daemon service');
+      }
 
       /* The one thing we ever write outside ~/.memnox, so it is the one thing that
          would outlive an uninstall if this did not take it back out. */
       for (const path of profilesFor(process.env['SHELL'] ?? 'zsh', home)) {
         const edit = await removeFromProfile(path);
-        if (edit.state === 'removed') out.line(`Removed our PATH line from ${path}.`);
+        if (edit.state === 'removed')
+          flow.step('Shell profile', `our PATH line is out of ${path}`);
       }
 
       /* Nothing may still be held by a seam that is no longer installed. The records
          stay — what was held and when is history — but nothing is left in force. */
       const released = await releaseEveryLease(home, (deps.now ?? (() => new Date()))());
       if (released > 0) {
-        out.line(`Released ${released} lease(s); no path is held any more.`);
+        flow.step('Leases', `released ${released}; no path is held any more`);
       }
 
       /* Operational state, not history and not rules: a pause or a held call left
          behind would silently stop the next install before it had done anything. */
       const cleared = await clearOperationalState(home);
       if (cleared > 0) {
-        out.line(`Cleared ${cleared} held or paused item(s).`);
+        flow.step('Held work', `cleared ${cleared} held or paused item(s)`);
       }
 
       const hooks = await removeGitHooks(dir);
-      out.line(
+      flow.step(
+        'Git hooks',
         hooks.length === 0
-          ? 'No Memnox git hooks in this repository.'
-          : `Removed the ${hooks.join(' and ')} hook(s).`,
+          ? 'none of ours in this repository'
+          : `removed the ${hooks.join(' and ')} hook(s)`,
       );
+      if (hooks.length > 0) taken.push('the git hooks');
 
       if (deps.unwrap !== undefined) {
         const restored = await deps.unwrap();
-        out.line(
-          restored === 0
-            ? 'No MCP server was wrapped.'
-            : `Restored ${restored} MCP server(s).`,
+        flow.step(
+          'MCP servers',
+          restored === 0 ? 'none was wrapped' : `restored ${restored}`,
         );
+        if (restored > 0) taken.push('the MCP wrapping');
       } else {
-        out.note('Run "memnox mcp unwrap" to put your MCP servers back.');
+        flow.step('MCP servers', 'not touched from here');
+        flow.aside('Run "memnox mcp unwrap" to put your MCP servers back.');
       }
 
       if (options.purge !== true) {
-        out.line('');
-        out.line(`Your rules and history are still in ${join(home, MEMNOX_HOME)}.`);
-        out.line('Add --purge to delete those too.');
+        flow.rows('Still here', [
+          { label: 'rules', value: join(home, MEMNOX_HOME) },
+          { label: 'history', value: 'the same place, and still yours' },
+        ]);
+        flow.close(
+          taken.length === 0
+            ? 'Nothing of ours was installed on this machine.'
+            : `Removed ${taken.join(', ')}.`,
+        );
+        flow.hint('Add --purge to delete your rules and history too.');
         return;
       }
 
       await rm(join(home, MEMNOX_HOME), { recursive: true, force: true });
-      out.line('');
-      out.line(`Deleted ${join(home, MEMNOX_HOME)}.`);
 
       /* The rule file lives in the repository and is very likely committed, so it is
          not ours to delete — but claiming nothing is left while it sits there is the
          kind of small untruth that makes somebody stop trusting the rest. */
       const rules = POLICY_FILES.map((name) => join(dir, name)).filter(existsSync);
-      if (rules.length === 0) {
-        out.line('Nothing of Memnox is left on this machine.');
-      } else {
-        for (const path of rules) {
-          out.line(
-            `Your rules are still at ${path} — they are yours, and probably committed.`,
-          );
-        }
-      }
+      flow.rows('Deleted', [
+        { label: 'home', value: join(home, MEMNOX_HOME) },
+        ...rules.map((path) => ({
+          label: 'kept',
+          value: `${path}, because it is yours and probably committed`,
+        })),
+      ]);
+      flow.close(
+        rules.length === 0
+          ? style.ok('Nothing of Memnox is left on this machine.')
+          : 'Everything of ours is gone; your rule files are where you put them.',
+      );
       // Ours came out above; a line somebody pasted themselves is theirs to remove.
-      out.note(
+      flow.hint(
         'If you added the interceptor directory to PATH by hand, remove that line.',
       );
     });

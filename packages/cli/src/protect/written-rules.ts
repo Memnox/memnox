@@ -20,10 +20,12 @@ import {
   type Policy,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { DAY_MS, windowDays } from '../duration';
 import { withEvents } from '../event-store';
 import { resolvePolicyFile } from '../policy-path';
 import { registerPolicyFile } from '../policy-registry';
+import { mergeRules } from './merge-rules';
 
 /**
  * One CLI, from its own verb table. Denying the credential *file* while allowing the
@@ -70,17 +72,16 @@ export async function runForCli(context: CliContext, name: string): Promise<void
   }
 
   const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
-  await writePolicyDocumentFile(path, { version: 1, policies: rules });
-  await registerPolicyFile(homedir(), path);
+  await mergeRules(path, rules);
 
-  const { out, style } = context;
-  out.line('');
-  for (const rule of rules) out.line(`  ${rule.decision.effect.padEnd(6)}${rule.name}`);
-  out.line('');
-  out.line(`Wrote ${rules.length} rule(s) for ${name} to ${path}.`);
-  out.note(
-    `${style.bold(name)} keeps working — only reading its credential file is denied.`,
+  const { flow } = context;
+  flow.table(
+    `Written to ${path}`,
+    ['Effect', 'Rule'],
+    rules.map((rule) => [rule.decision.effect, rule.name]),
   );
+  flow.close(`Wrote ${rules.length} rule(s) for ${name}.`);
+  flow.hint(`${name} keeps working: only reading its credential file is denied.`);
 }
 
 function ruleFor(
@@ -119,13 +120,13 @@ export async function runFromUsage(
 ): Promise<void> {
   const days = windowDays(window, '--from-usage');
   const since = new Date(Date.now() - days * DAY_MS).toISOString();
-  const { out, style } = context;
+  const { flow } = context;
 
   await withEvents(homedir(), async (store) => {
     const events = await store.query({ since });
     if (events.length === 0) {
-      out.line(`Nothing was recorded in the last ${days} days.`);
-      out.note('Nothing can be called unused until something has been used.');
+      flow.close(`Nothing was recorded in the last ${days} days.`);
+      flow.hint('Nothing can be called unused until something has been used.');
       return;
     }
 
@@ -155,7 +156,7 @@ export async function runFromUsage(
 
     const unused = findUnusedGrants(granted, usage, days, matchesPattern);
     if (unused.length === 0) {
-      out.line(`Everything reachable was used in the last ${days} days.`);
+      flow.close(`Everything reachable was used in the last ${days} days.`);
       return;
     }
 
@@ -175,18 +176,25 @@ export async function runFromUsage(
     } as unknown as Policy;
 
     const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
-    await writePolicyDocumentFile(path, { version: 1, policies: [rule] });
-    await registerPolicyFile(homedir(), path);
+    await mergeRules(path, [rule]);
 
-    out.line('');
-    out.line(`${actions.length} capability(ies) were reachable and never used:`);
-    for (const action of actions.slice(0, 12)) out.line(`  ${action}`);
-    if (actions.length > 12)
-      out.line(`  ${style.dim(`… and ${actions.length - 12} more`)}`);
-    out.line('');
-    out.line(`Wrote one ask rule to ${path}.`);
+    flow.list(`${actions.length} capability(ies) were reachable and never used`, [
+      ...actions.slice(0, UNUSED_SHOWN).map((action) => ({
+        tone: TONE.WARN,
+        text: action,
+      })),
+      ...(actions.length > UNUSED_SHOWN
+        ? [
+            {
+              tone: TONE.DIM,
+              text: `… and ${actions.length - UNUSED_SHOWN} more`,
+            },
+          ]
+        : []),
+    ]);
+    flow.close(`Wrote one ask rule to ${path}.`);
     // Ask, never deny: unused for a month is not the same as never needed.
-    out.note('They are set to ask, not deny — the first real use will simply pause.');
+    flow.hint('They are set to ask, not deny: the first real use will simply pause.');
   });
 }
 
@@ -207,22 +215,27 @@ export async function runAllow(
   actions: readonly string[],
   exists: (path: string) => boolean = existsSync,
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow } = context;
   const events = await withEvents(homedir(), (store) => store.query({ limit: 20_000 }));
   const found = delegations(events);
   const verdicts = actions.map((action) => handOverVerdict(action, found));
 
-  for (const verdict of verdicts) {
-    if (verdict.ready) continue;
-    out.line(`  ${style.dim('skipped')}  ${verdict.action}`);
-    out.line(`           ${style.dim(verdict.because)}`);
+  const skipped = verdicts.filter((verdict) => !verdict.ready);
+  if (skipped.length > 0) {
+    flow.list(
+      'Not handed over',
+      skipped.map((verdict) => ({
+        tone: TONE.DIM,
+        text: verdict.action,
+        detail: [verdict.because],
+      })),
+    );
   }
 
   const handing = verdicts.filter((verdict) => verdict.ready).map((v) => v.delegation);
   if (handing.length === 0) {
-    out.line('');
-    out.line('Nothing was handed over.');
-    out.note('Run "memnox next" to see what has been approved often enough.');
+    flow.close('Nothing was handed over.');
+    flow.hint('Run "memnox next" to see what has been approved often enough.');
     return;
   }
 
@@ -247,8 +260,7 @@ export async function runAllow(
     );
 
   if (added.length === 0) {
-    out.line('');
-    out.line('Every one of those is already allowed here.');
+    flow.close('Every one of those is already allowed here.');
     return;
   }
 
@@ -258,13 +270,17 @@ export async function runAllow(
   });
   await registerPolicyFile(homedir(), path);
 
-  out.line('');
-  for (const rule of added) out.line(`  ${style.ok('allow')}  ${rule.match.actions[0]}`);
-  out.line('');
-  out.line(`Wrote ${added.length} allow rule(s) to ${path}.`);
+  flow.list(
+    `Written to ${path}`,
+    added.map((rule) => ({ tone: TONE.OK, text: `allow  ${rule.match.actions[0]}` })),
+  );
+  flow.close(`Wrote ${added.length} allow rule(s).`);
   // Said out loud, because an allow rule is the one change that widens what may happen.
-  out.note('These now run without asking. Delete the rule to be asked again.');
+  flow.hint('These now run without asking. Delete the rule to be asked again.');
 }
+
+/** Enough to make the point without the block becoming the screen. */
+const UNUSED_SHOWN = 12;
 
 /** Stable across runs, so handing the same thing over twice adds one rule, not two. */
 function allowRuleName(action: string): string {

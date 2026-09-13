@@ -6,6 +6,7 @@ import type { Account } from '@memnox/core';
 import { registerSetupCommand } from '../src/commands/setup.command';
 import type { offboardAgent } from '../src/agents/onboard';
 import { readNames } from '../src/agents/names';
+import { readDeclined } from '../src/agents/declined';
 import { readRecord, retireRecord } from '../src/agents/onboarding';
 import { runCommand } from './cli-harness';
 import { RecordedOutput } from '../src/cli-output';
@@ -221,7 +222,7 @@ describe('memnox setup', () => {
     it('says so rather than carrying on with the credential it has', async () => {
       const { out } = await run({ enrolledAt: LOCAL, url: BASE, yes: false });
 
-      const text = out.notes.join('\n');
+      const text = out.text;
       expect(text).toContain('different control plane');
       expect(text).toContain(LOCAL);
       expect(text).toContain(BASE);
@@ -233,7 +234,7 @@ describe('memnox setup', () => {
       const { connects, out } = await run({ enrolledAt: LOCAL, url: BASE, yes: false });
 
       expect(connects).toHaveLength(0);
-      expect(out.notes.join('\n')).toContain(`Staying on ${LOCAL}`);
+      expect(out.text).toContain(`Staying on ${LOCAL}`);
     });
 
     it('enrols against the address it was pointed at once somebody says to move', async () => {
@@ -261,7 +262,7 @@ describe('memnox setup', () => {
 
       expect(handedBack).toContain('agt_claude-code');
       expect(connects).toEqual([BASE]);
-      expect(out.notes.join('\n')).toContain('credential is revoked');
+      expect(out.text).toContain('credential is revoked');
     });
 
     it('names a credential the old plane would not take back rather than calling it done', async () => {
@@ -274,7 +275,7 @@ describe('memnox setup', () => {
         handBack: () => ({ outcome: 'done', revoked: false }),
       });
 
-      expect(out.notes.join('\n')).toContain('revoke');
+      expect(out.text).toContain('revoke');
     });
 
     it('offers the agents again after a move, because the new workspace has none of them', async () => {
@@ -284,7 +285,7 @@ describe('memnox setup', () => {
       await run({ enrolledAt: LOCAL, url: BASE, yes: true });
       const { out } = await run({ enrolledAt: LOCAL, url: BASE, move: true, yes: true });
 
-      const text = out.notes.join('\n');
+      const text = out.text;
       expect(text).not.toContain('onboarded earlier');
       expect(text).toContain('2 agents are under Memnox');
     });
@@ -309,7 +310,7 @@ describe('memnox setup', () => {
         return null;
       });
 
-      const text = recorder.notes.join('\n');
+      const text = recorder.text;
       expect(said).toBeNull();
       expect(text).toContain('not under Memnox');
       expect(text).toContain('Run this again');
@@ -323,7 +324,29 @@ describe('memnox setup', () => {
       });
 
       expect(connects).toHaveLength(0);
-      expect(out.notes.join('\n')).toContain('memnox login --url');
+      expect(out.text).toContain('memnox login --url');
+    });
+
+    it('forgets the names and answers given for the workspace it is leaving', async () => {
+      /* "Call it something your workspace will recognise" and "put it under
+         Memnox" were both asked about the plane being left, so a laptop moved
+         off localhost kept offering "Moise claude" as the name the new
+         workspace knew it by. It had never heard of it. */
+      await run({
+        enrolledAt: LOCAL,
+        url: LOCAL,
+        yes: false,
+        names: { 'Claude Code': 'Moise claude' },
+      });
+      expect(await readNames(home)).toMatchObject({ 'agt_claude-code': 'Moise claude' });
+
+      const { out } = await run({ enrolledAt: LOCAL, url: BASE, move: true, yes: false });
+
+      const text = out.text;
+      expect(text).toContain('for the workspace you left');
+      /* What it asked about on the way through is the detected name, because
+         that is all there is once the chosen one is gone. */
+      expect(text).not.toContain('Moise claude');
     });
 
     it('says an agent belongs to another workspace rather than reporting it done', async () => {
@@ -334,7 +357,7 @@ describe('memnox setup', () => {
       await run({ enrolledAt: LOCAL, url: LOCAL, yes: true });
       const { out } = await run({ url: BASE, yes: false });
 
-      const text = out.notes.join('\n');
+      const text = out.text;
       expect(text).toContain('elsewhere');
       expect(text).toContain('memnox agents offboard');
     });
@@ -346,7 +369,7 @@ describe('memnox setup', () => {
     const { connects, out } = await run({ yes: false });
 
     expect(connects).toHaveLength(0);
-    expect(out.notes.join('\n')).toContain('Already connected');
+    expect(out.text).toContain('Already connected');
   });
 
   it('shows what each agent is and can reach before asking anything about it', async () => {
@@ -355,7 +378,7 @@ describe('memnox setup', () => {
        screen has to have said which before it asks. */
     const { out } = await run({ yes: false });
 
-    const text = out.notes.join('\n');
+    const text = out.text;
     expect(text).toContain('can use');
     expect(text).toContain('.aws/credentials');
   });
@@ -366,7 +389,7 @@ describe('memnox setup', () => {
        a person deciding has both in front of them. */
     const { out } = await run({ yes: false });
 
-    const text = out.notes.join('\n');
+    const text = out.text;
     expect(text).toContain('agt_claude-code');
     expect(text).toContain('.claude.json');
     expect(text).toContain('github');
@@ -377,7 +400,7 @@ describe('memnox setup', () => {
        ask the question the person thought they were answering. */
     const { out } = await run({ names: { 'Claude Code': 'y' } });
 
-    expect(out.notes.join('\n')).toContain('not a name');
+    expect(out.text).toContain('not a name');
     expect((await readNames(home))['agt_claude-code']).toBeUndefined();
   });
 
@@ -387,7 +410,7 @@ describe('memnox setup', () => {
        more is governed than is. */
     const { out } = await run({ yes: false });
 
-    const text = out.notes.join('\n');
+    const text = out.text;
     expect(text).toContain('Claude Code');
     expect(text).toContain('Cursor');
     expect(text).toContain('you said no');
@@ -402,7 +425,7 @@ describe('memnox setup', () => {
   it('says which workspace the name is for, because that is what it is for', async () => {
     const { out } = await run({ yes: false });
 
-    expect(out.notes.join('\n')).toContain('acme');
+    expect(out.text).toContain('acme');
   });
 
   it('onboards the ones that were agreed to, under the name that was given', async () => {
@@ -429,14 +452,34 @@ describe('memnox setup', () => {
        product rather than as a network that was down. */
     const { out } = await run({ reported: false });
 
-    expect(out.notes.join('\n')).toContain('next sync');
+    expect(out.text).toContain('next sync');
   });
 
   it('changes nothing for an agent that was refused', async () => {
     const { out } = await run({ yes: false });
 
     expect(await readRecord(home, 'agt_claude-code')).toBeNull();
-    expect(out.notes.join('\n')).toContain('nothing on this machine changed');
+    expect(out.text).toContain('nothing on this machine changed');
+  });
+
+  it('writes down a no, so the workspace is not asked the same question again', async () => {
+    /* The agent is still on this machine and still in the census, because it
+       can still reach everything it could before. What was missing was the
+       answer: the console listed Claude Desktop as an agent nobody had ever
+       been asked about, minutes after somebody was asked and said no. */
+    await run({ yes: false });
+
+    expect(await readDeclined(home)).toEqual(
+      expect.objectContaining({ 'agt_claude-code': expect.any(String) }),
+    );
+  });
+
+  it('takes the no back when the same agent is onboarded later', async () => {
+    await run({ yes: false });
+
+    await run({ yes: true });
+
+    expect(await readDeclined(home)).toEqual({});
   });
 
   it('opens no browser for an agent once the machine itself is connected', async () => {
@@ -444,18 +487,20 @@ describe('memnox setup', () => {
        five times, and a run that opens five tabs ends half finished. */
     const { out } = await run({});
 
-    const text = out.notes.join('\n');
+    const text = out.text;
     expect(text).not.toContain('device?code');
     expect(text).toContain('no browser');
   });
 
   it('draws every line on one rail, including what enrolment says', async () => {
-    /* Enrolment used to print its own block to stdout while the rest of the run
-       drew a rail on stderr, so the one step that can block on a person looked
-       like a different command had interrupted this one. */
+    /* Enrolment used to print its own block on one stream while the rest of the
+       run drew a rail on the other, so the one step that can block on a person
+       looked like a different command had interrupted this one. This run has no
+       payload of its own, so the rail is the answer and nothing is beside it. */
     const { out } = await run({});
 
-    expect(out.lines).toEqual([]);
+    expect(out.notes).toEqual([]);
+    expect(out.lines.join('\n')).toContain('is under Memnox');
   });
 
   it('says plainly that authority did not change', async () => {
@@ -463,7 +508,7 @@ describe('memnox setup', () => {
        more reach than it had. */
     const { out } = await run({});
 
-    expect(out.notes.join('\n')).toContain('Authority is unchanged');
+    expect(out.text).toContain('Authority is unchanged');
   });
 
   it('leaves an agent that is already onboarded alone rather than asking twice', async () => {
@@ -471,7 +516,7 @@ describe('memnox setup', () => {
 
     const { out } = await run({});
 
-    expect(out.notes.join('\n')).toContain('onboarded earlier');
+    expect(out.text).toContain('onboarded earlier');
   });
 
   it('stops rather than hanging when nothing is attached to the terminal', async () => {
@@ -479,7 +524,7 @@ describe('memnox setup', () => {
        command that hangs, which is worse than one that declines to run. */
     const { out } = await run({ interactive: false });
 
-    const text = out.notes.join('\n');
+    const text = out.text;
     expect(text).toContain('nobody can be asked');
     expect(text).toContain('memnox agents onboard');
     expect(await readRecord(home, 'agt_claude-code')).toBeNull();
