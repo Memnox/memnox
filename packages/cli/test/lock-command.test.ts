@@ -61,7 +61,7 @@ describe('memnox lock', () => {
        they did not ask for. */
     expect(out.text).toContain('Holding src/billing/invoice.ts');
     // Every lease expires, and the screen that takes one has to say so.
-    expect(out.notes.join(' ')).toContain('expires on its own');
+    expect(out.text).toContain('It expires on its own');
   });
 
   it('shows the holder and what they have been doing, from a third terminal', async () => {

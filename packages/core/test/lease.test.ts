@@ -6,6 +6,8 @@ import {
   LEASE_MAX_ACTIVITY,
   LEASE_MAX_WAIT_MS,
   LEASE_STATE,
+  NO_OWNER_PID,
+  holderPid,
   leaseFor,
   leaseState,
   leasesInForce,
@@ -229,5 +231,21 @@ describe('the scope a write claims', () => {
 
   it('reads a file at the top of the tree as the root', () => {
     expect(leaseScopeFor('README.md', directories)).toBe('');
+  });
+});
+
+/**
+ * A lease recorded against init could never be found dead, so it held the repository
+ * root until its clock ran out and no documented command would release it.
+ */
+describe('whose pid a lease belongs to', () => {
+  it('takes the parent, which outlives the seam that took the lease', () => {
+    expect(holderPid(4242, 99)).toBe(4242);
+  });
+
+  it('falls back to itself when the parent is already gone', () => {
+    // A reparented seam reports ppid 1, and init is nobody's agent.
+    expect(holderPid(NO_OWNER_PID, 99)).toBe(99);
+    expect(holderPid(0, 99)).toBe(99);
   });
 });

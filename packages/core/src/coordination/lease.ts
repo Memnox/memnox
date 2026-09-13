@@ -14,6 +14,23 @@
  * deliberately — a lease taken here and a lease read there must mean the same thing.
  */
 
+/**
+ * Whose pid a lease is recorded against.
+ *
+ * The parent, because a seam exits the moment its command does and holding its own pid
+ * would mark every lease abandoned as soon as it was taken. Except when the parent has
+ * already gone: the process is then reparented to init, and a lease recorded against
+ * pid 1 can never be reclaimed, because init outlives everything. Such a lease held
+ * the repository root until its clock ran out and no documented command would release
+ * it. Falling back to this process is right there, since a seam whose parent is
+ * already gone has no durable owner to outlive anyway.
+ */
+export const NO_OWNER_PID = 1;
+
+export function holderPid(parent: number, self: number): number {
+  return parent > NO_OWNER_PID ? parent : self;
+}
+
 /** Who holds a lease. The pid is this half's own: a dead owner is reclaimable. */
 export interface LeaseHolder {
   /** The agent that took it: `claude-code`, `cursor`, `codex`. */

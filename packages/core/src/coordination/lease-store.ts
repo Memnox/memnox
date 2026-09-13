@@ -6,6 +6,7 @@ import {
   conflicts,
   leasesInForce,
   leaseFor,
+  NO_OWNER_PID,
   sameHolder,
   withActivity,
   type Lease,
@@ -54,6 +55,10 @@ export type LeaseChangeResult =
 
 /** Whether a process is still there. Signal 0 asks without sending anything. */
 export function processAlive(pid: number): boolean {
+  /* init is alive forever and is nobody's agent, so a lease recorded against it is an
+     owner that can never be found dead. Reclaimable is the honest reading, and it is
+     what frees the leases written that way before `holderPid` existed. */
+  if (pid <= NO_OWNER_PID) return false;
   try {
     process.kill(pid, 0);
     return true;
