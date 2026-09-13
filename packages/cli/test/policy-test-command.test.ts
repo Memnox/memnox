@@ -63,7 +63,7 @@ describe('memnox policy test', () => {
 
   it('names the way forward, so the refusal is not a dead end', async () => {
     const out = await run(['policy', 'test', 'git push --force', '-f', await rules()]);
-    expect(out.text).toContain('instead git.push a branch');
+    expect(out.text).toContain('git.push a branch');
   });
 
   it('takes a namespaced action too, the way a git hook calls it', async () => {
@@ -111,5 +111,54 @@ reason = "it rewrites shared history"
     await expect(
       run(['policy', 'test', 'git push', '-f', '/nope/p.toml']),
     ).rejects.toThrow(/memnox protect/);
+  });
+});
+
+/**
+ * The dry run has to be the seam's answer. Reading only the first file meant a rule
+ * proven here fired on `cat ~/.ssh/id_ed25519` and not on `cat README ~/.ssh/id_ed25519`,
+ * which is one argument away from no gate at all.
+ */
+describe('a command that names more than one file', () => {
+  const CREDENTIALS = `
+version = 1
+
+[[policies]]
+name = "no-key-reads"
+[policies.match]
+actions = ["filesystem.read"]
+targets = ["/private/keys/**"]
+[policies.decision]
+effect = "deny"
+reason = "that is a credential"
+`;
+
+  async function credentialRules(): Promise<string> {
+    const path = join(await mkdtemp(join(tmpdir(), 'memnox-pt-')), 'c.toml');
+    await writeFile(path, CREDENTIALS);
+    return path;
+  }
+
+  it('rules on every one, so the second cannot ride in behind the first', async () => {
+    const out = await run([
+      'policy',
+      'test',
+      'cat README /private/keys/id_ed25519',
+      '-f',
+      await credentialRules(),
+    ]);
+    expect(out.text).toContain('DENY');
+    expect(out.text).toContain('no-key-reads');
+  });
+
+  it('still allows an ordinary read, or nobody keeps this turned on', async () => {
+    const out = await run([
+      'policy',
+      'test',
+      'cat README',
+      '-f',
+      await credentialRules(),
+    ]);
+    expect(out.text).toContain('ALLOW');
   });
 });

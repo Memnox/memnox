@@ -12,8 +12,10 @@ import {
   readPolicyRegistry,
   renameEffectsIn,
   resolveAction,
+  targetsRuledOn,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { TONE } from '../flow';
 import { backupPathFor } from '../memnox-paths';
 import {
   policyFilesInForce,
@@ -43,16 +45,18 @@ function splitCommand(input: string): string[] {
  * about `git.push` would not match somebody typing `git push --force` — which is the
  * only form anybody actually tests with.
  */
-function requestFor(
+function requestsFor(
   input: string,
   options: TestOptions,
-): Parameters<LocalGate['evaluate']>[0] {
+): Parameters<LocalGate['evaluate']>[0][] {
   // Already a namespaced action, e.g. from a git hook.
   if (!input.includes(' ') && input.includes('.')) {
-    return {
-      action: input,
-      ...(options.target === undefined ? {} : { target: options.target }),
-    };
+    return [
+      {
+        action: input,
+        ...(options.target === undefined ? {} : { target: options.target }),
+      },
+    ];
   }
 
   /* Split in order. `normalizeShellCommand` sorts flags ahead of positionals, which
@@ -62,15 +66,24 @@ function requestFor(
   const binary = argv[0] ?? input;
   const resolved = resolveAction(binary, argv.slice(1), process.env);
 
-  return {
+  if (options.target !== undefined) {
+    return [{ action: resolved.action, target: options.target }];
+  }
+  /* One per file the command names, through the same helper the shell seam uses. What
+     this command prints has to be what the seam will do, or `policy test` becomes a
+     second opinion rather than a dry run. */
+  return targetsRuledOn(resolved).map((target) => ({
     action: resolved.action,
-    ...(options.target !== undefined
-      ? { target: options.target }
-      : resolved.target === undefined
-        ? {}
-        : { target: resolved.target }),
-  };
+    ...(target === undefined ? {} : { target }),
+  }));
 }
+
+/** Deny beats ask beats allow, so a line is ruled by its worst file and not its last. */
+const SEVERITY: Record<string, number> = {
+  [DECISION_EFFECT.ALLOW]: 0,
+  [DECISION_EFFECT.ASK]: 1,
+  [DECISION_EFFECT.DENY]: 2,
+};
 
 export function registerPolicyCommand(program: Command, context: CliContext): void {
   const policy = program.command('policy').description('Inspect the rules in force');
@@ -82,6 +95,7 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     .option('--fix', 'rewrite effects this version renamed, keeping a backup')
     .action(
       async (file: string | undefined, options: { prune?: boolean; fix?: boolean }) => {
+        context.flow.open('memnox policy check');
         if (options.fix === true) await fixRenamedEffects(context, file);
         await checkPolicyFiles(context, file, options.prune === true);
       },
@@ -91,6 +105,8 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     .command('use [file]')
     .description('Register a rule file, so the seams load it and not only "policy test"')
     .action(async (file: string | undefined) => {
+      const { flow } = context;
+      flow.open('memnox policy use');
       const path = resolve(resolvePolicyFile(file));
       if (!existsSync(path)) {
         throw new Error(
@@ -104,12 +120,16 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
         join(homedir(), MEMNOX_HOME, REGISTRY_FILE),
       );
       await registerPolicyFile(homedir(), path);
-      context.out.line(
-        before.includes(path)
-          ? `${path} was already registered; ${policies.length} rule(s) load at every seam.`
-          : `Registered ${path} — ${policies.length} rule(s) now load at every seam.`,
-      );
-      context.out.note('Check it with "memnox doctor --wiring".');
+      flow.rows('Registered', [
+        { label: 'file', value: path },
+        { label: 'rules', value: `${policies.length} load at every seam` },
+        {
+          label: 'was',
+          value: before.includes(path) ? 'already registered' : 'not registered here',
+        },
+      ]);
+      flow.close(`${policies.length} rule(s) now load at every seam.`);
+      flow.hint('Check it with "memnox doctor --wiring".');
     });
 
   policy
@@ -119,6 +139,8 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
     .option('-a, --agent <name>', 'agent the rules are matched against', 'agent')
     .option('-t, --target <target>', 'what the action operates on')
     .action(async (action: string, options: TestOptions) => {
+      const { flow, style } = context;
+      flow.open('memnox policy test');
       // Every file in force, so this answers what the seams would, not what one file says.
       const rules = await policySetInForce(homedir(), options.file);
       if (rules.policies.length === 0 && rules.unreadable.length === 0) {
@@ -130,19 +152,40 @@ export function registerPolicyCommand(program: Command, context: CliContext): vo
       const gate = new LocalGate(rules.policies, {
         agentName: options.agent,
       });
-      const verdict = gate.evaluate(requestFor(action, options));
-
-      context.out.line(`${verdict.effect.toUpperCase()}  ${action}`);
-      context.out.line(`  reason  ${verdict.reason}`);
-      const rule = verdict.matchedPolicies[0];
-      if (rule !== undefined) context.out.line(`  rule    ${rule.name}`);
-      // A refusal that names no way forward is a dead end the agent cannot act on.
-      if (verdict.alternative !== undefined) {
-        const { action: instead, resource } = verdict.alternative;
-        context.out.line(
-          `  instead ${resource === undefined ? instead : `${instead} ${resource}`}`,
+      const verdict = requestsFor(action, options)
+        .map((request) => gate.evaluate(request))
+        .reduce((worst, each) =>
+          (SEVERITY[each.effect] ?? 0) > (SEVERITY[worst.effect] ?? 0) ? each : worst,
         );
-      }
+
+      const rule = verdict.matchedPolicies[0];
+      // A refusal that names no way forward is a dead end the agent cannot act on.
+      const alternative = verdict.alternative;
+      flow.rows(action, [
+        /* Upper case, the way `why` renders a verdict: this is the word a
+           reader is looking for and the one they paste into an issue. */
+        {
+          label: 'verdict',
+          value: style.effect(verdict.effect, verdict.effect.toUpperCase()),
+        },
+        { label: 'reason', value: verdict.reason },
+        ...(rule === undefined ? [] : [{ label: 'rule', value: rule.name }]),
+        ...(alternative === undefined
+          ? []
+          : [
+              {
+                label: 'instead',
+                value:
+                  alternative.resource === undefined
+                    ? alternative.action
+                    : `${alternative.action} ${alternative.resource}`,
+              },
+            ]),
+      ]);
+      flow.close(
+        style.effect(verdict.effect, `${verdict.effect.toUpperCase()}  ${action}`),
+      );
+      flow.hint('Nothing was run, and nothing on this machine changed.');
       if (verdict.effect !== DECISION_EFFECT.ALLOW) process.exitCode = 1;
     });
 }
@@ -157,35 +200,51 @@ async function checkPolicyFiles(
   file: string | undefined,
   prune: boolean,
 ): Promise<void> {
-  const { out, style } = context;
+  const { flow, style } = context;
   const files = file !== undefined ? [file] : await allPolicyFiles();
 
   if (files.length === 0) {
-    out.line('No rule files on this machine. Write some with "memnox protect".');
+    flow.close('No rule files on this machine.');
+    flow.hint('Write some with "memnox protect".');
     return;
   }
 
   const set = await loadPolicySet(files);
-  for (const loaded of set.loaded) {
-    out.line(`${style.ok('ok')}      ${loaded.file}  ${loaded.rules} rule(s)`);
-  }
   // A registered checkout that moved is not a fault to fix, so it is said separately.
-  for (const missing of set.missing) {
-    out.line(`${style.dim('gone')}    ${missing}`);
-  }
-  if (set.missing.length > 0 && prune && file === undefined) {
-    await forgetPolicyFiles(homedir(), set.missing);
-    out.line(`${style.dim('forgot')}  ${set.missing.length} path(s) that are gone`);
-  }
-  for (const broken of set.unreadable) {
-    out.line(`${style.warn('broken')}  ${broken.file}`);
-    for (const issue of broken.issues) out.line(`        ${issue}`);
-  }
+  const forgotten =
+    set.missing.length > 0 && prune && file === undefined
+      ? await forgetPolicyFiles(homedir(), set.missing).then(() => set.missing.length)
+      : 0;
 
-  out.line('');
-  out.line(`${set.policies.length} rule(s) in force from ${set.loaded.length} file(s).`);
+  flow.list('Rule files', [
+    ...set.loaded.map((loaded) => ({
+      tone: TONE.OK,
+      text: `${loaded.file}  ${loaded.rules} rule(s)`,
+    })),
+    ...set.missing.map((missing) => ({
+      tone: TONE.DIM,
+      text: `${missing}  gone`,
+      detail: [forgotten > 0 ? 'forgotten, because --prune was given' : undefined],
+    })),
+    ...set.unreadable.map((broken) => ({
+      tone: TONE.WARN,
+      text: `${broken.file}  would not load`,
+      detail: broken.issues,
+    })),
+  ]);
+
+  flow.close(
+    set.unreadable.length === 0
+      ? `${set.policies.length} rule(s) in force from ${set.loaded.length} file(s).`
+      : style.warn(
+          `${set.unreadable.length} file(s) would not load, so ${set.policies.length} rule(s) are in force from ${set.loaded.length}.`,
+        ),
+  );
   if (set.missing.length > 0 && !prune) {
-    out.note('Drop the paths that are gone with "memnox policy check --prune".');
+    flow.hint('Drop the paths that are gone with "memnox policy check --prune".');
+  }
+  if (set.unreadable.length > 0) {
+    flow.hint('Rewrite a renamed effect with "memnox policy check --fix".');
   }
   // Non-zero, so a CI step that checks the rule files fails on a broken one.
   if (set.unreadable.length > 0) process.exitCode = 1;
@@ -203,7 +262,6 @@ async function fixRenamedEffects(
   context: CliContext,
   file: string | undefined,
 ): Promise<void> {
-  const { out, style } = context;
   const files = file !== undefined ? [resolve(file)] : await allPolicyFiles();
   let touched = 0;
 
@@ -223,11 +281,16 @@ async function fixRenamedEffects(
     await writeFile(backup, source, 'utf8');
     await writeFile(path, text, 'utf8');
     touched += 1;
-    out.line(`${style.ok('fixed')}   ${path}  ${renamed.length} effect(s)`);
-    for (const each of new Set(renamed)) out.line(`        ${each}`);
-    out.note(`        kept the original at ${backup}`);
+    context.flow.list('Fixed', [
+      {
+        tone: TONE.OK,
+        text: `${path}  ${renamed.length} effect(s)`,
+        detail: [...new Set(renamed), `kept the original at ${backup}`],
+      },
+    ]);
   }
-  if (touched > 0) out.line('');
+  if (touched === 0)
+    context.flow.step('Nothing to fix', 'no file names a renamed effect');
 }
 
 /** The registry names every repository that registered itself; the cwd names this one. */
