@@ -3,17 +3,13 @@ import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
 import type { MemnoxEvent } from '../event/event';
 
 /**
- * What could safely be handed over next.
- *
- * The primary question this product answers is not "what did my agent do" but "what
- * can I safely let it do next", and the only honest source for that is what a person
- * has already approved. Twenty-three identical yeses are a decision somebody has made
- * over and over; asking a twenty-fourth time is the tool wasting their attention.
- *
- * Nothing here is a score. Every number on the screen is a count of something that
- * actually happened, because a confidence percentage is a thing nobody can check and
- * this is a screen people are being asked to act on.
+ * What could safely be handed over next, from what a person has already approved. Every
+ * number is a count of something that happened, because a percentage cannot be checked.
  */
+
+/** Interruptions as a share of all actions: above the first steered, below the second self-running. */
+const ASSIST_ASK_RATE = 0.2;
+const SUPERVISED_ASK_RATE = 0.02;
 
 export const AUTONOMY = {
   /** Watched, nothing enforced. Where every install starts. */
@@ -41,15 +37,7 @@ export const AUTONOMY_ORDER: readonly AutonomyLevel[] = [
 /** Identical yeses before the same question stops being worth asking. */
 export const PROMOTION_THRESHOLD = 5;
 
-/**
- * Actions in the window before the top two rungs can be claimed at all.
- *
- * Without a floor, a machine that ran three commands and was asked about none reads as
- * `trusted` on its first afternoon — the top of a ladder whose whole point is that it
- * is climbed as evidence accumulates. An absence of interruptions is not evidence of
- * trustworthiness when there was nothing much to interrupt, and a screen that says
- * otherwise is the one thing that would make the rest of this untrustworthy.
- */
+/** Actions in the window before the top two rungs can be claimed, since quiet is not proof. */
 export const MINIMUM_EVIDENCE = 50;
 
 export interface Delegation {
@@ -66,14 +54,7 @@ export interface Delegation {
   because: string;
 }
 
-/**
- * A destructive action never becomes autonomous on the strength of a habit.
- *
- * The point of the ladder is that it goes up as evidence accumulates, and the point of
- * this ceiling is that some things stay a decision however routine they became. An
- * agent that has deleted the right thing forty times is an agent that will delete the
- * wrong thing on the forty-first.
- */
+/** The highest rung each class can reach, because forty right deletions precede the wrong one. */
 const CEILING: Readonly<Record<string, AutonomyLevel>> = {
   [TOOL_CLASS.READ]: AUTONOMY.TRUSTED,
   [TOOL_CLASS.WRITE]: AUTONOMY.AUTONOMOUS,
@@ -94,11 +75,8 @@ interface Tally {
 }
 
 /**
- * What a person has decided, per action.
- *
- * An `ask` that carries an authorizer is a yes somebody typed. A `deny` is a no. An
- * `allow` is a rule already deciding and is not evidence about delegation at all —
- * counting it would recommend promoting things that were never being asked about.
+ * What a person has decided, per action: an authorized `ask` is a yes and a `deny` a no.
+ * An `allow` is a rule deciding, so counting it would promote what was never asked.
  */
 export function delegations(
   events: readonly MemnoxEvent[],
@@ -143,8 +121,7 @@ function recommend(
   threshold: number,
 ): { recommendation: AutonomyLevel; because: string } {
   if (tally.denials > 0) {
-    /* One no is enough. A thing somebody has refused is a thing they want to be asked
-       about, and the count of yeses before it does not overrule that. */
+    // One no is enough: a thing somebody refused is a thing they want to be asked about.
     return {
       recommendation: AUTONOMY.ASSIST,
       because: `refused ${tally.denials} time(s); keep asking`,
@@ -170,21 +147,13 @@ export function promotable(
   found: readonly Delegation[],
   threshold = PROMOTION_THRESHOLD,
 ): Delegation[] {
-  return found.filter(
-    (each) =>
-      each.denials === 0 &&
-      each.approvals >= threshold &&
-      each.recommendation !== AUTONOMY.ASSIST,
-  );
+  return found.filter((each) => {
+    const held = holdBackOf(each, threshold);
+    return held === null || held.kind === HOLD_BACK.CEILING;
+  });
 }
 
-/**
- * How often somebody is being interrupted, as a count rather than as hours.
- *
- * The temptation is to price it — "six hours a week you could get back" — and that
- * number would be invented. Interruptions are a thing that actually happened and can
- * be checked against the ledger, so that is what gets printed.
- */
+/** How often somebody is interrupted, as a count: hours saved would be a number nobody can check. */
 export function interruptions(
   events: readonly MemnoxEvent[],
   since: string,
@@ -205,12 +174,7 @@ export function interruptions(
   };
 }
 
-/**
- * Where this machine sits on the ladder, from what is actually configured and seen.
- *
- * Read off facts rather than declared: an install that says it is `autonomous` while
- * asking about everything is telling somebody a story about themselves.
- */
+/** Where this machine sits on the ladder, read off what is configured and seen rather than declared. */
 export function standingOf(input: {
   enforcing: boolean;
   rules: number;
@@ -220,12 +184,10 @@ export function standingOf(input: {
   if (!input.enforcing || input.rules === 0) return AUTONOMY.OBSERVE;
   if (input.actionsInWindow === 0) return AUTONOMY.ASSIST;
   const askRate = input.asksInWindow / input.actionsInWindow;
-  if (askRate > 0.2) return AUTONOMY.ASSIST;
-  if (askRate > 0.02) return AUTONOMY.SUPERVISED;
+  if (askRate > ASSIST_ASK_RATE) return AUTONOMY.ASSIST;
+  if (askRate > SUPERVISED_ASK_RATE) return AUTONOMY.SUPERVISED;
 
-  /* Quiet is not the same as proved. Until there is enough work behind it, a clean
-     record earns supervised and no more: the rungs above are claims about a boundary
-     that has been tested, and three commands have not tested one. */
+  // Quiet is not proved: the rungs above claim a boundary was tested, and three commands test none.
   if (input.actionsInWindow < MINIMUM_EVIDENCE) return AUTONOMY.SUPERVISED;
 
   if (input.asksInWindow > 0) return AUTONOMY.AUTONOMOUS;
@@ -244,15 +206,8 @@ export function describeLevel(level: AutonomyLevel): string {
 }
 
 /**
- * Whether one action may stop being asked about, and the sentence for why not.
- *
- * The same three tests the recommendation already applies, said once so a screen and
- * the command under it cannot disagree. Until this existed the screen printed
- * `memnox protect --allow <action>` under every promotable row, including the ones
- * whose own reason said they stay supervised, which is a screen arguing with itself.
- *
- * A refusal is a sentence rather than a boolean, because "skipped" with no reason is
- * how somebody concludes the tool is broken and hand-writes the rule anyway.
+ * Whether one action may stop being asked about, and the sentence for why not, so a
+ * screen and the command under it cannot disagree.
  */
 export type HandOverVerdict =
   | { action: string; ready: true; delegation: Delegation }
@@ -271,39 +226,52 @@ export function handOverVerdict(
       because: 'nothing has been held for it, so there is no yes to stop asking for',
     };
   }
-  /* One no outranks any number of yeses, exactly as the recommendation does. */
+  const held = holdBackOf(seen, threshold);
+  if (held !== null) return { action, ready: false, because: held.because };
+  return { action, ready: true, delegation: seen };
+}
+
+/** The rows on a screen that `--allow` would actually take, so neither names the other wrongly. */
+export function handable(each: Delegation, threshold = PROMOTION_THRESHOLD): boolean {
+  return holdBackOf(each, threshold) === null;
+}
+
+const HOLD_BACK = {
+  REFUSED: 'refused',
+  TOO_FEW: 'too-few',
+  /** The class ceiling: a habit, and still a decision however routine it became. */
+  CEILING: 'ceiling',
+} as const;
+
+type HoldBackKind = (typeof HOLD_BACK)[keyof typeof HOLD_BACK];
+
+/** What keeps one action a question, checked once for the screen, the list and the command. */
+function holdBackOf(
+  seen: Delegation,
+  threshold: number,
+): { kind: HoldBackKind; because: string } | null {
+  // One no outranks any number of yeses, exactly as the recommendation does.
   if (seen.denials > 0) {
     return {
-      action,
-      ready: false,
+      kind: HOLD_BACK.REFUSED,
       because: `somebody refused it ${seen.denials} time(s), so it stays a question`,
     };
   }
   if (seen.approvals < threshold) {
     return {
-      action,
-      ready: false,
+      kind: HOLD_BACK.TOO_FEW,
       because: `approved ${seen.approvals} time(s), fewer than the ${threshold} that make it a habit`,
     };
   }
-  /* The ceiling, not a preference: destructive and outward things stay decisions
-     however routine they became. */
+  // Recommended at a higher threshold than this one asks about.
+  if (seen.recommendation === AUTONOMY.ASSIST) {
+    return { kind: HOLD_BACK.TOO_FEW, because: seen.because };
+  }
   if (seen.recommendation === AUTONOMY.SUPERVISED) {
     return {
-      action,
-      ready: false,
+      kind: HOLD_BACK.CEILING,
       because: `it is ${seen.class}, which stays supervised however routine it became`,
     };
   }
-  return { action, ready: true, delegation: seen };
-}
-
-/** The rows on a screen that `--allow` would actually take, so neither names the other wrongly. */
-export function handable(each: Delegation): boolean {
-  return (
-    each.denials === 0 &&
-    each.approvals >= PROMOTION_THRESHOLD &&
-    each.recommendation !== AUTONOMY.ASSIST &&
-    each.recommendation !== AUTONOMY.SUPERVISED
-  );
+  return null;
 }

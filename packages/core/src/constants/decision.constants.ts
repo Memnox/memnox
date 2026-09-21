@@ -15,15 +15,15 @@ export const EFFECT_PRECEDENCE: Record<DecisionEffect, number> = {
 };
 
 export const DECISION_REASON = {
-  NO_POLICY_MATCHED: 'no policy matched — default effect applied',
-  UNKNOWN_AGENT: 'unknown agent credentials — fail closed',
+  NO_POLICY_MATCHED: 'no policy matched, so the default effect applied',
+  UNKNOWN_AGENT: 'unknown agent credentials, so this fails closed',
   AGENT_SUSPENDED: 'agent is suspended',
-  AGENT_QUARANTINED: 'agent is quarantined — reads pass, this does not',
+  AGENT_QUARANTINED: 'agent is quarantined, so reads pass and this does not',
   APPROVAL_GRANTED: 'human approval granted',
   APPROVAL_PENDING: 'human approval required and pending',
   CAPABILITY: "capability: action is outside this agent's declared capabilities",
   BREAK_GLASS_OVERRIDE: 'break-glass override',
-  NON_OVERRIDABLE: 'non-overridable deny — no approval can satisfy this action',
+  NON_OVERRIDABLE: 'non-overridable deny, so no approval can satisfy this action',
   RATE_LIMIT: 'rate limit exceeded for this rule',
   OUT_OF_DECLARED_SCOPE: 'this was not part of what the task declared',
 } as const;

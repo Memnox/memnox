@@ -1,40 +1,9 @@
 /**
- * The one thing a tool call acts on, as a ref two agents would both produce.
- *
- * Two agents repeating one message are caught by hashing the call. Two agents on
- * one pull request, one commenting and one closing it, are not repeating each
- * other and are still in each other's way, and nothing can see that without
- * knowing which *thing* each call is about. This is that: a provider's own
- * identifier, spelled the same way whichever tool named it.
- *
- * **Named per provider, never found by shape.** This is the same line
- * `self-address.ts` draws. A listing found by guessing lists nothing and is
- * visible at once; a *wrong* resource is two agents told they are in each
- * other's way when they are not, or worse, two agents on one issue that never
- * meet. Both of those are silent. So a provider with no entry here has no
- * resource, and its calls are still compared exactly, which is what every
- * provider had before this.
- *
- * **Read from the arguments a call already carries.** Nothing is fetched, and no
- * argument is guessed at by position: a field is named or it is absent. The
- * fields are the ones these providers' own MCP servers publish, and where a
- * server names something differently the call simply has no resource.
- *
- * **Composed left to right, lowercased.** `github:acme/api#pull/12` is what two
- * agents on that pull request both produce whether one of them asked to comment
- * and the other to close it.
+ * The thing a tool call acts on, as a ref two agents would both produce, such as
+ * `github:acme/api#pull/12`. Read from the call's own arguments, never fetched or guessed.
  */
 
-/**
- * One way a provider names the thing a call is about.
- *
- * **A thing, never the place it sits in.** A channel, a repository, a project
- * or a board is where many pieces of work happen side by side, and filing two
- * different messages to one channel under one resource would call them a
- * collision. So a shape names one issue, one thread, one page or one record,
- * and a call that names only its container has no resource and is compared
- * exactly.
- */
+/** One way a provider names a thing, never its container, since two messages in a channel do not collide. */
 interface ResourceShape {
   /** Argument names, in order. Every one must be present, or this shape misses. */
   fields: readonly string[];
@@ -46,8 +15,7 @@ interface ResourceShape {
 interface ProviderShapes {
   /** Matched against the server name, lowercased, as a substring. */
   matches: readonly string[];
-  /** Tried in order: the first whose fields are all present wins, so the most
-   * specific shape a call can satisfy is the one it is filed under. */
+  /** Tried in order, so the most specific shape a call satisfies is the one it is filed under. */
   shapes: readonly ResourceShape[];
 }
 
@@ -70,8 +38,7 @@ const PROVIDERS: readonly ProviderShapes[] = [
   {
     matches: ['slack'],
     shapes: [
-      /* A thread, where the call names one: two agents replying to one thread
-         are on the same thing, and two agents posting to one channel are not. */
+      // A thread, where named: two replies to one thread collide, two posts to a channel do not.
       { fields: ['channel', 'thread_ts'], ref: 'slack:$1#$2' },
       { fields: ['channel_id', 'thread_ts'], ref: 'slack:$1#$2' },
       { fields: ['channel', 'ts'], ref: 'slack:$1#$2' },
@@ -87,8 +54,7 @@ const PROVIDERS: readonly ProviderShapes[] = [
     ],
   },
   {
-    /* The Atlassian server carries Jira and Confluence both, so it is matched
-       by each entry and a page and an issue are both found on it. */
+    // The Atlassian server carries Jira and Confluence both, so each entry matches it.
     matches: ['jira', 'atlassian'],
     shapes: [
       { fields: ['issueIdOrKey'], ref: 'jira:$1' },
@@ -123,8 +89,7 @@ const PROVIDERS: readonly ProviderShapes[] = [
   {
     matches: ['calendar'],
     shapes: [
-      /* By the event alone, whether or not the call also named its calendar:
-         two agents on one event that spelled it differently must still meet. */
+      // By the event alone, so two agents naming its calendar differently still meet.
       { fields: ['eventId'], ref: 'gcal:event/$1' },
       { fields: ['event_id'], ref: 'gcal:event/$1' },
     ],
@@ -164,9 +129,7 @@ const PROVIDERS: readonly ProviderShapes[] = [
   {
     matches: ['salesforce'],
     shapes: [
-      /* A record id is unique across objects, so the object name is not
-         part of the ref and a call that leaves it out still meets one that
-         gives it. */
+      // A record id is unique across objects, so the object name stays out of the ref.
       { fields: ['recordId'], ref: 'salesforce:$1' },
     ],
   },
@@ -195,11 +158,8 @@ const PROVIDERS: readonly ProviderShapes[] = [
 ];
 
 /**
- * The thing this call acts on, or undefined where nothing names it.
- *
- * Undefined is the ordinary answer and costs nothing: the call is still
- * compared against other calls exactly, which is what catches a repeat. What
- * a resource adds is the other collision, which is two different actions on one thing.
+ * The thing this call acts on, or undefined where nothing names it, which is ordinary:
+ * the call is still compared exactly. A resource catches two different actions on one thing.
  */
 export function actionResource(
   serverName: string,

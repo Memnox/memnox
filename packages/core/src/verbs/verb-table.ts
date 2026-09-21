@@ -1,11 +1,8 @@
-import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
-
 /**
- * What one authenticated CLI can actually do, argv pattern by argv pattern. This is
- * the substance behind every screen that turns `~/.aws/credentials` into "can modify
- * infra in 2 accounts": a credential file is a fact, a verb is what somebody repeats
- * to a colleague.
+ * What one authenticated CLI can do, argv pattern by argv pattern: what turns
+ * `~/.aws/credentials` into what an agent could actually do with it.
  */
+import { changesExternalState, TOOL_CLASS, type ToolClass } from '../discovery/classify';
 
 /** Annotations that ride alongside the class rather than replacing it. */
 export const VERB_TAG = {
@@ -44,9 +41,8 @@ export interface VerbMatch {
 }
 
 /**
- * Longest literal prefix wins, so `deploy --prod` beats `deploy`. Without this the
- * first-listed pattern would decide, and a table's ordering would quietly become a
- * security control nobody reviewed.
+ * Longest literal prefix wins, so `deploy --prod` beats `deploy` rather than a table's
+ * ordering quietly becoming a security control nobody reviewed.
  */
 function specificity(pattern: string): number {
   return (
@@ -67,11 +63,8 @@ function wordMatches(word: string, argument: string | undefined): boolean {
 }
 
 /**
- * Where a pattern's flag sits in argv, or -1. A short flag is matched against the
- * letters of a cluster rather than the whole word, because `-fdx` and `-xfd` are the
- * forms people actually type and `argv.includes('-fd')` saw neither — so the deny rule
- * fired on `git clean -fd` and let the strictly more destructive `git clean -fdx` past.
- * Long flags stay exact: `--force` and `--force-with-lease` are different commands.
+ * Where a pattern's flag sits in argv, or -1. A short flag matches the letters of a cluster,
+ * such as `-xfd`; long flags stay exact, because `--force-with-lease` is not `--force`.
  */
 function flagIndexIn(flag: string, argv: readonly string[]): number {
   if (flag.startsWith('--')) return argv.indexOf(flag);
@@ -87,10 +80,8 @@ function flagIndexIn(flag: string, argv: readonly string[]): number {
 function matchesPattern(pattern: string, argv: readonly string[]): boolean {
   const words = pattern.split(/\s+/).filter((word) => word !== '');
   let index = 0;
-  /* Where the flag we just matched sits, so the word after it is read as that flag's
-     value. Without this `api -X DELETE **` compared `DELETE` against the positional at
-     `index` — which is the flag itself — so no pattern with a flag value ever matched
-     and `gh api -X DELETE` was classified a read. */
+  // Where the flag just matched sits, so the next word is read as its value, which is
+  // how `api -X DELETE **` matches `gh api -X DELETE`.
   let valueOf = -1;
 
   for (const word of words) {
@@ -135,13 +126,8 @@ function consumedBy(pattern: string, argv: readonly string[]): number {
 }
 
 /**
- * What the command was aimed at: the last positional argument the verb did not eat.
- *
- * The last, not the first, because that is where CLI grammar puts the object —
- * `git push origin main`, `aws s3 rm s3://bucket/key`, `kubectl delete pod api-7`.
- * Taking the first returned the subcommand itself, so `target` was `push` on every
- * push and no rule scoped with `targets` could ever match. Last is also what survives
- * a flag carrying a value, since that value sits before the object rather than after.
+ * What the command was aimed at: the last positional argument the verb did not eat, since
+ * CLI grammar puts the object last, as in `aws s3 rm s3://bucket/key`.
  */
 export function targetIn(verb: Verb, argv: readonly string[]): string | undefined {
   const positional = argv
@@ -150,7 +136,7 @@ export function targetIn(verb: Verb, argv: readonly string[]): string | undefine
   return positional[positional.length - 1];
 }
 
-/** Null when nothing in the table covers this command — which is `unknown`, not safe. */
+/** Null when nothing in the table covers this command, which is `unknown`, not safe. */
 export function matchVerb(table: VerbTable, argv: readonly string[]): VerbMatch | null {
   const candidates = table.verbs
     .filter((verb) => matchesPattern(verb.match, argv))
@@ -178,12 +164,7 @@ export function classOf(table: VerbTable, argv: readonly string[]): Verb {
 
 /** Every verb that changes something outside this machine, for the scan's headline. */
 export function externalStateVerbs(table: VerbTable): Verb[] {
-  return table.verbs.filter(
-    (verb) =>
-      verb.class === TOOL_CLASS.WRITE ||
-      verb.class === TOOL_CLASS.DESTRUCTIVE ||
-      verb.class === TOOL_CLASS.COMMUNICATION,
-  );
+  return table.verbs.filter((verb) => changesExternalState(verb.class));
 }
 
 export function destructiveVerbs(table: VerbTable): Verb[] {
@@ -191,14 +172,11 @@ export function destructiveVerbs(table: VerbTable): Verb[] {
 }
 
 /**
- * The single action name for a verb, used by the scan, `explain`, `protect`, the
- * interceptor and `policy test`. One function, because a rule written from one screen
- * that failed to match at another would be a gate nobody could trust.
+ * The single action name for a verb, shared by every screen and the interceptor, so a rule
+ * written from one screen matches at every other.
  */
 export function verbAction(cli: string, verb: Verb): string {
-  /* Flags stay in the name. `push --force` and `push origin main` are different
-     actions, and collapsing them would make a rule about force-pushing deny every
-     push — which is how a gate stops being used. */
+  // Flags stay in the name, so a rule about force-pushing does not deny every push.
   const words = verb.match
     .split(/\s+/)
     .filter((word) => word !== '' && !word.includes('*'))
@@ -221,13 +199,8 @@ export function hasTag(verb: Verb, tag: VerbTag): boolean {
 }
 
 /**
- * The verb an action name came from, found by asking which verb produces that name.
- *
- * Never by splitting the name back into argv: `verbAction` drops the dashes, so
- * `gh.api-x-delete` split on `-` is `api x delete`, which matches the plain `api **`
- * read and made the timeline annotate a repository deletion "read unless -X says
- * otherwise". `git.clean-fd` became `clean fd`, which matched nothing at all and was
- * labelled "no verb table entry covers this" beside the rule that had just denied it.
+ * The verb an action name came from, found by asking which verb produces that name rather
+ * than splitting it back into argv, since `verbAction` drops the dashes.
  */
 export function verbForAction(
   action: string,
@@ -235,20 +208,15 @@ export function verbForAction(
 ): Verb | null {
   const dot = action.indexOf('.');
   if (dot <= 0) return null;
-  const table = tableFor(action.slice(0, dot));
-  if (table === null) return null;
-
   const cli = action.slice(0, dot);
+  const table = tableFor(cli);
+  if (table === null) return null;
   return table.verbs.find((each) => verbAction(cli, each) === action) ?? null;
 }
 
 /**
- * A command glob for one Memnox action, from the table the evaluator itself reads.
- *
- * `git.push-force` is our name for it; `git push --force*` is what a command-level deny
- * list has to match. Deriving it from the table means a rule compiled into somebody
- * else's config gates exactly what this product would have refused, rather than a
- * pattern written twice and drifting.
+ * A command glob for one Memnox action, such as `git push --force*` for `git.push-force`,
+ * derived from the table the evaluator reads so a compiled rule cannot drift.
  */
 export function commandGlobFor(
   action: string,

@@ -21,11 +21,13 @@ const matches = (patterns: readonly string[], value: string): boolean =>
   matchesAny([...patterns], value);
 
 const checkout = taskFor(
-  'ses_1',
-  'fix checkout failures',
-  { paths: ['src/checkout/**'] },
+  {
+    sessionId: 'ses_1',
+    statement: 'fix checkout failures',
+    scope: { paths: ['src/checkout/**'] },
+    expectedActions: 40,
+  },
   NOW,
-  40,
 );
 
 describe('drift is compared, never guessed', () => {
@@ -60,7 +62,10 @@ describe('drift is compared, never guessed', () => {
   });
 
   it('says nothing about a dimension the task never declared', () => {
-    const paths = taskFor('ses_1', 'x', { paths: ['src/**'] }, NOW);
+    const paths = taskFor(
+      { sessionId: 'ses_1', statement: 'x', scope: { paths: ['src/**'] } },
+      NOW,
+    );
     const drift = scopeOf(
       paths,
       { action: 'deploy.service', environment: 'prod' },

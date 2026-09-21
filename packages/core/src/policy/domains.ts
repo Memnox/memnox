@@ -1,10 +1,10 @@
 import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
 import type { Policy } from './policy';
+import { ACTION } from '../constants/action.constants';
 
 /**
- * The five things somebody is deciding about when they write rules for the first time.
- * Walking these is faster than writing a file, and the file it produces is one they
- * can read afterwards — which a wizard that hid its output would not be.
+ * The five things somebody decides about when writing rules for the first time, walked
+ * as questions that produce a file they can read afterwards.
  */
 export const POLICY_DOMAIN = {
   FILESYSTEM: 'filesystem',
@@ -30,14 +30,12 @@ export interface DomainChoice {
 export const DOMAIN_CHOICES: readonly DomainChoice[] = [
   {
     domain: POLICY_DOMAIN.FILESYSTEM,
-    question: 'Reading your credentials — ~/.ssh, ~/.aws, .env files',
+    question: 'Reading your credentials: ~/.ssh, ~/.aws, .env files',
     recommended: DECISION_EFFECT.DENY,
     because:
       'almost no task needs the key itself, and a leaked one is somebody’s weekend',
-    actions: ['filesystem.read'],
-    /* Both the directory and what is inside it: a rule that only covered the contents
-       answers "no rule matched" to somebody asking about `~/.aws`, which reads as
-       permission. */
+    actions: [ACTION.FILESYSTEM_READ],
+    // The directory too, or asking about `~/.aws` itself answers "no rule matched".
     targets: [
       '**/.ssh',
       '**/.ssh/**',
@@ -53,21 +51,18 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
   },
   {
     domain: POLICY_DOMAIN.SHELL,
-    question: 'Destructive shell commands — rm -rf, dd, truncate',
+    question: 'Destructive shell commands: rm -rf, dd, truncate',
     recommended: DECISION_EFFECT.ASK,
     because: 'sometimes it really is the build directory, so a person should look',
-    actions: ['filesystem.delete'],
+    actions: [ACTION.FILESYSTEM_DELETE],
   },
   {
     domain: POLICY_DOMAIN.GIT,
     question: 'Force-pushing, and hard resets',
     recommended: DECISION_EFFECT.DENY,
     because: 'it rewrites history somebody else may already have pulled',
-    /* The names the verb table actually produces. This read `git.push` and so the
-       baseline denied every ordinary push while permitting `git push --force` — the
-       opposite of what the question above it asks, and invisible until something
-       rendered the boundary action by action. `git.reset` and `git.clean` stay for
-       the generic classifier's spelling of the same commands. */
+    // The names the verb table produces, so an ordinary push stays allowed; `git.reset`
+    // and `git.clean` are the generic classifier's spelling of the same commands.
     actions: [
       'git.push-force',
       'git.push-f',
@@ -121,11 +116,12 @@ export function policiesFrom(
         effect,
         reason: `${REASONS[effect]}: ${choice.because}`,
         alternative: {
+          // Every choice above names at least one action.
           action: choice.actions[0] as string,
           note: 'Ask somebody, or change this rule if it is wrong for your work.',
         },
       },
-    } as unknown as Policy);
+    });
   }
   return policies;
 }

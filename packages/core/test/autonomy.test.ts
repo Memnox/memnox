@@ -259,6 +259,17 @@ describe('handOverVerdict', () => {
     for (const each of promotable(found)) {
       expect(handOverVerdict(each.action, found).ready).toBe(handable(each));
     }
-    expect(promotable(found).filter(handable)).toHaveLength(1);
+    expect(promotable(found).filter((each) => handable(each))).toHaveLength(1);
+  });
+
+  it('holds a row to the threshold it was listed at, not the default', () => {
+    const higher = PROMOTION_THRESHOLD + 3;
+    const found = delegations(approvedTimes(PROMOTION_THRESHOLD));
+    const [row] = found;
+
+    expect(row !== undefined && handable(row)).toBe(true);
+    expect(row !== undefined && handable(row, higher)).toBe(false);
+    expect(handOverVerdict('vercel.deploy-preview', found, higher).ready).toBe(false);
+    expect(promotable(found, higher)).toEqual([]);
   });
 });

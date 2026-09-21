@@ -19,14 +19,7 @@ export interface ActionClassification {
   basis: ClassBasis;
 }
 
-/**
- * Which of the three classes an action falls in, from its namespace and its verb and
- * from nothing else. Deterministic, because this is read at the moment somebody is
- * deciding whether an action leaves the machine, and a guess there is worse than none.
- *
- * It classifies. It never decides: the effect is the policy engine's, and this is the
- * evidence a rule is written against.
- */
+/** Classifies an action by namespace and verb. Deterministic, and never decides the effect. */
 export function classifyActionClass(action: string): ActionClassification {
   const lowered = action.toLowerCase();
   const segments = lowered.split(ACTION_SEGMENT_SEPARATOR).filter((part) => part !== '');

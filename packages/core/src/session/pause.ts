@@ -1,19 +1,12 @@
-import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { JsonRecordDir } from '../store/json-records';
 import type { BreakerSignal } from './breaker';
 
 /**
- * A session held for a person.
- *
- * On disk rather than in memory, because the thing that noticed is a daemon and the
- * thing that has to stop is every seam in the session — and because "why did my agent
- * stop" is a question asked after the process that answered it has gone.
- *
- * A pause is not a denial and is deliberately shaped differently: it names the count
- * that produced it, it says how to lift it, and it can be lifted. A stop nobody can
- * argue with or undo is one people work around by uninstalling.
+ * A session held for a person, on disk because the daemon notices, every seam has to
+ * stop, and why it stopped is asked after those processes are gone. Unlike a denial it
+ * names the count that produced it and can be lifted.
  */
 export const PAUSE_DIR = 'paused';
 
@@ -35,23 +28,21 @@ export function pauseDirFor(home: string): string {
 }
 
 export class SessionPauses {
-  constructor(private readonly home: string) {}
+  private readonly records: JsonRecordDir<SessionPause>;
+
+  constructor(home: string) {
+    this.records = new JsonRecordDir(pauseDirFor(home));
+  }
 
   async pause(pause: SessionPause): Promise<void> {
-    /* First one wins: a session already held must not have its original reason
-       overwritten by whatever tripped next while somebody was reading it. */
+    // First one wins, so a held session keeps the reason somebody may be reading.
     if ((await this.inForce(pause.sessionId)) !== null) return;
-    await mkdir(pauseDirFor(this.home), { recursive: true, mode: 0o700 });
     await this.write(pause);
   }
 
-  async read(sessionId: string): Promise<SessionPause | null> {
-    try {
-      return JSON.parse(await readFile(this.pathFor(sessionId), 'utf8')) as SessionPause;
-    } catch {
-      // Never paused, which is the ordinary case.
-      return null;
-    }
+  /** Null when never paused, which is the ordinary case. */
+  read(sessionId: string): Promise<SessionPause | null> {
+    return this.records.read(sessionId);
   }
 
   /** The pause that is actually holding this session, or null once it was lifted. */
@@ -62,18 +53,7 @@ export class SessionPauses {
   }
 
   async all(): Promise<SessionPause[]> {
-    let names: string[];
-    try {
-      names = await readdir(pauseDirFor(this.home));
-    } catch {
-      return [];
-    }
-    const found: SessionPause[] = [];
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue;
-      const pause = await this.read(name.slice(0, -5));
-      if (pause !== null) found.push(pause);
-    }
+    const found = await this.records.all();
     return found.sort((a, b) => a.pausedAt.localeCompare(b.pausedAt));
   }
 
@@ -87,18 +67,12 @@ export class SessionPauses {
   }
 
   async clear(sessionId: string): Promise<void> {
-    await rm(this.pathFor(sessionId), { force: true });
+    await this.records.remove(sessionId);
   }
 
-  private pathFor(sessionId: string): string {
-    return join(pauseDirFor(this.home), `${sessionId}.json`);
-  }
-
+  // Atomic, so a pause read while it is being lifted never reads as absent.
   private async write(pause: SessionPause): Promise<void> {
-    await mkdir(pauseDirFor(this.home), { recursive: true, mode: 0o700 });
-    /* Atomic: a pause read while it is being lifted must not read as absent, or a
-       held session runs one command it was stopped from running. */
-    await writeJsonAtomic(this.pathFor(pause.sessionId), pause);
+    await this.records.write(pause.sessionId, pause);
   }
 }
 

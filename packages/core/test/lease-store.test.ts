@@ -25,10 +25,13 @@ const living = (): boolean => true;
 describe('one winner', () => {
   it('gives an overlapping path to the second asker as a refusal, not a second lease', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    const first = await registry.take('src/billing', cursor, NOW);
+    const first = await registry.take({ path: 'src/billing', holder: cursor }, NOW);
     expect(first.outcome).toBe(LEASE_OUTCOME.TAKEN);
 
-    const second = await registry.take('src/billing/invoice.ts', claude, at(1));
+    const second = await registry.take(
+      { path: 'src/billing/invoice.ts', holder: claude },
+      at(1),
+    );
     expect(second.outcome).toBe(LEASE_OUTCOME.HELD_BY_ANOTHER);
     if (second.outcome !== LEASE_OUTCOME.HELD_BY_ANOTHER) return;
     // The holder rides with the refusal, or the waiter has nobody to go and ask.
@@ -37,10 +40,11 @@ describe('one winner', () => {
 
   it('lets a sibling directory through, because the prefix trap is the whole risk', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src/billing', cursor, NOW);
-    expect((await registry.take('src/billing-legacy', claude, at(1))).outcome).toBe(
-      LEASE_OUTCOME.TAKEN,
-    );
+    await registry.take({ path: 'src/billing', holder: cursor }, NOW);
+    expect(
+      (await registry.take({ path: 'src/billing-legacy', holder: claude }, at(1)))
+        .outcome,
+    ).toBe(LEASE_OUTCOME.TAKEN);
   });
 
   /* Five callers racing through the real store. They interleave at every `await`, which
@@ -51,8 +55,14 @@ describe('one winner', () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, (_unused, index) =>
         registry.take(
-          'src/billing',
-          { agent: `agent-${index}`, sessionId: `ses_${index}`, pid: 1000 + index },
+          {
+            path: 'src/billing',
+            holder: {
+              agent: `agent-${index}`,
+              sessionId: `ses_${index}`,
+              pid: 1000 + index,
+            },
+          },
           NOW,
         ),
       ),
@@ -70,7 +80,7 @@ describe('one winner', () => {
     await mkdir(join(leaseDirFor(where), '.lock'), { recursive: true });
     const registry = new LeaseRegistry(where, living);
 
-    const taking = registry.take('src/billing', cursor, NOW);
+    const taking = registry.take({ path: 'src/billing', holder: cursor }, NOW);
     // Nothing may be written while somebody else holds the mutex.
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(await registry.all()).toEqual([]);
@@ -88,15 +98,28 @@ describe('one winner', () => {
     await utimes(lock, old, old);
 
     const registry = new LeaseRegistry(where, living);
-    expect((await registry.take('src', cursor, NOW)).outcome).toBe(LEASE_OUTCOME.TAKEN);
+    expect((await registry.take({ path: 'src', holder: cursor }, NOW)).outcome).toBe(
+      LEASE_OUTCOME.TAKEN,
+    );
   }, 15_000);
 });
 
 describe('one session, one lease', () => {
   it('renews rather than taking a second lease on the same tree', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src/billing', cursor, NOW, 30, 'wrote invoice.ts');
-    await registry.take('src/billing/tax.ts', cursor, at(1), 30, 'wrote tax.ts');
+    await registry.take(
+      { path: 'src/billing', holder: cursor, minutes: 30, activity: 'wrote invoice.ts' },
+      NOW,
+    );
+    await registry.take(
+      {
+        path: 'src/billing/tax.ts',
+        holder: cursor,
+        minutes: 30,
+        activity: 'wrote tax.ts',
+      },
+      at(1),
+    );
 
     const held = await registry.held(at(2));
     expect(held).toHaveLength(1);
@@ -108,7 +131,10 @@ describe('one session, one lease', () => {
     const directories = (path: string): boolean => !path.endsWith('.ts');
     for (let i = 0; i < 10; i += 1) {
       const scope = leaseScopeFor(`src/billing/file-${i}.ts`, directories);
-      await registry.take(scope, cursor, at(i), 30, `wrote file-${i}.ts`);
+      await registry.take(
+        { path: scope, holder: cursor, minutes: 30, activity: `wrote file-${i}.ts` },
+        at(i),
+      );
     }
     const held = await registry.held(at(11));
     expect(held).toHaveLength(1);
@@ -120,12 +146,12 @@ describe('a dead owner never blocks anybody', () => {
   it('lets the next writer through once the holder is gone', async () => {
     const where = await home();
     const dying = new LeaseRegistry(where, (pid) => pid === cursor.pid);
-    await dying.take('src/billing', cursor, NOW);
+    await dying.take({ path: 'src/billing', holder: cursor }, NOW);
 
     const after = new LeaseRegistry(where, () => false);
-    expect((await after.take('src/billing', claude, at(1))).outcome).toBe(
-      LEASE_OUTCOME.TAKEN,
-    );
+    expect(
+      (await after.take({ path: 'src/billing', holder: claude }, at(1))).outcome,
+    ).toBe(LEASE_OUTCOME.TAKEN);
   });
 
   it('asks the operating system rather than assuming', () => {
@@ -137,7 +163,7 @@ describe('a dead owner never blocks anybody', () => {
 describe('letting go', () => {
   it('refuses to release a lease that belongs to another session', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    const taken = await registry.take('src', cursor, NOW);
+    const taken = await registry.take({ path: 'src', holder: cursor }, NOW);
     if (taken.outcome !== LEASE_OUTCOME.TAKEN) throw new Error('not taken');
 
     expect((await registry.release(taken.lease.id, claude, at(1))).outcome).toBe(
@@ -147,9 +173,9 @@ describe('letting go', () => {
 
   it('releases everything a session held when the session ends', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src/billing', cursor, NOW);
-    await registry.take('docs', cursor, at(1));
-    await registry.take('src/auth', claude, at(1));
+    await registry.take({ path: 'src/billing', holder: cursor }, NOW);
+    await registry.take({ path: 'docs', holder: cursor }, at(1));
+    await registry.take({ path: 'src/auth', holder: claude }, at(1));
 
     const released = await registry.releaseSession('ses_1', at(2));
     expect(released).toHaveLength(2);
@@ -159,7 +185,7 @@ describe('letting go', () => {
 
   it('keeps a takeover in the record, and hands the path to the taker', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    const taken = await registry.take('src/billing', cursor, NOW);
+    const taken = await registry.take({ path: 'src/billing', holder: cursor }, NOW);
     if (taken.outcome !== LEASE_OUTCOME.TAKEN) throw new Error('not taken');
 
     const over = await registry.takeOver(
@@ -180,8 +206,8 @@ describe('letting go', () => {
 
   it('forgets what nobody holds, and keeps what somebody does', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src/billing', cursor, NOW, 10);
-    await registry.take('docs', claude, at(200), 30);
+    await registry.take({ path: 'src/billing', holder: cursor, minutes: 10 }, NOW);
+    await registry.take({ path: 'docs', holder: claude, minutes: 30 }, at(200));
 
     expect(await registry.forget(at(215))).toBe(1);
     expect((await registry.all()).map((lease) => lease.path)).toEqual(['docs']);
@@ -192,7 +218,7 @@ describe('what lands on disk', () => {
   it('writes leases only the owner can read', async () => {
     const where = await home();
     const registry = new LeaseRegistry(where, living);
-    await registry.take('src', cursor, NOW);
+    await registry.take({ path: 'src', holder: cursor }, NOW);
 
     const dir = join(where, MEMNOX_HOME, 'leases');
     const [file] = (await readdir(dir)).filter((name) => name.endsWith('.json'));
@@ -228,7 +254,10 @@ describe('a hold that lasts while its session works', () => {
 
   it('lapses a few minutes after the session stops, and lasts while it renews', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src/billing.ts', cursor, NOW, 5, 'edit');
+    await registry.take(
+      { path: 'src/billing.ts', holder: cursor, minutes: 5, activity: 'edit' },
+      NOW,
+    );
 
     expect(await registry.renewSession(cursor.sessionId, at(4), 5)).toBe(1);
     expect(await registry.held(at(8))).toHaveLength(1);
@@ -237,7 +266,10 @@ describe('a hold that lasts while its session works', () => {
 
   it('never cuts a longer hold short', async () => {
     const registry = new LeaseRegistry(await home(), living);
-    await registry.take('src', cursor, NOW, 30, 'shell');
+    await registry.take(
+      { path: 'src', holder: cursor, minutes: 30, activity: 'shell' },
+      NOW,
+    );
 
     await registry.renewSession(cursor.sessionId, at(1), 5);
 

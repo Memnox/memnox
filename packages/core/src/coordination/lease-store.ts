@@ -1,7 +1,7 @@
-import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { JsonRecordDir } from '../store/json-records';
 import {
   conflicts,
   DEFAULT_LEASE_MINUTES,
@@ -13,8 +13,13 @@ import {
   withActivity,
   type Lease,
   type LeaseHolder,
+  type LeaseRequest,
 } from './lease';
 
+/**
+ * The register of who holds which path, on one machine. Nothing here waits: a collision
+ * is answered with the holder, and the caller decides.
+ */
 export const LEASE_DIR = 'leases';
 /** The mutex is held for a directory read and one write. Anything longer is a crash. */
 const MUTEX_STALE_MS = 5_000;
@@ -43,9 +48,7 @@ export type TakeResult =
   | { outcome: typeof LEASE_OUTCOME.TAKEN; lease: Lease }
   | {
       outcome: typeof LEASE_OUTCOME.HELD_BY_ANOTHER;
-      /* The lease in the way, returned rather than hidden behind a bare refusal: "who
-         holds it and what have they been doing" is the sentence that ends the argument,
-         and a refusal that will not say is one people work around by forcing every time. */
+      // The lease in the way, because a refusal that will not say who gets forced every time.
       holding: Lease;
     }
   | { outcome: typeof LEASE_OUTCOME.UNUSABLE_PATH };
@@ -57,9 +60,7 @@ export type LeaseChangeResult =
 
 /** Whether a process is still there. Signal 0 asks without sending anything. */
 export function processAlive(pid: number): boolean {
-  /* init is alive forever and is nobody's agent, so a lease recorded against it is an
-     owner that can never be found dead. Reclaimable is the honest reading, and it is
-     what frees the leases written that way before `holderPid` existed. */
+  // init is nobody's agent and never dies, so a lease recorded against it is reclaimable.
   if (pid <= NO_OWNER_PID) return false;
   try {
     process.kill(pid, 0);
@@ -71,38 +72,21 @@ export function processAlive(pid: number): boolean {
 }
 
 /**
- * The register of who holds what, on one machine.
- *
- * Taking is serialized through a directory mutex rather than through one atomic file
- * create, because exclusion here is over *overlapping* paths and not over equal names:
- * `src/billing` and `src/billing/invoice.ts` are different file names and the same
- * lease. Two processes that each created their own file would both believe they won.
- *
- * Nothing here waits and nothing here blocks. A collision is answered with the holder;
- * the caller decides whether to wait, take it anyway, or do something else — that is
- * the side that can give up when the agent's own tool call times out.
+ * Serialized through a directory mutex rather than an atomic create, because exclusion is
+ * over overlapping paths: two files for `src/billing` and `src/billing/invoice.ts` both win.
  */
 export class LeaseRegistry {
+  private readonly records: JsonRecordDir<Lease>;
+
   constructor(
     private readonly home: string,
     private readonly alive: (pid: number) => boolean = processAlive,
-  ) {}
+  ) {
+    this.records = new JsonRecordDir<Lease>(leaseDirFor(home));
+  }
 
   async all(): Promise<Lease[]> {
-    let names: string[];
-    try {
-      names = await readdir(leaseDirFor(this.home));
-    } catch {
-      // Nothing has ever been leased here, which is the ordinary case.
-      return [];
-    }
-
-    const found: Lease[] = [];
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue;
-      const lease = await this.read(name.slice(0, -5));
-      if (lease !== null) found.push(lease);
-    }
+    const found = await this.records.all();
     return found.sort((a, b) => a.takenAt.localeCompare(b.takenAt));
   }
 
@@ -111,47 +95,25 @@ export class LeaseRegistry {
     return leasesInForce(await this.all(), moment, this.alive);
   }
 
-  async read(id: string): Promise<Lease | null> {
-    try {
-      return JSON.parse(await readFile(this.pathFor(id), 'utf8')) as Lease;
-    } catch {
-      // Released and cleared, or never taken. Both are "nobody holds it".
-      return null;
-    }
+  /** Null when released and cleared or never taken, which both mean nobody holds it. */
+  read(id: string): Promise<Lease | null> {
+    return this.records.read(id);
   }
 
-  async take(
-    path: string,
-    holder: LeaseHolder,
-    now: string,
-    minutes?: number,
-    activity?: string,
-  ): Promise<TakeResult> {
+  async take(request: LeaseRequest, now: string): Promise<TakeResult> {
     return this.exclusively(async () => {
       const standing = leasesInForce(await this.all(), now, this.alive);
-      const blocking = standing.find(
-        (lease) => conflicts(lease.path, path) && !sameHolder(lease.holder, holder),
+      const overlapping = standing.filter((lease) => conflicts(lease.path, request.path));
+      const blocking = overlapping.find(
+        (lease) => !sameHolder(lease.holder, request.holder),
       );
       if (blocking !== undefined) {
         return { outcome: LEASE_OUTCOME.HELD_BY_ANOTHER, holding: blocking };
       }
-
-      /* The same session asking again is a renewal, not a second lease. One session
-         writing ten files must end up holding one lease rather than ten. */
-      const mine = standing.find(
-        (lease) => sameHolder(lease.holder, holder) && conflicts(lease.path, path),
-      );
-      if (mine !== undefined) {
-        const noted = extendedTo(
-          activity === undefined ? mine : withActivity(mine, activity),
-          now,
-          minutes ?? DEFAULT_LEASE_MINUTES,
-        );
-        await this.write(noted);
-        return { outcome: LEASE_OUTCOME.TAKEN, lease: noted };
-      }
-
-      const lease = leaseFor(path, holder, now, minutes, activity);
+      // The same session asking again renews, so ten files written make one lease.
+      const mine = overlapping.find((lease) => sameHolder(lease.holder, request.holder));
+      const lease =
+        mine === undefined ? leaseFor(request, now) : renewed(mine, request, now);
       await this.write(lease);
       return { outcome: LEASE_OUTCOME.TAKEN, lease };
     });
@@ -169,7 +131,7 @@ export class LeaseRegistry {
       if (held === null) return { outcome: LEASE_OUTCOME.NOT_FOUND };
       await this.write({ ...held, takenOver: { by, at: now, reason } });
 
-      const lease = leaseFor(held.path, by, now);
+      const lease = leaseFor({ path: held.path, holder: by }, now);
       await this.write(lease);
       return { outcome: LEASE_OUTCOME.TAKEN, lease };
     });
@@ -190,10 +152,7 @@ export class LeaseRegistry {
     });
   }
 
-  /**
-   * Everything a session holds, let go at once. Rule 3 from the other end: a session
-   * that ended cannot still be holding a path, whatever its lease said about expiry.
-   */
+  /** Everything a session holds, let go at once, since an ended session holds nothing. */
   async releaseSession(sessionId: string, now: string): Promise<Lease[]> {
     return this.exclusively(async () => {
       const released: Lease[] = [];
@@ -208,11 +167,7 @@ export class LeaseRegistry {
     });
   }
 
-  /**
-   * Everything a session holds, kept for another window, because it is still
-   * working. An editor's hold is short so that one which went quiet lets its lines
-   * go in minutes; its own hook renews it on every tool call while it works.
-   */
+  /** Everything a session holds, kept for another window because it is still working. */
   async renewSession(sessionId: string, now: string, minutes: number): Promise<number> {
     return this.exclusively(async () => {
       let renewed = 0;
@@ -231,28 +186,21 @@ export class LeaseRegistry {
       let dropped = 0;
       for (const lease of await this.all()) {
         if (leasesInForce([lease], moment, this.alive).length > 0) continue;
-        await rm(this.pathFor(lease.id), { force: true });
+        await this.records.remove(lease.id);
         dropped += 1;
       }
       return dropped;
     });
   }
 
-  private pathFor(id: string): string {
-    return join(leaseDirFor(this.home), `${id}.json`);
-  }
-
+  // Atomic, so a lease read mid renewal never reads as absent and gets taken.
   private async write(lease: Lease): Promise<void> {
-    await mkdir(leaseDirFor(this.home), { recursive: true, mode: 0o700 });
-    /* Atomic: a lease read while it is being renewed must not read as absent, or the
-       next writer takes a path somebody is holding. */
-    await writeJsonAtomic(this.pathFor(lease.id), lease);
+    await this.records.write(lease.id, lease);
   }
 
   /**
-   * One writer at a time, across processes. `mkdir` is the atomic primitive every
-   * platform agrees on; a lock left behind by a crash is reclaimed once it is older
-   * than any honest critical section here, so a killed agent cannot wedge the machine.
+   * One writer at a time, across processes, since `mkdir` is atomic everywhere. A lock
+   * older than any honest critical section was left by a crash and is reclaimed.
    */
   private async exclusively<T>(work: () => Promise<T>): Promise<T> {
     const lock = join(leaseDirFor(this.home), '.lock');
@@ -272,8 +220,7 @@ export class LeaseRegistry {
         await new Promise((resolve) => setTimeout(resolve, MUTEX_RETRY_MS));
       }
     }
-    /* Five seconds of contention on a directory read is not contention, it is a bug —
-       and proceeding without the mutex would be the corruption this exists to prevent. */
+    // Five seconds of contention is a bug, and proceeding without the mutex would corrupt the register.
     throw new Error('could not take the lease lock; run `memnox doctor`');
   }
 
@@ -287,4 +234,10 @@ export class LeaseRegistry {
       // Gone between the failed mkdir and here, which is the outcome we wanted anyway.
     }
   }
+}
+
+function renewed(lease: Lease, request: LeaseRequest, now: string): Lease {
+  const noted =
+    request.activity === undefined ? lease : withActivity(lease, request.activity);
+  return extendedTo(noted, now, request.minutes ?? DEFAULT_LEASE_MINUTES);
 }

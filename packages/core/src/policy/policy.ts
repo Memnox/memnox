@@ -26,7 +26,7 @@ export interface PolicyMatch {
   branches?: string[];
   /** Every named argument must match; matched only by the in-process gate. */
   arguments?: Record<string, string[]>;
-  /** An action that does not state its size still matches — it cannot prove it is under. */
+  /** An action that does not state its size still matches, because it cannot prove it is under. */
   aboveAmount?: number;
   /** The policy applies only inside these recurring windows. */
   windows?: TimeWindow[];
@@ -41,6 +41,19 @@ export interface PolicyMatch {
    * organizational intelligence enforcing an action.
    */
   state?: string[];
+  /**
+   * Where this rule does not reach, because somebody approved an exception there. A
+   * carve-out names at least one of its fields and matches only when all it names do,
+   * so one the machine cannot place (no project reported, say) leaves the rule in force.
+   */
+  unless?: PolicyCarveOut[];
+}
+
+/** One scope a rule stands aside for. Every field it names must match. */
+export interface PolicyCarveOut {
+  project?: string;
+  agents?: string[];
+  workingDirectories?: string[];
 }
 
 /** Per-rule mode. An observed rule matches and is recorded, but never decides. */

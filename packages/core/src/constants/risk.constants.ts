@@ -1,3 +1,7 @@
+/**
+ * The risk vocabulary, and the verb tables the classifier reads. These decide what gets
+ * asked about, so moving a verb between them is a security change and reviewed as one.
+ */
 export const RISK_LEVEL = {
   LOW: 'low',
   MEDIUM: 'medium',
@@ -33,7 +37,7 @@ export const MUTATING_VERBS: readonly string[] = [
   'restart',
 ];
 
-/** Action verbs that destroy or exfiltrate — highest baseline risk. */
+/** Action verbs that destroy or exfiltrate, which carry the highest baseline risk. */
 export const DESTRUCTIVE_VERBS: readonly string[] = [
   'delete',
   'drop',

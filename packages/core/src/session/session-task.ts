@@ -1,4 +1,3 @@
-import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import {
@@ -9,16 +8,12 @@ import {
   type ScopeSubject,
 } from '../domain/task';
 import type { ActionRequest } from '../domain/action-event';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { JsonRecordDir } from '../store/json-records';
 
 /**
- * What somebody actually asked for, written down before the agent starts.
- *
- * Everything that can say "this went somewhere it was not asked to go" needs one of
- * these, and none of it can be inferred: scope drift compares against a declaration or
- * it is a classifier with an opinion, and action explosion needs a number a person
- * chose rather than one this file invented. An absent task is `undeclared` throughout —
- * never a guess, and never treated as a violation.
+ * What somebody asked for, written down before the agent starts, because scope drift
+ * compared against anything but a declaration is a classifier with an opinion. An absent
+ * task is `undeclared` throughout, never a guess and never a violation.
  */
 export const TASK_DIR = 'tasks';
 
@@ -29,10 +24,7 @@ export interface SessionTask {
   statement: string;
   scope: DeclaredScope;
   declaredAt: string;
-  /**
-   * Roughly what this should take. Compared against, never enforced on its own: an
-   * estimate somebody typed is evidence of surprise, not a ceiling.
-   */
+  /** Roughly what this should take: evidence of surprise, never a ceiling on its own. */
   expectedActions?: number;
 }
 
@@ -40,18 +32,21 @@ export function taskDirFor(home: string): string {
   return join(home, MEMNOX_HOME, TASK_DIR);
 }
 
-export function taskFor(
-  sessionId: string,
-  statement: string,
-  scope: DeclaredScope,
-  now: string,
-  expectedActions?: number,
-): SessionTask {
+/** What a person declares for a session, before it is stamped with an id and a time. */
+export interface TaskDeclaration {
+  sessionId: string;
+  statement: string;
+  scope: DeclaredScope;
+  expectedActions?: number;
+}
+
+export function taskFor(declaration: TaskDeclaration, now: string): SessionTask {
+  const { expectedActions } = declaration;
   return {
     id: `tsk_${Date.parse(now).toString(36)}`,
-    sessionId,
-    statement,
-    scope,
+    sessionId: declaration.sessionId,
+    statement: declaration.statement,
+    scope: declaration.scope,
     declaredAt: now,
     ...(expectedActions === undefined ? {} : { expectedActions }),
   };
@@ -69,54 +64,34 @@ export function isEmptyScope(scope: DeclaredScope): boolean {
 }
 
 export class SessionTasks {
-  constructor(private readonly home: string) {}
+  private readonly records: JsonRecordDir<SessionTask>;
 
-  async declare(task: SessionTask): Promise<void> {
-    await mkdir(taskDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeJsonAtomic(this.pathFor(task.sessionId), task);
+  constructor(home: string) {
+    this.records = new JsonRecordDir(taskDirFor(home));
   }
 
-  async read(sessionId: string): Promise<SessionTask | null> {
-    try {
-      return JSON.parse(await readFile(this.pathFor(sessionId), 'utf8')) as SessionTask;
-    } catch {
-      // Nothing was declared for this session, which is the ordinary case.
-      return null;
-    }
+  async declare(task: SessionTask): Promise<void> {
+    await this.records.write(task.sessionId, task);
+  }
+
+  /** Null when nothing was declared for this session, which is the ordinary case. */
+  read(sessionId: string): Promise<SessionTask | null> {
+    return this.records.read(sessionId);
   }
 
   async all(): Promise<SessionTask[]> {
-    let names: string[];
-    try {
-      names = await readdir(taskDirFor(this.home));
-    } catch {
-      return [];
-    }
-    const found: SessionTask[] = [];
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue;
-      const task = await this.read(name.slice(0, -5));
-      if (task !== null) found.push(task);
-    }
+    const found = await this.records.all();
     return found.sort((a, b) => a.declaredAt.localeCompare(b.declaredAt));
   }
 
   async clear(sessionId: string): Promise<void> {
-    await rm(this.pathFor(sessionId), { force: true });
-  }
-
-  private pathFor(sessionId: string): string {
-    return join(taskDirFor(this.home), `${sessionId}.json`);
+    await this.records.remove(sessionId);
   }
 }
 
 /**
- * The five dimensions of a request, read off what the caller already reported.
- *
- * A path is the working directory or the target, whichever is there — a rule about
- * `src/checkout` has to fire on `cat src/checkout/x.ts` and on an agent running inside
- * it. The rest are taken verbatim: nothing here derives a service from a path, because
- * that mapping is a guess and a wrong one produces a refusal nobody can argue with.
+ * The five dimensions of a request, read off what the caller reported and taken
+ * verbatim, because deriving a service from a path would be a guess.
  */
 export function subjectOf(request: ActionRequest): ScopeSubject {
   const namespace = request.action.split('.')[0];
@@ -132,9 +107,8 @@ export function subjectOf(request: ActionRequest): ScopeSubject {
 }
 
 /**
- * How this request sat against what was asked for. `undeclared` when no task was
- * declared, which is not a finding: most sessions never declare one, and reporting
- * every one of them as drift would make the signal worthless within a day.
+ * How this request sat against what was asked for. `undeclared` when no task was, which
+ * is not a finding: most sessions declare none and calling that drift would drown it.
  */
 export function scopeOf(
   task: SessionTask | null,

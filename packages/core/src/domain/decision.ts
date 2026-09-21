@@ -47,7 +47,7 @@ export interface Decision {
   alternative?: Alternative;
   /** What the caller must do for the allow to stand, e.g. record an outcome. */
   obligations?: string[];
-  /** Present when effect is ask — poll or resolve this approval. */
+  /** Present when effect is ask, so poll or resolve this approval. */
   approvalId?: string;
   mode: EnforcementMode;
   /** Which compiled rule set decided this, and whether it was the current one. */

@@ -59,7 +59,10 @@ describe('somebody in the way', () => {
   const held = async (): Promise<{ registry: LeaseRegistry; clock: Clock }> => {
     const clock = new Clock();
     const registry = new LeaseRegistry(await home(), () => true);
-    await registry.take('src/billing', cursor, clock.now(), 60, 'wrote invoice.ts');
+    await registry.take(
+      { path: 'src/billing', holder: cursor, minutes: 60, activity: 'wrote invoice.ts' },
+      clock.now(),
+    );
     return { registry, clock };
   };
 
@@ -196,7 +199,10 @@ describe('a wait cannot become a hang', () => {
   it('gives up even when the clock never advances', async () => {
     const registry = new LeaseRegistry(await home(), () => true);
     const frozen = '2026-09-05T10:00:00.000Z';
-    await registry.take('src/billing', cursor, frozen, 60, 'wrote invoice.ts');
+    await registry.take(
+      { path: 'src/billing', holder: cursor, minutes: 60, activity: 'wrote invoice.ts' },
+      frozen,
+    );
 
     const gate = new LeaseGate({
       registry,

@@ -41,6 +41,20 @@ describe('what the workspace says about a path', () => {
     );
   });
 
+  it('names the repository the path is in, where it was built with one', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body) as Record<string, unknown>);
+      return new Response(JSON.stringify({ id: 'lse_1' }), { status: 201 });
+    }) as unknown as typeof globalThis.fetch;
+    const home = await enrolled();
+
+    await new CloudLeases(home, fetcher, 1_000, 'api').take('src/a.ts', holder, 30);
+    await new CloudLeases(home, fetcher).take('src/a.ts', holder, 30);
+
+    expect(bodies.map((body) => body['repository'])).toEqual(['api', undefined]);
+  });
+
   it('names the holder and the machine when another one has it', async () => {
     const leases = new CloudLeases(
       await enrolled(),

@@ -1,11 +1,38 @@
-import { DECISION_EFFECT } from '../constants/decision.constants';
+import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
 import type { Policy } from './policy';
 
 /**
- * The same rules, written in the agent's own permission format. A rule Memnox holds
- * is enforced when the agent goes through us; a rule compiled into the agent's config
- * is enforced even when it does not. Both, or a bypass is a gap.
+ * The same rules, written in the agent's own permission format, so they hold even when
+ * the agent does not go through Memnox. Both, or a bypass is a gap.
  */
+
+/** A rule with no native equivalent. Named, never silently dropped. */
+export interface Untranslated {
+  policy: string;
+  because: string;
+}
+
+const NAMES_NO_ACTION = 'it names no action, so there is nothing to write';
+
+/** Ours added beside theirs, theirs first, each entry once. */
+function mergeLists(
+  ours: readonly string[],
+  theirs: readonly string[] | undefined,
+): string[] {
+  return [...new Set([...(theirs ?? []), ...ours])];
+}
+
+/** Theirs, less whatever we wrote. */
+function withoutOurs(
+  theirs: readonly string[] | undefined,
+  ours: readonly string[] | undefined,
+): string[] {
+  return (theirs ?? []).filter((entry) => !(ours ?? []).includes(entry));
+}
+
+function pushOnce(list: string[], entry: string): void {
+  if (!list.includes(entry)) list.push(entry);
+}
 
 export interface ClaudeCodePermissions {
   allow: string[];
@@ -32,13 +59,8 @@ const GIT_PREFIX = 'git.';
 const MCP_PREFIX = 'mcp.';
 
 /**
- * An MCP tool in Claude Code's own naming: `mcp__<server>__<tool>`.
- *
- * A Memnox action names the tool and not the server, because the proxy rules on a call
- * before it knows which of several configs launched that server. Claude Code accepts a
- * glob in the tool-name position for a deny or an ask, so `mcp__*__delete_customer` is
- * the honest translation — and it deliberately carries no parentheses, because Claude
- * Code skips any `mcp__` rule that has them.
+ * Renders an MCP action as Claude Code's `mcp__<server>__<tool>`, with no parentheses
+ * because Claude Code skips any `mcp__` rule that has them.
  */
 function mcpRuleFor(action: string): string {
   const rest = action.slice(MCP_PREFIX.length);
@@ -62,60 +84,61 @@ function nativeRuleFor(action: string, target?: string): string | null {
 
 export interface NativeTranslation {
   permissions: ClaudeCodePermissions;
-  /** Rules with no native equivalent. Named, never silently dropped. */
-  untranslated: { policy: string; because: string }[];
+  untranslated: Untranslated[];
+}
+
+/** Where each effect is written in Claude Code's settings. */
+function claudeBucket(
+  permissions: ClaudeCodePermissions,
+  effect: DecisionEffect,
+): string[] {
+  if (effect === DECISION_EFFECT.DENY) return permissions.deny;
+  if (effect === DECISION_EFFECT.ASK) return permissions.ask;
+  return permissions.allow;
+}
+
+/** Writes one policy's rules, or says why none could be written. */
+function writeClaudeRules(
+  policy: Policy,
+  actions: readonly string[],
+  permissions: ClaudeCodePermissions,
+): Untranslated | null {
+  const allowing = policy.decision.effect === DECISION_EFFECT.ALLOW;
+  let wrote = false;
+  let skippedUnanchored = false;
+  for (const action of actions) {
+    for (const target of policy.match.targets ?? [undefined]) {
+      const native = nativeRuleFor(action, target);
+      if (native === null) continue;
+      // Claude Code skips an unanchored MCP allow glob, so writing one would do nothing.
+      if (allowing && native.startsWith('mcp__*')) {
+        skippedUnanchored = true;
+        continue;
+      }
+      pushOnce(claudeBucket(permissions, policy.decision.effect), native);
+      wrote = true;
+    }
+  }
+  if (wrote) return null;
+  return {
+    policy: policy.name,
+    because: skippedUnanchored
+      ? 'an allow rule for an MCP tool has to name its server; Claude Code skips an unanchored glob'
+      : `no Claude Code permission covers ${actions.join(', ')}`,
+  };
 }
 
 export function toClaudeCodePermissions(policies: readonly Policy[]): NativeTranslation {
   const permissions: ClaudeCodePermissions = { allow: [], ask: [], deny: [] };
-  const untranslated: { policy: string; because: string }[] = [];
-
+  const untranslated: Untranslated[] = [];
   for (const policy of policies) {
     const actions = policy.match.actions ?? [];
-    if (actions.length === 0) {
-      untranslated.push({
-        policy: policy.name,
-        because: 'it names no action, so there is nothing to write',
-      });
-      continue;
-    }
-
-    const targets = policy.match.targets ?? [undefined];
-    const allowing = policy.decision.effect === DECISION_EFFECT.ALLOW;
-    let wrote = false;
-    let skippedUnanchored = false;
-
-    for (const action of actions) {
-      for (const target of targets) {
-        const native = nativeRuleFor(action, target);
-        if (native === null) continue;
-        /* Claude Code skips an allow glob that does not name a server, with a warning.
-           Writing one would put a line in somebody's settings that does nothing, so
-           the rule is reported as untranslated instead. */
-        if (allowing && native.startsWith('mcp__*')) {
-          skippedUnanchored = true;
-          continue;
-        }
-        const bucket =
-          policy.decision.effect === DECISION_EFFECT.DENY
-            ? permissions.deny
-            : policy.decision.effect === DECISION_EFFECT.ASK
-              ? permissions.ask
-              : permissions.allow;
-        if (!bucket.includes(native)) bucket.push(native);
-        wrote = true;
-      }
-    }
-    if (!wrote) {
-      untranslated.push({
-        policy: policy.name,
-        because: skippedUnanchored
-          ? 'an allow rule for an MCP tool has to name its server; Claude Code skips an unanchored glob'
-          : `no Claude Code permission covers ${actions.join(', ')}`,
-      });
-    }
+    const skipped =
+      actions.length === 0
+        ? { policy: policy.name, because: NAMES_NO_ACTION }
+        : writeClaudeRules(policy, actions, permissions);
+    if (skipped !== null) untranslated.push(skipped);
   }
-
   return { permissions, untranslated };
 }
 
@@ -137,40 +160,30 @@ export function applyNative(
 ): NativeSettings {
   const existing = settings.permissions ?? {};
   const ours = translation.permissions;
-  const merge = (mine: string[], theirs: string[] | undefined): string[] => [
-    ...new Set([...(theirs ?? []), ...mine]),
-  ];
-
   return {
     ...settings,
     permissions: {
-      allow: merge(ours.allow, existing.allow),
-      ask: merge(ours.ask, existing.ask),
-      deny: merge(ours.deny, existing.deny),
+      allow: mergeLists(ours.allow, existing.allow),
+      ask: mergeLists(ours.ask, existing.ask),
+      deny: mergeLists(ours.deny, existing.deny),
     },
-    [NATIVE_MARKER]: {
-      allow: ours.allow,
-      ask: ours.ask,
-      deny: ours.deny,
-    },
+    [NATIVE_MARKER]: { allow: ours.allow, ask: ours.ask, deny: ours.deny },
   };
 }
 
 /** Takes back only what the marker says we wrote. */
 export function revertNative(settings: NativeSettings): NativeSettings {
+  // The marker is only ever written by `applyNative`, in this shape.
   const managed = settings[NATIVE_MARKER] as Partial<ClaudeCodePermissions> | undefined;
   if (managed === undefined) return settings;
 
   const existing = settings.permissions ?? {};
-  const without = (theirs: string[] | undefined, mine: string[] | undefined): string[] =>
-    (theirs ?? []).filter((entry) => !(mine ?? []).includes(entry));
-
   const restored: NativeSettings = {
     ...settings,
     permissions: {
-      allow: without(existing.allow, managed.allow),
-      ask: without(existing.ask, managed.ask),
-      deny: without(existing.deny, managed.deny),
+      allow: withoutOurs(existing.allow, managed.allow),
+      ask: withoutOurs(existing.ask, managed.ask),
+      deny: withoutOurs(existing.deny, managed.deny),
     },
   };
   delete restored[NATIVE_MARKER];
@@ -178,12 +191,8 @@ export function revertNative(settings: NativeSettings): NativeSettings {
 }
 
 /**
- * OpenClaw names its own tools and gates them with one allow list and one deny list.
- *
- * It has no third effect. A Memnox ASK cannot be written here at all: putting it in
- * `allow` would silently drop the approval somebody asked for, and putting it in
- * `deny` would break work that was meant to continue after a prompt. So an ASK is
- * reported as untranslated and stays with the seams, which do have three effects.
+ * OpenClaw's two lists, allow and deny, with no third effect: an ask is reported
+ * untranslated and stays with the seams, which do have three.
  */
 export interface OpenClawTools {
   allow: string[];
@@ -203,39 +212,44 @@ const OPENCLAW_TOOLS: Readonly<Record<string, readonly string[]>> = {
 
 export interface OpenClawTranslation {
   tools: OpenClawTools;
-  untranslated: { policy: string; because: string }[];
+  untranslated: Untranslated[];
+}
+
+/** The OpenClaw tools these actions reach; git and anything shell-shaped goes through exec. */
+function openClawToolsFor(actions: readonly string[]): Set<string> {
+  const named = new Set<string>();
+  for (const action of actions) {
+    const mapped = action.startsWith(GIT_PREFIX)
+      ? ['exec']
+      : (OPENCLAW_TOOLS[action] ?? []);
+    for (const tool of mapped) named.add(tool);
+  }
+  return named;
+}
+
+/** Why a policy cannot be written as OpenClaw tools, or null when it can. */
+function openClawSkip(policy: Policy, actions: readonly string[]): Untranslated | null {
+  if (actions.length === 0) return { policy: policy.name, because: NAMES_NO_ACTION };
+  if (policy.decision.effect === DECISION_EFFECT.ASK) {
+    return {
+      policy: policy.name,
+      because: 'OpenClaw has allow and deny only, and an ask written as either is wrong',
+    };
+  }
+  return null;
 }
 
 export function toOpenClawTools(policies: readonly Policy[]): OpenClawTranslation {
   const tools: OpenClawTools = { allow: [], deny: [] };
-  const untranslated: { policy: string; because: string }[] = [];
-
+  const untranslated: Untranslated[] = [];
   for (const policy of policies) {
     const actions = policy.match.actions ?? [];
-    if (actions.length === 0) {
-      untranslated.push({
-        policy: policy.name,
-        because: 'it names no action, so there is nothing to write',
-      });
+    const skipped = openClawSkip(policy, actions);
+    if (skipped !== null) {
+      untranslated.push(skipped);
       continue;
     }
-    if (policy.decision.effect === DECISION_EFFECT.ASK) {
-      untranslated.push({
-        policy: policy.name,
-        because:
-          'OpenClaw has allow and deny only, and an ask written as either is wrong',
-      });
-      continue;
-    }
-
-    const named = new Set<string>();
-    for (const action of actions) {
-      // git and everything else shell-shaped reaches the world through exec.
-      const mapped = action.startsWith(GIT_PREFIX)
-        ? ['exec']
-        : (OPENCLAW_TOOLS[action] ?? []);
-      for (const tool of mapped) named.add(tool);
-    }
+    const named = openClawToolsFor(actions);
     if (named.size === 0) {
       untranslated.push({
         policy: policy.name,
@@ -243,14 +257,11 @@ export function toOpenClawTools(policies: readonly Policy[]): OpenClawTranslatio
       });
       continue;
     }
-
     const bucket =
       policy.decision.effect === DECISION_EFFECT.DENY ? tools.deny : tools.allow;
-    for (const tool of named) if (!bucket.includes(tool)) bucket.push(tool);
+    for (const tool of named) pushOnce(bucket, tool);
   }
-
-  /* Deny wins in OpenClaw, so a tool in both lists is denied. Leaving it in `allow`
-     as well would read as a contradiction to whoever opens the file next. */
+  // Deny wins in OpenClaw, so a tool in both lists would read as a contradiction.
   tools.allow = tools.allow.filter((tool) => !tools.deny.includes(tool));
   return { tools, untranslated };
 }
@@ -267,35 +278,29 @@ export function applyOpenClaw(
 ): OpenClawSettings {
   const existing = settings.tools ?? {};
   const ours = translation.tools;
-  const merge = (mine: string[], theirs: string[] | undefined): string[] => [
-    ...new Set([...(theirs ?? []), ...mine]),
-  ];
-
   return {
     ...settings,
     tools: {
       ...existing,
-      allow: merge(ours.allow, existing.allow),
-      deny: merge(ours.deny, existing.deny),
+      allow: mergeLists(ours.allow, existing.allow),
+      deny: mergeLists(ours.deny, existing.deny),
     },
     [NATIVE_MARKER]: { allow: ours.allow, deny: ours.deny },
   };
 }
 
 export function revertOpenClaw(settings: OpenClawSettings): OpenClawSettings {
+  // The marker is only ever written by `applyOpenClaw`, in this shape.
   const managed = settings[NATIVE_MARKER] as Partial<OpenClawTools> | undefined;
   if (managed === undefined) return settings;
 
   const existing = settings.tools ?? {};
-  const without = (theirs: string[] | undefined, mine: string[] | undefined): string[] =>
-    (theirs ?? []).filter((entry) => !(mine ?? []).includes(entry));
-
   const restored: OpenClawSettings = {
     ...settings,
     tools: {
       ...existing,
-      allow: without(existing.allow, managed.allow),
-      deny: without(existing.deny, managed.deny),
+      allow: withoutOurs(existing.allow, managed.allow),
+      deny: withoutOurs(existing.deny, managed.deny),
     },
   };
   delete restored[NATIVE_MARKER];
@@ -303,16 +308,25 @@ export function revertOpenClaw(settings: OpenClawSettings): OpenClawSettings {
 }
 
 /**
- * Hermes blocks commands with `approvals.deny`, a list of fnmatch globs read straight
- * out of `config.yaml`. Verified against its own source rather than its docs, which
- * disagree with each other about whether the key exists: `tools/approval_floors.py`
- * reads it, matches lowercased on both sides, and fires *before* any yolo bypass —
- * "never let the agent run this, even under yolo". That is the strongest place a rule
- * can sit in that product, so a deny compiles into it.
+ * Hermes blocks commands with `approvals.deny`, fnmatch globs in `config.yaml`. It fires
+ * before any yolo bypass, which makes it the strongest seat for a deny.
  */
 export interface HermesTranslation {
   deny: string[];
-  untranslated: { policy: string; because: string }[];
+  untranslated: Untranslated[];
+}
+
+/** Why a policy cannot be written into `approvals.deny`, or null when it can. */
+function hermesSkip(policy: Policy, actions: readonly string[]): Untranslated | null {
+  if (actions.length === 0) return { policy: policy.name, because: NAMES_NO_ACTION };
+  // `approvals.deny` cannot be answered, so an ask written there would become a refusal.
+  if (policy.decision.effect !== DECISION_EFFECT.DENY) {
+    return {
+      policy: policy.name,
+      because: 'approvals.deny is unconditional, so only a deny belongs in it',
+    };
+  }
+  return null;
 }
 
 export function toHermesApprovals(
@@ -320,27 +334,14 @@ export function toHermesApprovals(
   globFor: (action: string) => string | null,
 ): HermesTranslation {
   const deny: string[] = [];
-  const untranslated: { policy: string; because: string }[] = [];
-
+  const untranslated: Untranslated[] = [];
   for (const policy of policies) {
     const actions = policy.match.actions ?? [];
-    if (actions.length === 0) {
-      untranslated.push({
-        policy: policy.name,
-        because: 'it names no action, so there is nothing to write',
-      });
+    const skipped = hermesSkip(policy, actions);
+    if (skipped !== null) {
+      untranslated.push(skipped);
       continue;
     }
-    /* Only a deny compiles. `approvals.deny` is unconditional and cannot be answered,
-       so writing an ask into it would turn a question into a refusal. */
-    if (policy.decision.effect !== DECISION_EFFECT.DENY) {
-      untranslated.push({
-        policy: policy.name,
-        because: 'approvals.deny is unconditional, so only a deny belongs in it',
-      });
-      continue;
-    }
-
     const globs = actions
       .map(globFor)
       .filter((glob): glob is string => glob !== null && glob !== '');
@@ -351,12 +352,8 @@ export function toHermesApprovals(
       });
       continue;
     }
-    // Lowercase: Hermes lowers both sides before matching, so this is what it compares.
-    for (const glob of globs) {
-      const lowered = glob.toLowerCase();
-      if (!deny.includes(lowered)) deny.push(lowered);
-    }
+    // Lowercase, because Hermes lowers both sides before matching.
+    for (const glob of globs) pushOnce(deny, glob.toLowerCase());
   }
-
   return { deny, untranslated };
 }

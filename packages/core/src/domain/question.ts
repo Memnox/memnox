@@ -1,9 +1,5 @@
-/**
- * A grammar, not a model. The question a person types is matched against a fixed
- * shape and a fixed synonym table; anything it does not recognise is refused with
- * the shape it wanted. A model reading this sentence would be a model in the path of
- * an answer about authority, which is the one place it must never be.
- */
+/** A fixed grammar and synonym table, never a model: unrecognised input is refused, never guessed. */
+import { ACTION } from '../constants/action.constants';
 
 export const QUESTION_VERB = {
   READ: 'read',
@@ -127,22 +123,8 @@ function usage(problem: string): QuestionParse {
 }
 
 /**
- * A leading `~` is the home directory, expanded here rather than left to match
- * nothing.
- *
- * Rules name absolute paths, because that is what a seam hands the gate: nothing
- * types `~` at a kernel. So a question asked the way a person writes a home path
- * used to answer "no rule matched" about a file that was in fact denied, which is
- * the worst possible direction for a command whose whole job is telling somebody
- * whether they are covered.
- *
- * `home` is passed in rather than read, because this file is domain and domain
- * imports nothing. Without it the value is left exactly as typed: no home is a
- * reason to answer about `~/.ssh` literally, not a reason to guess at one.
- *
- * `~user` is deliberately not expanded. This knows one home and inventing another
- * person's would be a guess, so it stays a literal and matches nothing, which is
- * the honest answer.
+ * Expands a leading `~` so a typed question matches the absolute paths rules name.
+ * `~user` stays literal, since another person's home would be a guess.
  */
 export function expandHome(value: string, home: string | undefined): string {
   if (home === undefined || home === '') return value;
@@ -187,9 +169,9 @@ export function parseQuestion(raw: string, home?: string): QuestionParse {
 /** The action namespace a verb maps onto, so a question meets the same rules a call does. */
 export function actionForVerb(verb: QuestionVerb): string {
   const namespaces: Record<QuestionVerb, string> = {
-    [QUESTION_VERB.READ]: 'filesystem.read',
-    [QUESTION_VERB.WRITE]: 'filesystem.write',
-    [QUESTION_VERB.DELETE]: 'filesystem.delete',
+    [QUESTION_VERB.READ]: ACTION.FILESYSTEM_READ,
+    [QUESTION_VERB.WRITE]: ACTION.FILESYSTEM_WRITE,
+    [QUESTION_VERB.DELETE]: ACTION.FILESYSTEM_DELETE,
     [QUESTION_VERB.DEPLOY]: 'deploy.service',
     [QUESTION_VERB.MERGE]: 'git.merge',
     [QUESTION_VERB.PUSH]: 'git.push',

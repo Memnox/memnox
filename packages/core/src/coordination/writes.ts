@@ -3,16 +3,8 @@ import { COMMAND_CLASS } from '../intercept/binary-class';
 import { normalizeLeasePath } from './lease';
 
 /**
- * Which actions take a lease, and which never do.
- *
- * Rule 2, and it is the one that decides whether people keep this turned on: two agents
- * reading one directory is normal and always was. A lease is consulted for write-class
- * and destructive work only, so nothing here can ever make a read wait.
- *
- * The class vocabulary is deliberately both: a resolved shell action carries a
- * `ToolClass` when a verb table named it and a `CommandClass` when the generic
- * classifier did, and a lease that fired for one spelling and not the other would be a
- * gate that closes on Tuesdays.
+ * Which actions take a lease: write-class and destructive only, so a read never waits.
+ * Both class vocabularies are listed, since a shell action may carry either spelling.
  */
 
 const WRITING: readonly string[] = [
@@ -27,11 +19,8 @@ export function takesLease(actionClass: string): boolean {
 }
 
 /**
- * The repository-relative path a command acts on, or null when it names none.
- *
- * A target that is a host or a branch is not a path, and guessing at one would take a
- * lease nobody could predict — so anything that does not resolve under the repository
- * is declined rather than approximated. `..` is already null by `normalizeLeasePath`.
+ * The repository-relative path a command acts on, or null when it names none. Anything
+ * not under the repository is declined rather than approximated into a surprise lease.
  */
 export function leasePathFor(
   target: string | undefined,
@@ -52,19 +41,8 @@ export function leasePathFor(
 }
 
 /**
- * The path a session actually takes, given the file a command is about to write.
- *
- * A lease per file would be ten leases for one afternoon's work, and ten refusals for
- * the agent behind it. The directory is the unit a refactor collides on anyway, so a
- * write claims the directory it lands in and every later write in that directory is a
- * renewal rather than a second lease.
- *
- * The breadth is deliberate and is the cost of rule 1: a developer has to be able to
- * predict what they took, and "the directory I wrote in" is predictable in a way that
- * "the smallest tree covering everything I have touched so far" is not.
- *
- * Whether the path is a directory is asked of the caller rather than guessed from a
- * dot in the name — `.eslintrc` is a file and `src/v1.2` is a directory.
+ * The directory a write lands in, so later writes there renew one lease. Directory-ness
+ * is asked of the caller, since `.eslintrc` is a file and `src/v1.2` is a directory.
  */
 export function leaseScopeFor(
   path: string,

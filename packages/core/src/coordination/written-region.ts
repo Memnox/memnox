@@ -1,28 +1,7 @@
 /**
- * What a session is about to write, narrower than the file.
- *
- * Two agents in one file are usually nowhere near each other, and until now the
- * only thing a lease could say was the path. Asking the agent to declare a
- * function works and is what the control plane accepts, but an agent that was
- * never told to declare one gets nothing, which is every agent nobody has
- * updated.
- *
- * So it is read off the change itself, at the moment of the write. Git already
- * computes both halves and puts them in the hunk header:
- *
- *     @@ -6 +6,2 @@ export function retryCharge(attempt: number): boolean {
- *            ↑ the lines            ↑ the enclosing function
- *
- * No parser, no syntax tree, no dependency. Git derives the context from
- * built-in patterns for most languages and says nothing for the rest, and
- * saying nothing is the safe answer here.
- *
- * **Everything about this fails to the whole file.** A new file has no diff, a
- * language git has no pattern for has no context, a repository that is not a
- * git repository has neither, and a diff that takes too long is abandoned. Each
- * of those returns nothing, and nothing already means the whole file to every
- * lease that has ever been taken. It cannot lose a collision; it can only fail
- * to narrow one.
+ * What a session is about to write, narrower than the file, read off git's hunk headers
+ * (`@@ -6 +6,2 @@ function retryCharge(`), which carry the lines and the enclosing function.
+ * Everything fails to the whole file, so it can fail to narrow a collision, never lose one.
  */
 
 export interface LineRange {
@@ -38,22 +17,13 @@ export interface WrittenRegion {
 /** Nothing known, which is a claim on the whole file. */
 export const WHOLE_FILE: WrittenRegion = { lines: [], symbols: [] };
 
-/** `@@ -old,n +new,n @@ context` — the context is optional and often absent. */
+/** `@@ -old,n +new,n @@ context`, where the context is optional and often absent. */
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$/;
 
 /** `+++ b/src/billing/invoice.ts`, the new-file side of one file's header. */
 const NEW_FILE = /^\+\+\+ b\/(.+)$/;
 
-/**
- * Every file a diff covers.
- *
- * The caller needs this to know whether a region is safe to use at all. A
- * symbol is a fact about one file, so a diff spanning several cannot be
- * reduced to one set of names: `process` from one file and `handle` from
- * another would read as a session writing two functions, and two sessions each
- * naming the functions in their *own* file would look like they had nothing in
- * common when in truth nothing had been compared.
- */
+/** Every file a diff covers, so the caller knows whether a region is safe, since a symbol belongs to one file. */
 export function filesIn(diff: string): string[] {
   const found: string[] = [];
   for (const line of diff.split('\n')) {
@@ -65,13 +35,7 @@ export function filesIn(diff: string): string[] {
   return found;
 }
 
-/**
- * The lines and functions a unified diff touches.
- *
- * Reads the new-file side, because that is where the session is writing. A hunk
- * that only deletes claims the line it deleted at, so two agents removing
- * adjacent code still meet.
- */
+/** The lines and functions a unified diff touches, read off the new-file side. */
 export function regionFrom(diff: string): WrittenRegion {
   const lines: LineRange[] = [];
   const symbols = new Set<string>();
@@ -83,9 +47,7 @@ export function regionFrom(diff: string): WrittenRegion {
     const start = Number(hunk[1]);
     if (!Number.isInteger(start) || start < 1) continue;
     const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
-    /* A count of zero is a pure deletion: the new file has no lines here, and
-       the change is still at this row. Claiming it keeps two sessions deleting
-       next to each other from passing each other. */
+    // A count of zero is a pure deletion, still claimed at its row so two adjacent deletions meet.
     const span = Number.isInteger(count) && count > 0 ? count : 1;
     lines.push({ from: start, to: start + span - 1 });
 
@@ -96,13 +58,7 @@ export function regionFrom(diff: string): WrittenRegion {
   return { lines, symbols: [...symbols] };
 }
 
-/**
- * Words that are never the name of the thing being written.
- *
- * Short on purpose. A word missing from here can only produce a symbol that
- * matches nothing, which narrows a claim less than it could have; a real name
- * wrongly listed here would drop a symbol that was correct.
- */
+/** Words that are never the name being written. Short on purpose, since a missing word only fails to narrow. */
 const NOT_A_NAME = new Set([
   'if',
   'for',
@@ -139,17 +95,8 @@ const CALLABLE = /([A-Za-z_$][\w$]*)\s*\(/g;
 const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
 
 /**
- * The name of the thing a hunk header points at.
- *
- * A declaration is a name immediately before its parameters, which covers
- * `function retryCharge(`, `def retry_charge(`, `  async retryCharge(` and
- * Go's `func (s *Svc) RetryCharge(`, where the receiver is skipped because
- * `func` is a word this never takes. Anything with no parameters at all is a
- * class or a type, and the last word of it is its name.
- *
- * Null rather than a guess where neither shape is there. Git's context can be a
- * closing brace or a blank, and inventing a symbol from one would put a name on
- * a claim that nothing in the file is called.
+ * The name a hunk header points at: the word before the parameters, or else the last
+ * word. Null rather than a guess, because git's context can be a closing brace.
  */
 export function symbolIn(context: string): string | null {
   const text = context.trim();

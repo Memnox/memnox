@@ -1,7 +1,7 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import { inForce, type Overlay } from './overlay';
+import { readJsonFile } from '../store/json-records';
 
 /** Written by `memnox sync` and never by hand; `memnox login` is what starts it. */
 const ORG_POLICY_FILE = 'org.policies.json';
@@ -10,31 +10,15 @@ export function orgPolicyPathFor(home: string): string {
   return join(home, MEMNOX_HOME, ORG_POLICY_FILE);
 }
 
-/**
- * Which workspace bundle this machine is running, if it is on one.
- *
- * Carried in the rules file itself so there is not a second place to keep it in
- * step, and read here so a verdict can name it. Absent means not logged in, which
- * is a different answer from behind.
- */
+/** Which workspace bundle this machine runs, read from the rules file so a verdict can name it. */
 export async function bundleHashOn(home: string): Promise<string | undefined> {
-  try {
-    const document = JSON.parse(await readFile(orgPolicyPathFor(home), 'utf8')) as {
-      bundleHash?: string;
-    };
-    return document.bundleHash;
-  } catch {
-    return undefined; // Nothing pulled here.
-  }
+  const document = await readJsonFile<{ bundleHash?: string }>(orgPolicyPathFor(home));
+  return document?.bundleHash;
 }
 
 /**
- * What a verdict taken now should be stamped with, so it can be replayed later.
- *
- * The engine computed a state version for every decision and no seam carried it to
- * the ledger, so the one field built to make a freeze visible afterwards was
- * stamped and dropped. Both halves are best effort: a machine that cannot say which
- * bundle it was on still has to be able to record what it did.
+ * Stamps a verdict with the bundle and overlays in force, so it replays later. Best
+ * effort, because a machine that cannot name its bundle still records what it did.
  */
 export async function provenanceOf(
   home: string,

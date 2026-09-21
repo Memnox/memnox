@@ -25,12 +25,13 @@ export function classifyRisk(action: string, environment?: string): RiskLevel {
   }
 
   if (environment && RISK_ESCALATION_ENVIRONMENTS.includes(environment.toLowerCase())) {
-    level = ask(level);
+    level = raiseOneLevel(level);
   }
   return level;
 }
 
-function ask(level: RiskLevel): RiskLevel {
+/** One rung up, and never past the top. */
+function raiseOneLevel(level: RiskLevel): RiskLevel {
   const index = RISK_ORDER.indexOf(level);
   return RISK_ORDER[Math.min(index + 1, RISK_ORDER.length - 1)] ?? level;
 }

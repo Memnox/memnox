@@ -1,9 +1,9 @@
+import { EFFECT_PRECEDENCE, type DecisionEffect } from '../constants/decision.constants';
 import type { Policy } from './policy';
 
 /**
- * Three layers, strongest first. An organization sets a floor, a person sets their
- * own defaults, a project narrows for the work in front of them. The direction is the
- * whole point: a project may tighten anything and loosen nothing that was locked.
+ * Three layers, strongest first: an organization sets a floor, a person their defaults,
+ * a project narrows further. A project may tighten anything and loosen nothing locked.
  */
 export const POLICY_LAYER = {
   ORG: 'org',
@@ -51,15 +51,41 @@ export interface StackRefusal {
   reason: string;
 }
 
-/** Effects ordered by how much they let through. Anything below is stricter. */
-const PERMISSIVENESS: Record<string, number> = { allow: 0, ask: 1, deny: 2 };
-
 function isLocked(action: string, locked: readonly string[]): boolean {
   return locked.some((prefix) => action.startsWith(prefix));
 }
 
 function actionsOf(policy: Policy): readonly string[] {
   return policy.match.actions ?? [];
+}
+
+/** How strict an effect is; an effect this build does not know counts as the loosest. */
+function strictnessOf(effect: DecisionEffect): number {
+  // A hand-written file can carry any string, so the lookup may miss.
+  return (EFFECT_PRECEDENCE as Record<string, number | undefined>)[effect] ?? 0;
+}
+
+/** Whether a later rule would loosen an action an outer layer already locked. */
+function loosensLocked(
+  policy: Policy,
+  stack: PolicyStack,
+  floor: ReadonlyMap<string, number>,
+): boolean {
+  const strength = strictnessOf(policy.decision.effect);
+  return actionsOf(policy).some((action) => {
+    if (!isLocked(action, stack.locked)) return false;
+    const existing = floor.get(action);
+    return existing !== undefined && strength < existing;
+  });
+}
+
+/** Records the strictest effect seen for each action this policy names. */
+function raiseFloor(policy: Policy, floor: Map<string, number>): void {
+  const strength = strictnessOf(policy.decision.effect);
+  for (const action of actionsOf(policy)) {
+    const existing = floor.get(action);
+    if (existing === undefined || strength > existing) floor.set(action, strength);
+  }
 }
 
 /**
@@ -73,24 +99,14 @@ export function buildStack(layers: readonly LayerInput[]): {
   const ordered = [...layers].sort(
     (a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer),
   );
-
   const stack: PolicyStack = { policies: [], locked: [] };
   const refused: StackRefusal[] = [];
-  // The strictest effect any earlier layer set for an action, keyed by action pattern.
+  // The strictest effect any earlier layer set, keyed by action pattern.
   const floor = new Map<string, number>();
 
   for (const input of ordered) {
     for (const policy of input.policies) {
-      const effect = String(policy.decision.effect);
-      const strength = PERMISSIVENESS[effect] ?? 0;
-
-      const loosensLocked = actionsOf(policy).some((action) => {
-        if (!isLocked(action, stack.locked)) return false;
-        const existing = floor.get(action);
-        return existing !== undefined && strength < existing;
-      });
-
-      if (loosensLocked) {
+      if (loosensLocked(policy, stack, floor)) {
         refused.push({
           policy: policy.name,
           layer: input.layer,
@@ -99,16 +115,11 @@ export function buildStack(layers: readonly LayerInput[]): {
         });
         continue;
       }
-
-      for (const action of actionsOf(policy)) {
-        const existing = floor.get(action);
-        if (existing === undefined || strength > existing) floor.set(action, strength);
-      }
+      raiseFloor(policy, floor);
       stack.policies.push({ layer: input.layer, policy, file: input.file });
     }
     stack.locked.push(...(input.locked ?? []));
   }
-
   return { stack, refused };
 }
 

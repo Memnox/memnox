@@ -1,27 +1,17 @@
-import { readAccount } from '../sync/account';
+import { readAccount, type Account } from '../sync/account';
+import { HTTP } from '../sync/http-status';
+import {
+  parseReplyBody,
+  runControlPlaneRequest,
+  type Fetcher,
+} from '../sync/control-plane-request';
 import type { Lease, LeaseHolder } from './lease';
 import type { WrittenRegion } from './written-region';
+import { minutesToMs } from '../domain/time';
 
 /**
- * The half of a lease a laptop structurally cannot hold.
- *
- * One machine's register answers "is another session here writing this", and that is
- * the whole question when there is one machine. Two machines on one repository —
- * Hermes on a VPS and Claude Code on a laptop — need the register somewhere both can
- * see, and only the control plane is somewhere both can see.
- *
- * Three rules make this safe to put on the decision path.
- *
- * **Unreachable is not held.** A lease is coordination and not safety, so a network
- * that hiccups must not stop work. Every failure here reads as "nobody could tell me",
- * and the caller proceeds on the local register alone. A shared lease that blocked an
- * agent whenever the wifi dropped is one people would turn off within a day.
- *
- * **No account, no call.** With no account file this makes no network call at all,
- * which is the same promise the rest of the runtime makes.
- *
- * **Bounded.** One short request. The waiting, if there is any, happens on the side
- * that can give up — which is never this one.
+ * The register two machines on one repository can both see, held by the control plane.
+ * Unreachable is not held, no account means no call, and every request is bounded.
  */
 
 /** Milliseconds. An interceptor runs on every write; a slow control plane must not be felt. */
@@ -75,27 +65,15 @@ export interface SharedLeases {
     path: string,
     holder: LeaseHolder,
     minutes: number,
-    /* What in the file is being written, where the caller worked it out. The
-       control plane narrows a collision on it and takes the whole file
-       without it, so absent is what every lease meant before this. */
+    // What in the file is being written, where known; absent claims the whole file.
     region?: WrittenRegion,
   ): Promise<SharedTake>;
   release(id: string, holder: LeaseHolder): Promise<void>;
-  /**
-   * Everything this session holds in the workspace, given back when it ends. The
-   * write path keeps no ids for what it took, so without this a session that ended
-   * left its files held on every other machine until the window ran out.
-   */
+  /** Everything this session holds, given back when it ends, since the write path keeps no ids. */
   releaseSession(holder: LeaseHolder): Promise<void>;
-  /**
-   * Everything this session holds in the workspace, kept for another window,
-   * because it is still working. Best effort: a renewal that does not land is a
-   * hold that lapses a few minutes early.
-   */
+  /** Everything this session holds, kept for another window. A renewal that misses lapses early. */
   renewSession(holder: LeaseHolder, minutes: number): Promise<void>;
 }
-
-type Fetcher = typeof globalThis.fetch;
 
 /** The control plane's register, over the same account the rest of sync uses. */
 export class CloudLeases implements SharedLeases {
@@ -103,6 +81,8 @@ export class CloudLeases implements SharedLeases {
     private readonly home: string,
     private readonly fetcher: Fetcher = globalThis.fetch,
     private readonly timeoutMs: number = SHARED_LEASE_TIMEOUT_MS,
+    // The repository's name, so the console can say who else is working in it.
+    private readonly repository?: string,
   ) {}
 
   async take(
@@ -115,86 +95,25 @@ export class CloudLeases implements SharedLeases {
     if (account === null) {
       return { outcome: SHARED_OUTCOME.UNKNOWN, because: 'this machine is not enrolled' };
     }
-
-    const body = {
-      path,
-      holder: {
-        agent: holder.agent,
-        session: holder.sessionId,
-        machine: account.machineId,
-      },
-      ttlMs: minutes * 60_000,
-      activity: `taken on ${account.machineId}`,
-      /* Sent only where there is something to send. An empty list would claim
-         the session knows it is writing nothing, where the truth is that
-         nothing was worked out. */
-      ...(region === undefined || region.lines.length === 0
-        ? {}
-        : { lines: region.lines }),
-      ...(region === undefined || region.symbols.length === 0
-        ? {}
-        : { symbols: region.symbols }),
-    };
-
-    const response = await this.post(
-      account.baseUrl,
-      `/v1/workspaces/${account.workspaceId}/leases`,
-      account.token,
-      body,
-    );
+    const response = await this.send(account, {
+      path: `/v1/workspaces/${account.workspaceId}/leases`,
+      body: takeBody(
+        { path, holder, minutes, region, repository: this.repository },
+        account.machineId,
+      ),
+    });
     if (response === null) {
       return {
         outcome: SHARED_OUTCOME.UNKNOWN,
         because: 'the control plane did not answer',
       };
     }
-
-    if (response.status === 201 || response.status === 200) {
+    if (response.status === HTTP.CREATED || response.status === HTTP.OK) {
+      // The control plane answers with the lease it recorded, in this vocabulary.
       return { outcome: SHARED_OUTCOME.TAKEN, lease: response.body as Lease };
     }
-    if (response.status === 409) {
-      const conflict = response.body as {
-        message?: string;
-        holding?: {
-          id?: string;
-          holder?: { agent?: string; machine?: string };
-          path?: string;
-          takenAt?: string;
-          renewedAt?: string;
-          expiresAt?: string;
-          lines?: WrittenRegion['lines'];
-          symbols?: string[];
-        };
-      };
-      const held = conflict.holding;
-      const lines = held === undefined || !Array.isArray(held.lines) ? [] : held.lines;
-      const symbols =
-        held === undefined || !Array.isArray(held.symbols) ? [] : held.symbols;
-      return {
-        outcome: SHARED_OUTCOME.HELD_BY_ANOTHER,
-        ...(lines.length === 0 && symbols.length === 0
-          ? {}
-          : { region: { lines, symbols } }),
-        ...(held === undefined || typeof held.takenAt !== 'string'
-          ? {}
-          : { since: held.takenAt }),
-        ...(held === undefined ? {} : lastActiveOf(held.renewedAt, held.takenAt)),
-        ...(held === undefined || typeof held.expiresAt !== 'string'
-          ? {}
-          : { until: held.expiresAt }),
-        ...(held === undefined || typeof held.id !== 'string'
-          ? {}
-          : { leaseId: held.id }),
-        holder: conflict.holding?.holder?.agent ?? 'another agent',
-        ...(conflict.holding?.holder?.machine === undefined
-          ? {}
-          : { machine: conflict.holding.holder.machine }),
-        path: conflict.holding?.path ?? path,
-        message: conflict.message ?? 'another machine holds that path',
-      };
-    }
-    /* Anything else — the workspace does not have shared leases, the token was
-       revoked, the route moved — is "nobody could tell me" rather than "held". */
+    if (response.status === HTTP.CONFLICT) return heldByAnother(response.body, path);
+    // No shared leases, a revoked token or a moved route all mean nobody could tell.
     return {
       outcome: SHARED_OUTCOME.UNKNOWN,
       because: `the control plane answered ${response.status}`,
@@ -204,59 +123,49 @@ export class CloudLeases implements SharedLeases {
   async release(id: string, holder: LeaseHolder): Promise<void> {
     const account = await readAccount(this.home);
     if (account === null) return;
-    await this.post(
-      account.baseUrl,
-      `/v1/workspaces/${account.workspaceId}/leases/${id}`,
-      account.token,
-      { holder: { agent: holder.agent, session: holder.sessionId } },
-      'DELETE',
-    );
+    await this.send(account, {
+      path: `/v1/workspaces/${account.workspaceId}/leases/${id}`,
+      body: { holder: sessionHolder(holder) },
+      method: 'DELETE',
+    });
   }
 
   async renewSession(holder: LeaseHolder, minutes: number): Promise<void> {
     const account = await readAccount(this.home);
     if (account === null) return;
-    await this.post(
-      account.baseUrl,
-      `/v1/workspaces/${account.workspaceId}/leases/renew-session`,
-      account.token,
-      {
-        holder: { agent: holder.agent, session: holder.sessionId },
-        ttlMs: minutes * 60_000,
-      },
-    );
+    await this.send(account, {
+      path: `/v1/workspaces/${account.workspaceId}/leases/renew-session`,
+      body: { holder: sessionHolder(holder), ttlMs: minutesToMs(minutes) },
+    });
   }
 
   /**
-   * A person freeing lines another session holds, on the record.
-   *
-   * Taken over with the person's reason and then let go at once, so the lines are
-   * free for whichever agent was waiting rather than held by the terminal that
-   * freed them. The takeover row keeps who did it and why: an override nobody can
-   * find later is only a slower allow.
+   * A person freeing lines another session holds, on the record. Taken over and released
+   * at once, so the lines go to whoever was waiting rather than to this terminal.
    */
   async free(id: string, by: LeaseHolder, reason: string): Promise<FreeOutcome> {
     const account = await readAccount(this.home);
     if (account === null) return FREE_OUTCOME.NOT_ENROLLED;
-    const holder = { agent: by.agent, session: by.sessionId };
-    const taken = await this.post(
-      account.baseUrl,
-      `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(id)}/take-over`,
-      account.token,
-      { holder, reason },
-    );
+    const holder = sessionHolder(by);
+    const taken = await this.send(account, {
+      path: `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(id)}/take-over`,
+      body: { holder, reason },
+    });
     if (taken === null) return FREE_OUTCOME.UNREACHABLE;
-    if (taken.status === 404 || taken.status === 409) return FREE_OUTCOME.GONE;
-    if (taken.status !== 200 && taken.status !== 201) return FREE_OUTCOME.REFUSED;
-    const lease = taken.body as { id?: unknown };
+    if (taken.status === HTTP.NOT_FOUND || taken.status === HTTP.CONFLICT) {
+      return FREE_OUTCOME.GONE;
+    }
+    if (taken.status !== HTTP.OK && taken.status !== HTTP.CREATED) {
+      return FREE_OUTCOME.REFUSED;
+    }
+    // Read defensively: the body is whatever the control plane sent.
+    const lease = (taken.body ?? {}) as { id?: unknown };
     if (typeof lease.id === 'string') {
-      await this.post(
-        account.baseUrl,
-        `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(lease.id)}`,
-        account.token,
-        { holder },
-        'DELETE',
-      );
+      await this.send(account, {
+        path: `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(lease.id)}`,
+        body: { holder },
+        method: 'DELETE',
+      });
     }
     return FREE_OUTCOME.FREED;
   }
@@ -264,54 +173,96 @@ export class CloudLeases implements SharedLeases {
   async releaseSession(holder: LeaseHolder): Promise<void> {
     const account = await readAccount(this.home);
     if (account === null) return;
-    await this.post(
-      account.baseUrl,
-      `/v1/workspaces/${account.workspaceId}/leases/release`,
-      account.token,
-      { holder: { agent: holder.agent, session: holder.sessionId } },
-    );
+    await this.send(account, {
+      path: `/v1/workspaces/${account.workspaceId}/leases/release`,
+      body: { holder: sessionHolder(holder) },
+    });
   }
 
-  private async post(
-    baseUrl: string,
-    path: string,
-    token: string,
-    body: unknown,
-    method = 'POST',
+  private async send(
+    account: Account,
+    request: { path: string; body: unknown; method?: 'POST' | 'DELETE' },
   ): Promise<{ status: number; body: unknown } | null> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    timer.unref?.();
-    try {
-      const response = await this.fetcher(`${baseUrl}${path}`, {
-        method,
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      const text = await response.text();
-      return {
-        status: response.status,
-        body: text === '' ? null : safeJson(text),
-      };
-    } catch {
-      // Unreachable, aborted, or not JSON. All of them mean nobody could tell us.
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
+    const reply = await runControlPlaneRequest({
+      account,
+      ...request,
+      fetcher: this.fetcher,
+      timeoutMs: this.timeoutMs,
+    });
+    return reply === null
+      ? null
+      : { status: reply.status, body: parseReplyBody(reply.text) };
   }
 }
 
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+function sessionHolder(holder: LeaseHolder): { agent: string; session: string } {
+  return { agent: holder.agent, session: holder.sessionId };
+}
+
+interface SharedTakeRequest {
+  path: string;
+  holder: LeaseHolder;
+  minutes: number;
+  region: WrittenRegion | undefined;
+  repository: string | undefined;
+}
+
+function takeBody(
+  request: SharedTakeRequest,
+  machineId: string,
+): Record<string, unknown> {
+  const { path, holder, minutes, region, repository } = request;
+  // Only what is known: an empty list would claim the session writes nothing.
+  const lines =
+    region === undefined || region.lines.length === 0 ? {} : { lines: region.lines };
+  const symbols =
+    region === undefined || region.symbols.length === 0
+      ? {}
+      : { symbols: region.symbols };
+  return {
+    path,
+    holder: { ...sessionHolder(holder), machine: machineId },
+    ttlMs: minutesToMs(minutes),
+    activity: `taken on ${machineId}`,
+    ...lines,
+    ...symbols,
+    ...(repository === undefined ? {} : { repository }),
+  };
+}
+
+/** The lease in the way as the control plane described it, in its own field names. */
+interface ConflictBody {
+  message?: string;
+  holding?: {
+    id?: string;
+    holder?: { agent?: string; machine?: string };
+    path?: string;
+    takenAt?: string;
+    renewedAt?: string;
+    expiresAt?: string;
+    lines?: WrittenRegion['lines'];
+    symbols?: string[];
+  };
+}
+
+function heldByAnother(body: unknown, path: string): SharedTake {
+  // Read defensively below: every field is checked before it is trusted.
+  const conflict = (body ?? {}) as ConflictBody;
+  const held = conflict.holding ?? {};
+  const lines = Array.isArray(held.lines) ? held.lines : [];
+  const symbols = Array.isArray(held.symbols) ? held.symbols : [];
+  return {
+    outcome: SHARED_OUTCOME.HELD_BY_ANOTHER,
+    ...(lines.length === 0 && symbols.length === 0 ? {} : { region: { lines, symbols } }),
+    ...(typeof held.takenAt === 'string' ? { since: held.takenAt } : {}),
+    ...(conflict.holding === undefined ? {} : lastActiveOf(held.renewedAt, held.takenAt)),
+    ...(typeof held.expiresAt === 'string' ? { until: held.expiresAt } : {}),
+    ...(typeof held.id === 'string' ? { leaseId: held.id } : {}),
+    holder: held.holder?.agent ?? 'another agent',
+    ...(held.holder?.machine === undefined ? {} : { machine: held.holder.machine }),
+    path: held.path ?? path,
+    message: conflict.message ?? 'another machine holds that path',
+  };
 }
 
 /** The last sign of life: a renewal where there was one, and the take otherwise. */

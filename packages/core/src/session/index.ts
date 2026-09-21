@@ -8,3 +8,8 @@ export * from './operations';
 export * from './autopilot';
 export * from './replay';
 export * from './fleet-spend-store';
+export * from './breaker-pause';
+export * from './session-replay';
+export * from './probation';
+export * from './session-containment';
+export * from './destinations';

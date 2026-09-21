@@ -1,32 +1,15 @@
+import { minutesToMs, msToMinutes } from '../domain/time';
+import { describeSpan, IN_MINUTES } from '../domain/duration-text';
 /**
- * A lease on a path, so two agents in one repository stop being a coin flip.
- *
- * This is the first thing here that blocks work for a reason that is not safety, and
- * that changes what a mistake costs. A policy deny is wrong occasionally and the cost
- * is an argument; a wrong lease is wrong silently and the cost is somebody's afternoon.
- * So four rules hold, and every one of them is enforced in this file rather than left
- * to the callers: it locks paths and never meaning, it never blocks a read, every lease
- * expires, and a wait is always bounded.
- *
- * The cloud holds the half a laptop structurally cannot: two machines on one
- * repository need the register somewhere both can see. This half needs no account and
- * no network, so the vocabulary matches `memnox-cloud/src/coordination/lease.ts`
- * deliberately — a lease taken here and a lease read there must mean the same thing.
+ * A lease on a path, so two agents in one repository stop being a coin flip. It locks
+ * paths and never meaning, never blocks a read, always expires, and every wait is bounded.
+ * The vocabulary matches `memnox-cloud/src/coordination/lease.ts`, so both halves agree.
  */
 
-/**
- * Whose pid a lease is recorded against.
- *
- * The parent, because a seam exits the moment its command does and holding its own pid
- * would mark every lease abandoned as soon as it was taken. Except when the parent has
- * already gone: the process is then reparented to init, and a lease recorded against
- * pid 1 can never be reclaimed, because init outlives everything. Such a lease held
- * the repository root until its clock ran out and no documented command would release
- * it. Falling back to this process is right there, since a seam whose parent is
- * already gone has no durable owner to outlive anyway.
- */
+/** A pid nobody's agent runs as: init outlives everything and could never be reclaimed. */
 export const NO_OWNER_PID = 1;
 
+/** The parent, since a seam exits with its command and would abandon its own lease at once. */
 export function holderPid(parent: number, self: number): number {
   return parent > NO_OWNER_PID ? parent : self;
 }
@@ -35,7 +18,7 @@ export function holderPid(parent: number, self: number): number {
 export interface LeaseHolder {
   /** The agent that took it: `claude-code`, `cursor`, `codex`. */
   agent: string;
-  /** The run it belongs to. A lease outliving its session is what rule 3 forbids. */
+  /** The run it belongs to, because a lease must never outlive its session. */
   sessionId: string;
   /** The process that took it, so a holder that died is reclaimed rather than waited on. */
   pid: number;
@@ -56,12 +39,7 @@ export interface Lease {
   takenAt: string;
   /** Required. There is no spelling for a lease that lasts for ever, by design. */
   expiresAt: string;
-  /**
-   * What the holder has been doing with it, newest last. This is the half of a refusal
-   * that ends the argument: "cursor has src/billing" is a fact, "cursor wrote
-   * invoice.ts and ran the billing tests" is the sentence that tells the second agent
-   * whether it is about to do the same work twice.
-   */
+  /** What the holder has been doing, newest last, so a refusal says whether this is the same work. */
   activity: string[];
   releasedAt?: string;
   /** Kept for the life of the record rather than deleted with the lease. */
@@ -88,13 +66,7 @@ export const MAX_LEASE_MINUTES = 240;
 /** Enough to say what the holder has been doing without the file growing without end. */
 export const LEASE_MAX_ACTIVITY = 20;
 
-/**
- * Which of the five a lease is in, asked here and never by comparing dates at a call
- * site: that is five conditions and the last two are the ones that get forgotten.
- *
- * Liveness is passed in rather than read, so this stays pure and a replay gives the
- * same answer twice.
- */
+/** Which state a lease is in. Liveness is a parameter, so a replay answers the same twice. */
 export function leaseState(
   lease: Lease,
   moment: string,
@@ -117,15 +89,8 @@ export function leasesInForce(
 }
 
 /**
- * The path a lease is taken on, in one shape, so two agents naming the same directory
- * differently cannot both hold it.
- *
- * Repository-relative and forward-slashed, because that is the only spelling two
- * machines agree on. The empty string is the repository root, which is a real lease:
- * that is what a refactor of the whole tree takes.
- *
- * `null` for anything a prefix comparison could not be trusted on — a path that walks
- * out of the tree is one whose collisions this file cannot reason about.
+ * One repository-relative, forward-slashed spelling, so two agents cannot both hold a path.
+ * The empty string is the root; null is a path that walks out of the tree.
  */
 export function normalizeLeasePath(raw: string): string | null {
   const segments: string[] = [];
@@ -138,12 +103,8 @@ export function normalizeLeasePath(raw: string): string | null {
 }
 
 /**
- * Whether two paths collide: one is the other, or one contains the other.
- *
- * Compared on segment boundaries rather than as strings, so `src/billing` holds
- * `src/billing/invoice.ts` and does not hold `src/billing-legacy`. A plain `startsWith`
- * would take the second one too, and a lease that silently covers a directory nobody
- * named is rule 1 broken from the inside.
+ * Whether one path is or contains the other, on segment boundaries, so `src/billing`
+ * holds `src/billing/invoice.ts` and not `src/billing-legacy`.
  */
 export function conflicts(held: string, wanted: string): boolean {
   return contains(held, wanted) || contains(wanted, held);
@@ -157,16 +118,13 @@ function contains(outer: string, inner: string): boolean {
 
 /**
  * The same holder asking again, which is a renewal rather than a collision. A session
- * that lost its lease id — a crashed process, a re-exec — must not wait on itself.
+ * that lost its lease id, after a crash or a re-exec, must not wait on itself.
  */
 export function sameHolder(a: LeaseHolder, b: LeaseHolder): boolean {
   return a.agent === b.agent && a.sessionId === b.sessionId;
 }
 
-/**
- * How long a waiter should wait before giving up, never past the lease's own expiry and
- * never past the ceiling. Rule 4: the waiting happens on the side that can give up.
- */
+/** How long a waiter waits, never past the lease's expiry nor the ceiling. */
 export function waitFor(
   lease: Lease,
   moment: string,
@@ -177,37 +135,38 @@ export function waitFor(
   return Math.min(remaining, ceiling);
 }
 
-export function leaseFor(
-  path: string,
-  holder: LeaseHolder,
-  now: string,
-  minutes: number = DEFAULT_LEASE_MINUTES,
-  activity?: string,
-): Lease {
-  /* Clamped rather than refused: an agent asking for a day gets four hours, which
-     keeps rule 3 without failing the call somebody was in the middle of. */
-  const held = Math.min(Math.max(minutes, 1), MAX_LEASE_MINUTES);
+/** What a writer asks for: a path, who is asking, and optionally how long and why. */
+export interface LeaseRequest {
+  path: string;
+  holder: LeaseHolder;
+  minutes?: number;
+  activity?: string;
+}
+
+// Clamped rather than refused, so an agent asking for a day gets the maximum instead of an error.
+function clampMinutes(minutes: number): number {
+  return Math.min(Math.max(minutes, 1), MAX_LEASE_MINUTES);
+}
+
+function expiryAfter(now: string, minutes: number): string {
+  return new Date(Date.parse(now) + minutesToMs(clampMinutes(minutes))).toISOString();
+}
+
+export function leaseFor(request: LeaseRequest, now: string): Lease {
+  const { path, holder, activity } = request;
   return {
     id: `lse_${Date.parse(now).toString(36)}_${holder.pid.toString(36)}`,
     path,
     holder,
     takenAt: now,
-    expiresAt: new Date(Date.parse(now) + held * 60_000).toISOString(),
+    expiresAt: expiryAfter(now, request.minutes ?? DEFAULT_LEASE_MINUTES),
     activity: activity === undefined ? [] : [activity],
   };
 }
 
-/**
- * The lease kept for another window from now, never shorter than it was.
- *
- * What renewal means: the session is still working, so what it holds lasts. A short
- * window asked of a lease somebody took for longer leaves the longer one alone,
- * because an editor's five minutes landing on a shell's half hour would cut the
- * shell's hold short.
- */
+/** Kept for another window, never shorter, so an editor's five minutes cannot cut a shell's half hour. */
 export function extendedTo(lease: Lease, now: string, minutes: number): Lease {
-  const held = Math.min(Math.max(minutes, 1), MAX_LEASE_MINUTES);
-  const wanted = new Date(Date.parse(now) + held * 60_000).toISOString();
+  const wanted = expiryAfter(now, minutes);
   return wanted > lease.expiresAt ? { ...lease, expiresAt: wanted } : lease;
 }
 
@@ -222,9 +181,9 @@ export function withActivity(lease: Lease, note: string): Lease {
 export function describeLease(lease: Lease, moment: string): string {
   const minutes = Math.max(
     0,
-    Math.round((Date.parse(moment) - Date.parse(lease.takenAt)) / 60_000),
+    msToMinutes(Date.parse(moment) - Date.parse(lease.takenAt)),
   );
-  const held = minutes < 1 ? 'just now' : `${minutes} min`;
+  const held = minutes < 1 ? 'just now' : describeSpan(minutesToMs(minutes), IN_MINUTES);
   const path = lease.path === '' ? 'the repository root' : lease.path;
   return `${lease.holder.agent} has ${path} (${held}, session ${lease.holder.sessionId})`;
 }

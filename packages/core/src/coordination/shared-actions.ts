@@ -1,37 +1,22 @@
 import { digest } from '../domain/digest';
-import { readAccount } from '../sync/account';
+import { readAccount, type Account } from '../sync/account';
+import {
+  runControlPlaneRequest,
+  type ControlPlaneReply,
+  type Fetcher,
+} from '../sync/control-plane-request';
 import type { LeaseHolder } from './lease';
 
 /**
- * The workspace's answer to "is somebody else already doing this exact thing".
- *
- * A lease answers it for a path, and most of what an agent does writes no path at
- * all: it posts the message, opens the issue, restarts the service. Two agents on
- * two machines each deciding to send the same Slack message collide in exactly the
- * way two agents in one file do, and only the control plane can see it, which is
- * why this half of coordination is the part a team pays for.
- *
- * The three rules the shared lease is built on hold here too. **Unreachable is not
- * taken**: every failure reads as "nobody could tell me" and the caller proceeds,
- * because a seam that refused an agent's work whenever the network hiccuped is one
- * people turn off. **No account, no call.** And **bounded**: one short request on a
- * path an agent is waiting on.
- *
- * **The arguments never leave the machine.** What travels is a digest of them,
- * with the operation and destination by name, which is the same bargain the ledger
- * makes: names, never payloads.
+ * The workspace's answer to whether somebody else is already doing this exact thing,
+ * for the work that writes no path. Unreachable is not taken, and arguments never leave
+ * the machine, only their digest with the operation and destination by name.
  */
 
 /** Milliseconds. This sits in front of a tool call, so it must not be felt. */
 export const CLAIM_TIMEOUT_MS = 1_500;
 
-/**
- * How long a claim stands unless it is renewed.
- *
- * A claim means "doing this now", so it is short, and a seam renews it for as
- * long as the work runs. This is only how long it outlives a seam that died
- * holding it.
- */
+/** How long a claim outlives a seam that died holding it. Live work renews instead. */
 export const CLAIM_WINDOW_MS = 30_000;
 
 /** How often a seam renews a claim while its work is still running. */
@@ -71,21 +56,13 @@ export interface IntendedAction {
   target?: string;
   /** The arguments, which are hashed here and never sent. */
   arguments: Record<string, string>;
-  /**
-   * The one thing it acts on, as its provider would name it. Absent where no
-   * provider names it, which leaves the call compared exactly and nothing
-   * else, the way every call was before this.
-   */
+  /** The one thing it acts on, as its provider names it. Absent, the call is compared exactly. */
   resource?: string;
 }
 
 /**
- * The digest two agents doing the same thing produce and nobody else does.
- *
- * Over the operation, the destination and every argument, with the keys sorted so
- * two callers that built the same call in a different order still match. Two
- * *different* messages hash differently and are two pieces of work, which is the
- * whole claim this makes: it never decides that two things mean the same thing.
+ * The digest two agents doing the same thing produce and nobody else does, over the
+ * operation, destination and sorted arguments. It never decides two things mean the same.
  */
 export function actionFingerprint(action: IntendedAction): string {
   const args = Object.keys(action.arguments)
@@ -98,15 +75,9 @@ export function actionFingerprint(action: IntendedAction): string {
 export interface SharedActions {
   /** Claim it, or renew a claim this holder already has. */
   claim(action: IntendedAction, holder: LeaseHolder): Promise<ClaimOutcome>;
-  /**
-   * The action returned. The thing it was on is free at once, and the exact
-   * action counts as a repeat for a few seconds more. Never throws: a finish
-   * that does not arrive leaves a claim that lapses on its own.
-   */
+  /** The action returned, so its target is free. Never throws, since a lost finish lapses anyway. */
   finish(action: IntendedAction, holder: LeaseHolder): Promise<void>;
 }
-
-type Fetcher = typeof globalThis.fetch;
 
 /** The control plane's register, over the same account the rest of sync uses. */
 export class CloudActions implements SharedActions {
@@ -121,112 +92,65 @@ export class CloudActions implements SharedActions {
     if (account === null) {
       return { answer: CLAIM_ANSWER.UNKNOWN, because: 'this machine is not enrolled' };
     }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    timer.unref?.();
-    try {
-      const response = await this.fetcher(
-        `${account.baseUrl}/v1/workspaces/${account.workspaceId}/coordination/actions`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${account.token}`,
-          },
-          body: JSON.stringify({
-            fingerprint: actionFingerprint(action),
-            operation: action.operation,
-            ...(action.target === undefined ? {} : { target: action.target }),
-            ...(action.resource === undefined ? {} : { resource: action.resource }),
-            holder: {
-              agent: holder.agent,
-              session: holder.sessionId,
-              machine: account.machineId,
-            },
-            ttlMs: CLAIM_WINDOW_MS,
-          }),
-          signal: controller.signal,
-        },
-      );
-      if (!response.ok) {
-        return {
-          answer: CLAIM_ANSWER.UNKNOWN,
-          because: `the control plane answered ${response.status}`,
-        };
-      }
-      return read(await response.text());
-    } catch {
-      // Unreachable, aborted, or not JSON. All of them mean nobody could tell us.
+    const reply = await this.send(account, '/coordination/actions', {
+      fingerprint: actionFingerprint(action),
+      operation: action.operation,
+      ...(action.target === undefined ? {} : { target: action.target }),
+      ...(action.resource === undefined ? {} : { resource: action.resource }),
+      holder: machineHolder(holder, account),
+      ttlMs: CLAIM_WINDOW_MS,
+    });
+    if (reply === null) {
       return {
         answer: CLAIM_ANSWER.UNKNOWN,
         because: 'the control plane did not answer',
       };
-    } finally {
-      clearTimeout(timer);
     }
+    if (!reply.ok) {
+      return {
+        answer: CLAIM_ANSWER.UNKNOWN,
+        because: `the control plane answered ${reply.status}`,
+      };
+    }
+    return parseClaimReply(reply.text);
   }
 
-  finish(action: IntendedAction, holder: LeaseHolder): Promise<void> {
-    return finishClaim(this.home, this.fetcher, this.timeoutMs, action, holder);
+  /** Failing is silent, since the claim lapses on its own within its window. */
+  async finish(action: IntendedAction, holder: LeaseHolder): Promise<void> {
+    const account = await readAccount(this.home);
+    if (account === null) return;
+    await this.send(account, '/coordination/actions/finish', {
+      fingerprint: actionFingerprint(action),
+      ...(action.resource === undefined ? {} : { resource: action.resource }),
+      holder: machineHolder(holder, account),
+    });
+  }
+
+  private send(
+    account: Account,
+    route: string,
+    body: unknown,
+  ): Promise<ControlPlaneReply | null> {
+    return runControlPlaneRequest({
+      account,
+      path: `/v1/workspaces/${account.workspaceId}${route}`,
+      body,
+      fetcher: this.fetcher,
+      timeoutMs: this.timeoutMs,
+    });
   }
 }
 
-/**
- * Finishes a claim this machine made.
- *
- * The same bounds as a claim: no account, no call, and one short request.
- * Failing is silent, because the claim it would have finished lapses in
- * seconds anyway.
- */
-async function finishClaim(
-  home: string,
-  fetcher: Fetcher,
-  timeoutMs: number,
-  action: IntendedAction,
+function machineHolder(
   holder: LeaseHolder,
-): Promise<void> {
-  const account = await readAccount(home);
-  if (account === null) return;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  timer.unref?.();
-  try {
-    await fetcher(
-      `${account.baseUrl}/v1/workspaces/${account.workspaceId}/coordination/actions/finish`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${account.token}`,
-        },
-        body: JSON.stringify({
-          fingerprint: actionFingerprint(action),
-          ...(action.resource === undefined ? {} : { resource: action.resource }),
-          holder: {
-            agent: holder.agent,
-            session: holder.sessionId,
-            machine: account.machineId,
-          },
-        }),
-        signal: controller.signal,
-      },
-    );
-  } catch {
-    // Unreachable or too slow: the claim lapses on its own within its window.
-  } finally {
-    clearTimeout(timer);
-  }
+  account: Account,
+): { agent: string; session: string; machine: string } {
+  return { agent: holder.agent, session: holder.sessionId, machine: account.machineId };
 }
 
 /**
- * Keeps a claim alive while its work runs, and returns what ends it.
- *
- * A claim is short on purpose, so a seam that holds one for longer than its
- * window renews it by claiming again, which the workspace reads as this same
- * holder asking. The returned function stops renewing and finishes the claim,
- * and it is the only thing a seam has to call once the work returns. The timer
- * never keeps a process alive on its own.
+ * Keeps a claim alive while its work runs by asking again, and returns the one function
+ * that ends it. The timer never keeps the process alive on its own.
  */
 export function keepClaimed(
   actions: SharedActions,
@@ -256,25 +180,14 @@ export type MeetingOutcome = Extract<
 /** How much of an unnamed machine's id reads as an id rather than as noise. */
 const SHORT_ID = 8;
 
-/**
- * What to call the other machine.
- *
- * The workspace answers with what a person called it, and with its id where
- * nobody has. A whole UUID in a sentence an agent reads out is noise, and the
- * first segment still tells two machines apart.
- */
+/** What to call the other machine: its label, or the first segment of its id, never a whole UUID. */
 export function shortMachine(machine: string): string {
   return /^[0-9a-f-]{16,}$/i.test(machine) ? machine.slice(0, SHORT_ID) : machine;
 }
 
 /**
- * The sentence an agent is refused with, from whichever seam refused it.
- *
- * Two different refusals, because they call for different things. A repeat is
- * work already being done and the answer is to do something else; two agents
- * on one issue is a question about who should own it, which only the people
- * running them can settle. One sentence for the proxy and the shell both, so an
- * agent refused on either surface reads the same thing.
+ * The sentence an agent is refused with, the same on the proxy and the shell. A repeat
+ * calls for doing something else; two agents on one issue is for people to settle.
  */
 export function meetingReason(outcome: MeetingOutcome): string {
   const where =
@@ -286,40 +199,42 @@ export function meetingReason(outcome: MeetingOutcome): string {
         'Work on something else, or ask the person running you which of you should own it.';
 }
 
+/** The claim answers that name somebody else. */
+const MET: readonly string[] = [CLAIM_ANSWER.DUPLICATE, CLAIM_ANSWER.BUSY];
+
+interface ClaimReply {
+  outcome?: string;
+  by?: {
+    agent?: string;
+    machine?: string;
+    at?: string;
+    operation?: string;
+    target?: string;
+    resource?: string;
+  };
+}
+
 /** An answer this cannot read is one nobody gave, so the work goes through. */
-function read(body: string): ClaimOutcome {
+function parseClaimReply(body: string): ClaimOutcome {
+  let parsed: ClaimReply;
   try {
-    const parsed = JSON.parse(body) as {
-      outcome?: string;
-      by?: {
-        agent?: string;
-        machine?: string;
-        at?: string;
-        operation?: string;
-        target?: string;
-        resource?: string;
-      };
-    };
-    const met =
-      parsed.outcome === 'duplicate'
-        ? CLAIM_ANSWER.DUPLICATE
-        : parsed.outcome === 'busy'
-          ? CLAIM_ANSWER.BUSY
-          : null;
-    if (met === null || parsed.by === undefined) {
-      return { answer: CLAIM_ANSWER.MINE };
-    }
-    const by = parsed.by;
-    return {
-      answer: met,
-      agent: by.agent ?? 'another agent',
-      at: by.at ?? 'just now',
-      operation: by.operation ?? 'the same thing',
-      ...(by.machine === undefined ? {} : { machine: by.machine }),
-      ...(by.target === undefined ? {} : { target: by.target }),
-      ...(by.resource === undefined ? {} : { resource: by.resource }),
-    };
+    // Every field is optional and checked below, so a stranger shape reads as mine.
+    parsed = JSON.parse(body) as ClaimReply;
   } catch {
     return { answer: CLAIM_ANSWER.MINE };
   }
+  const by = parsed?.by;
+  if (parsed === null || !MET.includes(parsed.outcome ?? '') || by === undefined) {
+    return { answer: CLAIM_ANSWER.MINE };
+  }
+  return {
+    // Checked against MET just above.
+    answer: parsed.outcome as MeetingOutcome['answer'],
+    agent: by.agent ?? 'another agent',
+    at: by.at ?? 'just now',
+    operation: by.operation ?? 'the same thing',
+    ...(by.machine === undefined ? {} : { machine: by.machine }),
+    ...(by.target === undefined ? {} : { target: by.target }),
+    ...(by.resource === undefined ? {} : { resource: by.resource }),
+  };
 }

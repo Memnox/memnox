@@ -1,11 +1,9 @@
-import { TOOL_CLASS } from '../discovery/classify';
-import { VERB_TAG, type VerbTable } from './verb-table';
-
 /**
- * The seed set. Compiled in rather than read from disk: these decide what gets asked
- * about, so they ship with the binary and change through review. A table read from a
+ * The seed verb tables, compiled in rather than read from disk, because a table read from a
  * writable path would be a permission an agent could grant itself by editing a file.
  */
+import { TOOL_CLASS } from '../discovery/classify';
+import { VERB_TAG, type VerbTable } from './verb-table';
 
 const READ = TOOL_CLASS.READ;
 const WRITE = TOOL_CLASS.WRITE;

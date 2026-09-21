@@ -4,22 +4,14 @@ import { verbAction, verbTableFor } from '../verbs/index';
 import type { Policy } from '../policy/policy';
 import {
   describeReversibility,
-  mayBeAutomatic,
+  canBeAutomatic,
   reversibilityOf,
   type Reversibility,
-} from '../domain/reversibility';
+} from './reversibility';
 
 /**
- * "Run this agent on its own", turned into a boundary somebody can read.
- *
- * The point is that a person should not have to understand IAM, MCP permissions, file
- * modes and OAuth scopes to answer one question: can I leave this running? So the
- * boundary is rendered as three bands in plain words, and every line in it is the
- * verdict the rules would actually reach — not a description of them.
- *
- * That last part is the whole discipline here. A screen that lists what the policy
- * *intends* is marketing; this one asks the engine, action by action, so what it shows
- * is what will happen.
+ * Whether an agent can be left running, as three bands in plain words, each line the
+ * verdict the engine actually reaches for that action rather than what the rules intend.
  */
 
 export const BAND = {
@@ -60,12 +52,7 @@ export interface CandidateAction {
   class: ToolClass;
 }
 
-/**
- * Every action a CLI on this machine could take, from its verb table.
- *
- * The tables are the same ones enforcement reads, so a boundary drawn here cannot
- * promise something the gate would decide differently.
- */
+/** Every action a CLI could take, from the same verb tables enforcement reads. */
 export function actionsForCli(binary: string): CandidateAction[] {
   const table = verbTableFor(binary);
   if (table === null) return [];
@@ -90,25 +77,22 @@ export function boundaryFor(
   for (const candidate of candidates) {
     const verdict = decide(candidate.action);
     if (!verdict.matched) {
-      /* Nothing has an opinion about this. Counted rather than filed under
-         "automatic": an unruled capability is not a permitted one, and putting it in
-         the allowed band would be the screen telling a comfortable lie. */
+      // Counted rather than filed as automatic, because an unruled capability is not a permitted one.
       ungoverned.push(candidate.action);
       continue;
     }
     const band = BANDS[verdict.effect] ?? BAND.NEEDS_APPROVAL;
     const reversibility = reversibilityOf(candidate.action, candidate.class);
-    /* An allow is not enough on its own. Something Memnox cannot put back is never
-       handed over unattended, however ordinary the rule that permits it: the cost of
-       a wrong ask is an interruption, and the cost of a wrong send is a sent email. */
-    const held = band === BAND.AUTOMATIC && !mayBeAutomatic(reversibility);
+    // Something Memnox cannot put back is never unattended: a wrong ask costs an
+    // interruption, and a wrong send is a sent email.
+    const held = band === BAND.AUTOMATIC && !canBeAutomatic(reversibility);
     entries.push({
       action: candidate.action,
       class: candidate.class,
       band: held ? BAND.NEEDS_APPROVAL : band,
       reversibility,
       because: held
-        ? `${verdict.reason} — but ${describeReversibility(reversibility)}`
+        ? `${verdict.reason}, but ${describeReversibility(reversibility)}`
         : verdict.reason,
     });
   }
@@ -125,12 +109,8 @@ export function inBand(boundary: Boundary, band: Band): BoundaryEntry[] {
 }
 
 /**
- * How far a mistake would reach, from what the agent actually holds.
- *
- * Shown before somebody turns autonomy on, because that is the moment the question is
- * live. Built from credentials and classes found on the machine — never a score, and
- * never a reassurance: the honest version of this screen sometimes says the blast
- * radius is large and offers to narrow it.
+ * How far a mistake would reach, from the credentials and classes on this machine,
+ * shown before autonomy is turned on. Never a score and never a reassurance.
  */
 export interface BlastRadius {
   /** Credential kinds the agent can read, by name. Never a value. */
@@ -162,11 +142,8 @@ export function blastRadiusOf(
 }
 
 /**
- * Whether this is a boundary somebody should be allowed to switch on unexamined.
- *
- * Two things stop it, and both are cases where the screen would otherwise read as
- * reassuring while being wrong: something destructive running unasked, and a majority
- * of what the agent can do having no rule about it at all.
+ * Whether this boundary can be switched on unexamined: not while something destructive
+ * runs unasked, nor while most of the reach has no rule.
  */
 export function readyToEnable(radius: BlastRadius): { ready: boolean; because: string } {
   if (radius.destructiveAutomatic) {
@@ -185,14 +162,7 @@ export function readyToEnable(radius: BlastRadius): { ready: boolean; because: s
   return { ready: true, because: 'every destructive action is held or refused' };
 }
 
-/**
- * The jobs the rules on this machine actually name.
- *
- * A workforce is several agents holding different authority, and the question people
- * have is "who is allowed to do what" rather than "what may this binary do". Read from
- * the rules rather than from a roster, because a role nothing has a rule about is a
- * name somebody typed once — it governs nothing and listing it would suggest otherwise.
- */
+/** The jobs the rules actually name, since a role no rule mentions governs nothing. */
 export function rolesIn(policies: readonly Policy[]): string[] {
   const named = new Set<string>();
   for (const policy of policies) {
@@ -213,12 +183,10 @@ export interface RoleStanding {
 }
 
 export function standingFor(role: string, boundary: Boundary): RoleStanding {
-  const count = (band: Band): number =>
-    boundary.entries.filter((entry) => entry.band === band).length;
   return {
     role,
-    automatic: count(BAND.AUTOMATIC),
-    needsApproval: count(BAND.NEEDS_APPROVAL),
-    never: count(BAND.NEVER),
+    automatic: inBand(boundary, BAND.AUTOMATIC).length,
+    needsApproval: inBand(boundary, BAND.NEEDS_APPROVAL).length,
+    never: inBand(boundary, BAND.NEVER).length,
   };
 }

@@ -1,22 +1,9 @@
 import { readAccount } from '../sync/account';
+import { runControlPlaneRequest, type Fetcher } from '../sync/control-plane-request';
 
 /**
- * What somebody has said to this agent session, collected at its next turn.
- *
- * A note is written in the workspace: by a person steering an agent they can see
- * working, or by Memnox itself when another agent collided with work this one holds.
- * Nothing can open a connection to a laptop, so the session collects its own notes,
- * on its own move, at the natural pauses it already has: after a tool call and when
- * its turn ends. That is the same seam everything else here uses, running the same
- * one way.
- *
- * **A note is words, never a verdict.** It is handed to the agent the way a person
- * typing into its terminal would be, and what the agent does next is still decided
- * on this machine against the rules it pulled.
- *
- * **Bounded, and silent when it cannot ask.** This sits on every tool call, so one
- * short request and nothing at all without an account. A control plane that cannot
- * be reached has said nothing, which is the same as nobody saying anything.
+ * What somebody has said to this agent session, pulled at the pauses it already has,
+ * since nothing can open a connection to a laptop. A note is words and never a verdict.
  */
 
 /** Milliseconds. A tool call waits on this, so it must not be felt. */
@@ -41,18 +28,13 @@ export const NOTE_KIND = {
 export type NoteKind = (typeof NOTE_KIND)[keyof typeof NOTE_KIND];
 
 export interface SessionNotes {
-  /**
-   * What is waiting for this agent session, handed over once. Empty on any
-   * failure. `kinds` narrows it, and what it leaves out stays waiting.
-   */
+  /** What is waiting, handed over once and empty on any failure. What `kinds` leaves out stays waiting. */
   collect(
     agent: string,
     sessionId: string,
     kinds?: readonly NoteKind[],
   ): Promise<SessionNote[]>;
 }
-
-type Fetcher = typeof globalThis.fetch;
 
 /** The workspace's inbox, over the same account the rest of sync uses. */
 export class CloudNotes implements SessionNotes {
@@ -70,35 +52,16 @@ export class CloudNotes implements SessionNotes {
     const account = await readAccount(this.home);
     if (account === null) return [];
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    timer.unref?.();
-    try {
-      const response = await this.fetcher(
-        `${account.baseUrl}/v1/workspaces/${account.workspaceId}/agents/${encodeURIComponent(
-          agent,
-        )}/control/drain`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${account.token}`,
-          },
-          body: JSON.stringify({
-            session: sessionId,
-            ...(kinds === undefined ? {} : { kinds }),
-          }),
-          signal: controller.signal,
-        },
-      );
-      if (!response.ok) return [];
-      return notesIn(await response.text());
-    } catch {
-      // Unreachable, too slow, or not JSON: nobody could say anything.
-      return [];
-    } finally {
-      clearTimeout(timer);
-    }
+    const reply = await runControlPlaneRequest({
+      account,
+      path: `/v1/workspaces/${account.workspaceId}/agents/${encodeURIComponent(agent)}/control/drain`,
+      body: { session: sessionId, ...(kinds === undefined ? {} : { kinds }) },
+      fetcher: this.fetcher,
+      timeoutMs: this.timeoutMs,
+    });
+    // Unreachable, too slow or refused: nobody could say anything.
+    if (reply === null || !reply.ok) return [];
+    return notesIn(reply.text);
   }
 }
 
@@ -110,6 +73,7 @@ function notesIn(body: string): SessionNote[] {
     const found: SessionNote[] = [];
     for (const each of parsed.commands) {
       if (each === null || typeof each !== 'object') continue;
+      // Checked for an object just above; every field is narrowed before use.
       const note = each as Record<string, unknown>;
       const { id, message, issuedBy, issuedAt, kind } = note;
       if (typeof id !== 'string' || typeof message !== 'string') continue;
@@ -131,11 +95,8 @@ function notesIn(body: string): SessionNote[] {
 const MEMNOX_AUTHOR = 'memnox';
 
 /**
- * The notes as the agent reads them, in one block.
- *
- * Named as coming from outside the conversation, because they did: a model that
- * cannot tell a note from its own user's words would weigh it as either. Who said
- * it is kept, which is what lets the agent answer "who asked for this".
+ * The notes as the agent reads them, in one block marked as coming from outside the
+ * conversation and attributed, so the model can tell a note from its own user's words.
  */
 export function renderNotes(notes: readonly SessionNote[]): string {
   const lines = notes.map((note) => {

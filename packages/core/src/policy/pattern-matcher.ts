@@ -1,3 +1,7 @@
+/**
+ * How a rule's pattern is matched against an action, a path or a name. One matcher for
+ * every domain, because a second would be a rule that fires on one screen and not at the seam.
+ */
 const WILDCARD = '*';
 /** Patterns come from policy files, so the set is bounded; the cap is a backstop. */
 const MAX_CACHED_PATTERNS = 10_000;
@@ -23,7 +27,7 @@ export function matchesPattern(pattern: string, value: string): boolean {
 
 /** True when any pattern matches. An undefined pattern list matches everything. */
 export function matchesAny(
-  patterns: string[] | undefined,
+  patterns: readonly string[] | undefined,
   value: string | undefined,
 ): boolean {
   if (!patterns || patterns.length === 0) return true;

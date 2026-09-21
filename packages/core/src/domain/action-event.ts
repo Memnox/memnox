@@ -9,15 +9,15 @@ export interface ActionRequest {
   environment?: string;
   /** Groups actions into one agent session for replay and reporting. */
   sessionId?: string;
-  /** The governance unit, declared in a policy file — repos sharing a name share one scope. */
+  /** The governance unit, declared in a policy file, so repos sharing a name share one scope. */
   projectId?: string;
-  /** Whose authority the agent draws on — not who the agent is, which is its credential. */
+  /** Whose authority the agent draws on, not who the agent is, which is its credential. */
   principal?: string;
   /** Facts this action relies on, so "may not do" is tellable from "should not know". */
   reads?: readonly string[];
   /** What was actually asked for. Declared by the client; never inferred here. */
   task?: TaskRef;
-  /** The agent's stated intent — recorded verbatim for the audit trail. */
+  /** The agent's stated intent, recorded verbatim for the audit trail. */
   reason?: string;
   metadata?: Record<string, unknown>;
   /** Reference to a previously granted approval for this same action. */

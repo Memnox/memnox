@@ -1,13 +1,6 @@
 import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
 
-/**
- * Whether trying again could ever work.
- *
- * A denial that reads like a transient failure gets retried, and an agent retrying a
- * policy decision forty times is the loop the circuit breaker exists to stop, so the
- * cheapest place to stop it is the refusal itself. The model is told plainly, in the
- * one message it is going to read.
- */
+/** Whether retrying could ever work, told to the model so a rule denial is not retried as a fault. */
 export const RETRYABILITY = {
   /** A rule refused it. The same call will be refused again, for ever. */
   NEVER: 'never',
@@ -38,9 +31,7 @@ const EXPIRES = [
   'lease',
   'held by',
   'window',
-  /* Another agent's claim on the same action or the same thing, which lapses in
-     minutes. Told "change the rule", an agent would go looking for a rule there
-     is none of. */
+  // Another agent's claim, which lapses in minutes rather than being a rule to change.
   'claimed this exact action',
   'has been working on',
 ];

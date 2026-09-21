@@ -2,12 +2,8 @@ import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
 
 /**
- * A notice on the person's own screen, where the platform has one.
- *
- * Memnox lives where people work, and the desktop is where a person is when their
- * agent is busy in another window: an email about a collision is read an hour
- * later, a notice is read now. Best effort and never awaited: a desktop with no
- * notifications, or a server with no desktop, simply shows nothing.
+ * A desktop notice, so a person in another window hears about a collision now. Best
+ * effort and never awaited: a platform with no notifications shows nothing.
  */
 
 /** The longest notice shown; the rest is in the agent's session and the record. */

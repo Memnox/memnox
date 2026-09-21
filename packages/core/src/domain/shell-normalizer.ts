@@ -1,6 +1,6 @@
 /** Indirection the normalizer could not resolve. Never silently ignored. */
 export const OPAQUE_REASON = {
-  /** $VAR, `cmd`, or $(cmd) — the real command is not knowable here. */
+  /** $VAR, `cmd`, or $(cmd), where the real command is not knowable here. */
   EXPANSION: 'shell-expansion',
   /** A decoder whose input is not a literal, so nothing can be decoded. */
   UNDECODABLE: 'undecodable-payload',
@@ -20,8 +20,8 @@ export interface NormalizedCommand {
   segments: string[];
   /**
    * The same commands with argv in the order it was typed. A verb table matches argv
-   * as written — `vercel deploy --prod` canonicalizes to `vercel --prod deploy`, which
-   * resolves to the wrong verb — so resolution reads these and patterns read the above.
+   * as written, and `vercel deploy --prod` canonicalized to `vercel --prod deploy`
+   * resolves to the wrong verb, so resolution reads these and patterns read the above.
    */
   commands: string[];
   /** Sorted, deduplicated. Non-empty means something could not be resolved. */
@@ -101,8 +101,8 @@ function walk(
   }
 }
 
-/** `curl x | sh` — the last stage decides whether the pipeline executes. */
-function endsInInterpreter(pipeline: string[]): boolean {
+/** `curl x | sh`, where the last stage decides whether the pipeline executes. */
+function endsInInterpreter(pipeline: readonly string[]): boolean {
   const last = pipeline[pipeline.length - 1];
   if (last === undefined) return false;
   const words = stripEnvAssignments(tokenize(last));
@@ -112,7 +112,7 @@ function endsInInterpreter(pipeline: string[]): boolean {
 /** Returns the wrapped command when this word list is a wrapper, else null. */
 function unwrap(
   binary: string,
-  words: string[],
+  words: readonly string[],
   opaque: Set<OpaqueReason>,
 ): string | null {
   if (binary === 'eval' || binary === 'exec') {
@@ -146,7 +146,7 @@ function unwrap(
   return null;
 }
 
-function isDecoding(words: string[]): boolean {
+function isDecoding(words: readonly string[]): boolean {
   return words.some((word) => word === '-d' || word === '--decode' || word === '-D');
 }
 
@@ -157,7 +157,7 @@ function decodeBase64(value: string): string | null {
     // Reject binary noise: only a text command is worth re-inspecting.
     return /^[\x20-\x7e\s]+$/.test(decoded) && decoded.trim().length > 0 ? decoded : null;
   } catch {
-    return null; // Not valid base64 — treat it as an ordinary argument.
+    return null; // Not valid base64, so treat it as an ordinary argument.
   }
 }
 
@@ -189,7 +189,7 @@ function tokenize(input: string): string[] {
 }
 
 /** `FOO=bar rm -rf /` runs rm, not FOO. */
-function stripEnvAssignments(words: string[]): string[] {
+function stripEnvAssignments(words: readonly string[]): string[] {
   let index = 0;
   while (index < words.length && ENV_ASSIGNMENT.test(words[index] ?? '')) index += 1;
   return words.slice(index);
@@ -205,7 +205,7 @@ function looksLikeFlag(word: string): boolean {
 }
 
 /** One spelling per command, so `rm -r -f /x` and `/bin/rm -fr /x` match one pattern. */
-function canonicalize(words: string[]): string {
+function canonicalize(words: readonly string[]): string {
   const binary = basename(words[0] ?? '');
   const flags: string[] = [];
   const operands: string[] = [];

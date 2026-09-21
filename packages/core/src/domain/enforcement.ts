@@ -43,9 +43,8 @@ export function resolveEnforcementMode(
 }
 
 /**
- * Mode downgrades the effect and never the reverse. Observe and advise must never rewrite
- * what was decided: phase 03 has nothing to report and simulation nothing to replay unless
- * the real verdict is computed and kept beside the permissive one.
+ * Mode downgrades the effect and never the reverse. The real verdict is kept beside the
+ * permissive one, because reporting and simulation both replay what enforce would have said.
  */
 export function applyEnforcementMode(
   verdict: DecisionEffect,

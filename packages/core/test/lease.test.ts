@@ -72,15 +72,19 @@ describe('one spelling per path', () => {
 
 describe('a lease that cannot expire is a lease nobody turns on', () => {
   it('always carries an expiry', () => {
-    expect(leaseFor('src', holder, NOW).expiresAt).toBe(at(DEFAULT_LEASE_MINUTES));
+    expect(leaseFor({ path: 'src', holder }, NOW).expiresAt).toBe(
+      at(DEFAULT_LEASE_MINUTES),
+    );
   });
 
   it('clamps a day down to the ceiling instead of failing the call', () => {
-    expect(leaseFor('src', holder, NOW, 60 * 24).expiresAt).toBe(at(MAX_LEASE_MINUTES));
+    expect(leaseFor({ path: 'src', holder, minutes: 60 * 24 }, NOW).expiresAt).toBe(
+      at(MAX_LEASE_MINUTES),
+    );
   });
 
   it('is expired once the moment reaches it, and is no longer in force', () => {
-    const lease = leaseFor('src', holder, NOW, 30);
+    const lease = leaseFor({ path: 'src', holder, minutes: 30 }, NOW);
     expect(leaseState(lease, at(31), living)).toBe(LEASE_STATE.EXPIRED);
     expect(leasesInForce([lease], at(31), living)).toEqual([]);
   });
@@ -88,13 +92,13 @@ describe('a lease that cannot expire is a lease nobody turns on', () => {
 
 describe('a dead owner is reclaimed rather than waited on', () => {
   it('reads as abandoned when the process is gone', () => {
-    const lease = leaseFor('src', holder, NOW);
+    const lease = leaseFor({ path: 'src', holder }, NOW);
     expect(leaseState(lease, at(1), dead)).toBe(LEASE_STATE.ABANDONED);
     expect(leasesInForce([lease], at(1), dead)).toEqual([]);
   });
 
   it('is still held while the process lives', () => {
-    expect(leaseState(leaseFor('src', holder, NOW), at(1), living)).toBe(
+    expect(leaseState(leaseFor({ path: 'src', holder }, NOW), at(1), living)).toBe(
       LEASE_STATE.HELD,
     );
   });
@@ -102,13 +106,13 @@ describe('a dead owner is reclaimed rather than waited on', () => {
 
 describe('release and takeover leave a record', () => {
   it('stops being in force once released', () => {
-    const lease: Lease = { ...leaseFor('src', holder, NOW), releasedAt: at(2) };
+    const lease: Lease = { ...leaseFor({ path: 'src', holder }, NOW), releasedAt: at(2) };
     expect(leaseState(lease, at(3), living)).toBe(LEASE_STATE.RELEASED);
   });
 
   it('reads as taken over even before it would have expired', () => {
     const lease: Lease = {
-      ...leaseFor('src', holder, NOW),
+      ...leaseFor({ path: 'src', holder }, NOW),
       takenOver: { by: other, at: at(2), reason: 'the build is broken' },
     };
     expect(leaseState(lease, at(3), living)).toBe(LEASE_STATE.TAKEN_OVER);
@@ -127,21 +131,25 @@ describe('the same session never waits on itself', () => {
 
 describe('a wait is always bounded', () => {
   it('never waits past the ceiling, however long the lease has left', () => {
-    expect(waitFor(leaseFor('src', holder, NOW, 240), NOW)).toBe(LEASE_MAX_WAIT_MS);
+    expect(waitFor(leaseFor({ path: 'src', holder, minutes: 240 }, NOW), NOW)).toBe(
+      LEASE_MAX_WAIT_MS,
+    );
   });
 
   it('never waits past the lease that is in the way', () => {
-    expect(waitFor(leaseFor('src', holder, NOW, 240), at(239))).toBe(60_000);
+    expect(waitFor(leaseFor({ path: 'src', holder, minutes: 240 }, NOW), at(239))).toBe(
+      60_000,
+    );
   });
 
   it('does not wait at all on one that has already expired', () => {
-    expect(waitFor(leaseFor('src', holder, NOW, 10), at(20))).toBe(0);
+    expect(waitFor(leaseFor({ path: 'src', holder, minutes: 10 }, NOW), at(20))).toBe(0);
   });
 });
 
 describe('what the holder has been doing', () => {
   it('keeps the newest and drops the oldest, so one session cannot grow the file', () => {
-    let lease = leaseFor('src', holder, NOW);
+    let lease = leaseFor({ path: 'src', holder }, NOW);
     for (let i = 0; i < LEASE_MAX_ACTIVITY + 5; i += 1) {
       lease = withActivity(lease, `wrote file-${i}.ts`);
     }
@@ -150,18 +158,20 @@ describe('what the holder has been doing', () => {
   });
 
   it('ignores an empty note rather than recording a blank line', () => {
-    expect(withActivity(leaseFor('src', holder, NOW), '  ').activity).toEqual([]);
+    expect(withActivity(leaseFor({ path: 'src', holder }, NOW), '  ').activity).toEqual(
+      [],
+    );
   });
 
   it('names the holder, the path and how long, which is what a refusal needs', () => {
-    const line = describeLease(leaseFor('src/billing', holder, NOW), at(12));
+    const line = describeLease(leaseFor({ path: 'src/billing', holder }, NOW), at(12));
     expect(line).toContain('cursor');
     expect(line).toContain('src/billing');
     expect(line).toContain('12 min');
   });
 
   it('calls the root by a name a person would recognise', () => {
-    expect(describeLease(leaseFor('', holder, NOW), at(1))).toContain(
+    expect(describeLease(leaseFor({ path: '', holder }, NOW), at(1))).toContain(
       'the repository root',
     );
   });

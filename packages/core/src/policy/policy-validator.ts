@@ -1,14 +1,24 @@
 import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
-import { type Alternative, type RateLimitSpec } from '../domain/decision';
+import type { Alternative, RateLimitSpec } from '../domain/decision';
 import { SCOPE_MATCH, type ScopeMatch } from '../domain/task';
 import { isValidTimeWindow, type TimeWindow } from './time-window';
-import type { Policy, PolicyDocument, PolicyMode } from './policy';
+import type {
+  Policy,
+  PolicyDecision,
+  PolicyDocument,
+  PolicyCarveOut,
+  PolicyMatch,
+  PolicyMode,
+} from './policy';
 import { POLICY_DOCUMENT_VERSION, POLICY_MODE } from './policy';
 
+/**
+ * Turning a hand-written rule file into rules the engine can hold, every problem listed.
+ * What will not parse never reaches the engine, since nobody would know which half was in force.
+ */
 const VALID_EFFECTS: readonly string[] = Object.values(DECISION_EFFECT);
 
-/* What earlier versions of this file called the three effects. A rule somebody wrote
-   before a rename is not a puzzle to solve: the error says what to write instead. */
+/** Old spellings of the three effects, so the error can say what to write instead. */
 const RENAMED_EFFECTS = new Map<string, DecisionEffect>([
   ['block', DECISION_EFFECT.DENY],
   ['withhold', DECISION_EFFECT.DENY],
@@ -18,8 +28,7 @@ const RENAMED_EFFECTS = new Map<string, DecisionEffect>([
 const VALID_MODES: readonly string[] = Object.values(POLICY_MODE);
 
 export class PolicyValidationError extends Error {
-  /* One runtime loads every repository's rules, so "Invalid policy document" without a
-     path leaves an operator grepping their disk for which of them it means. */
+  // One runtime loads every repository's rules, so the message names the file.
   constructor(
     public readonly issues: string[],
     public readonly filePath?: string,
@@ -84,107 +93,155 @@ function validatePolicy(input: unknown, path: string, issues: string[]): Policy 
     issues.push(`${path}.match.actions must be a non-empty string array`);
     return null;
   }
-
-  const rawEffect = decision['effect'];
-  if (typeof rawEffect !== 'string' || !VALID_EFFECTS.includes(rawEffect)) {
-    const renamed =
-      typeof rawEffect === 'string' ? RENAMED_EFFECTS.get(rawEffect) : undefined;
-    issues.push(
-      renamed === undefined
-        ? `${path}.decision.effect must be one of: ${VALID_EFFECTS.join(', ')}`
-        : `${path}.decision.effect: "${rawEffect}" is now "${renamed}"`,
-    );
-    return null;
-  }
-  const effect = rawEffect as DecisionEffect;
+  const effect = validateEffect(decision['effect'], `${path}.decision.effect`, issues);
+  if (effect === null) return null;
+  // An ask with no approvers holds the call for whoever is at the terminal.
   const approvers = asOptionalStringArray(
     decision['approvers'],
     `${path}.decision.approvers`,
     issues,
   );
-  /* An ask with no approvers holds the call for whoever is at the terminal, which is
-     what the open half can actually do. Naming who may answer needs an identity this
-     machine does not have, so it is optional here rather than required. */
 
   return {
     name,
     description: typeof raw['description'] === 'string' ? raw['description'] : undefined,
-    match: {
-      actions,
-      targets: asOptionalStringArray(match['targets'], `${path}.match.targets`, issues),
-      environments: asOptionalStringArray(
-        match['environments'],
-        `${path}.match.environments`,
-        issues,
-      ),
-      agents: asOptionalStringArray(match['agents'], `${path}.match.agents`, issues),
-      roles: asOptionalStringArray(match['roles'], `${path}.match.roles`, issues),
-      principals: asOptionalStringArray(
-        match['principals'],
-        `${path}.match.principals`,
-        issues,
-      ),
-      models: asOptionalStringArray(match['models'], `${path}.match.models`, issues),
-      providers: asOptionalStringArray(
-        match['providers'],
-        `${path}.match.providers`,
-        issues,
-      ),
-      dataClassifications: asOptionalStringArray(
-        match['dataClassifications'],
-        `${path}.match.dataClassifications`,
-        issues,
-      ),
-      jurisdictions: asOptionalStringArray(
-        match['jurisdictions'],
-        `${path}.match.jurisdictions`,
-        issues,
-      ),
-      workingDirectories: asOptionalStringArray(
-        match['workingDirectories'],
-        `${path}.match.workingDirectories`,
-        issues,
-      ),
-      branches: asOptionalStringArray(
-        match['branches'],
-        `${path}.match.branches`,
-        issues,
-      ),
-      arguments: asOptionalArgumentPatterns(
-        match['arguments'],
-        `${path}.match.arguments`,
-        issues,
-      ),
-      aboveAmount: asOptionalThreshold(
-        match['aboveAmount'],
-        `${path}.match.aboveAmount`,
-        issues,
-      ),
-      windows: asOptionalWindows(match['windows'], `${path}.match.windows`, issues),
-      scope: asOptionalScope(match['scope'], `${path}.match.scope`, issues),
-      state: asOptionalStringArray(match['state'], `${path}.match.state`, issues),
-    },
+    match: validateMatch(match, actions, `${path}.match`, issues),
     decision: {
       effect,
-      reason: typeof decision['reason'] === 'string' ? decision['reason'] : undefined,
+      ...validateDecision(decision, `${path}.decision`, issues),
       approvers,
-      minApprovals: asOptionalQuorum(
-        decision['minApprovals'],
-        `${path}.decision.minApprovals`,
-        issues,
-      ),
-      mode: asOptionalMode(decision['mode'], `${path}.decision.mode`, issues),
-      rateLimit: asOptionalRateLimit(
-        decision['rateLimit'],
-        `${path}.decision.rateLimit`,
-        issues,
-      ),
-      alternative: asOptionalAlternative(
-        decision['alternative'],
-        `${path}.decision.alternative`,
-        issues,
-      ),
     },
+  };
+}
+
+function validateEffect(
+  input: unknown,
+  path: string,
+  issues: string[],
+): DecisionEffect | null {
+  if (typeof input === 'string' && VALID_EFFECTS.includes(input)) {
+    // Just checked against the effect values.
+    return input as DecisionEffect;
+  }
+  const renamed = typeof input === 'string' ? RENAMED_EFFECTS.get(input) : undefined;
+  issues.push(
+    renamed === undefined
+      ? `${path} must be one of: ${VALID_EFFECTS.join(', ')}`
+      : `${path}: "${String(input)}" is now "${renamed}"`,
+  );
+  return null;
+}
+
+/** The match fields that are plain lists of wildcard patterns, in the order they are checked. */
+const PATTERN_FIELDS = [
+  'targets',
+  'environments',
+  'agents',
+  'roles',
+  'principals',
+  'models',
+  'providers',
+  'dataClassifications',
+  'jurisdictions',
+  'workingDirectories',
+  'branches',
+] as const satisfies readonly (keyof PolicyMatch)[];
+
+type PatternField = (typeof PATTERN_FIELDS)[number];
+
+function validateMatch(
+  match: Record<string, unknown>,
+  actions: string[],
+  path: string,
+  issues: string[],
+): PolicyMatch {
+  const patterns: Partial<Record<PatternField, string[] | undefined>> = {};
+  for (const field of PATTERN_FIELDS) {
+    patterns[field] = asOptionalStringArray(match[field], `${path}.${field}`, issues);
+  }
+  return {
+    actions,
+    ...patterns,
+    arguments: asOptionalArgumentPatterns(
+      match['arguments'],
+      `${path}.arguments`,
+      issues,
+    ),
+    aboveAmount: asOptionalThreshold(match['aboveAmount'], `${path}.aboveAmount`, issues),
+    windows: asOptionalWindows(match['windows'], `${path}.windows`, issues),
+    scope: asOptionalScope(match['scope'], `${path}.scope`, issues),
+    state: asOptionalStringArray(match['state'], `${path}.state`, issues),
+    unless: asOptionalCarveOuts(match['unless'], `${path}.unless`, issues),
+  };
+}
+
+/**
+ * Where a rule stands aside, as the control plane publishes an approved exception. Each
+ * entry must name something: an empty one would read as everywhere and void the rule.
+ */
+function asOptionalCarveOuts(
+  input: unknown,
+  path: string,
+  issues: string[],
+): PolicyCarveOut[] | undefined {
+  if (input === undefined || input === null) return undefined;
+  if (!Array.isArray(input)) {
+    issues.push(`${path} must be an array`);
+    return undefined;
+  }
+  const carves: PolicyCarveOut[] = [];
+  for (const [index, raw] of input.entries()) {
+    const carve = asCarveOut(raw, `${path}[${index}]`, issues);
+    if (carve !== null) carves.push(carve);
+  }
+  return carves.length === 0 ? undefined : carves;
+}
+
+/** One carve-out entry, or null where it names nothing or is malformed (the issue is said). */
+function asCarveOut(raw: unknown, at: string, issues: string[]): PolicyCarveOut | null {
+  const entry = asRecord(raw, at, issues);
+  if (!entry) return null;
+  const project = entry['project'];
+  if (project !== undefined && (typeof project !== 'string' || project === '')) {
+    issues.push(`${at}.project must be a non-empty string when present`);
+    return null;
+  }
+  const agents = asOptionalStringArray(entry['agents'], `${at}.agents`, issues);
+  const workingDirectories = asOptionalStringArray(
+    entry['workingDirectories'],
+    `${at}.workingDirectories`,
+    issues,
+  );
+  if (project === undefined && agents === undefined && workingDirectories === undefined) {
+    issues.push(`${at} must name a project, agents or workingDirectories`);
+    return null;
+  }
+  return {
+    ...(project === undefined ? {} : { project }),
+    ...(agents === undefined ? {} : { agents }),
+    ...(workingDirectories === undefined ? {} : { workingDirectories }),
+  };
+}
+
+function validateDecision(
+  decision: Record<string, unknown>,
+  path: string,
+  issues: string[],
+): Omit<PolicyDecision, 'effect' | 'approvers'> {
+  return {
+    reason: typeof decision['reason'] === 'string' ? decision['reason'] : undefined,
+    minApprovals: asOptionalQuorum(
+      decision['minApprovals'],
+      `${path}.minApprovals`,
+      issues,
+    ),
+    mode: asOptionalMode(decision['mode'], `${path}.mode`, issues),
+    rateLimit: asOptionalRateLimit(decision['rateLimit'], `${path}.rateLimit`, issues),
+    alternative: asOptionalAlternative(
+      decision['alternative'],
+      `${path}.alternative`,
+      issues,
+    ),
   };
 }
 
@@ -232,7 +289,7 @@ function asOptionalAlternative(
     return undefined;
   }
   if (typeof note !== 'string' || note.length === 0) {
-    issues.push(`${path}.note is required — it is what the agent reads`);
+    issues.push(`${path}.note is required, because it is what the agent reads`);
     return undefined;
   }
   if (resource !== undefined && typeof resource !== 'string') {
@@ -389,15 +446,8 @@ function asOptionalStringArray(
 }
 
 /**
- * The renamed effects, rewritten in place as text.
- *
- * Text rather than a round trip through the parser: a rule file carries comments,
- * an order somebody chose and a format they picked, and re-serializing it would hand
- * all three back as something else. Only the value on an `effect` key moves — every
- * other byte in the file is left exactly as it was found.
- *
- * Never automatic. A rule file is a security control, so a machine that quietly
- * rewrote one would be the thing this product exists to catch.
+ * Rewrites renamed effect values in place as text, so comments, order and formatting
+ * survive. Never automatic, because a rule file is a security control.
  */
 export function renameEffectsIn(source: string): { text: string; renamed: string[] } {
   const renamed: string[] = [];

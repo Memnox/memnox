@@ -10,6 +10,7 @@ export interface Column {
 }
 
 const GAP = '  ';
+const RULE = '─';
 
 function pad(text: string, width: number, align: 'left' | 'right'): string {
   return align === 'right' ? text.padStart(width) : text.padEnd(width);
@@ -23,19 +24,23 @@ export function renderTable(
   const widths = columns.map((column, index) =>
     Math.max(column.header.length, ...rows.map((row) => (row[index] ?? '').length)),
   );
-  const line = (cells: readonly string[]): string =>
-    cells
-      .map((cell, index) =>
-        pad(cell, widths[index] ?? 0, columns[index]?.align ?? 'left'),
-      )
-      .join(GAP)
-      .trimEnd();
-
+  const line = (cells: readonly string[]): string => renderRow(cells, columns, widths);
   return [
     line(columns.map((column) => column.header)),
-    line(widths.map((width) => '─'.repeat(width))),
+    line(widths.map((width) => RULE.repeat(width))),
     ...rows.map((row) => line(row)),
   ].join('\n');
+}
+
+function renderRow(
+  cells: readonly string[],
+  columns: readonly Column[],
+  widths: readonly number[],
+): string {
+  return cells
+    .map((cell, index) => pad(cell, widths[index] ?? 0, columns[index]?.align ?? 'left'))
+    .join(GAP)
+    .trimEnd();
 }
 
 export interface TreeNode {
