@@ -95,6 +95,25 @@ describe('reviewServers', () => {
     expect(review?.network).toBe(true);
   });
 
+  it('matches whole words, so `postgres_query` and "offsets" reach neither', () => {
+    const [review] = reviewServers(
+      report({
+        agentId: 'claude-code',
+        kind: SURFACE_KIND.MCP,
+        detectedFrom: '~/.config/mcp.json',
+        servers: [LAUNCH],
+        tools: [
+          {
+            ...tool('stripe', 'postgres_query', TOOL_EFFECT.READ),
+            description: 'pages through rows by offsets',
+          },
+        ],
+      }),
+    );
+    expect(review?.filesystem).toBe(false);
+    expect(review?.network).toBe(false);
+  });
+
   it('is empty when no config launches anything', () => {
     expect(
       reviewServers(

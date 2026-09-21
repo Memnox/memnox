@@ -1,102 +1,86 @@
 import { join } from 'node:path';
-import type { DiscoveredAgent } from '../agent';
 import { DISCOVERED_AGENT_KIND, SURFACE_KIND } from '../discovery.constants';
+import { DEFAULT_SERVER_KEY } from '../mcp-keys';
 import type { MachineReader } from '../ports';
 import { FILTER_PRECEDENCE } from '../surface';
-import type { McpServerLaunch, Surface, ToolFilter } from '../surface';
+import type { McpServerLaunch, ToolFilter } from '../surface';
+import { buildDetectedAgent, buildMcpSurfaces, buildSurfaces } from './detected-agent';
 import type { AgentDetector, DetectionResult, HostedAgents } from './detector';
+import { resolveServerLaunch } from './mcp-config';
 import { blockAt, listIn, parseYamlBlocks, type YamlBlock } from './yaml-block';
 
 /** Hermes keeps everything in one YAML file, so the whole detector is one read. */
-const CONFIG = '.hermes/config.yaml';
-const ALTERNATE = '.hermes/config.yml';
+const CONFIG_PATHS: readonly string[] = ['.hermes/config.yaml', '.hermes/config.yml'];
 
 /**
- * Hermes already filters tools per server, so this reads the filter rather than
- * ignoring it: what it reports is what a Hermes agent can actually call, and the
- * tools Hermes itself took away are counted instead of quietly disappearing.
+ * Hermes filters tools per server, so the filter is read rather than ignored: what is
+ * reported is what a Hermes agent can call, and what Hermes took away is counted.
  */
 export class HermesDetector implements AgentDetector {
   readonly kind = DISCOVERED_AGENT_KIND.HERMES;
   readonly layoutVersion = '2026-09';
 
   async detect(reader: MachineReader, now: string): Promise<DetectionResult | null> {
-    const home = reader.homeDir();
-    let path: string | null = null;
-    for (const relative of [CONFIG, ALTERNATE]) {
-      const candidate = join(home, relative);
-      if (await reader.exists(candidate)) {
-        path = candidate;
-        break;
-      }
-    }
+    const path = await firstExisting(reader, CONFIG_PATHS);
     if (path === null) return null;
 
     const root = parseYamlBlocks(await reader.read(path));
-    const agent: DiscoveredAgent = {
-      id: `agt_${this.kind}`,
+    const agent = buildDetectedAgent({
       kind: this.kind,
       configPaths: [path],
       clients: ['Hermes'],
-      ownerHint: reader.userName(),
-      firstSeen: now,
-      lastSeen: now,
-    };
-
+      reader,
+      now,
+    });
     // Hermes runs tools in-process off a shell, so these hold whatever the config says.
-    const surfaces: Surface[] = [
-      SURFACE_KIND.SHELL,
-      SURFACE_KIND.FILESYSTEM,
-      SURFACE_KIND.NETWORK,
-    ].map((kind) => ({ agentId: agent.id, kind, detectedFrom: path }));
-
-    const servers = hermesServers(root);
-    if (servers.length > 0) {
-      surfaces.push({
-        agentId: agent.id,
-        kind: SURFACE_KIND.MCP,
-        detectedFrom: path,
-        tools: [],
-        servers,
-      });
-    }
-
+    const surfaces = [
+      ...buildSurfaces(
+        agent.id,
+        [SURFACE_KIND.SHELL, SURFACE_KIND.FILESYSTEM, SURFACE_KIND.NETWORK],
+        path,
+      ),
+      ...buildMcpSurfaces(agent.id, path, hermesServers(root)),
+    ];
     return { agent, surfaces, hosted: hostedIn(root, path) };
   }
 }
 
+async function firstExisting(
+  reader: MachineReader,
+  relatives: readonly string[],
+): Promise<string | null> {
+  for (const relative of relatives) {
+    const candidate = join(reader.homeDir(), relative);
+    if (await reader.exists(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** Names, launch lines and filters. Never a header value and never an env value. */
 function hermesServers(root: YamlBlock): McpServerLaunch[] {
-  const block = blockAt(root, 'mcp_servers');
+  const block = blockAt(root, DEFAULT_SERVER_KEY.yaml);
   if (block === null) return [];
 
   const servers: McpServerLaunch[] = [];
   for (const [name, entry] of block.children) {
-    const command = entry.children.get('command')?.value;
-    const url = entry.children.get('url')?.value;
-    // An HTTP upstream has no launch line; it is still a server and is still named.
-    if (command === undefined && url === undefined) continue;
-
-    const filter = filterIn(entry);
-    servers.push({
+    const launch = resolveServerLaunch({
       name,
-      command: command ?? 'http',
-      args:
-        command === undefined
-          ? [url as string]
-          : listIn(entry.children.get('args') ?? null),
+      command: entry.children.get('command')?.value ?? null,
+      url: entry.children.get('url')?.value ?? null,
+      args: listIn(entry.children.get('args') ?? null),
       env: [...(entry.children.get('env')?.children.keys() ?? [])].sort(),
-      ...(filter === undefined ? {} : { filter }),
-      ...(entry.children.get('enabled')?.value === 'false' ? { disabled: true } : {}),
+      disabled: entry.children.get('enabled')?.value === 'false',
     });
+    if (launch === null) continue;
+    const filter = filterIn(entry);
+    servers.push(filter === undefined ? launch : { ...launch, filter });
   }
   return servers;
 }
 
 /**
- * Present and empty are different answers here. Hermes registers nothing for an
- * explicit `include: []` — the "uncheck everything" path in its own installer — so an
- * absent key and an empty one cannot be collapsed into the same value.
+ * Present and empty differ: Hermes registers nothing for an explicit `include: []`,
+ * which is its installer's "uncheck everything", so absent and empty stay apart.
  */
 function filterIn(entry: YamlBlock): ToolFilter | undefined {
   const tools = entry.children.get('tools');
@@ -112,15 +96,11 @@ function filterIn(entry: YamlBlock): ToolFilter | undefined {
   };
 }
 
-/**
- * Hermes is a harness: the roles in its config are separate principals at the seam,
- * and counting it as one agent understates it by however many it launches.
- */
+/** Hermes is a harness: each role in its config is a separate principal at the seam. */
 function hostedIn(root: YamlBlock, path: string): HostedAgents {
   const roles = [...(blockAt(root, 'agents')?.children.keys() ?? [])];
   return {
-    /* Empty on purpose: Hermes executes its own roles rather than driving another
-       product, and printing the model here would call a model a runtime. */
+    // Hermes executes its own roles rather than driving another product, so a model is not a runtime.
     runtimes: [],
     roles,
     hooks: [],

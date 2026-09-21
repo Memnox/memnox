@@ -1,14 +1,11 @@
+import { findOutsideQuotes, openBrackets, unquote } from '../scalar-text';
+
 /**
- * Enough TOML to read a config's server tables, and deliberately no more. Same trade
- * as the YAML reader beside it: a full parser is a dependency and an attack surface
- * for a file we take four keys out of, and a shape this does not understand comes
- * back absent rather than guessed at.
- *
- * Tables are flattened to their dotted path, so `[mcp_servers.github.env]` is the key
- * `mcp_servers.github.env`. A caller asks for a path and gets that table's own pairs.
+ * Enough TOML to read a config's server tables, because a full parser is a dependency
+ * and an attack surface for four keys. An unrecognised shape comes back absent.
  */
 export interface TomlTables {
-  /** Dotted table path to the key/value pairs declared directly under it. */
+  /** Dotted table path, so `[mcp_servers.github.env]` is `mcp_servers.github.env`. */
   tables: Map<string, Map<string, TomlValue>>;
 }
 
@@ -20,8 +17,8 @@ export function parseTomlTables(raw: string | null): TomlTables {
   const tables = new Map<string, Map<string, TomlValue>>();
   if (raw === null) return { tables };
 
-  let current = ROOT;
-  tables.set(ROOT, new Map());
+  let current = new Map<string, TomlValue>();
+  tables.set(ROOT, current);
 
   for (const line of joinArrays(raw)) {
     const text = stripComment(line).trim();
@@ -30,8 +27,8 @@ export function parseTomlTables(raw: string | null): TomlTables {
     if (text.startsWith('[')) {
       // `[[x]]` is an array of tables; it names one and we only ever read the last.
       const header = text.replace(/^\[+/, '').replace(/\]+$/, '').trim();
-      current = header;
-      if (!tables.has(current)) tables.set(current, new Map());
+      current = tables.get(header) ?? new Map<string, TomlValue>();
+      tables.set(header, current);
       continue;
     }
 
@@ -41,24 +38,19 @@ export function parseTomlTables(raw: string | null): TomlTables {
     if (key === '') continue;
     const value = valueOf(text.slice(split + 1).trim());
     if (value === null) continue;
-    (tables.get(current) as Map<string, TomlValue>).set(key, value);
+    current.set(key, value);
   }
   return { tables };
 }
 
-/**
- * An array may be written across several lines. Folding them into one before parsing
- * keeps the reader a line at a time, which is the only reason it stays this small.
- */
+/** An array written across several lines is folded into one, so the reader stays a line at a time. */
 function joinArrays(raw: string): string[] {
   const lines: string[] = [];
   let pending: string | null = null;
   for (const line of raw.split('\n')) {
     const text: string = pending === null ? line : `${pending} ${line.trim()}`;
-    const opens = countOutsideQuotes(text, '[');
-    const closes = countOutsideQuotes(text, ']');
     // A table header opens and closes on its own line, so this only holds for arrays.
-    if (opens > closes && !text.trim().startsWith('[')) {
+    if (openBrackets(text) > 0 && !text.trim().startsWith('[')) {
       pending = text;
       continue;
     }
@@ -69,34 +61,10 @@ function joinArrays(raw: string): string[] {
   return lines;
 }
 
-function countOutsideQuotes(text: string, char: string): number {
-  let quote: string | null = null;
-  let total = 0;
-  for (let at = 0; at < text.length; at += 1) {
-    const c = text[at] as string;
-    if (quote !== null) {
-      if (c === quote) quote = null;
-      continue;
-    }
-    if (c === '"' || c === "'") quote = c;
-    else if (c === char) total += 1;
-  }
-  return total;
-}
-
 /** A `#` inside quotes is data. Anywhere else on the line it starts a comment. */
 function stripComment(line: string): string {
-  let quote: string | null = null;
-  for (let at = 0; at < line.length; at += 1) {
-    const c = line[at] as string;
-    if (quote !== null) {
-      if (c === quote) quote = null;
-      continue;
-    }
-    if (c === '"' || c === "'") quote = c;
-    else if (c === '#') return line.slice(0, at);
-  }
-  return line;
+  const at = findOutsideQuotes(line, (char) => char === '#');
+  return at === -1 ? line : line.slice(0, at);
 }
 
 function valueOf(raw: string): TomlValue | null {
@@ -126,32 +94,18 @@ function inlineKeys(raw: string): string[] {
 function splitTop(inner: string): string[] {
   const parts: string[] = [];
   let depth = 0;
-  let quote: string | null = null;
   let start = 0;
-  for (let at = 0; at < inner.length; at += 1) {
-    const c = inner[at] as string;
-    if (quote !== null) {
-      if (c === quote) quote = null;
-      continue;
-    }
-    if (c === '"' || c === "'") quote = c;
-    else if (c === '[' || c === '{') depth += 1;
-    else if (c === ']' || c === '}') depth -= 1;
-    else if (c === ',' && depth === 0) {
+  findOutsideQuotes(inner, (char, at) => {
+    if (char === '[' || char === '{') depth += 1;
+    else if (char === ']' || char === '}') depth -= 1;
+    else if (char === ',' && depth === 0) {
       parts.push(inner.slice(start, at).trim());
       start = at + 1;
     }
-  }
+    return false;
+  });
   parts.push(inner.slice(start).trim());
   return parts.filter((each) => each !== '');
-}
-
-function unquote(text: string): string {
-  const first = text[0];
-  if ((first === '"' || first === "'") && text.endsWith(first) && text.length > 1) {
-    return text.slice(1, -1);
-  }
-  return text;
 }
 
 /** The immediate children of a table path, e.g. every server under `mcp_servers`. */
@@ -178,10 +132,7 @@ export function listAt(parsed: TomlTables, path: string, key: string): string[] 
   return 'text' in value ? [value.text] : [];
 }
 
-/**
- * The names a table hands over, whether it was written as its own `[x.env]` table or
- * inline as `env = { A = "..." }`. Names only: a value read here would be one stored.
- */
+/** The names a table hands over, as its own `[x.env]` or inline `env = { A = "..." }`. Never a value. */
 export function keyNamesAt(parsed: TomlTables, path: string, key: string): string[] {
   const own = parsed.tables.get(`${path}.${key}`);
   if (own !== undefined) return [...own.keys()].sort();

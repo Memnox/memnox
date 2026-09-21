@@ -9,14 +9,15 @@ import {
   type Sensitivity,
 } from './discovery.constants';
 
+/**
+ * A thing on this machine an agent could reach, and how sensitive it is, read from a
+ * path's shape because opening a file to be sure would make this scanner worth stealing.
+ */
 export interface Resource {
   id: string;
   kind: ResourceKind;
   path?: string;
-  /**
-   * Where it was named, for a resource that is not itself a file: the env file a
-   * connection string was read from, or what makes the reach unrestricted.
-   */
+  /** Where a resource that is not a file was named, such as the env file holding a URL. */
   declaredIn?: string;
   /** A hash. NEVER the value: what is stored is a path, a kind and this. */
   fingerprint?: string;
@@ -25,9 +26,8 @@ export interface Resource {
 }
 
 /**
- * The value stays in the process that read it. A shareable report carrying the shape of
- * somebody's SSH key would be the single worst bug this product could ship, so the
- * fingerprint is truncated: enough to tell two files apart, not enough to attack one.
+ * Truncated, so it tells two files apart and cannot attack one: a report carrying the
+ * shape of somebody's SSH key would be the worst bug this product could ship.
  */
 export function fingerprint(value: string): string {
   return createHash(FINGERPRINT_ALGORITHM)
@@ -46,8 +46,11 @@ const CRITICAL_PATTERNS = [
   /(^|\/)\.pypirc$/,
 ];
 
+/** A `.env` file, with or without a suffix such as `.local`. */
+export const ENV_FILE_PATTERN = /(^|\/)\.env(\.[a-z0-9_-]+)?$/;
+
 const SENSITIVE_PATTERNS = [
-  /(^|\/)\.env(\.[a-z0-9_-]+)?$/,
+  ENV_FILE_PATTERN,
   /(^|\/)\.netrc$/,
   /(^|\/)secrets?\.(ya?ml|json)$/,
   /(^|\/)service-account.*\.json$/,

@@ -4,9 +4,8 @@ import {
   formatOf,
   readTextServers,
   rewriteTextServers,
-  setYamlList,
-  yamlListIsManaged,
 } from '../src/discovery/wrap-text';
+import { setYamlList, yamlListIsManaged } from '../src/discovery/yaml-list';
 import { planUnwrap, planWrap } from '../src/discovery/wrap';
 
 const CODEX = `# Codex config. This comment must survive a wrap.

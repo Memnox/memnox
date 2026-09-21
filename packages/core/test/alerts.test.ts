@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { agentUpdates, ALERT, alertsFor, describeUpdate } from '../src/discovery/alerts';
-import type { EnvironmentChange, EnvironmentSnapshot } from '../src/discovery/snapshot';
+import type { EnvironmentSnapshot } from '../src/discovery/snapshot';
+import {
+  compareSnapshots,
+  type EnvironmentChange,
+} from '../src/discovery/snapshot-changes';
 
 const change = (over: Partial<EnvironmentChange>): EnvironmentChange =>
   ({
@@ -17,12 +21,45 @@ describe('what is worth interrupting somebody for', () => {
       change({
         subject: 'resource',
         name: 'AWS_SECRET_ACCESS_KEY',
-        detail: 'secret reachable',
+        detail: 'readable, 1 agent',
+        sensitivity: 'critical',
       }),
     ]);
     expect(alert?.kind).toBe(ALERT.CREDENTIAL_EXPOSED);
     expect(alert?.headline).toContain('now reachable by an agent');
     expect(alert?.next).toContain('memnox explain');
+  });
+
+  it('stays quiet about an ordinary file, whatever its detail says', () => {
+    const ordinary = change({
+      subject: 'resource',
+      name: 'notes/credential-rotation.md',
+      detail: 'credential',
+      sensitivity: 'ordinary',
+    });
+    expect(alertsFor([ordinary])).toEqual([]);
+  });
+
+  it('raises a credential the real comparison reports, not only a hand-built one', () => {
+    const resource = {
+      id: 'res_aws',
+      kind: 'secret',
+      path: '~/.aws/credentials',
+      sensitivity: 'critical',
+    } as const;
+    const before = {
+      takenAt: 't0',
+      agents: [],
+      servers: [],
+      resources: [{ ...resource, reachableBy: [] }],
+    } as EnvironmentSnapshot;
+    const after = {
+      ...before,
+      takenAt: 't1',
+      resources: [{ ...resource, reachableBy: ['agt_claude-code'] }],
+    } as EnvironmentSnapshot;
+    const kinds = alertsFor(compareSnapshots(before, after)).map((alert) => alert.kind);
+    expect(kinds).toContain(ALERT.CREDENTIAL_EXPOSED);
   });
 
   it('raises a new server with the command that reviews it', () => {
@@ -47,14 +84,20 @@ describe('what is worth interrupting somebody for', () => {
       subject: 'resource',
       name: 'AWS_SECRET_ACCESS_KEY',
       direction: 'narrows',
-      detail: 'secret no longer reachable',
+      detail: '1 → 0 agents',
+      sensitivity: 'critical',
     });
     expect(alertsFor([narrowed])).toEqual([]);
   });
 
   it('gives every alert a next step, or it is only noise', () => {
     const alerts = alertsFor([
-      change({ subject: 'resource', name: 'k', detail: 'credential' }),
+      change({
+        subject: 'resource',
+        name: 'k',
+        detail: 'readable',
+        sensitivity: 'sensitive',
+      }),
       change({ subject: 'server', name: 's', detail: 'added' }),
       change({ name: 't', detail: 'destructive tool' }),
     ]);

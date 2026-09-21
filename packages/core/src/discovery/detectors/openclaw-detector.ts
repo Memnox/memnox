@@ -1,26 +1,33 @@
 import { join } from 'node:path';
-import type { DiscoveredAgent } from '../agent';
 import {
   DISCOVERED_AGENT_KIND,
   SURFACE_KIND,
   type SurfaceKind,
 } from '../discovery.constants';
 import type { MachineReader } from '../ports';
+import { findOutsideQuotes, JSON_QUOTING } from '../scalar-text';
 import { FILTER_PRECEDENCE } from '../surface';
-import type { McpServerLaunch, Surface, ToolFilter } from '../surface';
+import type { McpServerLaunch, ToolFilter } from '../surface';
+import { buildDetectedAgent, buildMcpSurfaces, buildSurfaces } from './detected-agent';
 import type { AgentDetector, DetectionResult, HostedAgents } from './detector';
+import { readServerEntries, stringsIn } from './mcp-config';
 
+/**
+ * OpenClaw, whose config is JSON with comments and whose tool filters deny first. Parsed
+ * loosely, because a config with one `//` in it must not read as an agent not installed.
+ */
 const STATE_DIR = '.openclaw';
 const CONFIG = '.openclaw/openclaw.json';
 /** Where OpenClaw keeps one directory per agent it runs. Each is a principal. */
 const AGENTS_DIR = '.openclaw/agents';
 const SANDBOX_DIR = '.openclaw/sandboxes';
 const CREDENTIALS_DIR = '.openclaw/credentials';
+/** Remote nodes, which make it agent-to-agent work across machines. */
+const NODES_DIR = '.openclaw/nodes';
 
 /**
- * OpenClaw names its own tools, so the surfaces here are read from its allow/deny list
- * rather than assumed. An agent whose config denies `exec` genuinely has no shell, and
- * reporting one anyway would be the same overstatement this tool exists to correct.
+ * Surfaces are read from OpenClaw's own allow and deny list rather than assumed, because
+ * an agent whose config denies `exec` genuinely has no shell.
  */
 const TOOL_SURFACES: Record<string, SurfaceKind> = {
   exec: SURFACE_KIND.SHELL,
@@ -50,44 +57,26 @@ export class OpenClawDetector implements AgentDetector {
     const hasConfig = await reader.exists(configPath);
     if (!hasConfig && !(await reader.exists(stateDir))) return null;
 
-    const found = hasConfig ? [configPath] : [stateDir];
-    const agent: DiscoveredAgent = {
-      id: `agt_${this.kind}`,
+    const evidence = hasConfig ? configPath : stateDir;
+    const agent = buildDetectedAgent({
       kind: this.kind,
-      configPaths: found,
+      configPaths: [evidence],
       clients: ['OpenClaw'],
-      ownerHint: reader.userName(),
-      firstSeen: now,
-      lastSeen: now,
-    };
-
-    const evidence = found[0] as string;
+      reader,
+      now,
+    });
     const config = hasConfig ? parseLoose(await reader.read(configPath)) : null;
-    const surfaces: Surface[] = grantedSurfaces(config).map((kind) => ({
-      agentId: agent.id,
-      kind,
-      detectedFrom: evidence,
-    }));
-
-    const servers = openClawServers(config);
-    if (servers.length > 0) {
-      surfaces.push({
-        agentId: agent.id,
-        kind: SURFACE_KIND.MCP,
-        detectedFrom: evidence,
-        tools: [],
-        servers,
-      });
-    }
-
-    return { agent, surfaces, hosted: await hostedIn(reader, home, config, evidence) };
+    const surfaces = [
+      ...buildSurfaces(agent.id, grantedSurfaces(config), evidence),
+      ...buildMcpSurfaces(agent.id, evidence, openClawServers(config)),
+    ];
+    return { agent, surfaces, hosted: await hostedIn(reader, config, evidence) };
   }
 }
 
 /**
- * The gateway always reaches the network, and the rest is whatever the tool lists
- * leave standing. A config that could not be parsed grants nothing beyond that: an
- * unreadable file must never widen what we claim an agent can do.
+ * The gateway always reaches the network, and the rest is whatever the tool lists leave
+ * standing. An unparsed config grants nothing more, because unreadable must never widen.
  */
 function grantedSurfaces(config: OpenClawConfig | null): SurfaceKind[] {
   const kinds = new Set<SurfaceKind>([SURFACE_KIND.NETWORK]);
@@ -117,58 +106,31 @@ function toolFilter(tools: OpenClawConfig['tools']): ToolFilter | undefined {
   return { include, exclude, precedence: FILTER_PRECEDENCE.EXCLUDE_WINS };
 }
 
-function stringsIn(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((each): each is string => typeof each === 'string');
-}
-
 function openClawServers(config: OpenClawConfig | null): McpServerLaunch[] {
-  if (config === null) return [];
-  const declared = config.mcpServers ?? config.mcp?.servers;
-  if (declared === undefined) return [];
-
-  const servers: McpServerLaunch[] = [];
-  for (const [name, value] of Object.entries(declared)) {
-    if (typeof value !== 'object' || value === null) continue;
-    const entry = value as { command?: unknown; args?: unknown; env?: unknown };
-    if (typeof entry.command !== 'string') continue;
-    servers.push({
-      name,
-      command: entry.command,
-      args: stringsIn(entry.args),
-      // Names only: what a config hands a server is a key here, never a value.
-      env:
-        typeof entry.env === 'object' && entry.env !== null
-          ? Object.keys(entry.env as Record<string, unknown>).sort()
-          : [],
-    });
-  }
-  return servers;
+  const declared = config?.mcpServers ?? config?.mcp?.servers;
+  return declared === undefined ? [] : readServerEntries(declared);
 }
 
 /**
- * Every directory under `agents/` is another principal OpenClaw runs, and the roster
- * has to name them: two of them writing the same file is a collision Memnox can only
- * see if it knew there were two.
+ * Every directory under `agents/` is another principal OpenClaw runs, and the roster has
+ * to name them: two of them writing one file is a collision only visible if both are known.
  */
 async function hostedIn(
   reader: MachineReader,
-  home: string,
   config: OpenClawConfig | null,
   evidence: string,
 ): Promise<HostedAgents> {
+  const home = reader.homeDir();
   const roles = new Set(Object.keys(config?.agents?.entries ?? {}));
+  const evidencePaths = [evidence];
   const agentsDir = join(home, AGENTS_DIR);
-  const onDisk: string[] = [];
   if (await reader.exists(agentsDir)) {
     for (const entry of await reader.list(agentsDir)) {
       const id = entry.split('/')[0];
       if (id !== undefined && id !== '') roles.add(id);
     }
-    onDisk.push(agentsDir);
+    evidencePaths.push(agentsDir);
   }
-
-  const evidencePaths = [evidence, ...onDisk];
   for (const relative of [SANDBOX_DIR, CREDENTIALS_DIR]) {
     const path = join(home, relative);
     if (await reader.exists(path)) evidencePaths.push(path);
@@ -178,17 +140,15 @@ async function hostedIn(
     runtimes: [],
     roles: [...roles].sort(),
     hooks: [],
-    /* OpenClaw's remote nodes are agent-to-agent work across machines, which is the
-       thing a per-machine roster cannot see the far side of. */
-    federated: await reader.exists(join(home, '.openclaw/nodes')),
+    // Remote nodes are the far side a per-machine roster cannot see.
+    federated: await reader.exists(join(home, NODES_DIR)),
     evidence: evidencePaths,
   };
 }
 
 /**
- * OpenClaw's config is JSON with comments, so a plain parse rejects a valid file. This
- * strips what JSON does not allow and parses the rest; anything still unreadable comes
- * back null, and the caller treats null as "grants nothing" rather than as an error.
+ * OpenClaw's config is JSON with comments, so what JSON does not allow is stripped first.
+ * Anything still unreadable is null, which the caller reads as "grants nothing".
  */
 export function parseLoose(raw: string | null): OpenClawConfig | null {
   if (raw === null) return null;
@@ -196,6 +156,7 @@ export function parseLoose(raw: string | null): OpenClawConfig | null {
   try {
     const parsed: unknown = JSON.parse(withoutComments);
     if (typeof parsed !== 'object' || parsed === null) return null;
+    // Every field of OpenClawConfig is optional and checked where it is read.
     return parsed as OpenClawConfig;
   } catch {
     // A config we cannot read is absence. It is never a reason to widen the report.
@@ -203,38 +164,23 @@ export function parseLoose(raw: string | null): OpenClawConfig | null {
   }
 }
 
-/** A comment marker inside a string is data, so quote state is tracked. */
+/** A comment marker inside a string is data, so only markers outside one are cut. */
 function stripComments(raw: string): string {
-  let out = '';
-  let quoted = false;
-  let escaped = false;
-  for (let at = 0; at < raw.length; at += 1) {
-    const char = raw[at] as string;
-    if (quoted) {
-      out += char;
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') quoted = false;
-      continue;
-    }
-    if (char === '"') {
-      quoted = true;
-      out += char;
-      continue;
-    }
-    if (char === '/' && raw[at + 1] === '/') {
-      const end = raw.indexOf('\n', at);
-      if (end === -1) break;
-      at = end - 1;
-      continue;
-    }
-    if (char === '/' && raw[at + 1] === '*') {
-      const end = raw.indexOf('*/', at + 2);
-      if (end === -1) break;
-      at = end + 1;
-      continue;
-    }
-    out += char;
+  let kept = '';
+  let rest = raw;
+  for (;;) {
+    const at = findOutsideQuotes(
+      rest,
+      (char, index) =>
+        char === '/' && (rest[index + 1] === '/' || rest[index + 1] === '*'),
+      JSON_QUOTING,
+    );
+    if (at === -1) return kept + rest;
+    kept += rest.slice(0, at);
+    const lineComment = rest[at + 1] === '/';
+    const end = lineComment ? rest.indexOf('\n', at) : rest.indexOf('*/', at + 2);
+    // An unclosed comment runs to the end of the file.
+    if (end === -1) return kept;
+    rest = rest.slice(lineComment ? end : end + 2);
   }
-  return out;
 }

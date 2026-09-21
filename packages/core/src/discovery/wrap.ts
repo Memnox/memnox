@@ -1,12 +1,14 @@
-/**
- * Repointing an agent's MCP servers at the proxy, and putting them back. The backup
- * is written before the rewrite and the restore is byte-identical, because the failure
- * that matters here is leaving somebody's editor unable to start.
- */
-
 import { DISCOVERED_AGENT_KIND, type DiscoveredAgentKind } from './discovery.constants';
 
+/**
+ * Repointing an agent's MCP servers at the proxy, and putting them back byte for byte,
+ * because the failure that matters here is leaving somebody's editor unable to start.
+ */
+
 export const PROXY_BINARY = 'memnox-mcp-proxy';
+
+/** Memnox's own session server: it answers from the ledger, so a proxy in front of it would govern itself. */
+export const SESSION_BINARY = 'memnox-session';
 
 /** Which agent launched the proxy, written into the line so the proxy can say. */
 export const AGENT_FLAG = '--agent';
@@ -27,26 +29,26 @@ export interface WrapPlan {
   alreadyWrapped: string[];
 }
 
+/** A launch line as any caller holds it, whether read from a config or a scan. */
+type LaunchLine = Pick<ServerLaunch, 'command'> & { args: readonly string[] };
+
 /**
- * Whether this entry is a command we could put a proxy in front of.
- *
- * A config file is JSON somebody else wrote, and it is read here through a cast:
- * `ServerLaunch` says `command` and `args` are always there and an MCP config is
- * under no obligation to agree. A server declared by URL, `{ type, url, headers }`,
- * has neither, so `launch.args.includes(...)` threw and took `mcp wrap` and
- * `mcp unwrap` down with it. That is not an exotic shape: it is what a remote
- * server looks like, and it is what Memnox's own cloud server is written as, so
- * the two commands crashed on the entry this product had just added itself.
- *
- * Checked rather than chained, the way everything else here is: the absence is the
- * answer, and an entry with no command to launch is one there is nothing to wrap.
+ * Whether this entry is a command a proxy could stand in front of. `ServerLaunch` is a
+ * cast over somebody else's JSON, and a server declared by URL has no `command`.
  */
-function isLaunch(launch: ServerLaunch): boolean {
+function isLaunch(launch: LaunchLine): boolean {
   if (typeof launch !== 'object' || launch === null) return false;
   return typeof launch.command === 'string' && Array.isArray(launch.args);
 }
 
-function isWrapped(launch: ServerLaunch): boolean {
+/** Whether this line starts Memnox's own session server, which is never wrapped. */
+export function isOwnServer(launch: LaunchLine): boolean {
+  if (!isLaunch(launch)) return false;
+  return launch.command.split(/[\\/]/).pop() === SESSION_BINARY;
+}
+
+/** Whether this line already routes through the proxy, so it is never wrapped twice. */
+export function isWrapped(launch: LaunchLine): boolean {
   if (!isLaunch(launch)) return false;
   return launch.command === PROXY_BINARY || launch.args.includes(WRAP_MARKER);
 }
@@ -60,9 +62,7 @@ export function wrapLaunch(
   launch: ServerLaunch,
   agent?: DiscoveredAgentKind,
 ): ServerLaunch {
-  /* The agent, where the config belongs to one. A server is started by the agent
-     with that agent's environment, which says nothing about who it is, so a
-     refusal naming the other side could only say "an agent". */
+  // The agent's environment says nothing about who it is, so the line has to name it.
   const naming = agent === undefined ? [] : [AGENT_FLAG, agent];
   return {
     command: PROXY_BINARY,
@@ -92,9 +92,10 @@ export function planWrap(
 ): WrapPlan {
   const plan: WrapPlan = { wrap: [], alreadyWrapped: [] };
   for (const [name, launch] of Object.entries(servers)) {
-    /* A URL server has no command to put anything in front of. Left exactly as
-       it is rather than rewritten into something that would never start. */
+    // A URL server has no command to stand in front of, so it is left exactly as it is.
     if (!isLaunch(launch)) continue;
+    // Our own server, left as it is: wrapping it would put Memnox in front of itself.
+    if (isOwnServer(launch)) continue;
     if (isWrapped(launch)) {
       plan.alreadyWrapped.push(name);
       continue;
@@ -105,12 +106,8 @@ export function planWrap(
 }
 
 /**
- * Lines this tool wrapped before it wrote the agent into them, rewritten with it.
- *
- * `setup` runs this so a machine wrapped by an older version names its agent in a
- * refusal too, without anybody unwrapping and wrapping again by hand. Only lines
- * this tool wrote, only where the config belongs to one agent, and the server's
- * own command carried across untouched.
+ * Lines this tool wrapped without the agent in them, rewritten with it so a refusal can
+ * name the agent. Only lines this tool wrote, and only where the config has one agent.
  */
 export function planUpgrade(
   servers: Readonly<Record<string, ServerLaunch>>,
@@ -144,26 +141,14 @@ export function planUnwrap(servers: Readonly<Record<string, ServerLaunch>>): {
   return { restore, untouched };
 }
 
-/**
- * Every place on a machine an MCP server can be declared, in one list.
- *
- * There were three of these: the detectors, `mcp wrap`, and the wiring check. They
- * drifted, and the wiring check ended up reporting "none routed through the proxy" on
- * a machine where six of eight were — because it had never heard of half the files.
- * A path spelled in two places is a path that will disagree with itself.
- */
+/** Every place an MCP server can be declared, read by the detectors, `mcp wrap` and the wiring check alike. */
 export interface McpConfigLocation {
   /** Relative to the home directory, or to the directory the reader is standing in. */
   relative: string;
   scope: 'home' | 'project';
   /** The product that writes it, for a line that names what is not covered. */
   product: string;
-  /**
-   * The agent whose servers these are, where the file belongs to one. Absent
-   * for a file more than one agent reads, which is `.mcp.json`: naming one of
-   * them would be a guess, and a refusal naming the wrong agent is worse than
-   * one naming none.
-   */
+  /** The agent whose servers these are. Absent for `.mcp.json`, which several agents read. */
   agent?: DiscoveredAgentKind;
 }
 
@@ -230,14 +215,3 @@ export const MCP_CONFIG_LOCATIONS: readonly McpConfigLocation[] = [
   },
   { relative: '.mcp.json', scope: 'project', product: 'Ruflo' },
 ];
-
-/** Where the servers live inside each client's config, since no two agree. */
-export const MCP_SERVER_KEYS = ['mcpServers', 'servers'] as const;
-
-export function serversKeyOf(config: Record<string, unknown>): string | null {
-  for (const key of MCP_SERVER_KEYS) {
-    const value = config[key];
-    if (typeof value === 'object' && value !== null) return key;
-  }
-  return null;
-}

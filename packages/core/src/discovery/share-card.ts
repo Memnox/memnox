@@ -1,10 +1,11 @@
-import type { CapabilityInventory } from './inventory';
 import { changesExternalState } from './classify';
+import { SENSITIVITY } from './discovery.constants';
+import { principalCount } from './harness';
+import type { CapabilityInventory } from './inventory';
 
 /**
- * Counts only. No path, no tool name, no host, no server name — somebody sharing this
- * is sharing a shape, not an inventory of their machine. The temptation is to include
- * "github" because it seems harmless; on a private repo the name is the leak.
+ * Counts only, with no path, tool, host or server name, because even "github" is the leak
+ * on a private repo. Somebody sharing this shares a shape, not an inventory.
  */
 export interface ShareCard {
   agents: number;
@@ -28,7 +29,8 @@ export function shareCardFor(inventory: CapabilityInventory): ShareCard {
     externalState: inventory.tools.filter((tool) => changesExternalState(tool.class))
       .length,
     sensitivePathsReachable: inventory.filesystem.filter(
-      (entry) => entry.sensitivity !== 'ordinary' && entry.reachableBy.length > 0,
+      (entry) =>
+        entry.sensitivity !== SENSITIVITY.ORDINARY && entry.reachableBy.length > 0,
     ).length,
     credentialsReachable: inventory.credentials.filter(
       (entry) => entry.reachableBy.length > 0,
@@ -37,18 +39,18 @@ export function shareCardFor(inventory: CapabilityInventory): ShareCard {
     principals:
       inventory.agents.length -
       inventory.harnesses.length +
-      inventory.harnesses.reduce(
-        (total, harness) => total + Math.max(1, harness.roles.length),
-        0,
-      ),
+      inventory.harnesses.reduce((total, harness) => total + principalCount(harness), 0),
     combinedPaths: inventory.chains.filter((chain) => chain.individuallyHarmless).length,
   };
 }
 
 const WIDTH = 46;
 
+/** One space either side of the dot leader, so the label and value never touch it. */
+const GAPS = 4;
+
 function row(label: string, value: string): string {
-  const dots = '.'.repeat(Math.max(1, WIDTH - label.length - value.length - 4));
+  const dots = '.'.repeat(Math.max(1, WIDTH - label.length - value.length - GAPS));
   return `  ${label} ${dots} ${value}`;
 }
 
@@ -73,7 +75,7 @@ export function renderShareCard(card: ShareCard): string {
       ? []
       : [row('paths ordinary tools open together', String(card.combinedPaths))]),
     '',
-    '  Counts only — no paths, no names, nothing identifying.',
+    '  Counts only: no paths, no names, nothing identifying.',
     '  Run it yourself:  npx memnox',
     '└' + '─'.repeat(WIDTH) + '┘',
     '',

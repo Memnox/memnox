@@ -12,8 +12,8 @@ import {
 } from './discovery.constants';
 
 /**
- * Every step prints its undo before it runs, and a single command puts the machine
- * back. Irreversible hardening is the one failure this product does not recover from.
+ * A finding and the step that closes it. Every step prints its undo before it runs,
+ * because irreversible hardening is the one failure this product does not recover from.
  */
 export interface HardenStep {
   id: string;
@@ -41,11 +41,8 @@ export interface HardenChange {
 export interface Finding {
   id: string;
   /**
-   * What kind of problem this is, apart from its wording and its severity.
-   *
-   * Required: a finding with no category is one a fleet cannot group and the
-   * control plane cannot store — `findings.kind` is `NOT NULL` there — and it
-   * is the stable half of the identity a re-scan is deduplicated on.
+   * What kind of problem this is, apart from its wording. Required, because the control
+   * plane deduplicates a re-scan on it and stores it `NOT NULL`.
    */
   kind: FindingKind;
   severity: FindingSeverity;
@@ -64,7 +61,7 @@ const SENSITIVITY_SEVERITY: Record<string, FindingSeverity> = {
 };
 
 /**
- * Ranked by consequence, and by whether the reach is used — which is unknown until a
+ * Ranked by consequence, and by whether the reach is used, which is unknown until a
  * day of observation exists, and is therefore assumed present.
  */
 export function rankFindings(findings: readonly Finding[]): Finding[] {
@@ -83,4 +80,18 @@ export function severityOfResource(resource: Resource): FindingSeverity {
 
 export function agentIdsOf(refs: readonly AgentRef[]): string[] {
   return refs.map((ref) => ref.id);
+}
+
+export type SeverityCounts = Record<FindingSeverity, number>;
+
+/** Counted, never summed: three mediums are three mediums, not one high. */
+export function countBySeverity(findings: readonly Finding[]): SeverityCounts {
+  const counts: SeverityCounts = {
+    [FINDING_SEVERITY.LOW]: 0,
+    [FINDING_SEVERITY.MEDIUM]: 0,
+    [FINDING_SEVERITY.HIGH]: 0,
+    [FINDING_SEVERITY.CRITICAL]: 0,
+  };
+  for (const finding of findings) counts[finding.severity] += 1;
+  return counts;
 }

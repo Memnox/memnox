@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { discover } from '../src/discovery/discover';
 import { alertsFor } from '../src/discovery/alerts';
-import { compareSnapshots, snapshotOf } from '../src/discovery/snapshot';
+import { snapshotOf } from '../src/discovery/snapshot';
+import { compareSnapshots } from '../src/discovery/snapshot-changes';
 import { HermesDetector } from '../src/discovery/detectors/hermes-detector';
 import { OpenClawDetector } from '../src/discovery/detectors/openclaw-detector';
 import { RufloDetector } from '../src/discovery/detectors/ruflo-detector';

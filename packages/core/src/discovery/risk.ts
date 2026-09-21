@@ -1,17 +1,18 @@
 import type { DiscoveryReport } from './discover';
-import { distinctTools } from './surface';
-import { OUTBOUND_STATE } from './network';
 import {
   FINDING_SEVERITY,
   SENSITIVITY,
+  SEVERITY_ORDER,
+  SURFACE_KIND,
   TOOL_EFFECT,
   type FindingSeverity,
 } from './discovery.constants';
+import { OUTBOUND_STATE } from './network';
+import { distinctTools, type McpTool } from './surface';
 
 /**
- * Fixed rules, evaluated in order, each one naming itself when it fires. A band with
- * no rules behind it is a number somebody has to trust; a band that lists what fired
- * is one they can argue with, which is the only kind worth printing.
+ * Fixed rules, evaluated in order, each naming itself when it fires, because a band that
+ * lists what fired is one somebody can argue with.
  */
 
 export const RISK_RULE = {
@@ -39,109 +40,146 @@ export interface RiskBand {
   fired: FiredRule[];
 }
 
-const SEVERITY_ORDER: readonly FindingSeverity[] = [
-  FINDING_SEVERITY.LOW,
-  FINDING_SEVERITY.MEDIUM,
-  FINDING_SEVERITY.HIGH,
-  FINDING_SEVERITY.CRITICAL,
-];
-
 function strongest(levels: readonly FindingSeverity[]): FindingSeverity {
   return levels.reduce(
-    (worst, level) =>
-      SEVERITY_ORDER.indexOf(level) > SEVERITY_ORDER.indexOf(worst) ? level : worst,
+    (worst, level) => (SEVERITY_ORDER[level] > SEVERITY_ORDER[worst] ? level : worst),
     FINDING_SEVERITY.LOW,
   );
 }
 
+/** One rule: what it counted, and the line it prints when that count is not zero. */
+type RuleCheck = (report: DiscoveryReport, tools: readonly McpTool[]) => FiredRule | null;
+
+/** Evaluated in this order, which is the order the fired rules print in. */
+const RULE_CHECKS: readonly RuleCheck[] = [
+  destructiveTools,
+  combinedCapability,
+  secretReached,
+  writePlusCredential,
+  unprobedServers,
+  shellSurfaces,
+  unrestrictedEgress,
+  writeTools,
+];
+
 export function bandFor(report: DiscoveryReport): RiskBand {
-  const fired: FiredRule[] = [];
   // Distinct: one server in five editors is not five times the risk.
   const tools = distinctTools(report.surfaces);
+  const fired = RULE_CHECKS.map((check) => check(report, tools)).filter(
+    (rule): rule is FiredRule => rule !== null,
+  );
+  return { level: strongest(fired.map((rule) => rule.contributes)), fired };
+}
 
+function destructiveTools(
+  _report: DiscoveryReport,
+  tools: readonly McpTool[],
+): FiredRule | null {
   const destructive = tools.filter((tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE);
-  if (destructive.length > 0) {
-    fired.push({
-      rule: RISK_RULE.DESTRUCTIVE_TOOL,
-      because: `${destructive.length} tool(s) can destroy or exfiltrate`,
-      contributes: FINDING_SEVERITY.CRITICAL,
-    });
-  }
+  if (destructive.length === 0) return null;
+  return {
+    rule: RISK_RULE.DESTRUCTIVE_TOOL,
+    because: `${destructive.length} tool(s) can destroy or exfiltrate`,
+    contributes: FINDING_SEVERITY.CRITICAL,
+  };
+}
 
-  /* A path a set of permitted tools opens that no single one of them opens. It sits
-     with the destructive rule because the consequence is the same and the review that
-     would have caught it does not exist: every step passes on its own. */
+/** A path a set of permitted tools opens together, which no one-call review ever catches. */
+function combinedCapability(report: DiscoveryReport): FiredRule | null {
   const chains = report.combined.flatMap((each) =>
     each.capabilities.filter((capability) => capability.individuallyHarmless),
   );
-  if (chains.length > 0) {
-    fired.push({
-      rule: RISK_RULE.COMBINED_CAPABILITY,
-      because: `${chains.length} path(s) a set of ordinary tools opens together`,
-      contributes: FINDING_SEVERITY.HIGH,
-    });
-  }
+  if (chains.length === 0) return null;
+  return {
+    rule: RISK_RULE.COMBINED_CAPABILITY,
+    because: `${chains.length} path(s) a set of ordinary tools opens together`,
+    contributes: FINDING_SEVERITY.HIGH,
+  };
+}
 
-  const reachedSecrets = report.resources.filter(
+function secretReached(report: DiscoveryReport): FiredRule | null {
+  const reached = report.resources.filter(
     (resource) =>
       resource.sensitivity !== SENSITIVITY.ORDINARY && resource.reachableBy.length > 0,
   );
-  if (reachedSecrets.length > 0) {
-    fired.push({
-      rule: RISK_RULE.SECRET_REACHED,
-      because: `${reachedSecrets.length} sensitive path(s) reachable by an agent here`,
-      contributes: FINDING_SEVERITY.CRITICAL,
-    });
-  }
+  if (reached.length === 0) return null;
+  return {
+    rule: RISK_RULE.SECRET_REACHED,
+    because: `${reached.length} sensitive path(s) reachable by an agent here`,
+    contributes: FINDING_SEVERITY.CRITICAL,
+  };
+}
 
-  const writes = tools.filter((tool) => tool.effect === TOOL_EFFECT.WRITE);
-  // Credential names ride on the launch line that declares the server, not the surface.
-  const credentialed = report.surfaces.filter((surface) =>
+/** Credential names ride on the launch line that declares the server, not the surface. */
+function credentialedSurfaces(report: DiscoveryReport): number {
+  return report.surfaces.filter((surface) =>
     (surface.servers ?? []).some((server) => (server.env ?? []).length > 0),
-  );
-  if (writes.length > 0 && credentialed.length > 0) {
-    fired.push({
-      rule: RISK_RULE.WRITE_PLUS_CREDENTIAL,
-      because: `${writes.length} write tool(s) alongside ${credentialed.length} credentialed surface(s)`,
-      contributes: FINDING_SEVERITY.HIGH,
-    });
-  }
+  ).length;
+}
 
+function writeCount(tools: readonly McpTool[]): number {
+  return tools.filter((tool) => tool.effect === TOOL_EFFECT.WRITE).length;
+}
+
+function writePlusCredential(
+  report: DiscoveryReport,
+  tools: readonly McpTool[],
+): FiredRule | null {
+  const writes = writeCount(tools);
+  const credentialed = credentialedSurfaces(report);
+  if (writes === 0 || credentialed === 0) return null;
+  return {
+    rule: RISK_RULE.WRITE_PLUS_CREDENTIAL,
+    because: `${writes} write tool(s) alongside ${credentialed} credentialed surface(s)`,
+    contributes: FINDING_SEVERITY.HIGH,
+  };
+}
+
+/** Only an MCP surface has servers to start, so a shell holding no tools is not one. */
+function unprobedServers(report: DiscoveryReport): FiredRule | null {
   const unprobed = report.surfaces.filter(
-    (surface) => surface.tools === undefined || surface.tools.length === 0,
+    (surface) => surface.kind === SURFACE_KIND.MCP && (surface.tools ?? []).length === 0,
   );
-  if (unprobed.length > 0) {
-    fired.push({
-      rule: RISK_RULE.UNPROBED_SERVER,
-      because: `${unprobed.length} server(s) were never started, so their tools are unknown`,
-      contributes: FINDING_SEVERITY.MEDIUM,
-    });
-  }
+  if (unprobed.length === 0) return null;
+  return {
+    rule: RISK_RULE.UNPROBED_SERVER,
+    because: `${unprobed.length} server(s) were never started, so their tools are unknown`,
+    contributes: FINDING_SEVERITY.MEDIUM,
+  };
+}
 
+function shellSurfaces(report: DiscoveryReport): FiredRule | null {
   const shells = report.reachability.filter((entry) => entry.viaShell);
-  if (shells.length > 0) {
-    fired.push({
-      rule: RISK_RULE.SHELL_SURFACE,
-      because: `${shells.length} agent(s) hold a shell, which reaches everything you can`,
-      contributes: FINDING_SEVERITY.HIGH,
-    });
-  }
+  if (shells.length === 0) return null;
+  return {
+    rule: RISK_RULE.SHELL_SURFACE,
+    because: `${shells.length} agent(s) hold a shell, which reaches everything you can`,
+    contributes: FINDING_SEVERITY.HIGH,
+  };
+}
 
-  if (report.egress.outbound === OUTBOUND_STATE.UNKNOWN && tools.length > 0) {
-    fired.push({
-      rule: RISK_RULE.UNRESTRICTED_EGRESS,
-      because: 'nothing in the environment restricts or observes outbound traffic',
-      contributes: FINDING_SEVERITY.MEDIUM,
-    });
-  }
+function unrestrictedEgress(
+  report: DiscoveryReport,
+  tools: readonly McpTool[],
+): FiredRule | null {
+  if (report.egress.outbound !== OUTBOUND_STATE.UNKNOWN || tools.length === 0)
+    return null;
+  return {
+    rule: RISK_RULE.UNRESTRICTED_EGRESS,
+    because: 'nothing in the environment restricts or observes outbound traffic',
+    contributes: FINDING_SEVERITY.MEDIUM,
+  };
+}
 
-  if (writes.length > 0 && credentialed.length === 0) {
-    fired.push({
-      rule: RISK_RULE.WRITE_TOOL,
-      because: `${writes.length} tool(s) change external state`,
-      contributes: FINDING_SEVERITY.MEDIUM,
-    });
-  }
-
-  return { level: strongest(fired.map((rule) => rule.contributes)), fired };
+function writeTools(
+  report: DiscoveryReport,
+  tools: readonly McpTool[],
+): FiredRule | null {
+  const writes = writeCount(tools);
+  if (writes === 0 || credentialedSurfaces(report) > 0) return null;
+  return {
+    rule: RISK_RULE.WRITE_TOOL,
+    because: `${writes} tool(s) change external state`,
+    contributes: FINDING_SEVERITY.MEDIUM,
+  };
 }

@@ -1,8 +1,8 @@
 import { join } from 'node:path';
-import type { DiscoveredAgent } from '../agent';
 import { DISCOVERED_AGENT_KIND, SURFACE_KIND } from '../discovery.constants';
 import type { MachineReader } from '../ports';
-import type { McpServerLaunch, Surface } from '../surface';
+import type { McpServerLaunch } from '../surface';
+import { buildDetectedAgent, buildMcpSurfaces, buildSurfaces } from './detected-agent';
 import type {
   AgentDetector,
   DetectionContext,
@@ -12,13 +12,8 @@ import type {
 import { readMcpServers } from './mcp-config';
 
 /**
- * Ruflo scaffolds beside the work rather than in the home directory, so the marker is
- * whichever of these a checkout has. Every one is from its own user guide: `.ruflo`
- * and `.claude-plugin` were guesses and are gone, and `.harness` was worse than a
- * guess — that directory belongs to Harness.io's CI, and keying on it would have
- * reported Ruflo on every repository that uses a different product entirely.
- *
- * `.claude` alone is not here either: Claude Code writes that on its own.
+ * Ruflo scaffolds beside the work, so the marker is whichever of these a checkout has.
+ * `.harness` belongs to Harness.io's CI and `.claude` to Claude Code, so neither is here.
  */
 const MARKERS: readonly string[] = [
   'claude-flow.config.json',
@@ -48,18 +43,13 @@ const HOSTED_RUNTIMES: readonly { path: string; kind: string }[] = [
   { path: '.codex', kind: DISCOVERED_AGENT_KIND.CODEX_CLI },
 ];
 
-/**
- * Ruflo registers its server into the host's own config rather than a file of its own,
- * so `.mcp.json` is read because that is Claude Code's project convention and a swarm
- * lands there — never because Ruflo is documented to write one.
- */
+/** Ruflo registers its server into the host's project config, which for Claude Code is this. */
 const PROJECT_MCP_CONFIG = '.mcp.json';
 const FEDERATION_MARKERS: readonly string[] = ['.claude-flow/federation'];
 
 /**
- * Ruflo orchestrates agents; it is not one. Its row on the roster is the union of what
- * it launches, because a swarm whose planner reads, whose coder writes and whose
- * deployer holds cloud credentials is one execution capability, not three harmless ones.
+ * Ruflo orchestrates agents rather than being one, so its row is the union of what it
+ * launches: a planner that reads and a deployer with credentials are one capability.
  */
 export class RufloDetector implements AgentDetector {
   readonly kind = DISCOVERED_AGENT_KIND.RUFLO;
@@ -71,51 +61,55 @@ export class RufloDetector implements AgentDetector {
     context?: DetectionContext,
   ): Promise<DetectionResult | null> {
     const roots = [reader.homeDir(), ...(context?.projectDirs ?? [])];
-    const found: string[] = [];
-    const scaffolded: string[] = [];
-    for (const root of roots) {
-      for (const marker of MARKERS) {
-        const path = join(root, marker);
-        if (!(await reader.exists(path))) continue;
-        found.push(path);
-        if (!scaffolded.includes(root)) scaffolded.push(root);
-      }
-    }
-    if (found.length === 0) return null;
+    const { found, scaffolded } = await markersIn(reader, roots);
+    const [evidence] = found;
+    if (evidence === undefined) return null;
 
-    const agent: DiscoveredAgent = {
-      id: `agt_${this.kind}`,
+    const agent = buildDetectedAgent({
       kind: this.kind,
       configPaths: found,
       clients: ['Ruflo'],
-      ownerHint: reader.userName(),
-      firstSeen: now,
-      lastSeen: now,
-    };
-
-    const evidence = found[0] as string;
-    /* A harness that installs hooks and spawns workers has a shell and the filesystem
-       by construction, whatever any one of its roles is configured with. */
-    const surfaces: Surface[] = [
-      SURFACE_KIND.SHELL,
-      SURFACE_KIND.FILESYSTEM,
-      SURFACE_KIND.GIT,
-      SURFACE_KIND.NETWORK,
-    ].map((kind) => ({ agentId: agent.id, kind, detectedFrom: evidence }));
-
+      reader,
+      now,
+    });
     const servers = await projectServers(reader, scaffolded);
-    if (servers.length > 0 && scaffolded.length > 0) {
-      surfaces.push({
-        agentId: agent.id,
-        kind: SURFACE_KIND.MCP,
-        detectedFrom: join(scaffolded[0] as string, PROJECT_MCP_CONFIG),
-        tools: [],
-        servers,
-      });
-    }
-
+    const firstRoot = scaffolded[0];
+    // A harness that installs hooks and spawns workers has a shell by construction.
+    const surfaces = [
+      ...buildSurfaces(
+        agent.id,
+        [
+          SURFACE_KIND.SHELL,
+          SURFACE_KIND.FILESYSTEM,
+          SURFACE_KIND.GIT,
+          SURFACE_KIND.NETWORK,
+        ],
+        evidence,
+      ),
+      ...(firstRoot === undefined
+        ? []
+        : buildMcpSurfaces(agent.id, join(firstRoot, PROJECT_MCP_CONFIG), servers)),
+    ];
     return { agent, surfaces, hosted: await hostedIn(reader, scaffolded, found) };
   }
+}
+
+/** Every marker present, and the roots that held one. */
+async function markersIn(
+  reader: MachineReader,
+  roots: readonly string[],
+): Promise<{ found: string[]; scaffolded: string[] }> {
+  const found: string[] = [];
+  const scaffolded: string[] = [];
+  for (const root of roots) {
+    for (const marker of MARKERS) {
+      const path = join(root, marker);
+      if (!(await reader.exists(path))) continue;
+      found.push(path);
+      if (!scaffolded.includes(root)) scaffolded.push(root);
+    }
+  }
+  return { found, scaffolded };
 }
 
 async function projectServers(
@@ -129,61 +123,61 @@ async function projectServers(
     for (const server of readMcpServers(raw)) {
       if (seen.has(server.name)) continue;
       seen.add(server.name);
-      servers.push({ ...server, args: [...server.args], env: [...server.env] });
+      servers.push(server);
     }
   }
   return servers;
 }
 
 /**
- * The roles, the runtimes and the hooks, each with the path that proved it. A swarm's
- * membership is the only thing that makes its combined reach countable, so it is read
- * off disk rather than taken from a number in somebody's README.
+ * The roles, the runtimes and the hooks, each with the path that proved it, read off disk
+ * because a swarm's membership is what makes its combined reach countable.
  */
 async function hostedIn(
   reader: MachineReader,
   roots: readonly string[],
   evidence: readonly string[],
 ): Promise<HostedAgents> {
-  const roles = new Set<string>();
-  const runtimes = new Set<string>();
-  const hooks: string[] = [];
-  const proof = [...evidence];
-  let federated = false;
+  const hosted: HostedAgents = {
+    runtimes: [],
+    roles: [],
+    hooks: [],
+    federated: false,
+    evidence: [...evidence],
+  };
+  for (const root of roots) await readHostedIn(reader, root, hosted);
+  return {
+    ...hosted,
+    runtimes: [...new Set(hosted.runtimes)].sort(),
+    roles: [...new Set(hosted.roles)].sort(),
+  };
+}
 
-  for (const root of roots) {
-    for (const dir of ROLE_DIRS) {
-      const path = join(root, dir);
-      // Listed rather than tested for: an unreadable directory and an empty one are
-      // the same answer, and neither is evidence of a role.
-      const entries = await reader.list(path);
-      if (entries.length === 0) continue;
-      proof.push(path);
-      for (const entry of entries) {
-        const name = (entry.split('/')[0] ?? '').replace(/\.(md|json|ya?ml)$/, '');
-        if (name !== '') roles.add(name);
-      }
-    }
-
-    for (const runtime of HOSTED_RUNTIMES) {
-      if (await reader.exists(join(root, runtime.path))) runtimes.add(runtime.kind);
-    }
-
-    for (const hook of HOOK_PATHS) {
-      const path = join(root, hook);
-      if (await reader.exists(path)) hooks.push(path);
-    }
-
-    for (const marker of FEDERATION_MARKERS) {
-      if (await reader.exists(join(root, marker))) federated = true;
+/** Adds what one root holds to `hosted`, which is deduplicated once every root is read. */
+async function readHostedIn(
+  reader: MachineReader,
+  root: string,
+  hosted: HostedAgents,
+): Promise<void> {
+  for (const dir of ROLE_DIRS) {
+    const path = join(root, dir);
+    // Listed rather than tested for: unreadable and empty are the same answer.
+    const entries = await reader.list(path);
+    if (entries.length === 0) continue;
+    hosted.evidence.push(path);
+    for (const entry of entries) {
+      const name = (entry.split('/')[0] ?? '').replace(/\.(md|json|ya?ml)$/, '');
+      if (name !== '') hosted.roles.push(name);
     }
   }
-
-  return {
-    runtimes: [...runtimes].sort(),
-    roles: [...roles].sort(),
-    hooks,
-    federated,
-    evidence: proof,
-  };
+  for (const runtime of HOSTED_RUNTIMES) {
+    if (await reader.exists(join(root, runtime.path))) hosted.runtimes.push(runtime.kind);
+  }
+  for (const hook of HOOK_PATHS) {
+    const path = join(root, hook);
+    if (await reader.exists(path)) hosted.hooks.push(path);
+  }
+  for (const marker of FEDERATION_MARKERS) {
+    if (await reader.exists(join(root, marker))) hosted.federated = true;
+  }
 }

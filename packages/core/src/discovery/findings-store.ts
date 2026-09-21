@@ -3,19 +3,9 @@ import { dirname, join } from 'node:path';
 import type { Finding } from './finding';
 
 /**
- * What the last `memnox doctor` found, kept so something else can send it.
- *
- * Findings were printed and dropped. The control plane has a projection and a
- * table for them and a deliberate hole in its ingest guard so a machine may
- * report them, and all of it stayed empty because nothing here outlived the
- * terminal that ran the scan.
- *
- * The last run only, not a history: this exists to answer "what is wrong with
- * this machine now", and a fleet counting a problem somebody fixed last week is
- * a fleet nobody trusts. The snapshot store next door keeps a history because
- * `diff` asks what *changed*; nothing asks that of a finding.
+ * What the last `memnox doctor` found, kept so the sync can send it. The last run only,
+ * because a fleet counting a problem fixed last week is one nobody trusts.
  */
-
 const FINDINGS_FILE = 'findings.json';
 const OWNER_ONLY = 0o600;
 
@@ -40,6 +30,7 @@ export class NodeFindingsStore implements FindingsStore {
   async latest(): Promise<KeptFindings | null> {
     try {
       const raw = await readFile(findingsPathFor(this.root), 'utf8');
+      // Partial until both fields are checked just below.
       const parsed = JSON.parse(raw) as Partial<KeptFindings>;
       if (typeof parsed.takenAt !== 'string' || !Array.isArray(parsed.findings)) {
         // Written by an older build, or truncated. A scan replaces it.
@@ -52,13 +43,7 @@ export class NodeFindingsStore implements FindingsStore {
     }
   }
 
-  /**
-   * Whole or not at all, and owner-only.
-   *
-   * Written to a temporary file and moved into place, the same way the bundle
-   * is: a sync reading a half-written file would report a truncated estate as
-   * the whole of it, and these name paths on somebody's machine.
-   */
+  /** Whole or not at all, and owner-only, because half a file reads as a truncated estate. */
   async keep(kept: KeptFindings): Promise<void> {
     const path = findingsPathFor(this.root);
     const staging = `${path}.incoming`;

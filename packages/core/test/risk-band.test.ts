@@ -74,6 +74,18 @@ describe('the risk band', () => {
     expect(withCredential.level).toBe('high');
   });
 
+  it('never counts a shell or filesystem surface as an unprobed server', () => {
+    const band = bandFor(
+      report({
+        surfaces: [
+          { agentId: 'agt_1', kind: 'shell', detectedFrom: '.claude.json' },
+          { agentId: 'agt_1', kind: 'filesystem', detectedFrom: '.claude.json' },
+        ] as never,
+      }),
+    );
+    expect(band.fired.map((rule) => rule.rule)).not.toContain(RISK_RULE.UNPROBED_SERVER);
+  });
+
   it('treats an unprobed server as unknown rather than harmless', () => {
     const band = bandFor(report({ surfaces: [surface([])] as never }));
     expect(band.fired.map((rule) => rule.rule)).toContain(RISK_RULE.UNPROBED_SERVER);

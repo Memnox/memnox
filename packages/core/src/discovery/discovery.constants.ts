@@ -27,6 +27,7 @@ export const HARNESS_KINDS: readonly DiscoveredAgentKind[] = [
 ];
 
 export function isHarnessKind(kind: string): boolean {
+  // Widened for the lookup: any string may be asked, and only a harness kind matches.
   return HARNESS_KINDS.includes(kind as DiscoveredAgentKind);
 }
 
@@ -101,16 +102,8 @@ export const FINDING_SEVERITY = {
 export type FindingSeverity = (typeof FINDING_SEVERITY)[keyof typeof FINDING_SEVERITY];
 
 /**
- * What a finding *is*, apart from how bad it is and how it is worded.
- *
- * The title is prose and changes whenever the sentence reads better; the
- * severity says how much it matters. Neither says what kind of problem this is,
- * which is what a fleet groups by — "every machine with a reachable production
- * database" is one question and "everything critical" is a different one.
- *
- * It is also the stable half of a finding's identity across scans. The local id
- * is a fresh UUID every run, so without this the same problem found twice is
- * two problems.
+ * What kind of problem a finding is, apart from its wording, which a fleet groups by and
+ * which keeps the same problem found twice from reading as two.
  */
 export const FINDING_KIND = {
   /** A sensitive file or store that agents on this machine can read. */

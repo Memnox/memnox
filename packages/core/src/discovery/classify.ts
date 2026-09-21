@@ -7,7 +7,7 @@ import { inferToolEffect, nameSegments, type McpToolDeclaration } from './surfac
 
 /**
  * A tool that carries something out of the organization is its own class. It is not
- * destructive — nothing is lost — and calling it a plain write hides the one property
+ * destructive, because nothing is lost, and calling it a plain write hides the one property
  * that matters: the data has left, and no rule downstream can call it back.
  */
 export const TOOL_CLASS = {
@@ -59,6 +59,7 @@ export interface Classification {
 export type ToolOverrides = Readonly<Record<string, ToolClass>>;
 
 function isToolClass(value: string): value is ToolClass {
+  // Widened for the lookup, which is what narrows `value`.
   return (Object.values(TOOL_CLASS) as readonly string[]).includes(value);
 }
 
@@ -83,6 +84,7 @@ export function parseOverrides(raw: string): {
   if (typeof parsed !== 'object' || parsed === null) {
     return { overrides: {}, rejected: ['the file is not an object of tool → class'] };
   }
+  // Narrowed to an object above; each value is checked below.
   for (const [tool, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof value === 'string' && isToolClass(value)) {
       overrides[tool] = value;
@@ -123,6 +125,7 @@ export function classifyTool(
   ) {
     return { class: TOOL_CLASS.COMMUNICATION, from: EFFECT_INFERENCE.NAME };
   }
+  // Every tool effect is also a tool class of the same name.
   return { class: effect as ToolClass, from: inferredFrom };
 }
 

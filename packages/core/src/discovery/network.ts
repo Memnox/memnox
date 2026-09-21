@@ -1,13 +1,8 @@
 /**
- * What an agent on this machine can reach on the network, read from the environment
- * rather than measured. Nothing here sends a request: a scan that dialled out would
- * be the one command in this product that leaves the machine, and the whole promise
- * is that none of them do.
+ * What an agent can reach on the network, read from the environment rather than
+ * measured, because nothing in this product leaves the machine.
  */
-
 export const OUTBOUND_STATE = {
-  /** Nothing constrains it: an agent with a shell can reach the internet. */
-  DETECTED: 'detected',
   /** A proxy or a sandbox stands in the way, so egress is at least observable. */
   RESTRICTED: 'restricted',
   /** Nothing in the environment says either way. Reported as unknown, never as safe. */
@@ -18,7 +13,7 @@ export type OutboundState = (typeof OUTBOUND_STATE)[keyof typeof OUTBOUND_STATE]
 
 export interface NetworkProbe {
   outbound: OutboundState;
-  /** Proxy variables in force, names only — a proxy URL can carry credentials. */
+  /** Proxy variables in force, names only, because a proxy URL can carry credentials. */
   proxyVars: string[];
   /** Hosts the environment already exempts from the proxy, which is the real hole. */
   noProxy: string[];
@@ -95,10 +90,7 @@ export function probeNetwork(input: NetworkProbeInput): NetworkProbe {
   };
 }
 
-/**
- * A proxy that exempts everything is not a restriction, and reporting it as one would
- * be the reassurance this product must never give.
- */
+/** Open egress cannot be proved without dialling out, so the other answer is unknown. */
 function outboundState(
   proxyVars: readonly string[],
   sandbox: readonly string[],

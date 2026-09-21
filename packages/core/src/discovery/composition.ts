@@ -151,6 +151,11 @@ function shortestChain(
   return packaged === undefined ? [acquire, emit] : [acquire, packaged, emit];
 }
 
+/** The step one tool name plays, for a seam ruling a single call rather than a surface. */
+export function chainLinkOfName(name: string): ChainLink | null {
+  return linkOf(nameSegments(name));
+}
+
 function linkOf(segments: readonly string[]): ChainLink | null {
   // Emit before acquire: `send_report` reads something to send it, and the send is the risk.
   for (const link of [CHAIN_LINK.EMIT, CHAIN_LINK.PACKAGE, CHAIN_LINK.ACQUIRE] as const) {
@@ -176,10 +181,8 @@ export interface AgentChains {
 }
 
 /**
- * Chains per agent, from whatever tools the surfaces carry. One function rather than
- * three: `discover` fills the surfaces by probing, `doctor` and `protect` fill them
- * from the last scan that did, and all three have to answer the same way or a finding
- * appears in one command and not another for no reason a reader could work out.
+ * Chains per agent, from whatever tools the surfaces carry. One function for `discover`,
+ * `doctor` and `protect`, so a finding never appears in one command and not another.
  */
 export function chainsFor(
   agentIds: readonly string[],

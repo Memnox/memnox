@@ -1,13 +1,12 @@
-import type { MachineReader } from './ports';
 import { verbTableFor, type VerbTable } from '../verbs/index';
 import { destructiveVerbs, externalStateVerbs } from '../verbs/verb-table';
+import { PRODUCTION_HINTS } from './discovery.constants';
+import type { MachineReader } from './ports';
 
 /**
- * The headline of the whole product. A credential file is a fact; what it lets an
- * agent do is the sentence somebody repeats to a colleague. Everything here is read
- * from structure — profile names, host names, counts — and never from a value.
+ * Credential files and what they let an agent do, read from structure: profile names,
+ * host names and counts, and never a value. The one owner of every credential path list.
  */
-
 export interface CredentialFinding {
   /** What it is, in the reader's words: "AWS", "GitHub CLI". */
   kind: string;
@@ -18,23 +17,49 @@ export interface CredentialFinding {
   count?: number;
 }
 
+/** Home paths opened to be fingerprinted, never kept: what leaves is a path and a hash. */
+export const FINGERPRINTED_HOME_PATHS: readonly string[] = [
+  '.aws/credentials',
+  '.ssh/id_rsa',
+  '.ssh/id_ed25519',
+  '.kube/config',
+  '.docker/config.json',
+  '.npmrc',
+  '.netrc',
+  '.env',
+];
+
+/** The `.env` names people actually use, in the directories they actually work in. */
+export const ENV_FILE_NAMES: readonly string[] = [
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.production',
+];
+
+/** Credential files that live beside the work rather than in the home directory. */
+export const PROJECT_CREDENTIAL_FILES: readonly string[] = [...ENV_FILE_NAMES, '.npmrc'];
+
+type CredentialDetail = { detail?: string; count?: number };
+
 interface CredentialSpec {
   kind: string;
   /** Relative to home. */
   paths: string[];
   /** Reads structure out of the file. Must never return a value from it. */
-  detail?: (contents: string) => { detail?: string; count?: number };
+  detail?: (contents: string) => CredentialDetail;
 }
 
 /** Section headers in an INI-style file: `[profile-name]`. */
 function iniSections(contents: string): string[] {
   return [...contents.matchAll(/^\s*\[([^\]]+)\]/gm)].map((match) =>
-    (match[1] as string).replace(/^profile\s+/, '').trim(),
+    (match[1] ?? '').replace(/^profile\s+/, '').trim(),
   );
 }
 
-function named(label: string) {
-  return (contents: string): { detail?: string; count?: number } => {
+/** A detail reader naming an INI file's sections under `label`. */
+function buildSectionDetail(label: string): (contents: string) => CredentialDetail {
+  return (contents) => {
     const names = iniSections(contents);
     if (names.length === 0) return {};
     return { detail: `${label}: ${names.join(', ')}`, count: names.length };
@@ -42,18 +67,41 @@ function named(label: string) {
 }
 
 /** Host keys in a YAML map, which is how gh and similar store their logins. */
-function yamlHosts(contents: string): { detail?: string; count?: number } {
+function yamlHosts(contents: string): CredentialDetail {
   const hosts = [...contents.matchAll(/^([A-Za-z0-9.-]+):\s*$/gm)].map(
-    (match) => match[1] as string,
+    (match) => match[1] ?? '',
   );
   if (hosts.length === 0) return {};
   return { detail: hosts.join(', '), count: hosts.length };
 }
 
+/** Context names in a kubeconfig, each counted once. */
+function kubeContexts(contents: string): CredentialDetail {
+  const contexts = [...contents.matchAll(/^\s*-?\s*name:\s*(\S+)/gm)].map(
+    (match) => match[1] ?? '',
+  );
+  const unique = [...new Set(contexts)];
+  if (unique.length === 0) return {};
+  return { detail: `contexts: ${unique.join(', ')}`, count: unique.length };
+}
+
+/** Registry hosts in a Docker config, and never the `auth` beside each. */
+function dockerRegistries(contents: string): CredentialDetail {
+  try {
+    // Only `auths` is read, and only its keys.
+    const parsed = JSON.parse(contents) as { auths?: Record<string, unknown> };
+    const hosts = Object.keys(parsed.auths ?? {});
+    return hosts.length === 0 ? {} : { detail: hosts.join(', '), count: hosts.length };
+  } catch {
+    // A config we cannot parse still counts as present; only the detail is lost.
+    return {};
+  }
+}
+
 const SPECS: readonly CredentialSpec[] = [
   { kind: 'SSH key', paths: ['.ssh/id_ed25519', '.ssh/id_rsa', '.ssh/id_ecdsa'] },
-  { kind: 'AWS', paths: ['.aws/credentials'], detail: named('profiles') },
-  { kind: 'AWS config', paths: ['.aws/config'], detail: named('profiles') },
+  { kind: 'AWS', paths: ['.aws/credentials'], detail: buildSectionDetail('profiles') },
+  { kind: 'AWS config', paths: ['.aws/config'], detail: buildSectionDetail('profiles') },
   { kind: 'Google Cloud', paths: ['.config/gcloud/credentials.db'] },
   { kind: 'Azure', paths: ['.azure/azureProfile.json'] },
   { kind: 'GitHub CLI', paths: ['.config/gh/hosts.yml'], detail: yamlHosts },
@@ -62,35 +110,9 @@ const SPECS: readonly CredentialSpec[] = [
   { kind: 'Fly.io', paths: ['.fly/config.yml'] },
   { kind: 'Netlify', paths: ['.netlify/config.json'] },
   { kind: 'Heroku', paths: ['.netrc'] },
-  {
-    kind: 'Kubernetes',
-    paths: ['.kube/config'],
-    detail: (contents) => {
-      const contexts = [...contents.matchAll(/^\s*-?\s*name:\s*(\S+)/gm)].map(
-        (match) => match[1] as string,
-      );
-      const unique = [...new Set(contexts)];
-      if (unique.length === 0) return {};
-      return { detail: `contexts: ${unique.join(', ')}`, count: unique.length };
-    },
-  },
+  { kind: 'Kubernetes', paths: ['.kube/config'], detail: kubeContexts },
   { kind: 'Terraform Cloud', paths: ['.terraform.d/credentials.tfrc.json'] },
-  {
-    kind: 'Docker registries',
-    paths: ['.docker/config.json'],
-    detail: (contents) => {
-      try {
-        const parsed = JSON.parse(contents) as { auths?: Record<string, unknown> };
-        const hosts = Object.keys(parsed.auths ?? {});
-        return hosts.length === 0
-          ? {}
-          : { detail: hosts.join(', '), count: hosts.length };
-      } catch {
-        // A config we cannot parse still counts as present; only the detail is lost.
-        return {};
-      }
-    },
-  },
+  { kind: 'Docker registries', paths: ['.docker/config.json'], detail: dockerRegistries },
   { kind: 'npm registry', paths: ['.npmrc'] },
   { kind: 'PyPI', paths: ['.pypirc'] },
   { kind: 'Cargo', paths: ['.cargo/credentials', '.cargo/credentials.toml'] },
@@ -98,13 +120,9 @@ const SPECS: readonly CredentialSpec[] = [
   { kind: 'Git credentials', paths: ['.git-credentials'] },
 ];
 
-/** The `.env` names people actually use, in the directories they actually work in. */
-const ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production'];
-
 /**
- * Counted, never read out. A `.env` is the credential file most likely to hold
- * something live, and the honest summary is how many variables it holds and how many
- * are named like a key — the values stay in the file.
+ * Counted, never read out: a `.env` is the credential file most likely to hold something
+ * live, so the summary is how many variables it holds and how many are named like a key.
  */
 export async function findEnvFiles(
   reader: MachineReader,
@@ -112,7 +130,7 @@ export async function findEnvFiles(
 ): Promise<EnvFinding[]> {
   const found: EnvFinding[] = [];
   for (const dir of projectDirs) {
-    for (const name of ENV_FILES) {
+    for (const name of ENV_FILE_NAMES) {
       const path = `${dir}/${name}`;
       const contents = await reader.read(path);
       if (contents === null) continue;
@@ -136,9 +154,7 @@ export async function findCredentials(
       const finding: CredentialFinding = { kind: spec.kind, path };
       if (spec.detail !== undefined) {
         const contents = await reader.read(path);
-        /* The value is read here and never leaves: what is kept is a name, a host or
-           a count. A report carrying the shape of somebody's key is the worst bug
-           this product could ship. */
+        // The value is read here and never leaves: what is kept is a name, a host or a count.
         if (contents !== null) Object.assign(finding, spec.detail(contents));
       }
       found.push(finding);
@@ -206,15 +222,15 @@ export interface AuthenticatedCli {
   productionLooking?: string;
 }
 
-const PRODUCTION_NAMES = ['prod', 'production', 'live', 'main'];
+/** A CLI context named `main` is the one people deploy from, so it reads as production too. */
+const PRODUCTION_NAMES: readonly string[] = [...PRODUCTION_HINTS, 'main'];
 
 /** Reported as "named like production", never as production. */
 export function productionLooking(detail: string | undefined): string | undefined {
   if (detail === undefined) return undefined;
-  const hit = detail
+  return detail
     .split(/[,\s:]+/)
     .find((word) => PRODUCTION_NAMES.some((name) => word.toLowerCase().includes(name)));
-  return hit === undefined ? undefined : hit;
 }
 
 /**
@@ -240,13 +256,14 @@ export function authenticatedClis(
     const variable = table.credential.find(
       (source) => !source.startsWith('~') && envNames.includes(source),
     );
-    if (match === undefined && variable === undefined) continue;
+    const via = match?.path ?? variable;
+    if (via === undefined) continue;
 
     const detail = match?.detail;
     const looking = productionLooking(detail);
     found.push({
       name: binary,
-      via: match === undefined ? (variable as string) : match.path,
+      via,
       headline: table.headline,
       ...(detail === undefined ? {} : { detail }),
       externalStateVerbs: externalStateVerbs(table).length,

@@ -1,5 +1,10 @@
-import { CHANGE_DIRECTION, CHANGE_SUBJECT, TOOL_EFFECT } from './discovery.constants';
-import type { EnvironmentChange } from './snapshot';
+import {
+  CHANGE_DIRECTION,
+  CHANGE_SUBJECT,
+  SENSITIVITY,
+  TOOL_EFFECT,
+} from './discovery.constants';
+import type { EnvironmentChange } from './snapshot-changes';
 
 /**
  * What a CI run should fail on. Narrowing never trips a gate: a build that broke
@@ -17,6 +22,7 @@ export const FAIL_ON = {
 export type FailOn = (typeof FAIL_ON)[keyof typeof FAIL_ON];
 
 export function isFailOn(value: string): value is FailOn {
+  // Widened for the lookup, which is what narrows `value`.
   return (Object.values(FAIL_ON) as readonly string[]).includes(value);
 }
 
@@ -31,15 +37,17 @@ function widens(change: EnvironmentChange): boolean {
 }
 
 /** True when a tool arrived that can change something outside this machine. */
-function isWriteCapable(change: EnvironmentChange): boolean {
+export function isWriteCapable(change: EnvironmentChange): boolean {
   if (change.subject !== CHANGE_SUBJECT.TOOL) return false;
   return WRITE_EFFECTS.some((effect) => change.detail.includes(effect));
 }
 
-function isCredential(change: EnvironmentChange): boolean {
+/** True when a sensitive resource became reachable, read from the field and never the wording. */
+export function isCredentialExposure(change: EnvironmentChange): boolean {
   return (
     change.subject === CHANGE_SUBJECT.RESOURCE &&
-    (change.detail.includes('secret') || change.detail.includes('credential'))
+    change.sensitivity !== undefined &&
+    change.sensitivity !== SENSITIVITY.ORDINARY
   );
 }
 
@@ -54,5 +62,5 @@ export function changesFailing(
   const widening = changes.filter(widens);
   if (gate === FAIL_ON.ANY) return widening;
   if (gate === FAIL_ON.WRITE_CAPABLE) return widening.filter(isWriteCapable);
-  return widening.filter(isCredential);
+  return widening.filter(isCredentialExposure);
 }

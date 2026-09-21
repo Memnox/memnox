@@ -1,17 +1,13 @@
 import { RESOURCE_KIND, SENSITIVITY } from './discovery.constants';
-import { classifyTool, type ToolClass, type ToolOverrides } from './classify';
+import { classifyTool, TOOL_CLASS, type ToolClass, type ToolOverrides } from './classify';
 import { CHAIN_LINK } from './composition';
 import { distinctTools } from './surface';
 import type { DiscoveryReport } from './discover';
-import type { NetworkProbe } from './network';
+import { OUTBOUND_STATE, type NetworkProbe } from './network';
 
 /**
- * The scan's answer in one flat shape: what can act here, and what each thing reaches.
- * `DiscoveryReport` is how the scan is assembled; this is what it means, and it is the
- * shape that leaves the process — so it carries names, counts and fingerprints only.
- *
- * Version 2 added harnesses and combined capability. Neither could be expressed in v1
- * without lying about the count: a harness is one agent row and several principals.
+ * The scan's answer in one flat shape that leaves the process: what can act here and
+ * what each thing reaches, as names, counts and fingerprints only.
  */
 export const INVENTORY_VERSION = 2;
 
@@ -113,64 +109,6 @@ export function inventoryOf(
   takenAt: string,
   overrides: ToolOverrides = {},
 ): CapabilityInventory {
-  const launches = report.surfaces.flatMap((surface) =>
-    (surface.servers ?? []).map((server) => ({ surface, server })),
-  );
-
-  /* One row per server, not per client that declares it: the same `github` server in
-     five editors is one server reached by five agents, and five rows would be counted
-     five times by everything downstream. */
-  const servers: InventoryServer[] = [];
-  const byName = new Map<string, InventoryServer>();
-  for (const { surface, server } of launches) {
-    const held = byName.get(server.name);
-    if (held !== undefined) {
-      if (!held.reachedBy.includes(surface.agentId)) held.reachedBy.push(surface.agentId);
-      continue;
-    }
-    const row: InventoryServer = {
-      name: server.name,
-      declaredIn: surface.detectedFrom,
-      command: [server.command, ...server.args].join(' '),
-      credentials: [...(server.env ?? [])],
-      reachedBy: [surface.agentId],
-      unprobed: !report.surfaces.some((each) =>
-        (each.tools ?? []).some((tool) => tool.server === server.name),
-      ),
-    };
-    byName.set(server.name, row);
-    servers.push(row);
-  }
-
-  const tools: InventoryTool[] = distinctTools(report.surfaces).map((tool) => {
-    const classification = classifyTool({ name: tool.name }, overrides);
-    return {
-      server: tool.server,
-      name: tool.name,
-      class: classification.class,
-      from: classification.from,
-    };
-  });
-
-  const filesystem: InventoryPath[] = report.resources
-    .filter((resource) => resource.path !== undefined)
-    .map((resource) => ({
-      path: resource.path as string,
-      sensitivity: resource.sensitivity,
-      reachableBy: resource.reachableBy.map((ref) => ref.id),
-      ...(resource.fingerprint === undefined
-        ? {}
-        : { fingerprint: resource.fingerprint }),
-    }));
-
-  const credentials: InventoryCredential[] = report.resources
-    .filter((resource) => resource.kind === RESOURCE_KIND.SECRET)
-    .map((resource) => ({
-      name: resource.path ?? resource.id,
-      declaredIn: resource.declaredIn ?? resource.path ?? 'unknown',
-      reachableBy: resource.reachableBy.map((ref) => ref.id),
-    }));
-
   return {
     version: INVENTORY_VERSION,
     takenAt,
@@ -181,14 +119,14 @@ export function inventoryOf(
       configPaths: [...agent.configPaths],
       clients: [...agent.clients],
     })),
-    mcpServers: servers,
-    tools,
-    filesystem,
+    mcpServers: serversOf(report),
+    tools: toolsOf(report, overrides),
+    filesystem: pathsOf(report),
     shell: report.reachability
       .filter((entry) => entry.viaShell)
       .map((entry) => entry.agentId),
     git: report.tools.filter((tool) => GIT_BINARIES.includes(tool.name)),
-    credentials,
+    credentials: credentialsOf(report),
     network: report.egress,
     harnesses: report.harnesses.map((harness) => ({
       agentId: harness.agentId,
@@ -199,22 +137,94 @@ export function inventoryOf(
       federated: harness.federated,
       evidence: [...harness.evidence],
     })),
-    chains: report.combined.flatMap((each) =>
-      each.capabilities.map((capability) => ({
-        agentId: each.agentId,
-        subject: capability.subject,
-        consequence: capability.consequence,
-        steps: capability.steps.map((step) => ({ ...step })),
-        individuallyHarmless: capability.individuallyHarmless,
-      })),
-    ),
+    chains: chainsOf(report),
   };
 }
 
+/** One row per server, not per client: one server in five editors is reached by five agents. */
+function serversOf(report: DiscoveryReport): InventoryServer[] {
+  const byName = new Map<string, InventoryServer>();
+  for (const surface of report.surfaces) {
+    for (const server of surface.servers ?? []) {
+      const held = byName.get(server.name);
+      if (held === undefined) {
+        byName.set(server.name, {
+          name: server.name,
+          declaredIn: surface.detectedFrom,
+          command: [server.command, ...server.args].join(' '),
+          credentials: [...(server.env ?? [])],
+          reachedBy: [surface.agentId],
+          unprobed: !isProbed(report, server.name),
+        });
+      } else if (!held.reachedBy.includes(surface.agentId)) {
+        held.reachedBy.push(surface.agentId);
+      }
+    }
+  }
+  return [...byName.values()];
+}
+
+function isProbed(report: DiscoveryReport, serverName: string): boolean {
+  return report.surfaces.some((surface) =>
+    (surface.tools ?? []).some((tool) => tool.server === serverName),
+  );
+}
+
+function toolsOf(report: DiscoveryReport, overrides: ToolOverrides): InventoryTool[] {
+  return distinctTools(report.surfaces).map((tool) => {
+    const classification = classifyTool({ name: tool.name }, overrides);
+    return {
+      server: tool.server,
+      name: tool.name,
+      class: classification.class,
+      from: classification.from,
+    };
+  });
+}
+
+function pathsOf(report: DiscoveryReport): InventoryPath[] {
+  return report.resources.flatMap((resource) =>
+    resource.path === undefined
+      ? []
+      : [
+          {
+            path: resource.path,
+            sensitivity: resource.sensitivity,
+            reachableBy: resource.reachableBy.map((ref) => ref.id),
+            ...(resource.fingerprint === undefined
+              ? {}
+              : { fingerprint: resource.fingerprint }),
+          },
+        ],
+  );
+}
+
+function credentialsOf(report: DiscoveryReport): InventoryCredential[] {
+  return report.resources
+    .filter((resource) => resource.kind === RESOURCE_KIND.SECRET)
+    .map((resource) => ({
+      name: resource.path ?? resource.id,
+      declaredIn: resource.declaredIn ?? resource.path ?? 'unknown',
+      reachableBy: resource.reachableBy.map((ref) => ref.id),
+    }));
+}
+
+/** Flat, so a consumer never has to walk a nesting to count the chains. */
+function chainsOf(report: DiscoveryReport): InventoryChain[] {
+  return report.combined.flatMap((each) =>
+    each.capabilities.map((capability) => ({
+      agentId: each.agentId,
+      subject: capability.subject,
+      consequence: capability.consequence,
+      steps: capability.steps.map((step) => ({ ...step })),
+      individuallyHarmless: capability.individuallyHarmless,
+    })),
+  );
+}
+
 /**
- * Published so a consumer can validate an inventory it did not produce. Kept as a
- * literal rather than generated: a schema derived from the types at runtime would
- * drift silently the moment the types changed shape.
+ * Published so a consumer can validate an inventory it did not produce. A literal, since
+ * one derived from the types at runtime would drift silently when they changed.
  */
 export const CAPABILITY_INVENTORY_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -286,9 +296,7 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
         properties: {
           server: { type: 'string' },
           name: { type: 'string' },
-          class: {
-            enum: ['read', 'write', 'destructive', 'communication', 'unknown'],
-          },
+          class: { enum: Object.values(TOOL_CLASS) },
           from: { type: 'string' },
         },
       },
@@ -302,7 +310,7 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
         properties: {
           path: { type: 'string' },
           sensitivity: {
-            enum: [SENSITIVITY.ORDINARY, SENSITIVITY.SENSITIVE, SENSITIVITY.CRITICAL],
+            enum: Object.values(SENSITIVITY),
           },
           reachableBy: { type: 'array', items: { type: 'string' } },
           fingerprint: { type: 'string' },
@@ -340,7 +348,7 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
       required: ['outbound', 'proxyVars', 'noProxy', 'sandbox', 'read'],
       additionalProperties: false,
       properties: {
-        outbound: { enum: ['detected', 'restricted', 'unknown'] },
+        outbound: { enum: Object.values(OUTBOUND_STATE) },
         proxyVars: { type: 'array', items: { type: 'string' } },
         noProxy: { type: 'array', items: { type: 'string' } },
         sandbox: { type: 'array', items: { type: 'string' } },
@@ -389,9 +397,7 @@ export const CAPABILITY_INVENTORY_SCHEMA = {
               required: ['link', 'server', 'tool'],
               additionalProperties: false,
               properties: {
-                link: {
-                  enum: [CHAIN_LINK.ACQUIRE, CHAIN_LINK.PACKAGE, CHAIN_LINK.EMIT],
-                },
+                link: { enum: Object.values(CHAIN_LINK) },
                 server: { type: 'string' },
                 tool: { type: 'string' },
               },

@@ -17,6 +17,7 @@ const NOTHING: CoverageFacts = {
   egressProxySet: false,
   loginPathConfigured: false,
   rulesRegistered: true,
+  ownPolicyHook: false,
 };
 
 const EVERYTHING: CoverageFacts = {
@@ -27,6 +28,7 @@ const EVERYTHING: CoverageFacts = {
   egressProxySet: true,
   loginPathConfigured: true,
   rulesRegistered: true,
+  ownPolicyHook: true,
 };
 
 const surfaces = (kinds: string[], servers?: Surface['servers']): Surface[] =>
@@ -104,7 +106,7 @@ describe('what is holding one agent', () => {
       NOTHING,
     );
 
-    expect(seam(coverage, 'shell')?.state).toBe(SEAM_STATE.NOT_HELD);
+    expect(seam(coverage, 'shell')?.state).toBe(SEAM_STATE.NOT_APPLICABLE);
     // One applicable seam, so the summary says one, not four.
     expect(coverageSummary(coverage)).toEqual({ held: 0, total: 1 });
   });
@@ -172,5 +174,49 @@ describe('a seam with nothing to decide with', () => {
       next: 'memnox policy use',
     });
     expect(seam(coverage, 'mcp')?.detail).toContain('no rule file is registered');
+  });
+});
+
+describe("an agent's own policy hook", () => {
+  const every = surfaces(
+    [SURFACE_KIND.FILESYSTEM, SURFACE_KIND.NETWORK, SURFACE_KIND.MCP],
+    [{ name: 'github', command: 'npx', args: ['raw'] }],
+  );
+
+  /* setup writes the hook into Claude Code's own settings, so a Read of a secret or a
+     WebFetch is ruled on with no wrapper in the way, and explain has to say so. */
+  it('holds the file, fetch and MCP tools Claude Code reports to it', () => {
+    const coverage = coverageFor('claude-code', 'agt_x', every, {
+      ...NOTHING,
+      ownPolicyHook: true,
+    });
+
+    expect(seam(coverage, 'filesystem')).toMatchObject({
+      state: SEAM_STATE.HELD,
+      detail: 'its own hook checks every Read, Edit and Write',
+    });
+    expect(seam(coverage, 'network')?.detail).toBe('its own hook checks every WebFetch');
+    expect(seam(coverage, 'mcp')?.state).toBe(SEAM_STATE.HELD);
+    expect(coverageSummary(coverage)).toEqual({ held: 3, total: 3 });
+  });
+
+  // Cursor's hooks see no web fetch, so its network stays with the other seams.
+  it('holds only what that agent reports to its hook', () => {
+    const coverage = coverageFor('cursor', 'agt_x', every, { ...NOTHING, ownPolicyHook: true });
+
+    expect(seam(coverage, 'filesystem')?.state).toBe(SEAM_STATE.HELD);
+    expect(seam(coverage, 'network')?.state).toBe(SEAM_STATE.OPEN);
+  });
+
+  it('holds nothing where the hook is absent or has no rules to apply', () => {
+    const absent = coverageFor('claude-code', 'agt_x', every, NOTHING);
+    const empty = coverageFor('claude-code', 'agt_x', every, {
+      ...NOTHING,
+      ownPolicyHook: true,
+      rulesRegistered: false,
+    });
+
+    expect(seam(absent, 'filesystem')?.detail).toContain('shell wrapper only');
+    expect(coverageSummary(empty).held).toBe(0);
   });
 });

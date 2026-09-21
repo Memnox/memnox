@@ -1,8 +1,8 @@
+import { ENFORCEMENT_MODE } from '../constants/enforcement.constants';
+
 /**
- * Whether Memnox is actually wired to anything, as opposed to installed. The two are
- * easy to confuse: every command below runs perfectly well on a machine where nothing
- * is being governed, and a doctor that reported a clean bill on that machine would be
- * the most expensive lie this product could tell.
+ * Whether Memnox is wired to anything, as against installed, because every command runs
+ * perfectly well on a machine where nothing is governed.
  */
 
 export const CHECK = {
@@ -24,13 +24,8 @@ export const CHECK_NAME = {
   DAEMON: 'daemon',
   LEDGER: 'ledger',
   /**
-   * The four things that stop work without a rule saying so.
-   *
-   * A paused session, a spent allowance, a path another session holds and a question
-   * nobody has answered each look identical from inside an agent: it asked, and
-   * nothing happened. None of them is a policy decision, so none of them shows up in
-   * `why`, and without a line here the honest answer to "my agent stopped working"
-   * would be a shrug.
+   * What stops work without a rule saying so: a paused session, a spent allowance, a held
+   * path and an unanswered question. None appears in `why`, and all four look alike.
    */
   HOLDS: 'holds',
 } as const;
@@ -61,39 +56,27 @@ export interface HealthFacts {
   /** Content hash of the rule set, so two machines can be compared without diffing. */
   policyVersion: string;
   /**
-   * Absolute paths of the rule files the seams actually load. A file you can test but
-   * nothing has registered is the worst state there is: `policy test` says DENY and
-   * every seam allows it, and until now nothing said so.
+   * Absolute paths of the rule files the seams actually load. A file nothing registered
+   * is the worst state there is: `policy test` says DENY and every seam allows it.
    */
   registeredFiles: string[];
   /**
-   * Rule files sitting in the policies directory that the registry does not name.
-   *
-   * A file dropped in there looks exactly like one `memnox protect` wrote and is
-   * loaded by nothing, silently, because `policies.json` is what the seams read.
-   * Somebody who hand-writes a rule has every reason to believe it is in force.
+   * Rule files in the policies directory the registry does not name, which the seams
+   * never load while they look exactly like one `memnox protect` wrote.
    */
   unregisteredRuleFiles: string[];
   /** Binaries present in the interceptor directory. */
   interceptorsInstalled: string[];
   /**
-   * Binaries this machine actually has that the classifier can rule on.
-   *
-   * Not every binary it knows about: `protect --interceptors` wraps only what is
-   * installed and says so, and reporting the rest as missing made `doctor` name a
-   * fault whose own suggested fix could never clear it — which sends somebody round
-   * the same two commands until they stop believing either.
+   * Binaries this machine has that the classifier can rule on, since `protect
+   * --interceptors` wraps only what is installed and could never clear the rest.
    */
   interceptorsExpected: string[];
   /** True when the interceptor directory is ahead of the real binaries on PATH. */
   interceptorDirFirstOnPath: boolean;
   /**
-   * Whether the one binary every wrapper execs can actually be found.
-   *
-   * A wrapper is three lines ending in `exec "memnox-intercept" "git" "$@"`, so
-   * the whole directory depends on that name resolving. When it does not, every
-   * wrapped command exits 127 and the agent is told `git: not found` — which is
-   * worse than ungoverned, and which a count of installed files cannot see.
+   * Whether the binary every wrapper execs can be found, because without it each wrapped
+   * command exits 127 and the agent is told `git: not found`.
    */
   interceptBinaryFound: boolean;
   /** MCP servers found, and how many are routed through the proxy. */
@@ -109,9 +92,8 @@ export interface HealthFacts {
   /** Null when the database will not open; otherwise how many rows it holds. */
   ledgerEvents: number | null;
   /**
-   * Recorded verdicts that did not simply proceed. In observe this is the work
-   * that would have been stopped, which is the reading the decision to enforce
-   * is supposed to be made on and which nothing was putting in front of anybody.
+   * Recorded verdicts that did not simply proceed. In observe this is the work that
+   * would have been stopped, which is what the decision to enforce is made on.
    */
   wouldHaveStopped: number;
   ledgerError?: string;
@@ -125,19 +107,13 @@ export interface HealthFacts {
   spentBudgets: string[];
 }
 
-/**
- * What is being stopped for a reason that is not a rule.
- *
- * Deliberately one check rather than four: a person asking why their agent is stuck
- * wants one line that names the cause, and four rows that are almost always "nothing
- * held" would be four rows nobody reads.
- */
+/** What is being stopped for a reason that is not a rule, as one line rather than four empty rows. */
 function holdsCheck(facts: HealthFacts): HealthCheck {
   if (facts.pausedSessions > 0) {
     return {
       name: CHECK_NAME.HOLDS,
       state: CHECK.BROKEN,
-      detail: `${facts.pausedSessions} session(s) paused — they run nothing until somebody lifts them`,
+      detail: `${facts.pausedSessions} session(s) paused, running nothing until somebody lifts them`,
       fix: 'memnox paused, then memnox resume <session> --by <you>',
     };
   }
@@ -145,10 +121,9 @@ function holdsCheck(facts: HealthFacts): HealthCheck {
     return {
       name: CHECK_NAME.HOLDS,
       state: CHECK.BROKEN,
-      /* Named as an allowance rather than a refusal: "not allowed" and "no allowance
-         left until the window resets" send somebody to different places. */
+      // An allowance rather than a refusal, because the two send somebody to different places.
       detail: `no allowance left on: ${facts.spentBudgets.join(', ')}`,
-      fix: 'memnox budget — raise the limit, or wait for the window',
+      fix: 'memnox budget, to raise the limit, or wait for the window',
     };
   }
   if (facts.waitingApprovals > 0) {
@@ -182,7 +157,7 @@ function configCheck(facts: HealthFacts): HealthCheck {
       detail: 'no config yet; it is written on the first run and defaults to observe',
     };
   }
-  if (facts.mode === 'off') {
+  if (facts.mode === ENFORCEMENT_MODE.OFF) {
     return {
       name: CHECK_NAME.CONFIG,
       state: CHECK.INERT,
@@ -190,36 +165,37 @@ function configCheck(facts: HealthFacts): HealthCheck {
       fix: 'memnox protect --observe',
     };
   }
-  if (facts.mode === 'observe') {
-    /* "Once the verdicts look right" was the whole instruction, and nothing ever
-       said whether they did. A machine can sit in observe for a month governing
-       nothing while every row on this screen stays green, because observe is the
-       correct default. The count is the reading somebody was told to take. */
-    if (facts.wouldHaveStopped === 0) {
-      return {
-        name: CHECK_NAME.CONFIG,
-        state: CHECK.OK,
-        detail:
-          facts.ledgerEvents === null || facts.ledgerEvents === 0
-            ? 'mode is observe, and nothing has run under it yet'
-            : `mode is observe, and none of ${facts.ledgerEvents} recorded action(s) would have been stopped`,
-        fix: 'memnox run -- <agent>, and read it again in a week',
-      };
-    }
+  if (facts.mode === ENFORCEMENT_MODE.OBSERVE) return observeCheck(facts);
+  return { name: CHECK_NAME.CONFIG, state: CHECK.OK, detail: `mode is ${facts.mode}` };
+}
+
+/**
+ * Observe is the right default and can sit a month governing nothing while every row
+ * stays green, so the count of what would have stopped is the reading to take.
+ */
+function observeCheck(facts: HealthFacts): HealthCheck {
+  if (facts.wouldHaveStopped === 0) {
     return {
       name: CHECK_NAME.CONFIG,
       state: CHECK.OK,
-      detail: `mode is observe, and ${facts.wouldHaveStopped} recorded verdict(s) would have stopped something`,
-      fix: 'read them with "memnox timeline --only deny", then "memnox config set mode enforce"',
+      detail:
+        facts.ledgerEvents === null || facts.ledgerEvents === 0
+          ? 'mode is observe, and nothing has run under it yet'
+          : `mode is observe, and none of ${facts.ledgerEvents} recorded action(s) would have been stopped`,
+      fix: 'memnox run -- <agent>, and read it again in a week',
     };
   }
-  return { name: CHECK_NAME.CONFIG, state: CHECK.OK, detail: `mode is ${facts.mode}` };
+  return {
+    name: CHECK_NAME.CONFIG,
+    state: CHECK.OK,
+    detail: `mode is observe, and ${facts.wouldHaveStopped} recorded verdict(s) would have stopped something`,
+    fix: 'read them with "memnox timeline --only deny", then "memnox config set mode enforce"',
+  };
 }
 
 function rulesCheck(facts: HealthFacts): HealthCheck {
   if (facts.rulesError !== undefined) {
-    /* An unreadable rule set is never an empty one. Reporting "no rule covers this"
-       about a machine whose rules simply failed to parse is a lie the reader acts on. */
+    // An unreadable rule set is never an empty one, and "no rule covers this" would be a lie.
     return {
       name: CHECK_NAME.RULES,
       state: CHECK.BROKEN,
@@ -235,40 +211,34 @@ function rulesCheck(facts: HealthFacts): HealthCheck {
       fix: 'memnox protect --interactive',
     };
   }
+  return registrationCheck(facts);
+}
+
+/** Rules that load, and whether the seams load them. */
+function registrationCheck(facts: HealthFacts): HealthCheck {
   if (facts.registeredFiles.length === 0) {
-    /* The file is here and readable and no seam will ever open it. Reported as broken
-       rather than ok, because "3 rules" beside an ungoverned machine is the reassuring
-       number this whole check exists to refuse to print. */
+    // Broken rather than ok, because "3 rules" beside an ungoverned machine is the lie.
     return {
       name: CHECK_NAME.RULES,
       state: CHECK.BROKEN,
-      detail: `${facts.ruleCount} rule(s) in ${facts.rulesPath}, registered by nothing — the seams load none of them`,
+      detail: `${facts.ruleCount} rule(s) in ${facts.rulesPath}, registered by nothing, so the seams load none of them`,
       fix: `memnox policy use ${facts.rulesPath}`,
     };
   }
+  const loaded = `${facts.ruleCount} rule(s) from ${facts.rulesPath} · v${facts.policyVersion}`;
   if (facts.unregisteredRuleFiles.length > 0) {
-    /* Still ok: what is registered is in force and this machine is governed. The
-       subject here is the file somebody wrote by hand and believes is working,
-       and believing it is the whole problem — so it is said in the detail, which
-       always renders, rather than as a fix on a check nobody is told to look at.
-
-       Named rather than counted where there is one, because "a file" sends a
-       person to `ls` and the name sends them to the file. */
+    // Still ok, because what is registered is in force; the file is named so nobody needs `ls`.
     const [first] = facts.unregisteredRuleFiles;
     const rest = facts.unregisteredRuleFiles.length - 1;
     const which = rest > 0 ? `${first} and ${String(rest)} more` : String(first);
     return {
       name: CHECK_NAME.RULES,
       state: CHECK.OK,
-      detail: `${facts.ruleCount} rule(s) from ${facts.rulesPath} · v${facts.policyVersion} — ${which} is in the policies directory, registered by nothing, and loads for no seam: "memnox policy use" puts it in force`,
+      detail: `${loaded}, and ${which} is in the policies directory, registered by nothing, and loads for no seam: "memnox policy use" puts it in force`,
     };
   }
-  return {
-    name: CHECK_NAME.RULES,
-    state: CHECK.OK,
-    // The version is what makes "4 laptops are on v3" answerable without diffing files.
-    detail: `${facts.ruleCount} rule(s) from ${facts.rulesPath} · v${facts.policyVersion}`,
-  };
+  // The version is what makes "4 laptops are on v3" answerable without diffing files.
+  return { name: CHECK_NAME.RULES, state: CHECK.OK, detail: loaded };
 }
 
 function interceptorCheck(facts: HealthFacts): HealthCheck {
@@ -291,8 +261,7 @@ function interceptorCheck(facts: HealthFacts): HealthCheck {
       fix: 'memnox protect --interceptors',
     };
   }
-  /* Checked after the count, because this is the failure the count hides: the
-     files are all there and every one of them is a command that cannot run. */
+  // After the count, which hides it: every file is there and none can run.
   if (!facts.interceptBinaryFound) {
     return {
       name: CHECK_NAME.INTERCEPTORS,
@@ -318,7 +287,7 @@ function pathCheck(facts: HealthFacts): HealthCheck {
     };
   }
   if (!facts.interceptorDirFirstOnPath) {
-    /* Installed and unreachable is the worst of both: it looks governed and is not. */
+    // Installed and unreachable is the worst of both: it looks governed and is not.
     return {
       name: CHECK_NAME.PATH,
       state: CHECK.BROKEN,
@@ -366,12 +335,8 @@ function proxyCheck(facts: HealthFacts): HealthCheck {
 
 function daemonCheck(facts: HealthFacts): HealthCheck {
   if (!facts.daemonSocket) {
-    /* Optional for enforcement: an interceptor with no daemon evaluates in process.
-       Not optional once this machine is enrolled, because the daemon is also the only
-       thing that pulls the workspace's rules and sends what happened. A workspace that
-       told somebody "it pulls on its own, about once a minute" was describing a loop
-       that ran only while a terminal stayed open, and a machine that quietly stopped
-       syncing looks exactly like one with nothing to report. */
+    // Optional for enforcement, since interceptors evaluate in process, but required once
+    // enrolled, because only the daemon pulls rules and sends what happened.
     if (facts.enrolled && !facts.daemonStartsItself) {
       return {
         name: CHECK_NAME.DAEMON,
@@ -394,7 +359,8 @@ function daemonCheck(facts: HealthFacts): HealthCheck {
     return {
       name: CHECK_NAME.DAEMON,
       state: CHECK.BROKEN,
-      detail: 'a socket is there but nothing answered — a stale one from a killed daemon',
+      detail:
+        'a socket is there but nothing answered, so it is stale from a killed daemon',
       fix: 'memnox daemon',
     };
   }

@@ -6,6 +6,10 @@ import type { DiscoveryReport } from './discover';
 import { externalStateVerbs, verbAction } from '../verbs/verb-table';
 import { verbTableFor } from '../verbs/tables';
 
+/**
+ * How much of what an agent can do has a rule about it: the closing line of the scan,
+ * counted by matching rules against actions, never by counting rule files.
+ */
 export interface Gap {
   total: number;
   governed: number;
@@ -27,11 +31,7 @@ export function reachingActions(report: DiscoveryReport): string[] {
   return [...tools, ...cliActions];
 }
 
-/**
- * The gap, counted rather than asserted. "Governed" means a rule actually matches the
- * action; counting rule files instead would print a reassuring number about rules that
- * cover none of this, which is the one lie the whole screen exists to avoid.
- */
+/** The gap, counted rather than asserted: "governed" means a rule actually matches the action. */
 export function measureGap(report: DiscoveryReport, policies: readonly Policy[]): Gap {
   const actions = reachingActions(report);
   const governed = actions.filter((action) =>

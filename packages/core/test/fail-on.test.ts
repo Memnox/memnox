@@ -5,7 +5,7 @@ import {
   isFailOn,
   FAIL_ON,
 } from '../src/discovery/fail-on';
-import type { EnvironmentChange } from '../src/discovery/snapshot';
+import type { EnvironmentChange } from '../src/discovery/snapshot-changes';
 
 const change = (over: Partial<EnvironmentChange>): EnvironmentChange =>
   ({
@@ -29,7 +29,8 @@ const WIDENED_READ = change({
 const NEW_CREDENTIAL = change({
   subject: 'resource',
   name: 'AWS_SECRET_ACCESS_KEY',
-  detail: 'secret newly reachable',
+  detail: 'readable, 1 agent',
+  sensitivity: 'critical',
 });
 const REMOVED_SERVER = change({
   subject: 'server',
@@ -71,6 +72,6 @@ describe('--fail-on', () => {
 
   it('returns the changes rather than a count, so CI can print why it failed', () => {
     const [first] = changesFailing([NEW_CREDENTIAL], FAIL_ON.ANY);
-    expect(first?.detail).toContain('secret');
+    expect(first).toBe(NEW_CREDENTIAL);
   });
 });

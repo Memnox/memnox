@@ -1,5 +1,5 @@
 import type { DiscoveryReport } from './discover';
-import type { McpServerLaunch, McpTool } from './surface';
+import { nameSegments, type McpServerLaunch, type McpTool } from './surface';
 import {
   FINDING_SEVERITY,
   TOOL_EFFECT,
@@ -7,11 +7,8 @@ import {
 } from './discovery.constants';
 
 /**
- * One server, and everything this machine can prove about it before it is trusted.
- *
- * The unit of installation is the server; the unit of danger is the tool. A reader
- * deciding whether to keep a server needs both counts in front of them, plus what the
- * config hands it, and none of that is anywhere today.
+ * One server, and what this machine can prove about it before it is trusted: the unit of
+ * installation is the server and the unit of danger is the tool.
  */
 export interface ServerReview {
   server: string;
@@ -35,8 +32,28 @@ export interface ServerReview {
   unprobed: boolean;
 }
 
-const FILESYSTEM_WORDS = ['file', 'directory', 'path', 'fs', 'read_file', 'write_file'];
-const NETWORK_WORDS = ['http', 'fetch', 'request', 'url', 'webhook', 'curl'];
+/** Whole words, singular and plural, so `postgres_query` never reads as `post` or `fs`. */
+const FILESYSTEM_WORDS: readonly string[] = [
+  'file',
+  'files',
+  'directory',
+  'directories',
+  'path',
+  'paths',
+  'fs',
+];
+const NETWORK_WORDS: readonly string[] = [
+  'http',
+  'https',
+  'fetch',
+  'request',
+  'requests',
+  'url',
+  'urls',
+  'webhook',
+  'webhooks',
+  'curl',
+];
 
 /**
  * Ranked on what was counted rather than on a reputation nobody measured. There is no
@@ -84,9 +101,11 @@ function reviewOne(
   return { ...counted, risk: riskOf(counted) };
 }
 
+/** Whether a tool's name or description holds one of `words` as a whole segment. */
 function mentions(tools: readonly McpTool[], words: readonly string[]): boolean {
-  return tools.some((tool) => {
-    const text = `${tool.name} ${tool.description ?? ''}`.toLowerCase();
-    return words.some((word) => text.includes(word));
-  });
+  return tools.some((tool) =>
+    nameSegments(`${tool.name} ${tool.description ?? ''}`).some((segment) =>
+      words.includes(segment),
+    ),
+  );
 }

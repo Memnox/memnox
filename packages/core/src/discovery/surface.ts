@@ -51,14 +51,8 @@ export interface McpServerLaunch {
 }
 
 /**
- * Hermes writes `tools.include` / `tools.exclude`; OpenClaw writes `tools.allow` /
- * `tools.deny`. They look like the same control and they resolve the pair differently,
- * so the filter carries whose rules it is rather than one matcher guessing.
- *
- * Hermes, from its own source: a present `include` decides alone and `exclude` is not
- * consulted at all, and `include: []` registers nothing. OpenClaw denies first. Reading
- * one product's file with the other's precedence reports the wrong reachable set, which
- * is the whole thing a scan exists to get right.
+ * Hermes and OpenClaw resolve an include and exclude pair differently, so a filter carries
+ * whose rules it is rather than one matcher guessing.
  */
 export const FILTER_PRECEDENCE = {
   /** A present include list decides alone. Hermes. */
@@ -91,7 +85,7 @@ export function passesFilter(name: string, filter: ToolFilter | undefined): bool
 }
 
 /**
- * Exact name first, then a case-sensitive glob — the semantics both products use.
+ * Exact name first, then a case-sensitive glob, which is the semantics both products use.
  * The policy matcher lowercases, which is right for a rule somebody typed and wrong
  * for a tool name, where `readFile` and `readfile` are two different tools.
  */
@@ -240,13 +234,8 @@ export function nameSegments(name: string): string[] {
 }
 
 /**
- * One entry per tool, however many clients declare the server it lives on.
- *
- * The same `github` server is normally configured in several editors at once, and each
- * client's surface carries its own copy of that server's tools. Summing the surfaces
- * multiplies the count by the number of clients: four tools in five editors reported as
- * twenty, which inflates the tool count, the destructive count, the risk band and the
- * gap. A tool is a thing on a server, not a thing per client that reaches it.
+ * One entry per tool, however many clients declare its server, so four tools in five
+ * editors are four and not twenty.
  */
 export function distinctTools(surfaces: readonly { tools?: McpTool[] }[]): McpTool[] {
   const seen = new Map<string, McpTool>();

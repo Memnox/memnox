@@ -78,3 +78,39 @@ describe('a finding a rule already covers', () => {
     expect(report().findings[0]?.title).not.toContain('denies it');
   });
 });
+
+describe('an export path', () => {
+  function exportFindings(toolName: string): DoctorReport['findings'] {
+    const report = runDoctor({
+      resources: [
+        {
+          id: 'res_env',
+          kind: RESOURCE_KIND.SECRET,
+          path: '/srv/app/.env',
+          sensitivity: SENSITIVITY.SENSITIVE,
+          reachableBy: [{ id: 'agt_x', kind: DISCOVERED_AGENT_KIND.CURSOR }],
+        },
+      ],
+      reachability: [{ agentId: 'agt_x', resources: [], viaShell: false, surfaces: [] }],
+      surfaces: [
+        { agentId: 'agt_x', kind: 'filesystem', detectedFrom: '/cfg' },
+        {
+          agentId: 'agt_x',
+          kind: 'mcp',
+          detectedFrom: '/cfg',
+          tools: [{ server: 'db', name: toolName, effect: 'read', inferredFrom: 'name' }],
+        },
+      ],
+      newId: () => 'fixed',
+    });
+    return report.findings.filter((finding) => finding.kind === 'export_path');
+  }
+
+  it('needs a tool that sends, named as a whole word', () => {
+    expect(exportFindings('send_message')).toHaveLength(1);
+  });
+
+  it('never reads `postgres_query` as a post', () => {
+    expect(exportFindings('postgres_query')).toEqual([]);
+  });
+});

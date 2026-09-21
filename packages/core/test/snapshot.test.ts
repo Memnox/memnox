@@ -8,11 +8,8 @@ import {
   SENSITIVITY,
   TOOL_EFFECT,
 } from '../src/discovery/discovery.constants';
-import {
-  compareSnapshots,
-  summarizeChanges,
-  type EnvironmentSnapshot,
-} from '../src/discovery/snapshot';
+import type { EnvironmentSnapshot } from '../src/discovery/snapshot';
+import { compareSnapshots, summarizeChanges } from '../src/discovery/snapshot-changes';
 import { NodeSnapshotStore } from '../src/discovery/snapshot-store';
 import { traceCapability } from '../src/discovery/trace';
 

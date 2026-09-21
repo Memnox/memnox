@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { databasesIn, detectTools, networkReach } from '../src/discovery/reach-detail';
-import { runDoctor, spellingsOf } from '../src/discovery/doctor';
+import { runDoctor } from '../src/discovery/doctor';
+import { spellingsOf } from '../src/discovery/remediation-steps';
 import { RESOURCE_KIND, SENSITIVITY } from '../src/discovery/discovery.constants';
 import type { MachineReader } from '../src/discovery/ports';
 import type { Surface } from '../src/discovery/surface';

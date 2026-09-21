@@ -1,11 +1,12 @@
 import { CHANGE_DIRECTION, CHANGE_SUBJECT } from './discovery.constants';
-import type { EnvironmentChange, EnvironmentSnapshot } from './snapshot';
+import { isCredentialExposure, isWriteCapable } from './fail-on';
+import type { EnvironmentSnapshot } from './snapshot';
+import type { EnvironmentChange } from './snapshot-changes';
 
 /**
- * The handful of changes worth interrupting somebody for. Everything else `diff` will
- * still show; an alert that fires on every ordinary install is one people turn off.
+ * The handful of changes worth interrupting somebody for, because an alert that fires on
+ * every ordinary install is one people turn off. Everything else `diff` still shows.
  */
-
 export const ALERT = {
   /** A credential became visible to something here. The one people page about. */
   CREDENTIAL_EXPOSED: 'credential-exposed',
@@ -30,58 +31,49 @@ export interface Alert {
   next: string;
 }
 
-const WRITE_EFFECTS = ['write', 'destructive'];
-
 export function alertsFor(changes: readonly EnvironmentChange[]): Alert[] {
-  const alerts: Alert[] = [];
-  for (const change of changes) {
-    if (change.direction !== CHANGE_DIRECTION.WIDENS) continue;
+  return changes.flatMap((change) => {
+    if (change.direction !== CHANGE_DIRECTION.WIDENS) return [];
+    const alert = alertFor(change);
+    return alert === null ? [] : [alert];
+  });
+}
 
-    if (
-      change.subject === CHANGE_SUBJECT.RESOURCE &&
-      (change.detail.includes('secret') || change.detail.includes('credential'))
-    ) {
-      alerts.push({
-        kind: ALERT.CREDENTIAL_EXPOSED,
-        name: change.name,
-        headline: `${change.name} is now reachable by an agent on this machine`,
-        next: `memnox explain "${change.name}"`,
-      });
-      continue;
-    }
-    if (change.subject === CHANGE_SUBJECT.SERVER) {
-      alerts.push({
-        kind: ALERT.NEW_SERVER,
-        name: change.name,
-        headline: `a new MCP server, ${change.name}, was added`,
-        next: `memnox scan --mcp ${change.name}`,
-      });
-      continue;
-    }
-    /* A new role is a new principal, and it arrives without any config a client
-       reads changing, so nothing else on this list would ever fire for it. */
-    if (change.subject === CHANGE_SUBJECT.HARNESS) {
-      alerts.push({
-        kind: ALERT.HARNESS_WIDENED,
-        name: change.name,
-        headline: `${change.name} now runs more than it did: ${change.detail}`,
-        next: `memnox explain ${change.name}`,
-      });
-      continue;
-    }
-    if (
-      change.subject === CHANGE_SUBJECT.TOOL &&
-      WRITE_EFFECTS.some((effect) => change.detail.includes(effect))
-    ) {
-      alerts.push({
-        kind: ALERT.NEW_WRITE_TOOL,
-        name: change.name,
-        headline: `${change.name} can change something outside this machine`,
-        next: 'memnox protect',
-      });
-    }
+/** The first kind that fits, in order of how urgently somebody should hear it. */
+function alertFor(change: EnvironmentChange): Alert | null {
+  const name = change.name;
+  if (isCredentialExposure(change)) {
+    return {
+      kind: ALERT.CREDENTIAL_EXPOSED,
+      name,
+      headline: `${name} is now reachable by an agent on this machine`,
+      next: `memnox explain "${name}"`,
+    };
   }
-  return alerts;
+  if (change.subject === CHANGE_SUBJECT.SERVER) {
+    return {
+      kind: ALERT.NEW_SERVER,
+      name,
+      headline: `a new MCP server, ${name}, was added`,
+      next: `memnox scan --mcp ${name}`,
+    };
+  }
+  // A new role arrives without any client config changing, so nothing else here fires for it.
+  if (change.subject === CHANGE_SUBJECT.HARNESS) {
+    return {
+      kind: ALERT.HARNESS_WIDENED,
+      name,
+      headline: `${name} now runs more than it did: ${change.detail}`,
+      next: `memnox explain ${name}`,
+    };
+  }
+  if (!isWriteCapable(change)) return null;
+  return {
+    kind: ALERT.NEW_WRITE_TOOL,
+    name,
+    headline: `${name} can change something outside this machine`,
+    next: 'memnox protect',
+  };
 }
 
 export interface VersionChange {
@@ -102,11 +94,6 @@ export function agentUpdates(
   after: EnvironmentSnapshot,
 ): VersionChange[] {
   const changes: VersionChange[] = [];
-  const countFor = (snapshot: EnvironmentSnapshot, agentId: string): number =>
-    snapshot.servers
-      .filter((server) => server.agentIds.includes(agentId))
-      .reduce((total, server) => total + server.tools.length, 0);
-
   for (const agent of after.agents) {
     const previous = before.agents.find((each) => each.id === agent.id);
     if (previous === undefined) continue;
@@ -116,20 +103,26 @@ export function agentUpdates(
       agent: agent.kind,
       before: previous.version ?? 'unknown',
       after: agent.version ?? 'unknown',
-      capabilitiesBefore: countFor(before, agent.id),
-      capabilitiesAfter: countFor(after, agent.id),
+      capabilitiesBefore: toolCountFor(before, agent.id),
+      capabilitiesAfter: toolCountFor(after, agent.id),
     });
   }
   return changes;
 }
 
+function toolCountFor(snapshot: EnvironmentSnapshot, agentId: string): number {
+  return snapshot.servers
+    .filter((server) => server.agentIds.includes(agentId))
+    .reduce((total, server) => total + server.tools.length, 0);
+}
+
 export function describeUpdate(change: VersionChange): string {
   const delta = change.capabilitiesAfter - change.capabilitiesBefore;
-  const direction =
-    delta > 0
-      ? `and came back with ${delta} more capability(ies)`
-      : delta < 0
-        ? `and came back with ${Math.abs(delta)} fewer`
-        : 'with the same capabilities';
-  return `${change.agent} updated ${change.before} → ${change.after} ${direction} (${change.capabilitiesBefore} → ${change.capabilitiesAfter})`;
+  return `${change.agent} updated ${change.before} → ${change.after} ${describeDelta(delta)} (${change.capabilitiesBefore} → ${change.capabilitiesAfter})`;
+}
+
+function describeDelta(delta: number): string {
+  if (delta > 0) return `and came back with ${delta} more capability(ies)`;
+  if (delta < 0) return `and came back with ${Math.abs(delta)} fewer`;
+  return 'with the same capabilities';
 }

@@ -2,14 +2,12 @@ import type { MachineReader } from './ports';
 
 /**
  * A browser driver with a persistent profile is the quietest credential on the machine:
- * no file called `credentials`, no token in an env var, and every site the person is
- * still logged into. An agent that can drive it is already inside every one of them.
+ * an agent that can drive it is inside every site the person is still logged into.
  */
-
 export interface BrowserFinding {
   /** playwright, puppeteer, or whatever drove it. */
   driver: string;
-  /** What proved it — a package directory, never an inference from a name. */
+  /** What proved it: a package directory, never an inference from a name. */
   detectedFrom: string;
   /** A profile that survives between runs, which is what carries the logins. */
   persistentProfile?: string;
@@ -35,18 +33,20 @@ const PROFILE_PATHS: readonly string[] = [
   '.cache/ms-playwright',
 ];
 
+/** Roughly what each stored origin adds to Chromium's `Login Data`, so a count is an estimate. */
+const BYTES_PER_LOGIN = 350;
+/** What an empty `Login Data` store already weighs. */
+const LOGIN_STORE_HEADER_BYTES = 20_000;
+
 /**
- * Counted from the profile's own metadata rather than read: the file holding logins is
- * an encrypted store, and opening it would be the one thing this product must not do.
- * What is available is how many origins it has entries for.
+ * Estimated from the store's size rather than read, because the file holding logins is
+ * encrypted and opening it is the one thing this product must not do.
  */
 export function countLogins(loginDataSize: number): number {
-  /* Chromium's Login Data is SQLite. Every stored origin adds roughly this much, so
-     the count is an estimate and is presented as one — a precise number here would be
-     a claim about a file we deliberately did not parse. */
-  const BYTES_PER_LOGIN = 350;
-  const HEADER_BYTES = 20_000;
-  return Math.max(0, Math.round((loginDataSize - HEADER_BYTES) / BYTES_PER_LOGIN));
+  return Math.max(
+    0,
+    Math.round((loginDataSize - LOGIN_STORE_HEADER_BYTES) / BYTES_PER_LOGIN),
+  );
 }
 
 export async function findBrowserAutomation(
@@ -132,9 +132,8 @@ export function navigationHost(url: string): string | null {
 }
 
 /**
- * The launchers worth standing in front of. A browser driver arrives at a site with the
- * person's own session cookie, so what it reaches is not "a page" — it is every account
- * they are signed into. These get an interceptor wherever the machine has them.
+ * The launchers worth standing in front of, because a driver arrives at a site with the
+ * person's own session cookie. Each gets an interceptor wherever the machine has it.
  */
 export const BROWSER_LAUNCHERS: readonly string[] = [
   'chromium',

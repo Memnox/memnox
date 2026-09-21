@@ -2,6 +2,10 @@ import type { DiscoveredAgent } from '../agent';
 import type { MachineReader } from '../ports';
 import type { Surface } from '../surface';
 
+/**
+ * What every agent detector answers. A detector proves an agent from files on disk and
+ * names them, and never guesses from a name somebody would act on and cannot verify.
+ */
 export interface DetectionResult {
   agent: DiscoveredAgent;
   surfaces: Surface[];
@@ -10,9 +14,8 @@ export interface DetectionResult {
 }
 
 /**
- * What a harness runs underneath itself. Named separately from the agent because a
- * harness is one row on the roster and several principals at the seam, and conflating
- * the two is how a swarm gets counted as a single agent.
+ * What a harness runs underneath itself. Separate from the agent, because a harness is
+ * one row on the roster and several principals at the seam.
  */
 export interface HostedAgents {
   /** Kinds it drives, as its own config named them. Never inferred from the binary. */
@@ -36,9 +39,8 @@ export interface DetectionContext {
 }
 
 /**
- * One module per product's config layout, versioned separately because those layouts
- * change without notice. A single upstream rename must empty one detector, never the
- * whole screen, so a detector that finds nothing returns nothing and says so.
+ * One module per product's config layout, versioned because those layouts change without
+ * notice. An upstream rename empties one detector and never the whole screen.
  */
 export interface AgentDetector {
   readonly kind: string;

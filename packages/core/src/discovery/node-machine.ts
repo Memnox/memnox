@@ -28,7 +28,7 @@ export class NodeMachineReader implements MachineReader {
     try {
       return await readFile(path, 'utf8');
     } catch {
-      // Absent, a directory, or no permission — all of them mean "nothing to read".
+      // Absent, a directory, or no permission: all of them mean nothing to read.
       return null;
     }
   }

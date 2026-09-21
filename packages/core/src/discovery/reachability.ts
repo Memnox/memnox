@@ -3,6 +3,10 @@ import { classifyResourceKind, type Resource } from './resource';
 import type { Surface } from './surface';
 import { TRANSITIVE_SURFACES, type SurfaceKind } from './discovery.constants';
 
+/**
+ * Which agents can reach which resources, joined from what the probes proved, and counted
+ * once per agent per resource so one fact never carries two numbers.
+ */
 export interface Reachability {
   agentId: string;
   /** Counts and names, never percentages: a percentage has no denominator here. */
@@ -70,10 +74,8 @@ export function attributeResources(
 }
 
 /**
- * Which agents reach a path that nothing opened as a resource — the credential list.
- * Counted off the same table the reachable block reads, because the screen printed
- * `~/.ssh/id_ed25519  5 agents` in one section and `4 agents` in another, and a reader
- * who catches two numbers for one file stops believing both.
+ * Which agents reach a credential path, counted off the same table the reachable block
+ * reads, so one file cannot carry two different counts on one screen.
  */
 export function agentsReachingPath(
   path: string,

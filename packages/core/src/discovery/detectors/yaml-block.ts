@@ -1,7 +1,8 @@
+import { findOutsideQuotes, flowItems, splitKey, unquote } from '../scalar-text';
+
 /**
- * Enough YAML to read a config's server block, and deliberately no more. A full parser
- * is a dependency and an attack surface for a file we only ever read four keys out of;
- * a shape this does not understand comes back empty, which is absence rather than a guess.
+ * Enough YAML to read a config's server block, because a full parser is a dependency
+ * and an attack surface for four keys. A shape this does not understand comes back empty.
  */
 export interface YamlBlock {
   /** The scalar on the key's own line, when it had one. */
@@ -39,20 +40,11 @@ function readable(raw: string): Line[] {
 
 /** A `#` inside quotes is data. Anywhere else on the line it starts a comment. */
 function withoutComment(line: string): string {
-  let quote: string | null = null;
-  for (let at = 0; at < line.length; at += 1) {
-    const char = line[at] as string;
-    if (quote !== null) {
-      if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === '#' && (at === 0 || line[at - 1] === ' ')) return line.slice(0, at);
-  }
-  return line;
+  const at = findOutsideQuotes(
+    line,
+    (char, index) => char === '#' && (index === 0 || line[index - 1] === ' '),
+  );
+  return at === -1 ? line : line.slice(0, at);
 }
 
 /** Consumes every line indented deeper than the parent, and returns where it stopped. */
@@ -73,7 +65,7 @@ function build(
       continue;
     }
 
-    const colon = keySplit(line.text);
+    const colon = splitKey(line.text);
     if (colon === null) {
       index += 1;
       continue;
@@ -92,34 +84,6 @@ function build(
     }
   }
   return index;
-}
-
-function keySplit(text: string): [string, string] | null {
-  const at = text.indexOf(':');
-  if (at <= 0) return null;
-  const key = text.slice(0, at).trim();
-  if (key === '') return null;
-  return [unquote(key), text.slice(at + 1).trim()];
-}
-
-/** `[a, "b", c]` on one line, which is how tool filters are usually written. */
-function flowItems(text: string): string[] {
-  const inner = text.slice(
-    1,
-    text.lastIndexOf(']') === -1 ? undefined : text.lastIndexOf(']'),
-  );
-  return inner
-    .split(',')
-    .map((each) => unquote(each.trim()))
-    .filter((each) => each !== '');
-}
-
-function unquote(text: string): string {
-  const first = text[0];
-  if ((first === '"' || first === "'") && text.endsWith(first) && text.length > 1) {
-    return text.slice(1, -1);
-  }
-  return text;
 }
 
 export function blockAt(root: YamlBlock, ...path: readonly string[]): YamlBlock | null {

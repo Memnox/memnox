@@ -63,10 +63,8 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
 ];
 
 /**
- * Products whose config needs real parsing. Codex is TOML, Hermes is YAML, OpenClaw is
- * JSON with comments, and Ruflo lives beside the work rather than in the home
- * directory. The data-driven detector reads servers with a JSON parser, so against any
- * of these it would find nothing and say nothing — which is worse than not trying.
+ * Products whose config the data-driven JSON reader would find nothing in: Codex is TOML,
+ * Hermes is YAML, OpenClaw is JSON with comments, and Ruflo sits beside the work.
  */
 const PARSING_DETECTORS: readonly AgentDetector[] = [
   new CodexDetector(),
@@ -81,9 +79,8 @@ export const DEFAULT_DETECTORS: readonly AgentDetector[] = [
 ];
 
 /**
- * The directories whose change means an agent's reach may have changed. Directories
- * rather than files, because a config that does not exist yet cannot be watched and a
- * newly added MCP config is exactly the case worth catching.
+ * The directories whose change means an agent's reach may have changed. Directories,
+ * because a config that does not exist yet cannot be watched and is the case worth catching.
  */
 export function watchablePaths(home: string): string[] {
   const paths = new Set<string>();
@@ -92,21 +89,14 @@ export function watchablePaths(home: string): string[] {
       paths.add(relative.includes('/') ? dirname(join(home, relative)) : home);
     }
   }
-  /* A product with its own parser is not in the spec list, so its directory is added
-     here: a harness adds agents without touching any client config, and Codex's
-     config would otherwise be watched by nothing at all. */
+  // A product with its own parser is not in the spec list, so its directory is added here.
   for (const relative of PARSED_CONFIG_DIRS) paths.add(join(home, relative));
   return [...paths].sort();
 }
 
 /**
- * Directories the parsing detectors read, watched so a new server or role is an event,
- * plus the directories definitions are installed into.
- *
- * A definition directory is watched for the same reason a config is: what an agent may
- * do changed and no config records it. `~/.claude` is already covered by the bare
- * `.claude.json` above, and the rest are here because nothing else on this list would
- * bring them in.
+ * Directories the parsing detectors read, plus those definitions are installed into,
+ * since either changes what an agent may do. `~/.claude` is covered by `.claude.json`.
  */
 const PARSED_CONFIG_DIRS: readonly string[] = [
   '.hermes',

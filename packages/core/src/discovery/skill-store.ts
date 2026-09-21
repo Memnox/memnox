@@ -4,6 +4,7 @@ import { MEMNOX_HOME } from '../config/config';
 import type { AcceptedSkill } from './skills';
 import { writeJsonAtomic } from '../store/atomic-file';
 
+/** Where the skills a person has accepted are kept, so a widened one can be told apart. */
 const SKILL_FILE = 'skills.json';
 
 export function skillPathFor(home: string): string {
@@ -14,6 +15,7 @@ export function skillPathFor(home: string): string {
 export async function readAcceptedSkills(home: string): Promise<AcceptedSkill[]> {
   try {
     const parsed: unknown = JSON.parse(await readFile(skillPathFor(home), 'utf8'));
+    // Written by `writeAcceptedSkills` and never edited by hand.
     return Array.isArray(parsed) ? (parsed as AcceptedSkill[]) : [];
   } catch {
     return [];

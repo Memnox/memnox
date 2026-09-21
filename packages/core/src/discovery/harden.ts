@@ -1,6 +1,10 @@
 import type { Finding, HardenChange, HardenStep } from './finding';
 import type { HardenWriter } from './ports';
 
+/**
+ * The changes that would close what the doctor found, as a plan, each step carrying its
+ * own undo because a fix that cannot be taken back is one people will not apply.
+ */
 export interface HardenPlan {
   steps: HardenStep[];
   /** Printed before anything runs: the undo is visible first, always. */

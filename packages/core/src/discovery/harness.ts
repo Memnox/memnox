@@ -3,13 +3,8 @@ import { isHarnessKind, type DiscoveredAgentKind } from './discovery.constants';
 import type { HostedAgents } from './detectors/detector';
 
 /**
- * A harness runs other agents. Hermes, OpenClaw and Ruflo each sit between a person
- * and a runtime, so the roster has to say so: one row that reads like Claude Code but
- * launches nine roles is the difference between a report and a wrong report.
- *
- * Memnox does not replace what any of them already enforce. Each one filters its own
- * tools and each one is right to; what none of them can see is the other two, the
- * credentials on the disk underneath, and the shell all three share.
+ * A harness runs other agents, so the roster says so: one row reading like Claude Code
+ * while launching nine roles is a wrong report.
  */
 export interface Harness {
   agentId: string;
@@ -48,11 +43,8 @@ export function harnessOf(
   };
 }
 
-/**
- * How many principals a harness really is. One, when it defines no roles — a harness
- * with nothing under it is still a harness, and saying "0 agents" would read as absent.
- */
-export function principalCount(harness: Harness): number {
+/** How many principals a harness really is, and one when it defines no roles, since zero reads as absent. */
+export function principalCount(harness: Pick<Harness, 'roles'>): number {
   return Math.max(1, harness.roles.length);
 }
 

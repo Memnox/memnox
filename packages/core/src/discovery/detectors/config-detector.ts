@@ -1,11 +1,15 @@
 import { join } from 'node:path';
-import type { DiscoveredAgent } from '../agent';
 import type { DiscoveredAgentKind, SurfaceKind } from '../discovery.constants';
 import type { MachineReader } from '../ports';
-import type { Surface } from '../surface';
+import type { McpServerLaunch, Surface } from '../surface';
+import { buildDetectedAgent, buildMcpSurfaces, buildSurfaces } from './detected-agent';
 import type { AgentDetector, DetectionContext, DetectionResult } from './detector';
 import { readMcpServers } from './mcp-config';
 
+/**
+ * The detector most agents need: a config path, a JSON servers key, and nothing else.
+ * A client that keeps JSON is a row of data; one needing real parsing gets its own module.
+ */
 export interface ConfigDetectorSpec {
   kind: DiscoveredAgentKind;
   layoutVersion: string;
@@ -19,10 +23,6 @@ export interface ConfigDetectorSpec {
   mcpConfigPath?: string;
 }
 
-/**
- * Most detectors differ only in which files to look at and what the product can do
- * by construction, so they are data. A product needing real parsing gets its own module.
- */
 export class ConfigDetector implements AgentDetector {
   readonly kind: string;
   readonly layoutVersion: string;
@@ -46,43 +46,26 @@ export class ConfigDetector implements AgentDetector {
     }
     if (found.length === 0) return null;
 
-    const agent: DiscoveredAgent = {
-      id: `agt_${this.spec.kind}`,
+    const agent = buildDetectedAgent({
       kind: this.spec.kind,
       configPaths: found,
       clients: [...this.spec.clients],
-      ownerHint: reader.userName(),
-      firstSeen: now,
-      lastSeen: now,
-    };
-
-    const evidence = found[0] ?? home;
-    const surfaces: Surface[] = this.spec.inherentSurfaces.map((kind) => ({
-      agentId: agent.id,
-      kind,
-      detectedFrom: evidence,
-    }));
-
-    const mcpPath = this.spec.mcpConfigPath;
-    if (mcpPath !== undefined) {
-      const full = join(home, mcpPath);
-      const servers = readMcpServers(await reader.read(full));
-      if (servers.length > 0) {
-        // The launch lines travel so the tools can be asked for over the protocol.
-        surfaces.push({
-          agentId: agent.id,
-          kind: 'mcp',
-          detectedFrom: full,
-          tools: [],
-          servers: servers.map((server) => ({
-            ...server,
-            args: [...server.args],
-            env: [...server.env],
-          })),
-        });
-      }
-    }
-
+      reader,
+      now,
+    });
+    const surfaces = [
+      ...buildSurfaces(agent.id, this.spec.inherentSurfaces, found[0] ?? home),
+      ...(await this.mcpSurfaces(reader, agent.id)),
+    ];
     return { agent, surfaces };
+  }
+
+  /** The launch lines travel so the tools can be asked for over the protocol. */
+  private async mcpSurfaces(reader: MachineReader, agentId: string): Promise<Surface[]> {
+    const mcpPath = this.spec.mcpConfigPath;
+    if (mcpPath === undefined) return [];
+    const full = join(reader.homeDir(), mcpPath);
+    const servers: McpServerLaunch[] = readMcpServers(await reader.read(full));
+    return buildMcpSurfaces(agentId, full, servers);
   }
 }

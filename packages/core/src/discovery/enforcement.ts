@@ -1,17 +1,8 @@
 import { SURFACE_KIND, type SurfaceKind } from './discovery.constants';
 
 /**
- * Whether a seam actually refuses something, proved by asking it to.
- *
- * `doctor --wiring` reads configuration and answers "is this installed". That is a
- * different question, and the gap between the two is where this product fails badly:
- * `mcp wrap` once repointed every server at a proxy that came up with no rules and
- * forwarded everything, while the wiring check reported all servers routed. Routed is
- * not governed, installed is not enforcing, and a readout nobody can trust is worse
- * than no readout — the whole proposition is that you can stop watching the agent.
- *
- * So this plants a rule, attempts the thing the rule forbids, and reports what came
- * back. Nothing here infers: a seam is enforcing because it refused, or it is not.
+ * Whether a seam actually refuses something, proved by planting a rule and attempting what
+ * it forbids, because installed is not governed and nothing here is inferred.
  */
 export const PROOF = {
   /** It was asked to refuse and it refused. */
@@ -65,11 +56,8 @@ export function summarizeProof(proofs: readonly SeamProof[]): {
 }
 
 /**
- * Non-zero when a seam that was asked to refuse did not.
- *
- * Absent and unproven never fail the command: a machine that has not installed the
- * egress proxy must not have its CI go red for it, or people install nothing and turn
- * the check off. Only a seam that was in place and let the action through is a failure.
+ * True when a seam that was asked to refuse did not. Absent and unproven never fail, so a
+ * machine without the egress proxy does not turn CI red for it.
  */
 export function enforcementFailed(proofs: readonly SeamProof[]): boolean {
   return summarizeProof(proofs).failed > 0;

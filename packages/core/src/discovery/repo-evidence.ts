@@ -1,9 +1,9 @@
-/**
- * What this repository already says about itself, read through a CLI the reader is
- * already logged into. `why` prints it beside a refusal so the rule is not the only
- * thing standing behind the answer — branch protection is a fact somebody else set.
- */
+import { minutesToMs } from '../domain/time';
 
+/**
+ * What this repository already says about itself, read through a CLI the reader is logged
+ * into, so `why` can print a fact somebody else set beside a refusal.
+ */
 export interface RepoEvidence {
   /** Required approving reviews, when the forge reports one. */
   requiredReviews?: number;
@@ -11,14 +11,7 @@ export interface RepoEvidence {
   protected?: boolean;
   /** Present when CODEOWNERS covers the path in question. */
   codeowners?: string;
-  /**
-   * The open pull request for this branch, when there is one.
-   *
-   * "Technically it can, and the change is not approved" is the commonest honest
-   * refusal there is, and it is answerable on a laptop: the forge already knows, and
-   * the reader is already logged into it. Slack and a ticket tracker are not here and
-   * are not coming; this is the part of the same question a local runtime can answer.
-   */
+  /** The open pull request for this branch, since not approved is the commonest honest refusal. */
   pullRequest?: PullRequestState;
   /** Where it came from and when, because cached evidence must say it is cached. */
   source: string;
@@ -47,7 +40,7 @@ export const EVIDENCE_TTL_MINUTES = 10;
 
 export function isFresh(evidence: RepoEvidence, now: Date): boolean {
   const age = now.getTime() - Date.parse(evidence.fetchedAt);
-  return age < EVIDENCE_TTL_MINUTES * 60_000;
+  return age < minutesToMs(EVIDENCE_TTL_MINUTES);
 }
 
 interface ProtectionPayload {
@@ -68,11 +61,12 @@ export function readProtection(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Not JSON — gh prints an error here when the branch is unprotected.
+    // Not JSON, because gh prints an error here when the branch is unprotected.
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
 
+  // Every field is optional and checked where it is read.
   const payload = parsed as ProtectionPayload;
   const reviews = payload.required_pull_request_reviews?.required_approving_review_count;
 
@@ -84,7 +78,6 @@ export function readProtection(
   };
 }
 
-/** Finds the CODEOWNERS entry covering a path, or null. Read from the file, not guessed. */
 interface PullRequestPayload {
   number?: unknown;
   reviewDecision?: unknown;
@@ -98,11 +91,8 @@ const DECISIONS: Readonly<Record<string, ReviewDecision>> = {
 };
 
 /**
- * Parsed rather than trusted, and every field is allowed to be absent.
- *
- * A forge that did not report a review decision means unknown, and printing "not
- * approved" about a repository whose reviews we could not read would be the same
- * reassurance-in-reverse that `readProtection` refuses to give about protection.
+ * Parsed rather than trusted, every field allowed to be absent: an unreported review
+ * decision is unknown, never not approved.
  */
 export function readPullRequest(
   raw: string,
@@ -117,6 +107,7 @@ export function readPullRequest(
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
+  // Every field is optional and checked where it is read.
   const payload = parsed as PullRequestPayload;
   if (typeof payload.number !== 'number') return null;
 
@@ -125,16 +116,7 @@ export function readPullRequest(
       ? DECISIONS[payload.reviewDecision]
       : undefined;
 
-  const checks = Array.isArray(payload.statusCheckRollup)
-    ? payload.statusCheckRollup
-    : undefined;
-  /* Every check has to have concluded successfully. One still running is not passing,
-     and calling it passing is how a gate waves through a build that later failed. */
-  const checksPassing =
-    checks === undefined || checks.length === 0
-      ? undefined
-      : checks.every((check) => check.conclusion === 'SUCCESS');
-
+  const checksPassing = checksPassingIn(payload.statusCheckRollup);
   return {
     pullRequest: {
       number: payload.number,
@@ -146,6 +128,18 @@ export function readPullRequest(
   };
 }
 
+/**
+ * Every check has to have concluded successfully, because one still running is how a
+ * gate waves through a build that later failed. Absent when none ran.
+ */
+function checksPassingIn(
+  rollup: PullRequestPayload['statusCheckRollup'],
+): boolean | undefined {
+  if (!Array.isArray(rollup) || rollup.length === 0) return undefined;
+  return rollup.every((check) => check.conclusion === 'SUCCESS');
+}
+
+/** The CODEOWNERS entry covering a path, or null. Read from the file, never guessed. */
 export function codeownersFor(contents: string, path: string): string | null {
   for (const line of contents.split('\n')) {
     const text = line.trim();
@@ -174,23 +168,26 @@ export function describeEvidence(evidence: RepoEvidence): string[] {
     lines.push(`CODEOWNERS: ${evidence.codeowners}`);
   }
 
-  const pr = evidence.pullRequest;
-  if (pr !== undefined) {
-    /* Said as what the forge reports, not as a verdict. "Not approved" about a
-       repository whose reviews we could not read is the one line here that would
-       be worse than saying nothing. */
-    const decision =
-      pr.decision === undefined
-        ? 'no review decision reported'
-        : pr.decision === REVIEW_DECISION.APPROVED
-          ? 'approved'
-          : pr.decision === REVIEW_DECISION.CHANGES_REQUESTED
-            ? 'changes requested'
-            : 'open and not approved';
-    lines.push(`pull request #${pr.number}: ${decision} (${evidence.source})`);
-    if (pr.checksPassing !== undefined) {
-      lines.push(pr.checksPassing ? 'checks: all passing' : 'checks: not all passing');
+  const pullRequest = evidence.pullRequest;
+  if (pullRequest !== undefined) {
+    const decision = describeDecision(pullRequest.decision);
+    lines.push(`pull request #${pullRequest.number}: ${decision} (${evidence.source})`);
+    if (pullRequest.checksPassing !== undefined) {
+      lines.push(
+        pullRequest.checksPassing ? 'checks: all passing' : 'checks: not all passing',
+      );
     }
   }
   return lines;
+}
+
+/**
+ * What the forge reports, never a verdict: "not approved" about reviews that could not be
+ * read would be worse than saying nothing.
+ */
+function describeDecision(decision: ReviewDecision | undefined): string {
+  if (decision === undefined) return 'no review decision reported';
+  if (decision === REVIEW_DECISION.APPROVED) return 'approved';
+  if (decision === REVIEW_DECISION.CHANGES_REQUESTED) return 'changes requested';
+  return 'open and not approved';
 }

@@ -5,10 +5,10 @@ import {
   planWrap,
   type ServerLaunch,
   PROXY_BINARY,
-  serversKeyOf,
   unwrapLaunch,
   wrapLaunch,
 } from '../src/discovery/wrap';
+import { serversKeyOf } from '../src/discovery/mcp-keys';
 
 const GITHUB = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] };
 

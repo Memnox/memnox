@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { discover } from '../src/discovery/discover';
-import { countBySeverity, rankAgents, runDoctor } from '../src/discovery/doctor';
+import { rankAgents } from '../src/discovery/agent-standing';
+import { runDoctor } from '../src/discovery/doctor';
+import { countBySeverity } from '../src/discovery/finding';
 import {
   applyHardening,
   compareFindings,

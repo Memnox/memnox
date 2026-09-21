@@ -1,30 +1,23 @@
 import { join } from 'node:path';
-import type { DiscoveredAgent, AgentRef } from './agent';
-import { agentRefOf } from './agent';
-import type { AgentDetector, DetectionContext } from './detectors/detector';
-import { DEFAULT_DETECTORS } from './detectors/index';
-import { harnessOf, type Harness } from './harness';
-import { chainsFor, type AgentChains } from './composition';
-import type { MachineReader, McpLister } from './ports';
-import { discoverDefinitions, type DiscoveredSkill } from './skills';
-import {
-  classifyResourceKind,
-  classifySensitivity,
-  fingerprint,
-  type Resource,
-} from './resource';
-import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
-import { distinctTools, passesFilter, toMcpTool, type Surface } from './surface';
-import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
+import { agentRefOf, type AgentRef, type DiscoveredAgent } from './agent';
 import { findBrowserAutomation, type BrowserFinding } from './browser';
+import { chainsFor, type AgentChains } from './composition';
 import {
   authenticatedClis,
   findCredentials,
-  type AuthenticatedCli,
   findEnvFiles,
+  FINGERPRINTED_HOME_PATHS,
+  PROJECT_CREDENTIAL_FILES,
+  type AuthenticatedCli,
   type CredentialFinding,
   type EnvFinding,
 } from './credentials';
+import type { AgentDetector, DetectionContext } from './detectors/detector';
+import { DEFAULT_DETECTORS } from './detectors/index';
+import { SENSITIVITY, SURFACE_KIND } from './discovery.constants';
+import { harnessOf, type Harness } from './harness';
+import { probeNetwork, SANDBOX_PATHS, type NetworkProbe } from './network';
+import type { MachineReader, McpLister } from './ports';
 import {
   databasesIn,
   detectTools,
@@ -36,36 +29,36 @@ import {
   computeReachability,
   type Reachability,
 } from './reachability';
+import {
+  classifyResourceKind,
+  classifySensitivity,
+  fingerprint,
+  type Resource,
+} from './resource';
+import { discoverDefinitions, type DiscoveredSkill } from './skills';
+import {
+  distinctTools,
+  passesFilter,
+  toMcpTool,
+  type McpServerLaunch,
+  type McpToolDeclaration,
+  type Surface,
+} from './surface';
 
-/** Paths worth opening. Every one of them is read to be protected, never to be kept. */
-const CREDENTIAL_PATHS: readonly string[] = [
-  '.aws/credentials',
-  '.ssh/id_rsa',
-  '.ssh/id_ed25519',
-  '.kube/config',
-  '.docker/config.json',
-  '.npmrc',
-  '.netrc',
-  '.env',
-];
+/**
+ * The whole scan, read off the disk: agents, what they act through, what they reach, and
+ * the credentials under them. Nothing is transmitted, and nothing dials outward.
+ */
 
 /** Sockets an agent with a shell can drive, which is the whole host. */
 const SOCKET_PATHS: readonly string[] = ['/var/run/docker.sock'];
-
-/** Credential files that live beside the work rather than in the home directory. */
-const PROJECT_CREDENTIAL_FILES: readonly string[] = [
-  '.env',
-  '.env.local',
-  '.env.production',
-  '.npmrc',
-];
 
 /** A checkout is a resource in its own right: an agent with it can push. */
 const REPOSITORY_MARKER = '.git';
 
 export interface DiscoveryReport {
   agents: DiscoveredAgent[];
-  surfaces: Surface[];
+  surfaces: readonly Surface[];
   resources: Resource[];
   reachability: Reachability[];
   /** What was opened and why, so the tool that inspects credentials is itself inspectable. */
@@ -84,21 +77,13 @@ export interface DiscoveryReport {
   browsers: BrowserFinding[];
   /** `.env` files in the directories worked in: counts of variables and key-like names. */
   envFiles: EnvFinding[];
-  /**
-   * Agents that run other agents. One row on the roster and several principals at the
-   * seam, which is the difference between counting a swarm and counting its author.
-   */
+  /** Agents that run other agents: one row on the roster and several principals at the seam. */
   harnesses: Harness[];
-  /**
-   * Paths no single tool opens and a set of them does. Per-agent, because a chain
-   * needs one principal able to walk all of it.
-   */
+  /** Paths a set of tools opens that no single one does, per agent that can walk all of it. */
   combined: AgentChains[];
   /**
-   * Skills an agent wrote for itself and personas somebody installed into it, each with
-   * the tool grant its own header states. Not in `read`, because every one of them
-   * carries its own path here and three hundred rows would bury the credentials that
-   * list exists for.
+   * Skills and installed personas, each with the tool grant its own header states. Kept
+   * out of `read`, where three hundred paths would bury the credentials.
    */
   definitions: DiscoveredSkill[];
 }
@@ -107,215 +92,217 @@ export interface DiscoveryOptions {
   detectors?: readonly AgentDetector[];
   /** Supplied rather than read, so discovery stays a function of what it was given. */
   env?: NodeJS.ProcessEnv;
-  /**
-   * Directories the reader actually works in. The home directory holds the credentials
-   * a person has; these hold the ones a repository has, and the doc's opening screen
-   * counts both.
-   */
+  /** Directories the reader works in, which hold the credentials a repository has. */
   projectDirs?: readonly string[];
   /** Injected so a report is reproducible; never read off a clock inside the run. */
   now: string;
   /**
-   * Omit and every MCP surface reports its servers with no tools, which is honest and
-   * useless. Supplied, each server is started and asked — the only thing here that
-   * runs somebody else's code, so the caller decides.
+   * Supplied, each server is started and asked what it holds, the only thing here that
+   * runs somebody else's code. Omitted, every MCP surface reports no tools.
    */
   lister?: McpLister;
 }
 
 /**
- * Read off the disk, which is the only aggregate true at minute zero. Nothing is
- * transmitted and nothing opens a socket outward; with a lister it does start the MCP
- * servers this machine already launches, and names each one it started.
+ * The only aggregate true at minute zero. With a lister it starts the MCP servers this
+ * machine already launches, and names each one it started.
  */
 export async function discover(
   reader: MachineReader,
   options: DiscoveryOptions,
 ): Promise<DiscoveryReport> {
-  const detectors = options.detectors ?? DEFAULT_DETECTORS;
-  const agents: DiscoveredAgent[] = [];
-  const surfaces: Surface[] = [];
-  const harnesses: Harness[] = [];
-  const context: DetectionContext = { projectDirs: options.projectDirs ?? [] };
-
-  for (const detector of detectors) {
-    const found = await detector.detect(reader, options.now, context);
-    if (found === null) continue;
-    agents.push(found.agent);
-    surfaces.push(...found.surfaces);
-    const harness = harnessOf(found.agent, found.hosted);
-    if (harness !== null) harnesses.push(harness);
-  }
-
-  const probed = await enumerateTools(surfaces, options.lister);
+  const detected = await runDetectors(reader, options);
+  const { surfaces, probed } = await probeServers(detected.surfaces, options.lister);
   const { resources, read } = await scanResources(reader, options.projectDirs ?? []);
-
   // Derived from the surfaces already found, never asserted on its own.
   const network = networkReach(surfaces);
   if (network !== null) resources.push(network);
 
-  const present: string[] = [];
-  for (const path of SANDBOX_PATHS) {
-    if (await reader.exists(path)) present.push(path);
-  }
-  const egress = probeNetwork({ env: options.env ?? {}, present });
-
-  const tools = await detectTools(reader);
-  const credentials = await findCredentials(reader);
-  /* A binary alone is unremarkable and a credential alone is unremarkable; the pair is
-     what turns "~/.aws/credentials exists" into "can modify infrastructure". */
-  const browsers = await findBrowserAutomation(reader, options.projectDirs ?? []);
-  const envFiles = await findEnvFiles(reader, options.projectDirs ?? []);
-  const authenticated = authenticatedClis(
-    tools.map((tool) => tool.name),
-    credentials,
-    Object.keys(options.env ?? {}),
-  );
-
-  /* Both the home directory and the work: a definition checked into a repository is
-     installed by cloning it, which is the one nobody chose to install at all. */
-  const definitions = await discoverDefinitions(reader, [
-    reader.homeDir(),
-    ...(options.projectDirs ?? []),
-  ]);
-
-  const refs: AgentRef[] = agents.map(agentRefOf);
+  const { definitions, ...facts } = await readMachineFacts(reader, options);
+  const refs: AgentRef[] = detected.agents.map(agentRefOf);
   const reachability = computeReachability(refs, surfaces, resources);
-  const combined = chainsFor(
-    agents.map((agent) => agent.id),
-    surfaces,
-  );
-
   return {
-    agents,
+    agents: detected.agents,
     surfaces,
     resources: attributeResources(resources, reachability, refs),
     reachability,
-    read: [...read, ...egress.read, ...credentials.map((each) => each.path)],
+    read: [...read, ...facts.egress.read, ...facts.credentials.map((each) => each.path)],
     probed,
-    tools,
-    egress,
-    credentials,
-    authenticated,
-    browsers,
-    envFiles,
-    harnesses,
-    combined,
+    ...facts,
+    harnesses: detected.harnesses,
+    combined: chainsFor(
+      detected.agents.map((agent) => agent.id),
+      surfaces,
+    ),
     definitions,
   };
 }
 
-/**
- * Every server, every tool, and whether each tool reads, writes or destroys — which no
- * client shows anywhere. One server that will not start loses its own tools and nobody
- * else's, and what was started is named so the probe is itself inspectable.
- */
-async function enumerateTools(
-  surfaces: Surface[],
-  lister: McpLister | undefined,
-): Promise<string[]> {
-  if (lister === undefined) return [];
+/** What the machine holds under its agents: egress, binaries, credentials and definitions. */
+type MachineFacts = Pick<
+  DiscoveryReport,
+  | 'egress'
+  | 'tools'
+  | 'credentials'
+  | 'authenticated'
+  | 'browsers'
+  | 'envFiles'
+  | 'definitions'
+>;
 
-  /* In parallel, because each handshake carries its own timeout: five servers probed
-     one after another cost five timeouts end to end, and a scan nobody waits for is a
-     scan nobody runs. One server that hangs must not hold up the other four. */
-  const work = surfaces.flatMap((surface) =>
-    // A server its own config disabled is declared and not running; starting it here
-    // would report reach the agent does not have.
-    (surface.servers ?? [])
-      .filter((server) => server.disabled !== true)
-      .map(async (server) => {
-        try {
-          const declared = await lister.listTools(
-            server.name,
-            server.command,
-            server.args,
-          );
-          return { surface, server, declared };
-        } catch {
-          /* A server that will not start is a gap in the report, never a crash. It is
-           still named as present below, because zero tools means unknown. */
-          return { surface, server, declared: [] };
-        }
-      }),
-  );
+async function readMachineFacts(
+  reader: MachineReader,
+  options: DiscoveryOptions,
+): Promise<MachineFacts> {
+  const projectDirs = options.projectDirs ?? [];
+  const egress = probeNetwork({
+    env: options.env ?? {},
+    present: await sandboxMarkers(reader),
+  });
+  const tools = await detectTools(reader);
+  const credentials = await findCredentials(reader);
+  return {
+    tools,
+    egress,
+    credentials,
+    // A binary alone and a credential alone are unremarkable; the pair is the finding.
+    authenticated: authenticatedClis(
+      tools.map((tool) => tool.name),
+      credentials,
+      Object.keys(options.env ?? {}),
+    ),
+    browsers: await findBrowserAutomation(reader, projectDirs),
+    envFiles: await findEnvFiles(reader, projectDirs),
+    // The work as well as home: a definition in a repository is installed by cloning it.
+    definitions: await discoverDefinitions(reader, [reader.homeDir(), ...projectDirs]),
+  };
+}
 
-  const probed: string[] = [];
-  for (const outcome of await Promise.all(work)) {
-    const { surface, server, declared } = outcome;
-    probed.push(`${server.name}: ${[server.command, ...server.args].join(' ')}`);
-    const tools = surface.tools ?? [];
-    for (const declaration of declared) {
-      /* A host that already filters its own tools gets the credit: a tool its config
-         takes away is not reachable through it, and counting it anyway would overstate
-         the very product that did the right thing. The number it removed is kept. */
-      if (!passesFilter(declaration.name, server.filter)) {
-        surface.filteredOut = (surface.filteredOut ?? 0) + 1;
-        continue;
-      }
-      tools.push(toMcpTool(server.name, declaration));
-    }
-    surface.tools = tools;
+interface Detected {
+  agents: DiscoveredAgent[];
+  surfaces: Surface[];
+  harnesses: Harness[];
+}
+
+async function runDetectors(
+  reader: MachineReader,
+  options: DiscoveryOptions,
+): Promise<Detected> {
+  const detected: Detected = { agents: [], surfaces: [], harnesses: [] };
+  const context: DetectionContext = { projectDirs: options.projectDirs ?? [] };
+  for (const detector of options.detectors ?? DEFAULT_DETECTORS) {
+    const found = await detector.detect(reader, options.now, context);
+    if (found === null) continue;
+    detected.agents.push(found.agent);
+    detected.surfaces.push(...found.surfaces);
+    const harness = harnessOf(found.agent, found.hosted);
+    if (harness !== null) detected.harnesses.push(harness);
   }
-  return probed;
+  return detected;
+}
+
+async function sandboxMarkers(reader: MachineReader): Promise<string[]> {
+  const present: string[] = [];
+  for (const path of SANDBOX_PATHS) {
+    if (await reader.exists(path)) present.push(path);
+  }
+  return present;
+}
+
+/** One server's answer, still attached to the surface that declared it. */
+interface ProbeOutcome {
+  surface: Surface;
+  server: McpServerLaunch;
+  declared: McpToolDeclaration[];
+}
+
+/**
+ * Every server asked what it holds, in parallel because each handshake carries its own
+ * timeout. One that will not start loses its own tools and nobody else's.
+ */
+async function probeServers(
+  surfaces: readonly Surface[],
+  lister: McpLister | undefined,
+): Promise<{ surfaces: Surface[]; probed: string[] }> {
+  if (lister === undefined) return { surfaces: [...surfaces], probed: [] };
+
+  const outcomes = await Promise.all(
+    surfaces.flatMap((surface) =>
+      // A disabled server is declared and not running, so starting it would invent reach.
+      (surface.servers ?? [])
+        .filter((server) => server.disabled !== true)
+        .map((server) => probeOne(lister, surface, server)),
+    ),
+  );
+  return {
+    surfaces: surfaces.map((surface) =>
+      withProbedTools(
+        surface,
+        outcomes.filter((outcome) => outcome.surface === surface),
+      ),
+    ),
+    // Named so the probe is itself inspectable.
+    probed: outcomes.map(
+      ({ server }) => `${server.name}: ${[server.command, ...server.args].join(' ')}`,
+    ),
+  };
+}
+
+async function probeOne(
+  lister: McpLister,
+  surface: Surface,
+  server: McpServerLaunch,
+): Promise<ProbeOutcome> {
+  try {
+    const declared = await lister.listTools(server.name, server.command, server.args);
+    return { surface, server, declared };
+  } catch {
+    // A gap in the report, never a crash: zero tools here means unknown.
+    return { surface, server, declared: [] };
+  }
+}
+
+/**
+ * A surface with the tools its servers declared. A tool the host's own filter takes
+ * away is not reachable through it, so it is counted in `filteredOut` rather than kept.
+ */
+function withProbedTools(surface: Surface, outcomes: readonly ProbeOutcome[]): Surface {
+  if (outcomes.length === 0) return surface;
+  const tools = [...(surface.tools ?? [])];
+  let filteredOut = surface.filteredOut;
+  for (const { server, declared } of outcomes) {
+    for (const declaration of declared) {
+      if (passesFilter(declaration.name, server.filter)) {
+        tools.push(toMcpTool(server.name, declaration));
+      } else {
+        filteredOut = (filteredOut ?? 0) + 1;
+      }
+    }
+  }
+  return { ...surface, tools, ...(filteredOut === undefined ? {} : { filteredOut }) };
 }
 
 /**
  * Finding a credential requires reading the file it lives in. The value stays in this
- * function: what leaves is a path, a kind and a hash, so nothing downstream can leak
- * what it never received.
+ * function: what leaves is a path, a kind and a hash.
  */
 async function scanResources(
   reader: MachineReader,
   projectDirs: readonly string[],
 ): Promise<{ resources: Resource[]; read: string[] }> {
+  const scan: ResourceScan = { resources: [], read: [], seen: new Set<string>() };
   const home = reader.homeDir();
-  const resources: Resource[] = [];
-  const read: string[] = [];
-  const seen = new Set<string>();
-
-  const record = async (path: string): Promise<void> => {
-    if (seen.has(path)) return;
-    const contents = await reader.read(path);
-    if (contents === null) return;
-    seen.add(path);
-    read.push(path);
-    resources.push({
-      id: `res_${fingerprint(path)}`,
-      kind: classifyResourceKind(path),
-      path,
-      // The value stays in this function: what leaves is a path, a kind and a hash.
-      fingerprint: fingerprint(contents),
-      sensitivity: classifySensitivity(path),
-      reachableBy: [],
-    });
-    // A connection string names a database; the scheme is kept and the URL is not.
-    resources.push(...databasesIn(contents, path));
-  };
-
-  for (const relative of CREDENTIAL_PATHS) await record(join(home, relative));
-
-  for (const dir of projectDirs) {
-    for (const file of PROJECT_CREDENTIAL_FILES) await record(join(dir, file));
-
-    // A checkout is reachable in its own right, and it is not opened to be counted.
-    const repository = join(dir, REPOSITORY_MARKER);
-    if (await reader.exists(repository)) {
-      if (seen.has(repository)) continue;
-      seen.add(repository);
-      resources.push({
-        id: `res_${fingerprint(repository)}`,
-        kind: classifyResourceKind(repository),
-        path: repository,
-        sensitivity: classifySensitivity(repository),
-        reachableBy: [],
-      });
-    }
+  for (const relative of FINGERPRINTED_HOME_PATHS) {
+    await recordFile(reader, scan, join(home, relative));
   }
-
+  for (const dir of projectDirs) {
+    for (const file of PROJECT_CREDENTIAL_FILES)
+      await recordFile(reader, scan, join(dir, file));
+    await recordRepository(reader, scan, join(dir, REPOSITORY_MARKER));
+  }
   for (const path of SOCKET_PATHS) {
     if (!(await reader.exists(path))) continue;
-    resources.push({
+    scan.resources.push({
       id: `res_${fingerprint(path)}`,
       kind: classifyResourceKind(path),
       path,
@@ -323,8 +310,52 @@ async function scanResources(
       reachableBy: [],
     });
   }
+  return { resources: scan.resources, read: scan.read };
+}
 
-  return { resources, read };
+interface ResourceScan {
+  resources: Resource[];
+  read: string[];
+  seen: Set<string>;
+}
+
+/** A readable file, fingerprinted, plus any database its contents name by scheme. */
+async function recordFile(
+  reader: MachineReader,
+  scan: ResourceScan,
+  path: string,
+): Promise<void> {
+  if (scan.seen.has(path)) return;
+  const contents = await reader.read(path);
+  if (contents === null) return;
+  scan.seen.add(path);
+  scan.read.push(path);
+  scan.resources.push({
+    id: `res_${fingerprint(path)}`,
+    kind: classifyResourceKind(path),
+    path,
+    fingerprint: fingerprint(contents),
+    sensitivity: classifySensitivity(path),
+    reachableBy: [],
+  });
+  scan.resources.push(...databasesIn(contents, path));
+}
+
+/** A checkout is reachable in its own right, and it is not opened to be counted. */
+async function recordRepository(
+  reader: MachineReader,
+  scan: ResourceScan,
+  repository: string,
+): Promise<void> {
+  if (!(await reader.exists(repository)) || scan.seen.has(repository)) return;
+  scan.seen.add(repository);
+  scan.resources.push({
+    id: `res_${fingerprint(repository)}`,
+    kind: classifyResourceKind(repository),
+    path: repository,
+    sensitivity: classifySensitivity(repository),
+    reachableBy: [],
+  });
 }
 
 /** Counts and names, not percentages: a percentage here has no denominator. */

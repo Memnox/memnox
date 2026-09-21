@@ -57,6 +57,7 @@ export class NodeSnapshotStore implements SnapshotStore {
 
   private async readOne(name: string): Promise<EnvironmentSnapshot | null> {
     try {
+      // Written by `save` below and never edited by hand.
       return JSON.parse(
         await readFile(join(this.dir, name), 'utf8'),
       ) as EnvironmentSnapshot;
