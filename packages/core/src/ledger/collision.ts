@@ -1,3 +1,5 @@
+/** Two agents working on the same thing, read from what the ledger already recorded. */
+import { daysToMs, minutesToMs } from '../domain/time';
 import {
   DEFAULT_COLLISION_WINDOW_MINUTES,
   MINIMUM_SHARED_TARGETS,
@@ -34,18 +36,36 @@ export interface Collision {
 /**
  * Two agents inside the same target inside one window, at least one of them writing.
  * Reported, never refereed: which of them is right is a diff somebody opens, and that
- * is code review — a different product, and out of scope permanently.
+ * is code review, which is a different product and out of scope permanently.
  */
 export function concurrentWork(
   observations: readonly WorkObservation[],
   options: { now: string; windowMinutes?: number },
 ): Collision[] {
   const window = options.windowMinutes ?? DEFAULT_COLLISION_WINDOW_MINUTES;
-  const cutoff = Date.parse(options.now) - window * 60_000;
+  const cutoff = Date.parse(options.now) - minutesToMs(window);
   const recent = observations.filter((each) => Date.parse(each.at) >= cutoff);
 
+  const collisions: Collision[] = [];
+  for (const [target, agents] of latestTouchByTarget(recent)) {
+    const involved = [...agents.values()];
+    if (involved.length < 2) continue;
+    // Two readers in one file is a normal Tuesday. One writer makes it a collision.
+    if (!involved.some((agent) => agent.writing)) continue;
+    collisions.push({
+      target,
+      agents: involved.sort((a, b) => a.at.localeCompare(b.at)),
+    });
+  }
+  return collisions.sort((a, b) => a.target.localeCompare(b.target));
+}
+
+/** Each agent's most recent touch per target, writing if any touch in the window wrote. */
+function latestTouchByTarget(
+  observations: readonly WorkObservation[],
+): Map<string, Map<string, CollidingAgent>> {
   const byTarget = new Map<string, Map<string, CollidingAgent>>();
-  for (const observation of recent) {
+  for (const observation of observations) {
     const agents = byTarget.get(observation.target) ?? new Map<string, CollidingAgent>();
     const existing = agents.get(observation.agentId);
     if (existing === undefined || existing.at < observation.at) {
@@ -61,19 +81,7 @@ export function concurrentWork(
     }
     byTarget.set(observation.target, agents);
   }
-
-  const collisions: Collision[] = [];
-  for (const [target, agents] of byTarget) {
-    const involved = [...agents.values()];
-    if (involved.length < 2) continue;
-    // Two readers in one file is a normal Tuesday. One writer makes it a collision.
-    if (!involved.some((agent) => agent.writing)) continue;
-    collisions.push({
-      target,
-      agents: involved.sort((a, b) => a.at.localeCompare(b.at)),
-    });
-  }
-  return collisions.sort((a, b) => a.target.localeCompare(b.target));
+  return byTarget;
 }
 
 export interface OverlappingWork {
@@ -86,7 +94,7 @@ export interface OverlappingWork {
 
 /**
  * Two agents building the same thing: overlapping targets over a longer window than a
- * collision, on different branches. Proposed to a person rather than acted on — a
+ * collision, on different branches. Proposed to a person rather than acted on, because a
  * shared file is evidence of duplication and never proof of it.
  */
 export function overlappingWork(
@@ -94,18 +102,45 @@ export function overlappingWork(
   options: { now: string; windowDays: number; minShared?: number },
 ): OverlappingWork[] {
   const minShared = options.minShared ?? MINIMUM_SHARED_TARGETS;
-  const cutoff = Date.parse(options.now) - options.windowDays * 24 * 60 * 60_000;
+  const cutoff = Date.parse(options.now) - daysToMs(options.windowDays);
+  const writers = writersSince(observations, cutoff);
 
-  const byAgent = new Map<
-    string,
-    { agentName: string; targets: Set<string>; branches: Set<string>; since: string }
-  >();
+  const found: OverlappingWork[] = [];
+  for (const [index, left] of writers.entries()) {
+    for (const right of writers.slice(index + 1)) {
+      const shared = [...left.targets].filter((target) => right.targets.has(target));
+      if (shared.length < minShared) continue;
+      found.push({
+        agents: [describeWriter(left), describeWriter(right)],
+        sharedTargets: shared.sort(),
+        since: left.since < right.since ? left.since : right.since,
+      });
+    }
+  }
+  return found;
+}
+
+interface WriterActivity {
+  agentId: string;
+  agentName: string;
+  targets: Set<string>;
+  branches: Set<string>;
+  since: string;
+}
+
+/** Every agent that wrote after the cutoff, with what it wrote and where. */
+function writersSince(
+  observations: readonly WorkObservation[],
+  cutoff: number,
+): WriterActivity[] {
+  const byAgent = new Map<string, WriterActivity>();
   for (const observation of observations) {
     if (!observation.writing) continue;
     if (Date.parse(observation.at) < cutoff) continue;
     const existing = byAgent.get(observation.agentId);
     if (existing === undefined) {
       byAgent.set(observation.agentId, {
+        agentId: observation.agentId,
         agentName: observation.agentName,
         targets: new Set([observation.target]),
         branches: new Set(observation.branch === undefined ? [] : [observation.branch]),
@@ -117,30 +152,19 @@ export function overlappingWork(
     if (observation.branch !== undefined) existing.branches.add(observation.branch);
     if (observation.at < existing.since) existing.since = observation.at;
   }
+  return [...byAgent.values()];
+}
 
-  const found: OverlappingWork[] = [];
-  const agents = [...byAgent.entries()];
-  for (let i = 0; i < agents.length; i += 1) {
-    for (let j = i + 1; j < agents.length; j += 1) {
-      const [leftId, left] = agents[i] as [string, (typeof agents)[number][1]];
-      const [rightId, right] = agents[j] as [string, (typeof agents)[number][1]];
-      const shared = [...left.targets].filter((target) => right.targets.has(target));
-      if (shared.length < minShared) continue;
-      found.push({
-        agents: [
-          { agentId: leftId, agentName: left.agentName, ...branchOf(left.branches) },
-          { agentId: rightId, agentName: right.agentName, ...branchOf(right.branches) },
-        ],
-        sharedTargets: shared.sort(),
-        since: left.since < right.since ? left.since : right.since,
-      });
-    }
-  }
-  return found;
+function describeWriter(writer: WriterActivity): OverlappingWork['agents'][number] {
+  return {
+    agentId: writer.agentId,
+    agentName: writer.agentName,
+    ...branchOf(writer.branches),
+  };
 }
 
 /** One branch names the work; several mean the agent moved around, so none is named. */
-function branchOf(branches: Set<string>): { branch?: string } {
+function branchOf(branches: ReadonlySet<string>): { branch?: string } {
   if (branches.size !== 1) return {};
   const [only] = [...branches];
   return only === undefined ? {} : { branch: only };

@@ -1,3 +1,7 @@
+/**
+ * The event schema, frozen at v1. The cloud ingests against it, so a change is a new version
+ * and never an edit; additive optional fields are the only safe change within a version.
+ */
 import {
   ACTOR_TYPE,
   EVENT_SCHEMA_VERSION,
@@ -9,11 +13,9 @@ import { DECISION_EFFECT } from '../constants/decision.constants';
 import { ENFORCEMENT_MODE } from '../constants/enforcement.constants';
 import { TOOL_CLASS } from '../discovery/classify';
 
-/**
- * Frozen at v1. The cloud ingests against this, so a change here is a new version and
- * never an edit: a field that quietly changed meaning would corrupt history nobody can
- * re-derive. Additive optional fields are the only safe change within a version.
- */
+/** Longer than any digest this writes, so anything past it is content that escaped. */
+const LONGEST_FIELD = 128;
+
 export const EVENT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'https://memnox.dev/schema/event-v1.json',
@@ -93,62 +95,77 @@ const DIGEST_FIELDS = ['argsDigest', 'outputDigest'] as const;
  * first, because a caller fixing one field at a time round-trips forever.
  */
 export function validateEvent(candidate: unknown): string[] {
-  const problems: string[] = [];
   if (typeof candidate !== 'object' || candidate === null) {
     return ['an event must be an object'];
   }
+  // Every field is read as unknown and checked below.
   const event = candidate as Record<string, unknown>;
+  return [
+    ...fieldProblems(event),
+    ...enumProblems(event),
+    ...timestampProblems(event),
+    ...digestProblems(event),
+    ...costProblems(event),
+  ];
+}
 
+function fieldProblems(event: Record<string, unknown>): string[] {
+  const problems: string[] = [];
   for (const key of EVENT_SCHEMA.required) {
     if (event[key] === undefined) problems.push(`${key} is required`);
   }
   for (const key of Object.keys(event)) {
     if (!(key in EVENT_SCHEMA.properties)) problems.push(`${key} is not a field of v1`);
   }
-
   if (event['schemaVersion'] !== EVENT_SCHEMA_VERSION) {
     problems.push(`schemaVersion must be ${EVENT_SCHEMA_VERSION}`);
   }
-  const enums: [string, readonly string[]][] = [
-    ['actorType', Object.values(ACTOR_TYPE)],
-    ['surface', Object.values(EVENT_SURFACE)],
-    ['class', Object.values(TOOL_CLASS)],
-    ['effect', Object.values(DECISION_EFFECT)],
-    ['mode', Object.values(ENFORCEMENT_MODE)],
-  ];
-  for (const [key, allowed] of enums) {
-    const value = event[key];
-    if (value !== undefined && !allowed.includes(String(value))) {
-      problems.push(`${key} must be one of ${allowed.join(', ')}`);
-    }
-  }
+  return problems;
+}
 
+const ENUM_FIELDS: readonly [string, readonly string[]][] = [
+  ['actorType', Object.values(ACTOR_TYPE)],
+  ['surface', Object.values(EVENT_SURFACE)],
+  ['class', Object.values(TOOL_CLASS)],
+  ['effect', Object.values(DECISION_EFFECT)],
+  ['mode', Object.values(ENFORCEMENT_MODE)],
+];
+
+function enumProblems(event: Record<string, unknown>): string[] {
+  return ENUM_FIELDS.flatMap(([key, allowed]) => {
+    const value = event[key];
+    if (value === undefined || allowed.includes(String(value))) return [];
+    return [`${key} must be one of ${allowed.join(', ')}`];
+  });
+}
+
+function timestampProblems(event: Record<string, unknown>): string[] {
   const at = event['at'];
   if (typeof at === 'string' && Number.isNaN(Date.parse(at))) {
-    problems.push('at must be an ISO 8601 timestamp');
+    return ['at must be an ISO 8601 timestamp'];
   }
+  return [];
+}
 
-  /* A digest field holding something long is the shape of a payload that escaped.
-     Cheap to check, and the one mistake that would make the ledger worth stealing. */
-  for (const key of DIGEST_FIELDS) {
+// A digest field holding something long is the shape of a payload that escaped.
+function digestProblems(event: Record<string, unknown>): string[] {
+  return DIGEST_FIELDS.flatMap((key) => {
     const value = event[key];
-    if (typeof value === 'string' && value.length > 128) {
-      problems.push(`${key} looks like content rather than a digest`);
+    if (typeof value === 'string' && value.length > LONGEST_FIELD) {
+      return [`${key} looks like content rather than a digest`];
     }
-  }
+    return [];
+  });
+}
 
-  /* A cost is a number somebody reported, so the row refuses the shapes that would
-     make every total downstream meaningless rather than merely wrong. */
+// A reported cost that is not a finite, non-negative number would poison every total.
+function costProblems(event: Record<string, unknown>): string[] {
   const cost = event['costUsd'];
-  if (cost !== undefined) {
-    if (typeof cost !== 'number' || !Number.isFinite(cost)) {
-      problems.push('costUsd must be a finite number');
-    } else if (cost < 0) {
-      problems.push('costUsd cannot be negative');
-    }
-  }
-
-  return problems;
+  if (cost === undefined) return [];
+  if (typeof cost !== 'number' || !Number.isFinite(cost))
+    return ['costUsd must be a finite number'];
+  if (cost < 0) return ['costUsd cannot be negative'];
+  return [];
 }
 
 export function isMemnoxEvent(candidate: unknown): candidate is MemnoxEvent {

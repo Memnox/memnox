@@ -1,14 +1,12 @@
+/**
+ * One thing an agent tried to do, and what happened to it: the row every surface writes,
+ * versioned and frozen because a field that changed meaning would corrupt history.
+ */
 import type { DecisionEffect } from '../constants/decision.constants';
 import type { EnforcementMode } from '../constants/enforcement.constants';
 import type { ToolClass } from '../discovery/classify';
 import type { Alternative } from '../domain/decision';
 
-/**
- * One thing an agent tried to do, and what happened to it. This is the row every
- * surface writes and every later question is answered from, so it is versioned and
- * frozen: the cloud reads it, and a field that changed meaning would corrupt history
- * nobody can go back and re-derive.
- */
 export const EVENT_SCHEMA_VERSION = 1;
 
 /** Where the attempt was caught. One per interception point the product ships. */
@@ -20,6 +18,8 @@ export const EVENT_SURFACE = {
   NETWORK: 'network',
   /** A question somebody asked; recorded so `why` can answer about it later. */
   QUESTION: 'question',
+  /** A change to an agent's configuration the daemon made or noticed. Not agent work. */
+  CONFIG: 'config',
 } as const;
 
 export type EventSurface = (typeof EVENT_SURFACE)[keyof typeof EVENT_SURFACE];
@@ -98,23 +98,12 @@ export interface MemnoxEvent {
   policyHash?: string;
 
   /**
-   * The workspace bundle this machine was running when it decided.
-   *
-   * `policyHash` covers the whole stack as this machine assembled it, which is not a
-   * thing the control plane can name. Without this a verdict cannot be replayed
-   * against what the workspace had published at the time, and "was this machine even
-   * on the current rules" is unanswerable after the fact.
+   * The workspace bundle this machine was running when it decided, so a verdict replays
+   * against what the workspace published rather than the stack this machine assembled.
    */
   bundleHash?: string;
 
-  /**
-   * Ids of the conditions in force at the moment of the verdict.
-   *
-   * The engine computed a state version for every decision and nothing carried it to
-   * the ledger, so the field that exists to make a freeze visible afterwards was
-   * stamped and dropped. Recorded as ids rather than labels because the label is
-   * derivable from them and the id is what a condition is actually called.
-   */
+  /** Ids of the conditions in force at the verdict, as ids because a label is derivable from one. */
   conditionsInForce?: readonly string[];
 
   /** A hash of the arguments. The arguments themselves never reach a row. */
@@ -130,13 +119,8 @@ export interface MemnoxEvent {
   authorizedBy?: string;
 
   /**
-   * What this action cost, in dollars, when something reported it.
-   *
-   * Memnox prices nothing: an MCP call's model spend is knowable to the agent and to
-   * nobody else on this machine, so a number invented here would be the one figure a
-   * reader stops trusting the rest of the row over. Absent means nobody said, which is
-   * a different answer from zero and is why a dollar budget reads as unwatched rather
-   * than as under budget.
+   * What this action cost, when something able to price it said so. Memnox prices nothing,
+   * and absent means nobody said, which differs from zero.
    */
   costUsd?: number;
 }
@@ -160,14 +144,6 @@ export interface EventQuery {
   since?: string;
   until?: string;
   limit?: number;
-}
-
-export function matches(row: MemnoxEvent, filter: EventQuery): boolean {
-  if (filter.sessionId !== undefined && row.sessionId !== filter.sessionId) return false;
-  if (filter.agent !== undefined && row.agent !== filter.agent) return false;
-  if (filter.surface !== undefined && row.surface !== filter.surface) return false;
-  if (filter.effects !== undefined && !filter.effects.includes(row.effect)) return false;
-  if (filter.since !== undefined && row.at < filter.since) return false;
-  if (filter.until !== undefined && row.at > filter.until) return false;
-  return true;
+  /** Config changes are left out unless asked for, so no count of agent work includes them. */
+  withConfig?: boolean;
 }

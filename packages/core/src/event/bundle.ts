@@ -1,11 +1,6 @@
+/** A period of history, signed, so an auditor is looking at evidence rather than at a file somebody could have edited. */
 import { createHash, generateKeyPairSync, sign, verify } from 'node:crypto';
 import type { MemnoxEvent } from './event';
-
-/**
- * A period of history, signed, so an auditor is looking at evidence rather than at a
- * file somebody could have edited. This is the compliance line item: without it the
- * answer to "how do you control what AI agents do in production" is a PDF.
- */
 
 export const BUNDLE_VERSION = 1;
 
@@ -75,7 +70,7 @@ export function buildBundle(input: BuildBundleInput): { header: Bundle; body: st
 
   if (input.keys !== undefined) {
     // Signed over the header without its own signature, so the range and the count
-    // are covered too — a bundle whose period could be edited proves nothing.
+    // are covered too, because a bundle whose period could be edited proves nothing.
     const signature = sign(
       null,
       Buffer.from(signedPayload(header)),
@@ -124,7 +119,7 @@ export function verifyBundle(header: Bundle, body: string): Verification {
   if (digestOf(body) !== header.digest) {
     return {
       result: VERIFY_RESULT.TAMPERED,
-      detail: 'the events do not match the digest in the header — this has been edited',
+      detail: 'the events do not match the digest in the header, so this has been edited',
     };
   }
   if (header.signature === undefined || header.publicKey === undefined) {

@@ -3,12 +3,8 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  IMMUTABLE_COLUMNS,
-  RELEASE_COLUMN,
-  SqliteEventStore,
-  databasePathFor,
-} from '../src/event/sqlite-store';
+import { IMMUTABLE_COLUMNS, RELEASE_COLUMN } from '../src/event/event-migrations';
+import { SqliteEventStore, databasePathFor } from '../src/event/sqlite-store';
 import { EVENT_SCHEMA_VERSION, type MemnoxEvent } from '../src/event/event';
 
 const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-db-'));

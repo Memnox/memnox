@@ -1,8 +1,24 @@
-import Database from 'better-sqlite3';
+/**
+ * The ledger on disk: every action an agent tried, and what happened to it. Append-only,
+ * enforced by a trigger, and WAL because several short-lived seams write at once.
+ */
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+
+import Database from 'better-sqlite3';
+
 import { MEMNOX_HOME } from '../config/config';
-import type { EventQuery, EventSink, MemnoxEvent } from './event';
+import {
+  EVENT_SURFACE,
+  type EventQuery,
+  type EventSink,
+  type MemnoxEvent,
+} from './event';
+import { MIGRATIONS } from './event-migrations';
+import { EVENT_COLUMNS, eventToRow, rowToEvent, type EventRow } from './event-row';
+
+/** How long a writer waits on another's lock before failing, rather than stalling the agent. */
+const BUSY_TIMEOUT_MS = 5_000;
 
 export const DATABASE_FILE = 'memnox.db';
 
@@ -10,318 +26,46 @@ export function databasePathFor(home: string): string {
   return join(home, MEMNOX_HOME, DATABASE_FILE);
 }
 
-/**
- * Each migration runs once, in order, inside a transaction. Numbered rather than
- * hashed so a half-applied upgrade is obvious in the table rather than mysterious.
- */
-/**
- * Every column of `events` except the one a release is allowed to fill in.
- *
- * Written out rather than read from `PRAGMA table_info` at runtime, because a
- * trigger built from whatever the table happens to have would quietly stop
- * guarding a column somebody added and forgot. `sqlite-store.test.ts` asserts
- * this list against the real table instead, so the reminder arrives as a failing
- * test rather than as a gap nobody sees.
- */
-export const IMMUTABLE_COLUMNS = [
-  'id',
-  'schemaVersion',
-  'at',
-  'sessionId',
-  'agent',
-  'actorType',
-  'principal',
-  'surface',
-  'operation',
-  'target',
-  'class',
-  'effect',
-  'shadowEffect',
-  'mode',
-  'reason',
-  'ruleName',
-  'ruleLayer',
-  'ruleFile',
-  'ruleLine',
-  'altAction',
-  'altResource',
-  'altNote',
-  'policyHash',
-  'argsDigest',
-  'execution',
-  'exitCode',
-  'durationMs',
-  'outputDigest',
-  'costUsd',
-  'bundleHash',
-  'conditionsInForce',
-] as const;
-
-/** The column a held call's release fills in, and the only one that may change. */
-export const RELEASE_COLUMN = 'authorizedBy';
-
-/**
- * Append-only, enforced by the database rather than by everyone remembering.
- *
- * The one legal update is releasing a held call: `authorizedBy` going from null
- * to a name, once, with nothing else moving.
- */
-export function appendOnlyTrigger(): string {
-  const unchanged = IMMUTABLE_COLUMNS.map(
-    (column) => `NEW.${column} IS NOT OLD.${column}`,
-  ).join('\n        OR ');
-  return `CREATE TRIGGER events_no_update BEFORE UPDATE ON events
-      WHEN OLD.${RELEASE_COLUMN} IS NOT NULL
-        OR NEW.${RELEASE_COLUMN} IS NULL
-        OR ${unchanged}
-      BEGIN
-        SELECT RAISE(ABORT, 'events are append-only');
-      END;`;
+interface WhereClause {
+  clause: string;
+  params: Record<string, string>;
 }
 
-const MIGRATIONS: readonly { version: number; sql: string }[] = [
-  {
-    version: 1,
-    sql: `
-      CREATE TABLE events (
-        id            TEXT PRIMARY KEY,
-        schemaVersion INTEGER NOT NULL,
-        at            TEXT NOT NULL,
-        sessionId     TEXT NOT NULL,
-        agent         TEXT NOT NULL,
-        actorType     TEXT NOT NULL,
-        principal     TEXT,
-        surface       TEXT NOT NULL,
-        operation     TEXT NOT NULL,
-        target        TEXT,
-        class         TEXT NOT NULL,
-        effect        TEXT NOT NULL,
-        shadowEffect  TEXT,
-        mode          TEXT NOT NULL,
-        reason        TEXT NOT NULL,
-        ruleName      TEXT,
-        ruleLayer     TEXT,
-        ruleFile      TEXT,
-        ruleLine      INTEGER,
-        altAction     TEXT,
-        altResource   TEXT,
-        altNote       TEXT,
-        policyHash    TEXT,
-        argsDigest    TEXT,
-        execution     TEXT,
-        exitCode      INTEGER,
-        durationMs    INTEGER,
-        outputDigest  TEXT,
-        authorizedBy  TEXT
-      );
-      CREATE INDEX events_at ON events (at);
-      CREATE INDEX events_session ON events (sessionId, at);
-      CREATE INDEX events_effect ON events (effect, at);
-
-      /* Append-only, enforced by the database rather than by everyone remembering.
-         The one legal update is releasing a held call, which the trigger allows by
-         name: a record that could be edited is a claim about the past, not the past. */
-      CREATE TRIGGER events_no_update BEFORE UPDATE ON events
-      WHEN OLD.authorizedBy IS NOT NULL OR NEW.authorizedBy IS NULL
-      BEGIN
-        SELECT RAISE(ABORT, 'events are append-only');
-      END;
-
-      CREATE TABLE policy_versions (
-        hash      TEXT PRIMARY KEY,
-        at        TEXT NOT NULL,
-        contents  TEXT NOT NULL
-      );
-
-      CREATE TABLE sessions (
-        id        TEXT PRIMARY KEY,
-        agent     TEXT NOT NULL,
-        startedAt TEXT NOT NULL,
-        endedAt   TEXT
-      );
-    `,
-  },
-  {
-    /* Added rather than edited into v1: a machine that already has a ledger keeps it.
-       Nullable, because absent means nobody reported a cost and that is not zero. */
-    version: 2,
-    sql: 'ALTER TABLE events ADD COLUMN costUsd REAL;',
-  },
-  {
-    /* The bundle and the conditions a verdict was reached under. Both were knowable
-       at the moment and neither was kept, so no decision could be replayed against
-       what the workspace had published or what was frozen when it was taken. */
-    version: 3,
-    sql: `ALTER TABLE events ADD COLUMN bundleHash TEXT;
-          ALTER TABLE events ADD COLUMN conditionsInForce TEXT;`,
-  },
-  {
-    /*
-     * The append-only trigger did not hold what its own comment claimed.
-     *
-     * `WHEN OLD.authorizedBy IS NOT NULL OR NEW.authorizedBy IS NULL` asks only
-     * about that one column, so it let through any UPDATE that happened to set
-     * it. One statement releasing a held call could rewrite the row around it:
-     *
-     *   UPDATE events SET authorizedBy = 'x', effect = 'allow', operation = 'ls'
-     *
-     * passed, and a denied action became an allowed one with a different name
-     * and a different reason. The row a person reads in `memnox why` a year
-     * later is the row this trigger exists to make trustworthy, so the check has
-     * to be that nothing except `authorizedBy` moved, not that `authorizedBy`
-     * moved the right way.
-     *
-     * Recreated here rather than edited into version 1, because a machine that
-     * already has a ledger never re-runs version 1 and would keep the weak
-     * trigger for ever. A fresh database runs both and lands in the same place.
-     *
-     * `IS NOT` rather than `<>`, which is null-safe in SQLite: half these
-     * columns are nullable and `NULL <> NULL` is NULL, so a `<>` chain would
-     * wave through exactly the columns that are usually empty.
-     */
-    version: 4,
-    sql: `
-      DROP TRIGGER IF EXISTS events_no_update;
-      ${appendOnlyTrigger()}
-    `,
-  },
-];
-
-interface Row {
-  [column: string]: string | number | null;
+/** Named parameters only, so nothing a filter carries is ever spliced into the SQL. */
+function whereClauseFor(filter: EventQuery): WhereClause {
+  const where: string[] = [];
+  const params: Record<string, string> = {};
+  const equal = {
+    sessionId: filter.sessionId,
+    agent: filter.agent,
+    surface: filter.surface,
+  };
+  for (const [column, value] of Object.entries(equal)) {
+    if (value === undefined) continue;
+    where.push(`${column} = @${column}`);
+    params[column] = value;
+  }
+  if (filter.surface === undefined && filter.withConfig !== true) {
+    where.push('surface <> @configSurface');
+    params['configSurface'] = EVENT_SURFACE.CONFIG;
+  }
+  if (filter.since !== undefined) {
+    where.push('at >= @since');
+    params['since'] = filter.since;
+  }
+  if (filter.until !== undefined) {
+    where.push('at <= @until');
+    params['until'] = filter.until;
+  }
+  if (filter.effects !== undefined && filter.effects.length > 0) {
+    const names = filter.effects.map((effect, index) => {
+      params[`effect${index}`] = effect;
+      return `@effect${index}`;
+    });
+    where.push(`effect IN (${names.join(', ')})`);
+  }
+  return { clause: where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`, params };
 }
-
-function toRow(event: MemnoxEvent): Row {
-  const rule = event.rule;
-  const alternative = event.alternative;
-  return {
-    id: event.id,
-    schemaVersion: event.schemaVersion,
-    at: event.at,
-    sessionId: event.sessionId,
-    agent: event.agent,
-    actorType: event.actorType,
-    principal: event.principal ?? null,
-    surface: event.surface,
-    operation: event.operation,
-    target: event.target ?? null,
-    class: event.class,
-    effect: event.effect,
-    shadowEffect: event.shadowEffect ?? null,
-    mode: event.mode,
-    reason: event.reason,
-    ruleName: rule === undefined ? null : rule.name,
-    ruleLayer: rule === undefined ? null : rule.layer,
-    ruleFile: rule === undefined ? null : rule.file,
-    ruleLine: rule === undefined || rule.line === undefined ? null : rule.line,
-    altAction: alternative === undefined ? null : alternative.action,
-    altResource:
-      alternative === undefined || alternative.resource === undefined
-        ? null
-        : alternative.resource,
-    altNote: alternative === undefined ? null : alternative.note,
-    policyHash: event.policyHash ?? null,
-    bundleHash: event.bundleHash ?? null,
-    /* Joined rather than a second table: it is read back whole every time and never
-       queried across, so a row of ids is the shape that matches the use. */
-    conditionsInForce:
-      event.conditionsInForce === undefined || event.conditionsInForce.length === 0
-        ? null
-        : event.conditionsInForce.join(','),
-    argsDigest: event.argsDigest ?? null,
-    execution: event.execution ?? null,
-    exitCode: event.exitCode ?? null,
-    durationMs: event.durationMs ?? null,
-    outputDigest: event.outputDigest ?? null,
-    authorizedBy: event.authorizedBy ?? null,
-    costUsd: event.costUsd ?? null,
-  };
-}
-
-function fromRow(row: Row): MemnoxEvent {
-  const text = (key: string): string | undefined => {
-    const value = row[key];
-    return value === null || value === undefined ? undefined : String(value);
-  };
-  const number = (key: string): number | undefined => {
-    const value = row[key];
-    return value === null || value === undefined ? undefined : Number(value);
-  };
-  const ruleName = text('ruleName');
-  const altAction = text('altAction');
-
-  const event: MemnoxEvent = {
-    id: String(row['id']),
-    schemaVersion: Number(row['schemaVersion']),
-    at: String(row['at']),
-    sessionId: String(row['sessionId']),
-    agent: String(row['agent']),
-    actorType: String(row['actorType']) as MemnoxEvent['actorType'],
-    surface: String(row['surface']) as MemnoxEvent['surface'],
-    operation: String(row['operation']),
-    class: String(row['class']) as MemnoxEvent['class'],
-    effect: String(row['effect']) as MemnoxEvent['effect'],
-    mode: String(row['mode']) as MemnoxEvent['mode'],
-    reason: String(row['reason']),
-  };
-
-  const optional: [keyof MemnoxEvent, string | undefined][] = [
-    ['principal', text('principal')],
-    ['target', text('target')],
-    ['shadowEffect', text('shadowEffect')],
-    ['policyHash', text('policyHash')],
-    ['bundleHash', text('bundleHash')],
-    ['argsDigest', text('argsDigest')],
-    ['execution', text('execution')],
-    ['outputDigest', text('outputDigest')],
-    ['authorizedBy', text('authorizedBy')],
-  ];
-  for (const [key, value] of optional) {
-    if (value !== undefined) Object.assign(event, { [key]: value });
-  }
-  for (const key of ['exitCode', 'durationMs', 'costUsd'] as const) {
-    const value = number(key);
-    if (value !== undefined) event[key] = value;
-  }
-  const conditions = text('conditionsInForce');
-  if (conditions !== undefined) event.conditionsInForce = conditions.split(',');
-
-  if (ruleName !== undefined) {
-    const line = number('ruleLine');
-    event.rule = {
-      name: ruleName,
-      layer: text('ruleLayer') ?? 'project',
-      file: text('ruleFile') ?? '',
-      ...(line === undefined ? {} : { line }),
-    };
-  }
-  if (altAction !== undefined) {
-    const resource = text('altResource');
-    event.alternative = {
-      action: altAction,
-      note: text('altNote') ?? '',
-      ...(resource === undefined ? {} : { resource }),
-    };
-  }
-  return event;
-}
-
-const COLUMNS = Object.keys(
-  toRow({
-    id: '',
-    schemaVersion: 1,
-    at: '',
-    sessionId: '',
-    agent: '',
-    actorType: 'agent',
-    surface: 'mcp',
-    operation: '',
-    class: 'read',
-    effect: 'allow',
-    mode: 'observe',
-    reason: '',
-  }),
-);
 
 /**
  * WAL, because an interceptor, the proxy and a daemon all write while `timeline` reads. The
@@ -335,7 +79,7 @@ export class SqliteEventStore implements EventSink {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new Database(path);
     this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
+    this.db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
     this.db.pragma('synchronous = NORMAL');
     this.migrate();
   }
@@ -364,54 +108,24 @@ export class SqliteEventStore implements EventSink {
   }
 
   async append(event: MemnoxEvent): Promise<void> {
-    const placeholders = COLUMNS.map((column) => `@${column}`).join(', ');
+    const placeholders = EVENT_COLUMNS.map((column) => `@${column}`).join(', ');
     // OR IGNORE, because a resent event must not become a second row.
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO events (${COLUMNS.join(', ')}) VALUES (${placeholders})`,
+        `INSERT OR IGNORE INTO events (${EVENT_COLUMNS.join(', ')}) VALUES (${placeholders})`,
       )
-      .run(toRow(event));
+      .run(eventToRow(event));
   }
 
   async query(filter: EventQuery): Promise<MemnoxEvent[]> {
-    const where: string[] = [];
-    const params: Record<string, string> = {};
-    if (filter.sessionId !== undefined) {
-      where.push('sessionId = @sessionId');
-      params['sessionId'] = filter.sessionId;
-    }
-    if (filter.agent !== undefined) {
-      where.push('agent = @agent');
-      params['agent'] = filter.agent;
-    }
-    if (filter.surface !== undefined) {
-      where.push('surface = @surface');
-      params['surface'] = filter.surface;
-    }
-    if (filter.since !== undefined) {
-      where.push('at >= @since');
-      params['since'] = filter.since;
-    }
-    if (filter.until !== undefined) {
-      where.push('at <= @until');
-      params['until'] = filter.until;
-    }
-    if (filter.effects !== undefined && filter.effects.length > 0) {
-      const names = filter.effects.map((effect, index) => {
-        params[`effect${index}`] = effect;
-        return `@effect${index}`;
-      });
-      where.push(`effect IN (${names.join(', ')})`);
-    }
-
-    const clause = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
-    /* Newest first with a limit, then reversed: an unbounded scan on a laptop that
-       has been observing for a month is the stall this store exists to avoid. */
+    const { clause, params } = whereClauseFor(filter);
+    // Newest first with a limit, then reversed, so a month of history is never scanned whole.
     const limit = filter.limit === undefined ? '' : ` LIMIT ${Number(filter.limit)}`;
     const rows = this.db
       .prepare(`SELECT * FROM events${clause} ORDER BY at DESC, id DESC${limit}`)
-      .all(params) as Row[];
-    return rows.map(fromRow).reverse();
+      // Every row in `events` was written by `eventToRow`.
+      .all(params) as EventRow[];
+    return rows.map(rowToEvent).reverse();
   }
 
   /** Who released a held call. The only field a row may ever gain after the fact. */
@@ -452,12 +166,8 @@ export class SqliteEventStore implements EventSink {
   }
 
   /**
-   * How many recorded verdicts did not simply proceed.
-   *
-   * The number behind "should this machine enforce yet". In observe every rule is
-   * matched and nothing is refused, so this is exactly the work that would have
-   * stopped — counted here rather than walked, because `doctor` runs while
-   * somebody waits and a full scan of the ledger is the wrong price for one line.
+   * How many recorded verdicts did not simply proceed, which is the work that would have
+   * stopped had this machine been enforcing. Counted in SQL because `doctor` runs while somebody waits.
    */
   async countWithheld(): Promise<number> {
     const row = this.db

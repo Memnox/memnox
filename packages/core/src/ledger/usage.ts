@@ -1,5 +1,6 @@
-import type { DecisionEffect } from '../constants/decision.constants';
-import { DECISION_EFFECT } from '../constants/decision.constants';
+/** What each agent actually did with what it was granted, and what it never touched. */
+import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
+import type { MemnoxEvent } from '../event/event';
 
 /** What each agent actually did, rolled up as it is written rather than scanned later. */
 export interface CapabilityUsage {
@@ -29,6 +30,18 @@ export interface UsageObservation {
   resourceId: string;
   at: string;
   effect: DecisionEffect;
+}
+
+/** Ledger rows as the usage roll-up reads them, mapped beside the shape they produce. */
+export function usageFrom(events: readonly MemnoxEvent[]): UsageObservation[] {
+  return events.map((event) => ({
+    agentId: event.agent,
+    action: event.operation,
+    resourceKind: event.surface,
+    resourceId: event.target ?? event.operation,
+    at: event.at,
+    effect: event.effect,
+  }));
 }
 
 /**
@@ -76,12 +89,7 @@ export function findUnusedGrants(
   granted: readonly GrantedAction[],
   usage: readonly CapabilityUsage[],
   observedWindowDays: number,
-  /**
-   * A grant is usually a pattern rather than an action: `deploy.*` is granted, and
-   * `deploy.release` is what happened. Without a matcher, a pattern covering something
-   * the agent used would be proposed for denial alongside a rule allowing it, which
-   * is a policy file that contradicts itself.
-   */
+  /** Grants are patterns and events are actions, so `deploy.*` has to match `deploy.release`. */
   matches: (pattern: string, action: string) => boolean = (pattern, action) =>
     pattern === action,
 ): UnusedGrant[] {

@@ -1,11 +1,9 @@
-import type { MemnoxEvent } from '../event/event';
-import { EXECUTION } from '../event/event';
-
 /**
- * What an agent said it did, checked against what the ledger recorded. A fixed pattern
- * table and a lookup — no model reads the transcript, because a model deciding whether
- * somebody lied is exactly the claim this product must not make on evidence it invented.
+ * What an agent said it did, checked against what the ledger recorded, by a fixed pattern
+ * table rather than a model, because deciding somebody lied must rest on recorded evidence.
  */
+import type { MemnoxEvent } from '../event/event';
+import { didFail } from '../event/outcome';
 
 export const CLAIM_KIND = {
   TESTS_PASSED: 'tests-passed',
@@ -111,7 +109,7 @@ function provingEvents(kind: ClaimKind, events: readonly MemnoxEvent[]): MemnoxE
 
 /**
  * Reported, never refereed. "Unsupported" means the ledger holds nothing that would
- * have produced the claim — which is often that the work happened somewhere this
+ * have produced the claim, which is often that the work happened somewhere this
  * machine cannot see, and saying otherwise would be an accusation built on a gap.
  */
 export function checkClaims(
@@ -129,11 +127,7 @@ export function checkClaims(
       };
     }
 
-    const failed = candidates.filter(
-      (event) =>
-        event.execution === EXECUTION.FAILED ||
-        (event.exitCode !== undefined && event.exitCode !== 0),
-    );
+    const failed = candidates.filter(didFail);
     if (failed.length > 0 && failed.length === candidates.length) {
       return {
         ...claim,
