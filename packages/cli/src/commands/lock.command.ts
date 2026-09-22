@@ -2,13 +2,16 @@ import { homedir } from 'node:os';
 import { relative, resolve } from 'node:path';
 import type { Command } from 'commander';
 import {
+  CloudLeases,
   DEFAULT_LEASE_MINUTES,
+  FREE_OUTCOME,
   LEASE_OUTCOME,
   LeaseRegistry,
   holderPid,
   describeLease,
   SESSION_VAR,
   normalizeLeasePath,
+  type LeaseHolder,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
@@ -36,6 +39,8 @@ export function registerLockCommand(
     .option('--release <id>', 'let one go early')
     .option('--forget', 'drop the records of leases nobody holds')
     .option('--agent <name>', 'who is taking it', 'you')
+    .option('--free <id>', "free lines another machine's agent holds, from a refusal")
+    .option('--reason <why>', 'why they are being freed, kept on the record')
     .action(
       async (
         path: string | undefined,
@@ -45,6 +50,8 @@ export function registerLockCommand(
           release?: string;
           forget?: boolean;
           agent: string;
+          free?: string;
+          reason?: string;
         },
       ) => {
         const moment = now().toISOString();
@@ -66,6 +73,11 @@ export function registerLockCommand(
 
         const { flow, style } = context;
         flow.open('memnox lock');
+
+        if (options.free !== undefined) {
+          await freeLines(context, home(), options.free, holder, options.reason);
+          return;
+        }
 
         if (options.forget === true) {
           const dropped = await registry.forget(moment);
@@ -173,3 +185,69 @@ export function registerLockCommand(
 
 /** Enough of what a holder has been doing to end an argument, and never a log. */
 const ACTIVITY_SHOWN = 3;
+
+/** What the record says when a person freed lines without saying why. */
+const DEFAULT_FREE_REASON = 'freed by a person from the terminal';
+
+/**
+ * A person freeing lines another machine's agent holds.
+ *
+ * The one way out a refusal names, because an agent told only to ask somebody
+ * leaves that somebody nothing to type. It asks first, on a terminal, and runs on
+ * nothing else: the refused agent reads this command in its own refusal, and one
+ * that could run it through its shell would be an agent lifting the block on
+ * itself.
+ */
+async function freeLines(
+  context: CliContext,
+  home: string,
+  id: string,
+  holder: LeaseHolder,
+  reason: string | undefined,
+): Promise<void> {
+  const { flow, style } = context;
+  if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
+    flow.close(
+      style.warn('This asks a person to confirm, so it only runs in a terminal.'),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let yes = false;
+  try {
+    const answer = await rl.question(
+      `Free ${id}? The agent holding those lines loses them now, and the record keeps that you did.  [y/N] `,
+    );
+    yes = answer.trim().toLowerCase().startsWith('y');
+  } catch {
+    // Ctrl+D, or a stdin that closed. Neither is consent.
+  } finally {
+    rl.close();
+  }
+  if (!yes) {
+    flow.close('Left as it was.');
+    return;
+  }
+
+  const said =
+    reason === undefined || reason.trim() === '' ? DEFAULT_FREE_REASON : reason;
+  const outcome = await new CloudLeases(home).free(id, holder, said);
+  if (outcome === FREE_OUTCOME.FREED) {
+    flow.close(style.ok('Freed. The agent that was waiting can write those lines now.'));
+    return;
+  }
+  if (outcome === FREE_OUTCOME.GONE) {
+    flow.close('Nobody holds it any more, so there was nothing to free.');
+    return;
+  }
+  if (outcome === FREE_OUTCOME.NOT_ENROLLED) {
+    flow.close('This machine is not connected, so it cannot reach the workspace.');
+    flow.hint('Connect it with "memnox login".');
+    process.exitCode = 1;
+    return;
+  }
+  flow.close(style.warn('The workspace could not free it. Try again in a moment.'));
+  process.exitCode = 1;
+}
