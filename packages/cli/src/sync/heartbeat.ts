@@ -25,7 +25,7 @@ import {
   type SkillFinding,
 } from '@memnox/core';
 import { CLI_VERSION } from '../defaults';
-import { readAccount } from '@memnox/core';
+import { activitySince, readAccount } from '@memnox/core';
 import { orgPolicyPath, PULL_OUTCOME, pullBundle, type PullResult } from './bundle';
 import { CloudUnreachable } from './client';
 import {
@@ -374,6 +374,8 @@ interface LoopSeams {
   log?: (message: string) => void;
   /** Injected so a test states what is held rather than writing files to say it. */
   holding?: (home: string) => Promise<number>;
+  /** Whether an agent here did something since then, so it is sent at once. */
+  active?: (home: string, since: number) => Promise<boolean>;
 }
 
 /** How many calls this machine is stopped on. Local, so it costs no request to ask. */
@@ -399,10 +401,16 @@ async function until(
   idleMs: number,
   sleep: (ms: number) => Promise<void>,
   holding: (home: string) => Promise<number>,
+  active: (home: string, since: number) => Promise<boolean>,
+  since: number,
 ): Promise<void> {
   for (let left = idleMs; left > 0; left -= HELD_POLL_MS) {
     await sleep(Math.min(HELD_POLL_MS, left));
     if ((await holding(home)) > 0) return;
+    /* An agent here just did something. Sent now rather than at the next beat,
+       so the workspace sees a session as it works: the same early wake a held
+       question gets, for the same reason, which is somebody looking. */
+    if (await active(home, since)) return;
   }
 }
 
@@ -420,6 +428,7 @@ export async function syncLoop(
   const pass = seams.pass ?? onePass;
 
   while (running()) {
+    const passStarted = Date.now();
     let result: Pass;
     try {
       result = await pass(home);
@@ -439,6 +448,13 @@ export async function syncLoop(
       await sleep(BACKOFF_MS);
       continue;
     }
-    await until(home, HEARTBEAT_MS, sleep, seams.holding ?? heldHere);
+    await until(
+      home,
+      HEARTBEAT_MS,
+      sleep,
+      seams.holding ?? heldHere,
+      seams.active ?? activitySince,
+      passStarted,
+    );
   }
 }

@@ -191,6 +191,24 @@ describe('the loop the daemon runs', () => {
     expect(slept).toEqual([2_000, 2_000]);
   });
 
+  /* A session as it works rather than a minute later: a hook that wrote a row
+     marks it, and the loop sends at once, as it does for a held question. */
+  it('comes back at once when an agent here just did something', async () => {
+    const slept: number[] = [];
+    let left = 1;
+
+    await syncLoop('/home', () => left-- > 0, {
+      pass: passes([{}]),
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      holding: async () => 0,
+      active: async () => true,
+    });
+
+    expect(slept).toEqual([2_000]);
+  });
+
   it('waits a held call out whole when the control plane cannot be reached', async () => {
     const slept: number[] = [];
     let left = 1;
