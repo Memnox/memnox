@@ -4,7 +4,7 @@ import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.cons
  * Whether trying again could ever work.
  *
  * A denial that reads like a transient failure gets retried, and an agent retrying a
- * policy decision forty times is the loop the circuit breaker exists to stop — so the
+ * policy decision forty times is the loop the circuit breaker exists to stop, so the
  * cheapest place to stop it is the refusal itself. The model is told plainly, in the
  * one message it is going to read.
  */
@@ -30,7 +30,20 @@ export interface RefusalShape {
  * telling a model "never" about one of those is as wrong as telling it "soon" about a
  * rule, because it abandons work that would have been fine in an hour.
  */
-const EXPIRES = ['freeze', 'frozen', 'budget', 'exhausted', 'lease', 'held by', 'window'];
+const EXPIRES = [
+  'freeze',
+  'frozen',
+  'budget',
+  'exhausted',
+  'lease',
+  'held by',
+  'window',
+  /* Another agent's claim on the same action or the same thing, which lapses in
+     minutes. Told "change the rule", an agent would go looking for a rule there
+     is none of. */
+  'claimed this exact action',
+  'has been working on',
+];
 
 export function refusalShapeFor(effect: DecisionEffect, reason: string): RefusalShape {
   if (effect === DECISION_EFFECT.ASK) {

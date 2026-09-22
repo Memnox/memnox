@@ -6,3 +6,5 @@ export * from './lease-prompt';
 export * from './shared-leases';
 export * from './written-region';
 export * from './git-region';
+export * from './shared-actions';
+export * from './action-target';

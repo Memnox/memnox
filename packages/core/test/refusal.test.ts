@@ -24,6 +24,18 @@ describe('what a refusal says about trying again', () => {
     }
   });
 
+  /* Another agent's claim lapses in minutes, and there is no rule to change. */
+  it('tells it another agent holding the work will clear', () => {
+    for (const reason of [
+      'hermes on vps claimed this exact action at 10:00, so doing it again would repeat it.',
+      'claude-code on laptop has been working on github:acme/api#pull/12 since 10:00.',
+    ]) {
+      expect(refusalShapeFor(DECISION_EFFECT.DENY, reason).retryability).toBe(
+        RETRYABILITY.LATER,
+      );
+    }
+  });
+
   it('tells it an ask is waiting on a person, not failing', () => {
     const shape = refusalShapeFor(DECISION_EFFECT.ASK, 'a person decides');
 
