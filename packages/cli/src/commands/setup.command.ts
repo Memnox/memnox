@@ -35,6 +35,7 @@ import {
 import { declineAgent, forgetDeclined } from '../agents/declined';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
 import { onePass } from '../sync/heartbeat';
+import { runPathLine } from '../protect/seam-install';
 import { wireMachine, WIRED, type Wiring, type WiringSeams } from '../setup-wiring';
 
 /**
@@ -226,7 +227,9 @@ export function registerSetupCommand(
            one on its own rung read as four separate things having happened. */
         flow.step(
           'Wired this machine',
-          `${wired.interceptors} interceptors, ${wired.rules} rules, ${daemonWord(wired)}`,
+          `${wired.interceptors} interceptors, ${wired.rules} rules, ${daemonWord(wired)}${editorWord(
+            wired,
+          )}${mcpWord(wired)}`,
         );
 
         /* The last step, and the one that was missing: onboarding writes
@@ -237,6 +240,19 @@ export function registerSetupCommand(
            sync does, so the cursor that stops a scan being sent twice is the
            one that already owns that. */
         const reported = await reportScan(home()).catch(() => false);
+
+        /* The last thing that cannot be done for somebody: an editor started
+           from a dock icon takes its PATH from the login shell, so without this
+           line the wrappers are in front of nothing there. Asked rather than
+           written, because a tool that edits your shell profile without asking
+           is one you do not trust twice, and asked *here* so that setting a
+           machine up is still one command. */
+        if (interactive()) {
+          const wanted = await confirm(
+            'Add the interceptors to your login PATH, so an editor started from the dock meets them too?',
+          );
+          if (wanted) await runPathLine(context, false);
+        }
 
         summarize(context, flow, account, results, reported, wired);
       },
@@ -766,6 +782,41 @@ function summarize(
     'This machine is watching, not stopping. "memnox doctor --wiring" shows what is in the path, and "memnox config set mode enforce" turns it on when you have read a week of it.',
   );
   flow.hint('Take all of it back out with "memnox uninstall".');
+}
+
+/**
+ * Which coding agents now take a lease before they write, where any do.
+ *
+ * Named, because a machine where only one of three editors is hooked is one where
+ * the other two still edit the same lines as another computer without either
+ * being told.
+ */
+function editorWord(wired: Wiring): string {
+  const editors = [...(wired.claudeHook ? ['Claude Code'] : []), ...wired.editHooks];
+  const hooked =
+    editors.length === 0
+      ? ''
+      : `, ${editors.join(', ')} ${editors.length === 1 ? 'takes' : 'take'} a lease before writing`;
+  /* Named, because it is what covers every agent with no hook of its own. */
+  const watched =
+    wired.watching === undefined
+      ? ''
+      : ', edits by anything else in this repository watched';
+  return `${hooked}${watched}`;
+}
+
+/**
+ * What happened to the MCP servers, where anything did.
+ *
+ * Said out loud when wrapping was skipped, because a machine whose servers are
+ * unwrapped is one where an agent's outward work is compared against nothing.
+ */
+function mcpWord(wired: Wiring): string {
+  if (wired.mcpUnwrapped === true) {
+    return ', MCP servers left alone (the proxy is not on PATH)';
+  }
+  if (wired.mcpServers === 0) return '';
+  return `, ${wired.mcpServers} MCP server(s) through the proxy`;
 }
 
 /** The daemon half of the wiring line, in the words the summary will use again. */

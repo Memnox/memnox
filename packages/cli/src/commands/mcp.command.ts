@@ -7,12 +7,14 @@ import {
   formatOf,
   MCP_CONFIG_LOCATIONS,
   planUnwrap,
+  planUpgrade,
   planWrap,
   PROXY_BINARY,
   readTextServers,
   rewriteTextServers,
   serversKeyOf,
   type ConfigFormat,
+  type DiscoveredAgentKind,
   type ServerLaunch,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
@@ -30,15 +32,18 @@ interface ConfigFile {
   servers: Record<string, ServerLaunch>;
   /** Servers declared by URL. Named so a run can say what it skipped and why. */
   urlOnly: string[];
+  /** The agent these servers belong to, written into each wrapped line. */
+  agent?: DiscoveredAgentKind;
 }
 
 async function readConfigs(home: string, project: string): Promise<ConfigFile[]> {
   const found: ConfigFile[] = [];
   // One list, shared with the detectors and the wiring check, or they drift apart.
-  const paths = MCP_CONFIG_LOCATIONS.map((each) =>
-    join(each.scope === 'home' ? home : project, each.relative),
-  );
-  for (const path of paths) {
+  const places = MCP_CONFIG_LOCATIONS.map((each) => ({
+    path: join(each.scope === 'home' ? home : project, each.relative),
+    owner: each.agent === undefined ? {} : { agent: each.agent },
+  }));
+  for (const { path, owner } of places) {
     let raw: string;
     try {
       raw = await readFile(path, 'utf8');
@@ -52,7 +57,7 @@ async function readConfigs(home: string, project: string): Promise<ConfigFile[]>
     if (format !== CONFIG_FORMAT.JSON) {
       const { servers, urlOnly } = readTextServers(format, raw);
       if (Object.keys(servers).length === 0 && urlOnly.length === 0) continue;
-      found.push({ path, raw, format, servers, urlOnly });
+      found.push({ path, raw, format, servers, urlOnly, ...owner });
       continue;
     }
 
@@ -73,6 +78,7 @@ async function readConfigs(home: string, project: string): Promise<ConfigFile[]>
       key,
       servers: config[key] as Record<string, ServerLaunch>,
       urlOnly: [],
+      ...owner,
     });
   }
   return found;
@@ -149,7 +155,7 @@ export function registerMcpCommand(
 
       let wrapped = 0;
       for (const file of configs) {
-        const plan = planWrap(file.servers);
+        const plan = planWrap(file.servers, file.agent);
         if (plan.wrap.length === 0 && plan.alreadyWrapped.length === 0) continue;
 
         flow.list(file.path, [
@@ -207,6 +213,46 @@ export function registerMcpCommand(
       );
       if (restored > 0) flow.hint('Restart your agent.');
     });
+}
+
+/**
+ * Wraps what is there, for `setup` to call rather than tell somebody to.
+ *
+ * The same reasoning as `unwrapEveryServer` below: leaving a person to run a
+ * second command is the trap. A guided run that enrolled the machine, wired the
+ * interceptors and then said nothing about MCP left every outward tool call (the
+ * message, the issue, the deploy) going straight out with nothing to compare it
+ * against another agent's.
+ *
+ * Silent, and the caller reports the count. Skipped where the proxy is not on
+ * PATH, because wrapping onto a binary that is not there stops agents starting
+ * at all, which is the one failure worse than not wrapping.
+ */
+export async function wrapEveryServer(
+  home: string,
+  project: string,
+  resolveBinary: (binary: string) => boolean = defaultResolve,
+): Promise<{ wrapped: number; skipped: boolean }> {
+  if (!proxyOnPath(resolveBinary)) return { wrapped: 0, skipped: true };
+  const configs = await readConfigs(home, project);
+  let wrapped = 0;
+
+  for (const file of configs) {
+    const plan = planWrap(file.servers, file.agent);
+    /* And the lines an older version wrapped without the agent's name, so a
+       refusal on another machine names this agent without a second command. */
+    const upgrades = planUpgrade(file.servers, file.agent);
+    if (plan.wrap.length === 0 && upgrades.length === 0) continue;
+    const next = { ...file.servers };
+    const changed: Record<string, ServerLaunch> = {};
+    for (const each of [...plan.wrap, ...upgrades]) {
+      next[each.name] = each.after;
+      changed[each.name] = each.after;
+    }
+    await writeConfig(home, file, next, changed);
+    wrapped += plan.wrap.length;
+  }
+  return { wrapped, skipped: false };
 }
 
 /**

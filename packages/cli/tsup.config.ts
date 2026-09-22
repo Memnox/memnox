@@ -10,6 +10,7 @@ export default defineConfig({
     'src/bin/intercept.ts',
     'src/bin/git-credential.ts',
     'src/bin/egress.ts',
+    'src/bin/edit-hook.ts',
   ],
   format: ['esm'],
   clean: true,

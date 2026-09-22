@@ -20,6 +20,13 @@ import {
   removeInterceptors,
 } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
+import { removeClaudeHook } from '../protect/claude-hook';
+import {
+  removeCodexHook,
+  removeCursorHook,
+  removeGeminiHook,
+  removeWindsurfHook,
+} from '../protect/agent-hooks';
 import { profilesFor, removeFromProfile } from '../protect/shell-profile';
 import { POLICY_FILES } from '../policy-path';
 import { uninstallService } from '../daemon/service';
@@ -106,6 +113,31 @@ export function registerUninstallCommand(
           : `removed ${interceptors.length} from ${interceptorDirFor(home)}`,
       );
       if (interceptors.length > 0) taken.push('the interceptors');
+
+      const claudeHook = await removeClaudeHook(home);
+      flow.step(
+        'Claude Code hook',
+        claudeHook ? 'taken out of its settings' : 'none was installed',
+      );
+      if (claudeHook) taken.push('the Claude Code hook');
+
+      const codexHook = await removeCodexHook(home);
+      const cursorHook = await removeCursorHook(home);
+      const geminiHook = await removeGeminiHook(home);
+      const windsurfHook = await removeWindsurfHook(home);
+      const editors = [
+        ...(codexHook ? ['Codex'] : []),
+        ...(cursorHook ? ['Cursor'] : []),
+        ...(geminiHook ? ['Gemini CLI'] : []),
+        ...(windsurfHook ? ['Windsurf'] : []),
+      ];
+      flow.step(
+        "Other coding agents' hooks",
+        editors.length === 0
+          ? 'none were installed'
+          : `taken out of ${editors.join(' and ')}`,
+      );
+      for (const editor of editors) taken.push(`the ${editor} hook`);
 
       /* Taken out before the wrappers, because it is the one piece that restarts
          itself: a service left loaded would keep a daemon alive against a machine

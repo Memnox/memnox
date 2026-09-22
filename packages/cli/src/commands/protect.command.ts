@@ -27,6 +27,7 @@ import {
   runInteractive,
   type DomainAsker,
 } from '../protect/interactive-rules';
+import { runClaudeHook } from '../protect/claude-hook';
 import { runNative } from '../protect/native-permissions';
 import {
   runHooks,
@@ -74,6 +75,11 @@ export function registerProtectCommand(
       'draft ask rules for what was granted and never used, e.g. 30d',
     )
     .option('--hooks', 'install git pre-push and pre-commit hooks in this repository')
+    .option(
+      '--claude-hook',
+      'make Claude Code take a lease before it writes a file, so two sessions never write one at once',
+    )
+    .option('--revert-claude-hook', 'take that hook back out of Claude Code')
     .option('--os-guard', 'write the kernel sandbox profile from your filesystem rules')
     .option('--interactive', 'walk the five domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
@@ -98,6 +104,8 @@ export function registerProtectCommand(
         fromUsage?: string;
         interceptors?: boolean;
         hooks?: boolean;
+        claudeHook?: boolean;
+        revertClaudeHook?: boolean;
         osGuard?: boolean;
         interactive?: boolean;
         yes?: boolean;
@@ -165,6 +173,10 @@ export function registerProtectCommand(
         }
         if (options.hooks === true) {
           await runHooks(context, cwd());
+          return;
+        }
+        if (options.claudeHook === true || options.revertClaudeHook === true) {
+          await runClaudeHook(context, options.revertClaudeHook === true);
           return;
         }
         if (options.osGuard === true) {

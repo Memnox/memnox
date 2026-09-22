@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -29,6 +29,11 @@ describe('wiring a machine that has just been set up', () => {
     interceptors: wrappers,
     service: started,
     rules: async () => 7,
+    /* Nothing real again: a test that rewrote MCP configs would repoint the
+       servers of whoever ran it. */
+    mcp: async () => ({ wrapped: 0, skipped: false }),
+    codexHook: async () => false,
+    cursorHook: async () => false,
   };
 
   it('reports what is now in the path, counted rather than claimed', async () => {
@@ -37,6 +42,77 @@ describe('wiring a machine that has just been set up', () => {
     expect(wired.interceptors).toBe(3);
     expect(wired.rules).toBe(7);
     expect(wired.daemon).toBe(WIRED.DONE);
+  });
+
+  /* Claude Code's own file tools pass through no wrapper, so without this two
+     sessions on one file never met a lease. */
+  it('makes Claude Code take a lease where Claude Code is installed', async () => {
+    const machine = await home();
+    await mkdir(join(machine, '.claude'));
+
+    const wired = await wireMachine(machine, '/tmp/project', nothing);
+
+    expect(wired.claudeHook).toBe(true);
+    const settings = await readFile(join(machine, '.claude', 'settings.json'), 'utf8');
+    expect(settings).toContain('memnox-edit-hook');
+  });
+
+  /* Codex and Cursor write from inside themselves too, and an edit either made
+     on another computer met nothing until each had its own hook. */
+  it('hooks Codex and Cursor where they are installed, and names them', async () => {
+    const machine = await home();
+    await mkdir(join(machine, '.codex'));
+    await mkdir(join(machine, '.cursor'));
+
+    const wired = await wireMachine(machine, '/tmp/project', {
+      ...nothing,
+      codexHook: undefined,
+      cursorHook: undefined,
+    });
+
+    expect(wired.editHooks).toEqual(['Codex', 'Cursor']);
+    const codex = await readFile(join(machine, '.codex', 'hooks.json'), 'utf8');
+    expect(codex).toContain('apply_patch');
+    expect(codex).toContain('--agent codex-cli');
+    const cursor = JSON.parse(
+      await readFile(join(machine, '.cursor', 'hooks.json'), 'utf8'),
+    ) as { version: number; hooks: Record<string, { command: string }[]> };
+    expect(cursor.version).toBe(1);
+    expect(Object.keys(cursor.hooks)).toEqual([
+      'preToolUse',
+      'afterFileEdit',
+      'sessionEnd',
+      'postToolUse',
+      'stop',
+    ]);
+    expect(cursor.hooks['afterFileEdit']?.[0]?.command).toContain('--agent cursor');
+  });
+
+  it('writes no editor settings where there is no Claude Code', async () => {
+    const wired = await wireMachine(await home(), '/tmp/project', nothing);
+
+    expect(wired.claudeHook).toBe(false);
+  });
+
+  /* An outward action (the message, the issue, the deploy) is compared against
+     another agent's only where the proxy is in front of the server. */
+  it('puts the MCP servers behind the proxy and counts them', async () => {
+    const wired = await wireMachine(await home(), '/tmp/project', {
+      ...nothing,
+      mcp: async () => ({ wrapped: 3, skipped: false }),
+    });
+
+    expect(wired.mcpServers).toBe(3);
+    expect(wired.mcpUnwrapped).toBeUndefined();
+  });
+
+  it('says so rather than wrapping onto a proxy that is not on PATH', async () => {
+    const wired = await wireMachine(await home(), '/tmp/project', {
+      ...nothing,
+      mcp: async () => ({ wrapped: 0, skipped: true }),
+    });
+
+    expect(wired.mcpUnwrapped).toBe(true);
   });
 
   it('says a platform with no service manager is not a failure', async () => {
