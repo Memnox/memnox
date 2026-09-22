@@ -1,72 +1,33 @@
-import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir, release } from 'node:os';
-import { randomUUID } from 'node:crypto';
+/** `memnox run`: starts an agent with the interceptors, the shell wrapper, a session and a milestone in place. */
+
+import { rm } from 'node:fs/promises';
 import { delimiter } from 'node:path';
 import type { Command } from 'commander';
 import {
-  guardFor,
-  isEmptyScope,
   CloudLeases,
   LeaseRegistry,
-  MILESTONE_REASON,
-  Milestones,
-  OS_GUARD,
-  sandboxCommand,
   SESSION_VAR,
-  SessionTasks,
-  taskFor,
-  type DeclaredScope,
-  type SessionTask,
+  SessionContainments,
 } from '@memnox/core';
-import {
-  ENV_AGENT_ROLE as AGENT_ROLE_VAR,
-  FALLBACK_SHELL,
-  interceptorDirFor,
-  REAL_SHELL_VAR,
-} from '@memnox/interceptors';
+import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import type { FlowRow } from '../flow';
-import { guardProfilePath, transcriptPathFor } from '../memnox-paths';
-import { NodeGit, NodeWorktree } from '../node-git';
+import { sessionGuardPath } from '../memnox-paths';
+import { describeCount } from '../plural';
 import { binaryMeantBy, onPath } from '../on-path';
-
-/** What is actually in the interceptor directory. Empty when there is no directory. */
-function interceptorsIn(home: string): readonly string[] {
-  try {
-    return readdirSync(interceptorDirFor(home));
-  } catch {
-    // Not there, which is the same answer as empty: nothing on PATH will be wrapped.
-    return [];
-  }
-}
-
-function wiringRow(
-  context: CliContext,
-  home: string,
-  installed: (home: string) => readonly string[],
-): FlowRow {
-  const wrappers = installed(home);
-  if (wrappers.length > 0) {
-    return {
-      label: 'interceptors',
-      value: `${wrappers.length} on PATH from ${interceptorDirFor(home)}`,
-    };
-  }
-  return {
-    label: 'interceptors',
-    value: context.style.warn(
-      'none installed, so shell and git commands are not gated. "memnox protect --interceptors" installs them',
-    ),
-  };
-}
+import {
+  nowOf,
+  prepareRun,
+  type PreparedRun,
+  type RunDeps,
+  type RunOptions,
+} from './run/prepare';
+import { SESSION_GUARD_EXTENSIONS } from './run/sandbox';
+import { defaultStart, interceptorsIn, wiringRow } from './run/start';
 
 /**
- * Everything the child needs to be governed, set as environment rather than asked of
- * the agent: PATH so the interceptors are found first, SHELL so its `Bash` tool goes
- * through one, the shell we displaced so that wrapper has something to hand off to, and
- * a session id so one piece of work reads as one timeline.
+ * Everything the child needs to be governed, set as environment rather than asked of the
+ * agent: interceptors first on PATH, SHELL pointing at the wrapper, and a session id.
  */
 export function environmentFor(
   base: NodeJS.ProcessEnv,
@@ -80,74 +41,11 @@ export function environmentFor(
     ...base,
     PATH: path.startsWith(interceptors) ? path : `${interceptors}${delimiter}${path}`,
     SHELL: shellBinary,
-    /* The shell we displace, so the wrapper has something to hand the command to and
-       never reads `SHELL` back to find itself. */
+    // The displaced shell, so the wrapper hands off to it and never reads `SHELL` to find itself.
     [REAL_SHELL_VAR]: base['SHELL'] ?? FALLBACK_SHELL,
     [SESSION_VAR]: sessionId,
   };
 }
-
-function newSessionId(): string {
-  return `ses_${randomUUID().slice(0, 12)}`;
-}
-
-interface RunDeps {
-  /** Injected so a test never writes a ref into the repository it is running in. */
-  milestones?: () => Milestones;
-  /** Injected so a test drives the real command body without starting a process. */
-  start?: (
-    command: string,
-    args: readonly string[],
-    env: NodeJS.ProcessEnv,
-    transcript?: string,
-  ) => Promise<number>;
-  home?: () => string;
-  newId?: () => string;
-  now?: () => Date;
-  /** Injected so a test states what is installed rather than reading the runner's PATH. */
-  onPath?: (binary: string) => boolean;
-  binaryMeantBy?: (name: string) => string | null;
-  /** Injected so a test says what is installed rather than reading the runner's home. */
-  interceptorsIn?: (home: string) => readonly string[];
-}
-
-const defaultStart = (
-  command: string,
-  args: readonly string[],
-  env: NodeJS.ProcessEnv,
-  transcript?: string,
-): Promise<number> =>
-  new Promise((resolve) => {
-    if (transcript === undefined) {
-      const child = spawn(command, [...args], { stdio: 'inherit', env });
-      // The agent's exit code is the caller's; a wrapper that swallowed it would lie.
-      child.on('exit', (code) => resolve(code ?? 1));
-      child.on('error', () => resolve(127));
-      return;
-    }
-
-    /* Teed rather than intercepted: the agent's output still reaches the terminal
-       unchanged, and a copy lands on this disk for `memnox why` to check a claim
-       against. It never leaves the machine, and retention drops it with everything else. */
-    mkdirSync(join(transcript, '..'), { recursive: true, mode: 0o700 });
-    const log = createWriteStream(transcript, { mode: 0o600 });
-    const child = spawn(command, [...args], {
-      stdio: ['inherit', 'pipe', 'pipe'],
-      env,
-    });
-    child.stdout?.pipe(process.stdout);
-    child.stdout?.pipe(log);
-    child.stderr?.pipe(process.stderr);
-    child.stderr?.pipe(log);
-    child.on('exit', (code) => {
-      log.end();
-      resolve(code ?? 1);
-    });
-    child.on('error', () => {
-      log.end();
-      resolve(127);
-    });
-  });
 
 export function registerRunCommand(
   program: Command,
@@ -165,6 +63,10 @@ export function registerRunCommand(
     )
     .option('--no-guard', 'start outside the kernel sandbox even when a profile exists')
     .option('--no-milestone', 'do not keep the working tree before the agent starts')
+    .option(
+      '--untrusted',
+      'a repository nobody here vouched for: writes stay in it, secrets unreadable, the network asks',
+    )
     .option('--task <statement>', 'what you actually asked for, in your words')
     .option('--paths <globs>', 'paths the task covers, comma separated')
     .option('--repos <list>', 'repositories the task covers, comma separated')
@@ -172,204 +74,130 @@ export function registerRunCommand(
     .option('--envs <list>', 'environments the task covers, comma separated')
     .option('--expect <count>', 'roughly how many actions this should take')
     .option('--role <name>', 'the job this agent is enrolled under, matched by roles:')
-    .action(
-      async (
-        command: string[],
-        options: {
-          shell: string;
-          transcript?: boolean;
-          guard?: boolean;
-          milestone?: boolean;
-          task?: string;
-          paths?: string;
-          repos?: string;
-          services?: string;
-          envs?: string;
-          expect?: string;
-          role?: string;
-        },
-      ) => {
-        /* The rail is commentary here, and it is the one command where that is
-           not a choice: what stdout carries from the moment the agent starts is
-           the agent's own output, teed straight through. */
-        const { flow } = context;
-        flow.commentary();
-        flow.open('memnox run');
-
-        const binary = command[0];
-        if (binary === undefined) {
-          throw new Error('Name the command to run:  memnox run -- claude');
-        }
-        /* Before a session, a task, a milestone or the sandbox. Checked last, the
-           refusal came back as `sandbox-exec: execvp() ... No such file or directory`
-           over a working tree this had already kept for a run that never started. */
-        if (!(deps.onPath ?? onPath)(binary)) {
-          const meant = (deps.binaryMeantBy ?? binaryMeantBy)(binary);
-          throw new Error(
-            `"${binary}" is not on PATH, so there is nothing to start.` +
-              (meant === null
-                ? ''
-                : `\nThe binary for ${binary} is "${meant}":  memnox run -- ${meant}`),
-          );
-        }
-
-        const home = (deps.home ?? homedir)();
-        const sessionId = (deps.newId ?? newSessionId)();
-        const env = environmentFor(process.env, home, sessionId, options.shell);
-        if (options.role !== undefined) env[AGENT_ROLE_VAR] = options.role;
-
-        /* Written before the agent starts, because everything that can say "this went
-           somewhere it was not asked to go" compares against a declaration. Nothing
-           infers one: a session with no task is undeclared, never in violation. */
-        const declared = await declareTask(home, sessionId, options, deps);
-
-        /* Taken before a single command runs, because the point is the willingness to
-           let it run unsupervised — and that only exists if the way back is already
-           there when somebody realises they need it. */
-        const kept =
-          options.milestone === false
-            ? null
-            : await keepMilestone(sessionId, binary, deps);
-
-        /* The kernel guard, when one was written and this platform takes it. It is a
-           second line, not the gate: without it a binary that never saw a wrapper can
-           still read a denied file. */
-        const guarded = sandboxed(command, home, options.guard !== false);
-        const transcript =
-          options.transcript === true ? transcriptPathFor(home, sessionId) : undefined;
-
-        flow.rows(`Starting ${binary}`, [
-          { label: 'session', value: sessionId },
-          /* Said only when it is true. This announced the directory whether or
-             not anything was in it, so a run with no wrappers installed reported
-             that shell and git commands were being gated and then gated none of
-             them, which is the one lie this product cannot afford, because it is
-             the screen somebody reads before walking away from the agent. */
-          wiringRow(context, home, deps.interceptorsIn ?? interceptorsIn),
-          {
-            label: 'sandbox',
-            value: guarded === command ? 'not used' : 'inside the profile',
-          },
-          ...(declared === null
-            ? []
-            : [{ label: 'task', value: `"${declared.statement}"` }]),
-          ...(declared === null || declared.expectedActions === undefined
-            ? []
-            : [
-                {
-                  label: 'expecting',
-                  value: `about ${declared.expectedActions} actions`,
-                },
-              ]),
-          ...(kept === null
-            ? []
-            : [
-                {
-                  label: 'working tree',
-                  value: `kept as ${kept}, and "memnox rewind" undoes it`,
-                },
-              ]),
-          ...(transcript === undefined
-            ? []
-            : [{ label: 'transcript', value: transcript }]),
-        ]);
-        flow.close(`${binary} is running under session ${sessionId}.`);
-
-        const start = deps.start ?? defaultStart;
-        const [executable, ...args] = guarded;
-        try {
-          process.exitCode = await start(executable ?? binary, args, env, transcript);
-        } finally {
-          /* Rule 3 from the other end: a session that has ended cannot still be holding
-             a path, whatever its lease said about expiry. In a `finally`, because an
-             agent that crashed is exactly the one whose paths must not stay held. */
-          const let_go = await releaseLeases(home, sessionId, deps);
-          if (let_go > 0) {
-            /* Off the rail deliberately: it closed above, when the agent took
-               over the terminal, and reopening it to say one thing minutes later
-               would draw a second header under the agent's own output. */
-            context.out.note(`released ${let_go} lease${let_go === 1 ? '' : 's'}`);
-          }
-        }
-      },
+    .action(async (command: readonly string[], options: RunOptions) =>
+      runAgent(context, deps, command, options),
     );
 }
 
-interface GuardSeams {
-  exists?: (path: string) => boolean;
-  platform?: string;
-  kernel?: string;
-}
-
-/** Wraps the command in `sandbox-exec` when a profile is there and the platform takes it. */
-export function sandboxed(
-  command: readonly string[],
-  home: string,
-  wanted: boolean,
-  seams: GuardSeams = {},
-): readonly string[] {
-  if (!wanted) return command;
-  const platform = seams.platform ?? process.platform;
-  const kernel = seams.kernel ?? release();
-  if (guardFor(platform, kernel).guard !== OS_GUARD.SEATBELT) return command;
-  const profile = guardProfilePath(home);
-  if (!(seams.exists ?? existsSync)(profile)) return command;
-  return sandboxCommand(profile, command);
-}
-
 /**
- * The task, when one was given. Every dimension is optional and an omitted one is
- * undeclared rather than empty — a task that declared paths says nothing about
- * environments, and reporting the second as drift would be an invention.
+ * Starts the agent with every seam in front of it. The rail is commentary here, because
+ * what stdout carries once the agent starts is the agent's own output, teed through.
  */
-async function declareTask(
-  home: string,
-  sessionId: string,
-  options: {
-    task?: string;
-    paths?: string;
-    repos?: string;
-    services?: string;
-    envs?: string;
-    expect?: string;
-  },
+async function runAgent(
+  context: CliContext,
   deps: RunDeps,
-): Promise<SessionTask | null> {
-  const scope: DeclaredScope = {
-    ...listOf('paths', options.paths),
-    ...listOf('repositories', options.repos),
-    ...listOf('services', options.services),
-    ...listOf('environments', options.envs),
-  };
-  if (options.task === undefined && isEmptyScope(scope)) return null;
-
-  const expected =
-    options.expect === undefined ? undefined : Number.parseInt(options.expect, 10);
-  if (expected !== undefined && (Number.isNaN(expected) || expected < 1)) {
-    throw new Error('--expect takes a count, e.g. --expect 40');
-  }
-
-  const task = taskFor(
-    sessionId,
-    options.task ?? 'unstated',
-    scope,
-    (deps.now ?? (() => new Date()))().toISOString(),
-    expected,
-  );
-  await new SessionTasks(home).declare(task);
-  return task;
+  command: readonly string[],
+  options: RunOptions,
+): Promise<void> {
+  context.flow.commentary();
+  context.flow.open('memnox run');
+  const binary = resolveBinary(command, deps);
+  const run = await prepareRun({
+    binary,
+    command,
+    options,
+    deps,
+    environment: (home, sessionId) =>
+      environmentFor(deps.env ?? process.env, home, sessionId, options.shell),
+  });
+  renderStart(context, run, deps);
+  await startAndRelease(context, run, deps);
 }
 
-function listOf<TKey extends string>(
-  key: TKey,
-  value: string | undefined,
-): Partial<Record<TKey, string[]>> {
-  if (value === undefined) return {};
-  const items = value
-    .split(',')
-    .map((each) => each.trim())
-    .filter((each) => each.length > 0);
-  return items.length === 0 ? {} : ({ [key]: items } as Record<TKey, string[]>);
+/** Refused before a session, a milestone or the sandbox, so nothing is kept for a run that never starts. */
+function resolveBinary(command: readonly string[], deps: RunDeps): string {
+  const binary = command[0];
+  if (binary === undefined) {
+    throw new Error('Name the command to run:  memnox run -- claude');
+  }
+  if ((deps.onPath ?? onPath)(binary)) return binary;
+  const meant = (deps.binaryMeantBy ?? binaryMeantBy)(binary);
+  const hint =
+    meant === null
+      ? ''
+      : `\nThe binary for ${binary} is "${meant}":  memnox run -- ${meant}`;
+  throw new Error(`"${binary}" is not on PATH, so there is nothing to start.${hint}`);
+}
+
+function renderStart(context: CliContext, run: PreparedRun, deps: RunDeps): void {
+  const rows: FlowRow[] = [
+    { label: 'session', value: run.sessionId },
+    wiringRow(context, run.home, deps.interceptorsIn ?? interceptorsIn),
+    ...containmentRows(context, run),
+  ];
+  if (run.declared !== null) {
+    rows.push({ label: 'task', value: `"${run.declared.statement}"` });
+    if (run.declared.expectedActions !== undefined) {
+      rows.push({
+        label: 'expecting',
+        value: `about ${run.declared.expectedActions} actions`,
+      });
+    }
+  }
+  if (run.kept !== null) {
+    rows.push({
+      label: 'working tree',
+      value: `kept as ${run.kept}, and "memnox rewind" undoes it`,
+    });
+  }
+  if (run.transcript !== undefined)
+    rows.push({ label: 'transcript', value: run.transcript });
+  context.flow.rows(`Starting ${run.binary}`, rows);
+  context.flow.close(`${run.binary} is running under session ${run.sessionId}.`);
+  if (run.hint !== null) context.flow.hint(run.hint);
+}
+
+/** The wall and the network, said as they are, including where there is neither. */
+function containmentRows(context: CliContext, run: PreparedRun): FlowRow[] {
+  const { style } = context;
+  const sandbox = run.sandbox;
+  const rows: FlowRow[] = [
+    {
+      label: 'sandbox',
+      value:
+        sandbox.guard === null ? sandbox.because : `${sandbox.guard}: ${sandbox.because}`,
+    },
+    {
+      label: 'network',
+      value:
+        run.egress === null
+          ? style.warn('not proxied, since no egress proxy would start')
+          : `through the ${run.egress.source} egress proxy on port ${run.egress.port}, ruled on by host`,
+    },
+  ];
+  if (run.untrusted) {
+    rows.push({
+      label: 'untrusted',
+      value:
+        'writes stay in the repository and temp; outward and destructive actions ask',
+    });
+  }
+  return rows;
+}
+
+async function startAndRelease(
+  context: CliContext,
+  run: PreparedRun,
+  deps: RunDeps,
+): Promise<void> {
+  const start = deps.start ?? defaultStart;
+  const [executable, ...args] = run.sandbox.command;
+  try {
+    process.exitCode = await start(
+      executable ?? run.binary,
+      args,
+      run.env,
+      run.transcript,
+    );
+  } finally {
+    // In a `finally`, because an agent that crashed is the one whose paths must not stay held.
+    const released = await releaseLeases(run.home, run.sessionId, deps);
+    await endContainment(run);
+    if (released > 0) {
+      // Off the rail, because it closed when the agent took over the terminal.
+      context.out.note(`released ${describeCount(released, 'lease')}`);
+    }
+  }
 }
 
 /** Quiet on failure: a register that cannot be written must not stop an agent exiting. */
@@ -380,12 +208,8 @@ async function releaseLeases(
 ): Promise<number> {
   try {
     const registry = new LeaseRegistry(home);
-    const released = await registry.releaseSession(
-      sessionId,
-      (deps.now ?? (() => new Date()))().toISOString(),
-    );
-    /* And in the workspace, once per agent that held something, or another machine
-       waits out the window on paths nobody here is writing any more. */
+    const released = await registry.releaseSession(sessionId, nowOf(deps).toISOString());
+    // Once per agent in the workspace too, or another machine waits on paths nobody writes.
     const shared = new CloudLeases(home);
     const agents = new Set(released.map((lease) => lease.holder.agent));
     for (const agent of agents) {
@@ -397,32 +221,13 @@ async function releaseLeases(
   }
 }
 
-/**
- * Best effort, and quiet about it: not being in a repository is the ordinary case for
- * somebody running an agent in a scratch directory, and it must not stop the agent.
- */
-async function keepMilestone(
-  sessionId: string,
-  binary: string,
-  deps: RunDeps,
-): Promise<string | null> {
-  try {
-    const milestones =
-      deps.milestones === undefined
-        ? new Milestones(new NodeGit(process.cwd()), new NodeWorktree(process.cwd()))
-        : deps.milestones();
-    const taken = await milestones.take({
-      at: new Date().toISOString(),
-      reason: MILESTONE_REASON.SESSION,
-      sessionId,
-      note: `before ${binary}`,
-    });
-    /* Retention applied where milestones are made rather than only when somebody
-       asks. Left to `--forget` alone, a machine that starts agents all day reached
-       nine hundred refs and a `rewind --list` nobody could read. */
-    await milestones.forget();
-    return taken.id;
-  } catch {
-    return null;
+/** The session's proxy closed and its record gone, so nothing outlives the agent it was for. */
+async function endContainment(run: PreparedRun): Promise<void> {
+  await run.egress?.close().catch(() => undefined);
+  await new SessionContainments(run.home).clear(run.sessionId).catch(() => undefined);
+  for (const extension of SESSION_GUARD_EXTENSIONS) {
+    await rm(sessionGuardPath(run.home, run.sessionId, extension), { force: true }).catch(
+      () => undefined,
+    );
   }
 }

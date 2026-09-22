@@ -4,18 +4,22 @@ import { interceptorDirFor } from '@memnox/interceptors';
 import { CliContext } from '../src/cli-context';
 import { RecordedOutput } from '../src/cli-output';
 import { plainStyle } from '../src/style';
-import {
-  environmentFor,
-  registerRunCommand,
-  sandboxed,
-} from '../src/commands/run.command';
-import { LeaseRegistry, SESSION_VAR } from '@memnox/core';
+import { environmentFor, registerRunCommand } from '../src/commands/run.command';
+import { sandboxed } from '../src/commands/run/sandbox';
+import { ENV_AGENT_NAME, LeaseRegistry, SESSION_VAR } from '@memnox/core';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { transcriptPathFor } from '../src/memnox-paths';
 
 const HOME = '/home/dev';
+
+/** No repository, no proxy started and no profile read, so a run touches nothing real. */
+const QUIET = {
+  rootOf: () => null,
+  egress: { daemonPort: async () => 4321 },
+  guard: { exists: () => false },
+};
 
 /**
  * Never the real one. Left unstubbed, every `memnox run` in this file took a git
@@ -75,6 +79,7 @@ describe('memnox run', () => {
        terminal while passing. exitOverride turns it into the message a user reads. */
     const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
     registerRunCommand(program, new CliContext(out, plainStyle), {
+      ...QUIET,
       start: start as never,
       home: () => HOME,
       newId: () => 'ses_test',
@@ -99,6 +104,22 @@ describe('memnox run', () => {
     expect(args).toEqual(['--dangerous']);
     expect(env[SESSION_VAR]).toBe('ses_test');
     expect(out.notes.join('\n')).toContain('ses_test');
+  });
+
+  /* Every seam its children reach reads the name from here, and one that finds
+     none reports an anonymous action the control plane cannot put on an agent. */
+  it.each([
+    ['claude', 'claude-code'],
+    ['codex', 'codex-cli'],
+    ['cursor-agent', 'cursor'],
+  ])('names %s to every seam as %s', async (binary, agent) => {
+    const start = vi.fn(async () => 0);
+    await run(['run', '--', binary], start);
+
+    const env = (
+      start.mock.calls[0] as unknown as [string, string[], NodeJS.ProcessEnv]
+    )[2];
+    expect(env[ENV_AGENT_NAME]).toBe(agent);
   });
 
   it('applies retention where the milestone is made, not only when asked', async () => {
@@ -128,6 +149,7 @@ describe('memnox run', () => {
     const start = vi.fn(async () => 0);
     const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
     registerRunCommand(program, new CliContext(out, plainStyle), {
+      ...QUIET,
       start: start as never,
       home: () => HOME,
       newId: () => 'ses_test',
@@ -160,6 +182,7 @@ describe('the transcript tap', () => {
     const out = new RecordedOutput();
     const program = new Command();
     registerRunCommand(program, new CliContext(out, plainStyle), {
+      ...QUIET,
       start: start as never,
       home: () => HOME,
       newId: () => 'ses_test',
@@ -194,9 +217,10 @@ describe('the transcript tap', () => {
 
 describe('starting an agent inside the kernel sandbox', () => {
   const mac = { platform: 'darwin', kernel: '23.5.0', exists: () => true };
+  const linux = { platform: 'linux', kernel: '6.8.0', exists: () => true };
 
   it('wraps the command when a profile was written', () => {
-    expect(sandboxed(['claude'], '/home/me', true, mac)).toEqual([
+    expect(sandboxed(['claude'], '/home/me', true, mac).command).toEqual([
       'sandbox-exec',
       '-f',
       '/home/me/.memnox/guard/memnox.sb',
@@ -204,22 +228,51 @@ describe('starting an agent inside the kernel sandbox', () => {
     ]);
   });
 
-  /* No profile means nobody asked for one. Starting the sandbox anyway would deny
-     nothing and only add a process between the person and their agent. */
+  // No profile means nobody asked for one, and a sandbox denying nothing only adds a process.
   it('leaves the command alone when no profile was written', () => {
-    expect(
-      sandboxed(['claude'], '/home/me', true, { ...mac, exists: () => false }),
-    ).toEqual(['claude']);
-  });
-
-  it('leaves the command alone on a platform with no seatbelt', () => {
-    expect(
-      sandboxed(['claude'], '/home/me', true, { ...mac, platform: 'linux' }),
-    ).toEqual(['claude']);
+    const run = sandboxed(['claude'], '/home/me', true, { ...mac, exists: () => false });
+    expect(run.command).toEqual(['claude']);
+    expect(run.because).toContain('memnox protect --os-guard');
   });
 
   it('leaves the command alone when the person said not to', () => {
-    expect(sandboxed(['claude'], '/home/me', false, mac)).toEqual(['claude']);
+    expect(sandboxed(['claude'], '/home/me', false, mac).command).toEqual(['claude']);
+  });
+
+  it('applies the Landlock ruleset for real where the kernel answers with an ABI', () => {
+    const run = sandboxed(['claude'], '/home/me', true, { ...linux, probe: () => 4 });
+    expect(run.guard).toBe('landlock');
+    expect(run.command).toEqual([
+      'python3',
+      '/home/me/.memnox/guard/landlock-exec.py',
+      '/home/me/.memnox/guard/landlock.json',
+      '--',
+      'claude',
+    ]);
+    expect(run.because).toContain('TCP connect');
+  });
+
+  it('says plainly when Landlock is there but nothing can apply it', () => {
+    const run = sandboxed(['claude'], '/home/me', true, { ...linux, probe: () => null });
+    expect(run.command).toEqual(['claude']);
+    expect(run.because).toContain('python3 is not here');
+  });
+
+  it('says plainly when the kernel has Landlock turned off', () => {
+    const run = sandboxed(['claude'], '/home/me', true, { ...linux, probe: () => 0 });
+    expect(run.guard).toBeNull();
+    expect(run.because).toContain('turned off');
+  });
+
+  it('names a kernel too old for Landlock rather than pretending', () => {
+    const run = sandboxed(['claude'], '/home/me', true, { ...linux, kernel: '5.4.0' });
+    expect(run.command).toEqual(['claude']);
+    expect(run.because).toContain('predates Landlock');
+  });
+
+  it('holds files only on a kernel whose Landlock cannot hold TCP', () => {
+    const run = sandboxed(['claude'], '/home/me', true, { ...linux, probe: () => 3 });
+    expect(run.because).toContain('files only');
   });
 });
 
@@ -233,6 +286,7 @@ describe('a session that ends holds nothing', () => {
     const out = new RecordedOutput();
     const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
     registerRunCommand(program, new CliContext(out, plainStyle), {
+      ...QUIET,
       start: start as never,
       home: () => home,
       newId: () => 'ses_test',
@@ -250,8 +304,10 @@ describe('a session that ends holds nothing', () => {
     const home = await mkdtemp(join(tmpdir(), 'memnox-run-lease-'));
     const registry = new LeaseRegistry(home, () => true);
     await registry.take(
-      'src/billing',
-      { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      {
+        path: 'src/billing',
+        holder: { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      },
       NOW.toISOString(),
     );
 
@@ -263,8 +319,10 @@ describe('a session that ends holds nothing', () => {
     const home = await mkdtemp(join(tmpdir(), 'memnox-run-crash-'));
     const registry = new LeaseRegistry(home, () => true);
     await registry.take(
-      'src/billing',
-      { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      {
+        path: 'src/billing',
+        holder: { agent: 'claude-code', sessionId: 'ses_test', pid: process.pid },
+      },
       NOW.toISOString(),
     );
 
@@ -280,8 +338,10 @@ describe('a session that ends holds nothing', () => {
     const home = await mkdtemp(join(tmpdir(), 'memnox-run-other-'));
     const registry = new LeaseRegistry(home, () => true);
     await registry.take(
-      'docs',
-      { agent: 'cursor', sessionId: 'ses_other', pid: process.pid },
+      {
+        path: 'docs',
+        holder: { agent: 'cursor', sessionId: 'ses_other', pid: process.pid },
+      },
       NOW.toISOString(),
     );
 
@@ -300,6 +360,7 @@ describe('what memnox run says is wired', () => {
     const out = new RecordedOutput();
     const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
     registerRunCommand(program, new CliContext(out, plainStyle), {
+      ...QUIET,
       start: (async () => 0) as never,
       home: () => HOME,
       newId: () => 'ses_test',
