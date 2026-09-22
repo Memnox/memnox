@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GitRegionReader, WHOLE_FILE } from '@memnox/core';
+import { GitRegionReader, upcomingRegion, WHOLE_FILE } from '@memnox/core';
 
 /**
  * What a write touches, read off the working tree at the moment of the write.
@@ -142,5 +142,35 @@ describe('reading a write off the working tree', () => {
 
   it('takes the whole file when asked about nothing', async () => {
     expect(await new GitRegionReader(root).read('  ')).toEqual(WHOLE_FILE);
+  });
+});
+
+/* A hook runs before the edit lands, so the working tree only knows what was
+   changed before. This asks git about the edit that is about to happen. */
+describe('what an edit is about to touch', () => {
+  const before = [
+    'export function a() {',
+    '  return 1;',
+    '}',
+    '',
+    'export function retryCharge(n: number) {',
+    '  const x = 1;',
+    '  return n > x;',
+    '}',
+    '',
+  ].join('\n');
+
+  it('names the line and the function, before anything is written', async () => {
+    const region = await upcomingRegion(
+      'billing.ts',
+      before,
+      before.replace('return n > x;', 'return n >= x;'),
+    );
+
+    expect(region).toEqual({ lines: [{ from: 7, to: 7 }], symbols: ['retryCharge'] });
+  });
+
+  it('is the whole file where nothing changes', async () => {
+    expect(await upcomingRegion('billing.ts', before, before)).toEqual(WHOLE_FILE);
   });
 });
