@@ -8,3 +8,5 @@ export * from './written-region';
 export * from './git-region';
 export * from './shared-actions';
 export * from './action-target';
+export * from './session-notes';
+export * from './desktop-notice';
