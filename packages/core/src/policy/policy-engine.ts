@@ -13,7 +13,13 @@ import { matchesAny } from './pattern-matcher';
 import { matchesAnyTimeWindow } from './time-window';
 import { classifyRisk } from './risk-classifier';
 import { versionPolicySet } from './policy-version';
-import { POLICY_MODE, type Policy } from './policy';
+import { AGENT_FROZEN_REASON, agentFrozen } from './agent-freeze';
+import { POLICY_MODE, type Policy, type PolicyCarveOut } from './policy';
+
+/**
+ * The rule engine: one action in, one verdict out. Pure and deterministic so a verdict
+ * replays, and it names the rule that decided so a refusal can be argued with.
+ */
 
 export interface EvaluationContext {
   agentName: string;
@@ -27,7 +33,7 @@ export interface EvaluationContext {
    */
   scope?: ScopeMatch;
   /**
-   * State facts in force for this request, by kind — "freeze", "incident". Small,
+   * State facts in force for this request, by kind, such as "freeze" and "incident". Small,
    * versioned and carrying an expiry, so they ride in the bundle and the evaluator
    * still decides locally in microseconds rather than calling a service.
    */
@@ -56,14 +62,14 @@ export interface PolicyEngineOptions {
   defaultEffect?: DecisionEffect;
 }
 
-/** Most restrictive effect wins. No network, no LLM, no randomness. */
+/** Deny, then ask, then allow: the most restrictive effect wins. No network, no model. */
 export class PolicyEngine {
   private readonly defaultEffect: DecisionEffect;
   /** Content version of this rule set, stamped onto every event it decides. */
   readonly version: string;
   /** Policies whose action patterns all start with a literal segment. */
   private readonly byActionPrefix = new Map<string, Policy[]>();
-  /** Patterns whose first segment is not literal — candidates for every action. */
+  /** Patterns whose first segment is not literal, so they are candidates for every action. */
   private readonly unindexed: Policy[] = [];
 
   constructor(
@@ -91,7 +97,7 @@ export class PolicyEngine {
     }
   }
 
-  /** Every rule that could match this action — a superset, never a filter. */
+  /** Every rule that could match this action: a superset, never a filter. */
   private candidates(action: string): Policy[] {
     const bucket = this.byActionPrefix.get(firstSegment(action).toLowerCase());
     if (bucket === undefined) return this.unindexed;
@@ -104,51 +110,43 @@ export class PolicyEngine {
   }
 
   evaluate(incoming: ActionRequest, context: EvaluationContext): EvaluationResult {
-    /* Here rather than in a caller, because callers are the problem: the runtime
-       gateway is one, the in-process gate another, and a padded name only had to
-       miss the rule naming it once to turn a block into an allow. */
+    // Normalized here rather than by callers, because one padded name turns a block into an allow.
     const request = normalizeActionRequest(incoming);
-    const riskLevel = classifyRisk(request.action, request.environment);
+    // Containment outranks every rule: an allow written for this agent must not let a frozen one through.
+    const frozen = frozenVerdict(request, context);
+    if (frozen !== null) return frozen;
     const applicable = this.candidates(request.action).filter((policy) =>
       this.matches(policy, request, context),
     );
     const matchedPolicies = applicable.map(toMatchedPolicy);
-
-    // A observed rule is recorded but never decides, so the verdict comes from
-    // the enforcing ones alone — and their absence means no rule decided at all.
-    const enforcing = matchedPolicies.filter((policy) => policy.observed !== true);
-    const shadowEffect = strictestMonitored(matchedPolicies);
-
-    if (enforcing.length === 0) {
-      return {
-        effect: this.defaultEffect,
-        riskLevel,
-        reason: DECISION_REASON.NO_POLICY_MATCHED,
-        matchedPolicies,
-        ...(context.stateVersion === undefined
-          ? {}
-          : { stateVersion: context.stateVersion }),
-        ...denied(this.defaultEffect, shadowEffect),
-      };
-    }
-
-    const winner = enforcing.reduce((mostRestrictive, candidate) =>
-      EFFECT_PRECEDENCE[candidate.effect] > EFFECT_PRECEDENCE[mostRestrictive.effect]
-        ? candidate
-        : mostRestrictive,
-    );
-    const decided = applicable.find((policy) => policy.name === winner.name);
-    return {
-      effect: winner.effect,
-      riskLevel,
-      reason: winner.reason ?? `policy "${winner.name}" applied`,
+    const verdict = {
+      riskLevel: classifyRisk(request.action, request.environment),
       matchedPolicies,
-      ...(decided === undefined ? {} : { rule: this.ruleRef(decided) }),
       ...(context.stateVersion === undefined
         ? {}
         : { stateVersion: context.stateVersion }),
+    };
+    // An observed rule is recorded but never decides.
+    const shadow = strictestOf(observedEffects(matchedPolicies));
+    const winner = strictestPolicy(
+      matchedPolicies.filter((policy) => policy.observed !== true),
+    );
+    if (winner === undefined) {
+      return {
+        effect: this.defaultEffect,
+        reason: DECISION_REASON.NO_POLICY_MATCHED,
+        ...verdict,
+        ...shadowIfStricter(this.defaultEffect, shadow),
+      };
+    }
+    const decided = applicable.find((policy) => policy.name === winner.name);
+    return {
+      effect: winner.effect,
+      reason: winner.reason ?? `policy "${winner.name}" applied`,
+      ...verdict,
+      ...(decided === undefined ? {} : { rule: this.ruleRef(decided) }),
       ...(winner.alternative === undefined ? {} : { alternative: winner.alternative }),
-      ...denied(winner.effect, shadowEffect),
+      ...shadowIfStricter(winner.effect, shadow),
     };
   }
 
@@ -186,9 +184,41 @@ export class PolicyEngine {
       matchesAmount(policy.match.aboveAmount, request.amount) &&
       matchesScope(policy.match.scope, context.scope) &&
       matchesState(policy.match.state, context.state) &&
-      matchesAnyTimeWindow(policy.match.windows, context.now)
+      matchesAnyTimeWindow(policy.match.windows, context.now) &&
+      !carvedOut(policy.match.unless, request, context)
     );
   }
+}
+
+/**
+ * Whether an approved exception takes this request out of the rule. An empty carve-out
+ * is ignored rather than read as everywhere, because that would void the rule entirely.
+ */
+function carvedOut(
+  unless: readonly PolicyCarveOut[] | undefined,
+  request: ActionRequest,
+  context: EvaluationContext,
+): boolean {
+  if (unless === undefined) return false;
+  return unless.some((carve) => {
+    const named =
+      carve.project !== undefined ||
+      carve.agents !== undefined ||
+      carve.workingDirectories !== undefined;
+    if (!named) return false;
+    if (carve.project !== undefined && carve.project !== request.projectId) return false;
+    // A directory the machine did not report cannot be shown to be inside the exception.
+    if (
+      carve.workingDirectories !== undefined &&
+      request.workingDirectory === undefined
+    ) {
+      return false;
+    }
+    return (
+      matchesAny(carve.agents, context.agentName) &&
+      matchesAny(carve.workingDirectories, request.workingDirectory)
+    );
+  });
 }
 
 function toMatchedPolicy(policy: Policy): MatchedPolicy {
@@ -237,31 +267,45 @@ function matchesScope(
   return required.includes(actual);
 }
 
-function strictestMonitored(matched: MatchedPolicy[]): DecisionEffect | undefined {
+function observedEffects(matched: readonly MatchedPolicy[]): DecisionEffect[] {
   return matched
     .filter((policy) => policy.observed === true)
-    .map((policy) => policy.effect)
-    .reduce<DecisionEffect | undefined>(
-      (strictest, effect) =>
-        strictest === undefined ||
-        EFFECT_PRECEDENCE[effect] > EFFECT_PRECEDENCE[strictest]
-          ? effect
-          : strictest,
-      undefined,
-    );
+    .map((policy) => policy.effect);
 }
 
-/** Reporting a denied effect no stricter than the applied one would be noise. */
-function denied(
+function isStricter(effect: DecisionEffect, than: DecisionEffect): boolean {
+  return EFFECT_PRECEDENCE[effect] > EFFECT_PRECEDENCE[than];
+}
+
+/** The strictest of these effects, or undefined when there are none. */
+function strictestOf(effects: readonly DecisionEffect[]): DecisionEffect | undefined {
+  return effects.reduce<DecisionEffect | undefined>(
+    (strictest, effect) =>
+      strictest === undefined || isStricter(effect, strictest) ? effect : strictest,
+    undefined,
+  );
+}
+
+/** The first matched policy with the strictest effect, so ties go to the earlier rule. */
+function strictestPolicy(matched: readonly MatchedPolicy[]): MatchedPolicy | undefined {
+  return matched.reduce<MatchedPolicy | undefined>(
+    (strictest, candidate) =>
+      strictest === undefined || isStricter(candidate.effect, strictest.effect)
+        ? candidate
+        : strictest,
+    undefined,
+  );
+}
+
+/** What an observed rule would have decided, reported only when stricter than what applied. */
+function shadowIfStricter(
   applied: DecisionEffect,
   observed: DecisionEffect | undefined,
 ): { shadowEffect?: DecisionEffect } {
-  if (observed === undefined) return {};
-  if (EFFECT_PRECEDENCE[observed] <= EFFECT_PRECEDENCE[applied]) return {};
+  if (observed === undefined || !isStricter(observed, applied)) return {};
   return { shadowEffect: observed };
 }
 
-/** Each named argument narrows the rule further — all of them must hold. */
 /** An unstated amount matches: it cannot prove it is under the line. */
 function matchesAmount(
   threshold: number | undefined,
@@ -272,8 +316,9 @@ function matchesAmount(
   return amount > threshold;
 }
 
+/** Each named argument narrows the rule further, so all of them must hold. */
 function matchesAllArguments(
-  patterns: Record<string, string[]> | undefined,
+  patterns: Readonly<Record<string, readonly string[]>> | undefined,
   values: Record<string, string> | undefined,
 ): boolean {
   if (patterns === undefined) return true;
@@ -292,7 +337,7 @@ function firstSegment(value: string): string {
 }
 
 /** Null when a pattern could match anything, so the index only ever narrows work. */
-function literalPrefixes(patterns: string[]): Set<string> | null {
+function literalPrefixes(patterns: readonly string[]): Set<string> | null {
   const prefixes = new Set<string>();
   for (const pattern of patterns) {
     const prefix = firstSegment(pattern);
@@ -300,4 +345,19 @@ function literalPrefixes(patterns: string[]): Set<string> | null {
     prefixes.add(prefix.toLowerCase());
   }
   return prefixes.size === 0 ? null : prefixes;
+}
+
+/** The verdict for an agent a workspace froze by name, or null when it is not frozen. */
+function frozenVerdict(
+  request: ActionRequest,
+  context: EvaluationContext,
+): EvaluationResult | null {
+  if (!agentFrozen(context.state, context.agentName)) return null;
+  return {
+    effect: DECISION_EFFECT.DENY,
+    reason: AGENT_FROZEN_REASON,
+    riskLevel: classifyRisk(request.action, request.environment),
+    matchedPolicies: [],
+    ...(context.stateVersion === undefined ? {} : { stateVersion: context.stateVersion }),
+  };
 }

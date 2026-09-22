@@ -16,7 +16,13 @@ const at = (minutes: number): string =>
   new Date(Date.parse(NOW) + minutes * 60_000).toISOString();
 
 const freeze = (over: Partial<Overlay> = {}): Overlay => ({
-  ...freezeFor('payments', 'auth regression', 120, NOW, 'tresor'),
+  ...freezeFor({
+    subject: 'payments',
+    reason: 'auth regression',
+    minutes: 120,
+    now: NOW,
+    source: 'tresor',
+  }),
   ...over,
 });
 

@@ -17,12 +17,10 @@ const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-freeze-'));
 async function run(args: string[], dir: string, at = NOW): Promise<RecordedOutput> {
   const out = new RecordedOutput();
   const program = new Command();
-  registerFreezeCommand(
-    program,
-    new CliContext(out, plainStyle),
-    () => dir,
-    () => at,
-  );
+  registerFreezeCommand(program, new CliContext(out, plainStyle), {
+    home: () => dir,
+    now: () => at,
+  });
   await program.parseAsync(args, { from: 'user' });
   return out;
 }

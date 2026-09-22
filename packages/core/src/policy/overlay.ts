@@ -1,11 +1,10 @@
+import { minutesToMs, msToMinutes } from '../domain/time';
+import { describeSpan, IN_MINUTES_THEN_HOURS } from '../domain/duration-text';
+
 /**
- * A rule that is true for a while. An incident opens, deploys stop; the incident
- * closes, they start again — without anybody editing a policy file under pressure and
- * forgetting to put it back.
- *
- * A freeze that outlives its incident is worse than no freeze, because the next one
- * gets ignored. So an expiry is required, never defaulted, and the moment is always an
- * argument rather than a clock this module reads.
+ * A rule that is true for a while, so an incident needs no edit to a policy file. The
+ * expiry is required and the moment is always an argument, because a freeze that
+ * outlives its incident is worse than no freeze.
  */
 
 export const OVERLAY_KIND = {
@@ -40,7 +39,7 @@ export function validateOverlay(overlay: Partial<Overlay>): string[] {
   }
   if (overlay.validUntil === undefined) {
     problems.push(
-      'an overlay must say when it ends — one that never expires gets ignored',
+      'an overlay must say when it ends, because one that never expires gets ignored',
     );
   } else if (Number.isNaN(Date.parse(overlay.validUntil))) {
     problems.push('validUntil must be an ISO 8601 timestamp');
@@ -77,45 +76,36 @@ export function stateVersionOf(overlays: readonly Overlay[], moment: string): st
 }
 
 export function describeOverlay(overlay: Overlay, moment: string): string {
-  const ends = new Date(overlay.validUntil);
-  const minutes = Math.round((ends.getTime() - Date.parse(moment)) / 60_000);
+  const minutes = msToMinutes(Date.parse(overlay.validUntil) - Date.parse(moment));
   const remaining =
     minutes <= 0
       ? 'expired'
-      : minutes < 60
-        ? `${minutes} min left`
-        : `${Math.round(minutes / 60)}h left`;
-  return `${overlay.kind}:${overlay.subject} — ${overlay.reason} (${remaining}, ${overlay.source})`;
+      : `${describeSpan(minutesToMs(minutes), IN_MINUTES_THEN_HOURS)} left`;
+  return `${overlay.kind}:${overlay.subject}: ${overlay.reason} (${remaining}, ${overlay.source})`;
 }
 
 /** Minutes. Long enough for a real incident, short enough that forgetting is survivable. */
 export const DEFAULT_FREEZE_MINUTES = 120;
 
-export function freezeFor(
-  subject: string,
-  reason: string,
-  minutes: number,
-  now: string,
-  source: string,
-): Overlay {
-  return {
-    id: `ovl_${Date.parse(now).toString(36)}_${subject}`,
-    kind: OVERLAY_KIND.FREEZE,
-    subject,
-    reason,
-    declaredAt: now,
-    validUntil: new Date(Date.parse(now) + minutes * 60_000).toISOString(),
-    source,
-  };
+export interface FreezeInput {
+  subject: string;
+  reason: string;
+  minutes: number;
+  now: string;
+  /** Who declared it: a person here, or the workspace. */
+  source: string;
 }
 
-/**
- * The labels a gate should be built with, read off the overlays as of a moment. Named
- * for what a caller is asking: not "which overlays exist" but "what is true right now".
- */
-export function stateFactsInForce(
-  overlays: readonly Overlay[],
-  moment: string,
-): string[] {
-  return stateLabelsOf(overlays, moment);
+export function freezeFor(input: FreezeInput): Overlay {
+  return {
+    id: `ovl_${Date.parse(input.now).toString(36)}_${input.subject}`,
+    kind: OVERLAY_KIND.FREEZE,
+    subject: input.subject,
+    reason: input.reason,
+    declaredAt: input.now,
+    validUntil: new Date(
+      Date.parse(input.now) + minutesToMs(input.minutes),
+    ).toISOString(),
+    source: input.source,
+  };
 }

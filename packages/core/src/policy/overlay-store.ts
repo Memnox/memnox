@@ -1,9 +1,14 @@
-import { mkdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { DAY_MS } from '../domain/time';
 import { MEMNOX_HOME } from '../config/config';
 import { OVERLAY_KIND, type Overlay } from './overlay';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { readJsonArray, readJsonFile, writeJsonFile } from '../store/json-records';
+import { AGENT_SUBJECT_PREFIX } from './agent-freeze';
 
+/**
+ * Where the conditions in force are kept: those declared here, and those the workspace
+ * declared, in two files so `freeze --lift` on one laptop cannot end a company-wide incident.
+ */
 const OVERLAY_FILE = 'overlays.json';
 
 function overlayPathFor(home: string): string {
@@ -12,31 +17,18 @@ function overlayPathFor(home: string): string {
 
 /** Lifted overlays stay in the file: what was frozen and when is part of the record. */
 export async function readOverlays(home: string): Promise<Overlay[]> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(overlayPathFor(home), 'utf8'));
-    return Array.isArray(parsed) ? (parsed as Overlay[]) : [];
-  } catch {
-    // Nothing has ever been frozen here, which is the ordinary case.
-    return [];
-  }
+  return readJsonArray<Overlay>(overlayPathFor(home));
 }
 
-export async function writeOverlays(home: string, overlays: Overlay[]): Promise<void> {
-  const path = overlayPathFor(home);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  /* Atomic: `overlaysInForce` reads this on every decision, and a torn read is
-     caught and returned as "nothing is frozen" — a freeze that stops applying for
-     one command and leaves no trace of having done so. */
-  await writeJsonAtomic(path, overlays);
+export async function writeOverlays(
+  home: string,
+  overlays: readonly Overlay[],
+): Promise<void> {
+  // Atomic, because every decision reads this and a torn read would be "nothing is frozen".
+  await writeJsonFile(overlayPathFor(home), overlays);
 }
 
-/**
- * What the control plane declared, pulled by `memnox sync` and never edited here.
- *
- * Its own file because `freeze --lift` is a read-modify-write of the local one: a
- * company-wide incident living in that file could be ended by one developer running
- * a command about their own laptop.
- */
+/** What the control plane declared, pulled by `memnox sync` and never edited here. */
 const ORG_CONDITIONS_FILE = 'org-conditions.json';
 
 export function orgConditionsPathFor(home: string): string {
@@ -44,14 +36,8 @@ export function orgConditionsPathFor(home: string): string {
 }
 
 /**
- * A condition exactly as the control plane sends it.
- *
- * Stored in the control plane's own field names rather than translated on the way
- * in. The two halves were written against each other's documentation and not each
- * other: this said `from` and `until`, the wire says `fromAt` and `untilAt`, so
- * every pulled condition arrived with no window at all and was given a default one.
- * Keeping the wire shape on disk is what makes that class of drift a parse error
- * instead of a silent default.
+ * A condition in the control plane's own field names, kept untranslated on disk so a
+ * field rename is a parse error rather than a silently defaulted window.
  */
 export interface OrgCondition {
   id: string;
@@ -71,18 +57,36 @@ export interface OrgConditionsFile {
 }
 
 /**
- * How long an open-ended condition outlives the last successful sync.
- *
- * The control plane may declare a freeze with no end, and a machine that honoured
- * that literally could never be unfrozen — the sibling failure to a freeze that
- * lapses. So it holds while the machine is in touch and for a day after it stops,
- * and every sync pushes the horizon out again. A machine that has left the fleet
- * releases; one on a closed laptop over a weekend does not.
+ * How long an open-ended condition outlives the last successful sync, so a freeze with
+ * no end is still liftable: a machine that left the fleet releases it.
  */
-export const ORG_CONDITION_GRACE_MS = 24 * 60 * 60 * 1000;
+export const ORG_CONDITION_GRACE_MS = DAY_MS;
 
 /** Absent means every subject, and `*` is what a rule names to match one. */
 export const WORKSPACE_WIDE = '*';
+
+/** Separates an agent from the one machine a freeze of it is scoped to: `agent:<name>@<machine>`. */
+export const MACHINE_MARK = '@';
+
+/**
+ * The conditions that are this machine's to apply. A freeze pressed on one agent's page
+ * names the machine it runs on, so another laptop running the same product is untouched;
+ * a condition naming no machine is everybody's, as before.
+ */
+export function conditionsForMachine(
+  conditions: readonly OrgCondition[],
+  machineId: string,
+): OrgCondition[] {
+  return conditions.flatMap((condition) => {
+    const subject = condition.subject;
+    if (subject === undefined || !subject.startsWith(AGENT_SUBJECT_PREFIX))
+      return [condition];
+    const at = subject.lastIndexOf(MACHINE_MARK);
+    if (at === -1) return [condition];
+    if (subject.slice(at + 1) !== machineId) return [];
+    return [{ ...condition, subject: subject.slice(0, at) }];
+  });
+}
 
 export function orgOverlaysFrom(file: OrgConditionsFile): Overlay[] {
   return file.conditions.map((condition) => ({
@@ -92,8 +96,7 @@ export function orgOverlaysFrom(file: OrgConditionsFile): Overlay[] {
         ? OVERLAY_KIND.FREEZE
         : OVERLAY_KIND.INCIDENT,
     subject: condition.subject ?? condition.scope ?? WORKSPACE_WIDE,
-    /* The control plane has no reason column, so this says where it came from rather
-       than inventing why. A refusal that guessed the reason would be worse. */
+    // The control plane has no reason column, so this says where it came from rather than guess.
     reason: `${condition.kind} declared for this workspace`,
     declaredAt: new Date(condition.fromAt).toISOString(),
     validUntil: new Date(
@@ -103,16 +106,15 @@ export function orgOverlaysFrom(file: OrgConditionsFile): Overlay[] {
   }));
 }
 
+/** Empty when not logged in or nothing was declared, which are both ordinary. */
 export async function readOrgConditions(home: string): Promise<Overlay[]> {
+  const file = await readJsonFile<Partial<OrgConditionsFile>>(orgConditionsPathFor(home));
+  if (file === null || typeof file !== 'object') return [];
+  if (!Array.isArray(file.conditions) || typeof file.syncedAt !== 'number') return [];
   try {
-    const parsed: unknown = JSON.parse(
-      await readFile(orgConditionsPathFor(home), 'utf8'),
-    );
-    const file = parsed as Partial<OrgConditionsFile>;
-    if (!Array.isArray(file.conditions) || typeof file.syncedAt !== 'number') return [];
     return orgOverlaysFrom({ syncedAt: file.syncedAt, conditions: file.conditions });
   } catch {
-    // Not logged in, or nothing declared for the workspace. Both are ordinary.
+    // A condition with a timestamp no date can hold is one this machine cannot bound.
     return [];
   }
 }
@@ -121,19 +123,13 @@ export async function writeOrgConditions(
   home: string,
   file: OrgConditionsFile,
 ): Promise<void> {
-  const path = orgConditionsPathFor(home);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeJsonAtomic(path, file);
+  await writeJsonFile(orgConditionsPathFor(home), file);
 }
 
 /**
- * Everything in force here: what somebody declared on this machine, and what the
- * workspace declared for every machine.
+ * Every overlay in force: local plus workspace.
  *
- * Every decision path reads this and `readOverlays` reads only the local half. The
- * pulled file was written, reported as applied, and consulted by nothing — a
- * production freeze reached every laptop and governed none of them, because the one
- * function the gates call had never been told the second file existed.
+ * Decision paths call this, never `readOverlays`, which is the local half alone.
  */
 export async function overlaysInForce(home: string): Promise<Overlay[]> {
   const [local, org] = await Promise.all([readOverlays(home), readOrgConditions(home)]);
