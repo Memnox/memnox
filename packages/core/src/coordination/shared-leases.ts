@@ -45,8 +45,30 @@ export type SharedTake =
       machine?: string;
       path: string;
       message: string;
+      /** What in the file the holder is writing, where it said. */
+      region?: WrittenRegion;
+      /** When the holder took it. */
+      since?: string;
+      /** When the holder last did anything, which is when it last renewed. */
+      lastActive?: string;
+      /** When it lapses if the holder stays quiet. */
+      until?: string;
+      /** The lease itself, so a person can free it by name. */
+      leaseId?: string;
     }
   | { outcome: typeof SHARED_OUTCOME.UNKNOWN; because: string };
+
+export const FREE_OUTCOME = {
+  FREED: 'freed',
+  /** Nobody holds it any more: it lapsed, was released, or never existed. */
+  GONE: 'gone',
+  NOT_ENROLLED: 'not-enrolled',
+  UNREACHABLE: 'unreachable',
+  /** The control plane answered and said no, in its own words elsewhere. */
+  REFUSED: 'refused',
+} as const;
+
+export type FreeOutcome = (typeof FREE_OUTCOME)[keyof typeof FREE_OUTCOME];
 
 export interface SharedLeases {
   take(
@@ -59,6 +81,18 @@ export interface SharedLeases {
     region?: WrittenRegion,
   ): Promise<SharedTake>;
   release(id: string, holder: LeaseHolder): Promise<void>;
+  /**
+   * Everything this session holds in the workspace, given back when it ends. The
+   * write path keeps no ids for what it took, so without this a session that ended
+   * left its files held on every other machine until the window ran out.
+   */
+  releaseSession(holder: LeaseHolder): Promise<void>;
+  /**
+   * Everything this session holds in the workspace, kept for another window,
+   * because it is still working. Best effort: a renewal that does not land is a
+   * hold that lapses a few minutes early.
+   */
+  renewSession(holder: LeaseHolder, minutes: number): Promise<void>;
 }
 
 type Fetcher = typeof globalThis.fetch;
@@ -121,10 +155,36 @@ export class CloudLeases implements SharedLeases {
     if (response.status === 409) {
       const conflict = response.body as {
         message?: string;
-        holding?: { holder?: { agent?: string; machine?: string }; path?: string };
+        holding?: {
+          id?: string;
+          holder?: { agent?: string; machine?: string };
+          path?: string;
+          takenAt?: string;
+          renewedAt?: string;
+          expiresAt?: string;
+          lines?: WrittenRegion['lines'];
+          symbols?: string[];
+        };
       };
+      const held = conflict.holding;
+      const lines = held === undefined || !Array.isArray(held.lines) ? [] : held.lines;
+      const symbols =
+        held === undefined || !Array.isArray(held.symbols) ? [] : held.symbols;
       return {
         outcome: SHARED_OUTCOME.HELD_BY_ANOTHER,
+        ...(lines.length === 0 && symbols.length === 0
+          ? {}
+          : { region: { lines, symbols } }),
+        ...(held === undefined || typeof held.takenAt !== 'string'
+          ? {}
+          : { since: held.takenAt }),
+        ...(held === undefined ? {} : lastActiveOf(held.renewedAt, held.takenAt)),
+        ...(held === undefined || typeof held.expiresAt !== 'string'
+          ? {}
+          : { until: held.expiresAt }),
+        ...(held === undefined || typeof held.id !== 'string'
+          ? {}
+          : { leaseId: held.id }),
         holder: conflict.holding?.holder?.agent ?? 'another agent',
         ...(conflict.holding?.holder?.machine === undefined
           ? {}
@@ -150,6 +210,65 @@ export class CloudLeases implements SharedLeases {
       account.token,
       { holder: { agent: holder.agent, session: holder.sessionId } },
       'DELETE',
+    );
+  }
+
+  async renewSession(holder: LeaseHolder, minutes: number): Promise<void> {
+    const account = await readAccount(this.home);
+    if (account === null) return;
+    await this.post(
+      account.baseUrl,
+      `/v1/workspaces/${account.workspaceId}/leases/renew-session`,
+      account.token,
+      {
+        holder: { agent: holder.agent, session: holder.sessionId },
+        ttlMs: minutes * 60_000,
+      },
+    );
+  }
+
+  /**
+   * A person freeing lines another session holds, on the record.
+   *
+   * Taken over with the person's reason and then let go at once, so the lines are
+   * free for whichever agent was waiting rather than held by the terminal that
+   * freed them. The takeover row keeps who did it and why: an override nobody can
+   * find later is only a slower allow.
+   */
+  async free(id: string, by: LeaseHolder, reason: string): Promise<FreeOutcome> {
+    const account = await readAccount(this.home);
+    if (account === null) return FREE_OUTCOME.NOT_ENROLLED;
+    const holder = { agent: by.agent, session: by.sessionId };
+    const taken = await this.post(
+      account.baseUrl,
+      `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(id)}/take-over`,
+      account.token,
+      { holder, reason },
+    );
+    if (taken === null) return FREE_OUTCOME.UNREACHABLE;
+    if (taken.status === 404 || taken.status === 409) return FREE_OUTCOME.GONE;
+    if (taken.status !== 200 && taken.status !== 201) return FREE_OUTCOME.REFUSED;
+    const lease = taken.body as { id?: unknown };
+    if (typeof lease.id === 'string') {
+      await this.post(
+        account.baseUrl,
+        `/v1/workspaces/${account.workspaceId}/leases/${encodeURIComponent(lease.id)}`,
+        account.token,
+        { holder },
+        'DELETE',
+      );
+    }
+    return FREE_OUTCOME.FREED;
+  }
+
+  async releaseSession(holder: LeaseHolder): Promise<void> {
+    const account = await readAccount(this.home);
+    if (account === null) return;
+    await this.post(
+      account.baseUrl,
+      `/v1/workspaces/${account.workspaceId}/leases/release`,
+      account.token,
+      { holder: { agent: holder.agent, session: holder.sessionId } },
     );
   }
 
@@ -193,4 +312,11 @@ function safeJson(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+/** The last sign of life: a renewal where there was one, and the take otherwise. */
+function lastActiveOf(renewedAt: unknown, takenAt: unknown): { lastActive?: string } {
+  if (typeof renewedAt === 'string') return { lastActive: renewedAt };
+  if (typeof takenAt === 'string') return { lastActive: takenAt };
+  return {};
 }

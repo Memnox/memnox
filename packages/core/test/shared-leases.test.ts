@@ -90,3 +90,39 @@ describe('what the workspace says about a path', () => {
     );
   });
 });
+
+/* The write path keeps no ids for what it took, so a session that ended left its
+   files held on every other machine until the window ran out. */
+describe('a session ending', () => {
+  it('asks the workspace to release everything this session holds', async () => {
+    const asked: { url: string; body: unknown }[] = [];
+    const fetcher = (async (url: string, init: { body: string }) => {
+      asked.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ released: 2 }), { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await new CloudLeases(await enrolled(), fetcher).releaseSession(holder);
+
+    expect(asked).toEqual([
+      {
+        url: 'https://control.example.com/v1/workspaces/acme/leases/release',
+        body: { holder: { agent: 'hermes', session: 'ses_a' } },
+      },
+    ]);
+  });
+
+  it('makes no call from a machine that is not enrolled', async () => {
+    let called = false;
+    const fetcher = (async () => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await new CloudLeases(
+      await mkdtemp(join(tmpdir(), 'memnox-shared-')),
+      fetcher,
+    ).releaseSession(holder);
+
+    expect(called).toBe(false);
+  });
+});

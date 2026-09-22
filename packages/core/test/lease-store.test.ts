@@ -219,3 +219,28 @@ describe('whether a holder is still there', () => {
     expect(processAlive(process.pid)).toBe(true);
   });
 });
+
+/* An editor's hold is short and kept alive by its session working, so an agent
+   that goes quiet lets its lines go in minutes rather than half an hour. */
+describe('a hold that lasts while its session works', () => {
+  const at = (minutes: number) =>
+    new Date(Date.parse(NOW) + minutes * 60_000).toISOString();
+
+  it('lapses a few minutes after the session stops, and lasts while it renews', async () => {
+    const registry = new LeaseRegistry(await home(), living);
+    await registry.take('src/billing.ts', cursor, NOW, 5, 'edit');
+
+    expect(await registry.renewSession(cursor.sessionId, at(4), 5)).toBe(1);
+    expect(await registry.held(at(8))).toHaveLength(1);
+    expect(await registry.held(at(10))).toEqual([]);
+  });
+
+  it('never cuts a longer hold short', async () => {
+    const registry = new LeaseRegistry(await home(), living);
+    await registry.take('src', cursor, NOW, 30, 'shell');
+
+    await registry.renewSession(cursor.sessionId, at(1), 5);
+
+    expect(await registry.held(at(20))).toHaveLength(1);
+  });
+});

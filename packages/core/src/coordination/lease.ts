@@ -197,6 +197,20 @@ export function leaseFor(
   };
 }
 
+/**
+ * The lease kept for another window from now, never shorter than it was.
+ *
+ * What renewal means: the session is still working, so what it holds lasts. A short
+ * window asked of a lease somebody took for longer leaves the longer one alone,
+ * because an editor's five minutes landing on a shell's half hour would cut the
+ * shell's hold short.
+ */
+export function extendedTo(lease: Lease, now: string, minutes: number): Lease {
+  const held = Math.min(Math.max(minutes, 1), MAX_LEASE_MINUTES);
+  const wanted = new Date(Date.parse(now) + held * 60_000).toISOString();
+  return wanted > lease.expiresAt ? { ...lease, expiresAt: wanted } : lease;
+}
+
 /** Newest last, bounded, so the file cannot grow without end on a long session. */
 export function withActivity(lease: Lease, note: string): Lease {
   if (note.trim() === '') return lease;

@@ -6,7 +6,8 @@ import {
   type LeaseHolder,
 } from './lease';
 import { LEASE_OUTCOME, type LeaseRegistry } from './lease-store';
-import { SHARED_OUTCOME, type SharedLeases } from './shared-leases';
+import { shortMachine } from './shared-actions';
+import { SHARED_OUTCOME, type SharedLeases, type SharedTake } from './shared-leases';
 import type { WrittenRegion } from './written-region';
 
 /**
@@ -68,6 +69,17 @@ export interface LeaseVerdict {
   holding?: Lease;
   /** What to print. A refusal that explains nothing gets the wrapper removed. */
   message?: string;
+  /**
+   * The workspace lease in the way, where another machine holds it, so the person
+   * at the refused agent can take it over from where they are.
+   */
+  sharedLeaseId?: string;
+  /**
+   * The refusal without the command a person could type, for a host that asks its
+   * person in its own prompt instead: telling them to go and type something while
+   * asking them the same question is two ways to say one thing.
+   */
+  asked?: string;
 }
 
 export function proceeds(verdict: LeaseVerdict): boolean {
@@ -110,6 +122,82 @@ export interface LeaseGateDeps {
 const DEFAULT_POLL_MS = 500;
 /** Matches the local default, so one window is not quietly longer than the other. */
 const DEFAULT_SHARED_MINUTES = 30;
+
+/**
+ * What an agent is told when another machine is writing the same part of a file.
+ *
+ * Which lines, and which function where git could tell, because "somebody holds
+ * this file" sends the agent away from all of it, and the part that is actually
+ * taken is usually a few lines of it. The other parts stay open, and saying so is
+ * what lets the agent keep working instead of waiting.
+ */
+function heldElsewhere(
+  result: Extract<SharedTake, { outcome: typeof SHARED_OUTCOME.HELD_BY_ANOTHER }>,
+  now: string,
+): string {
+  const where = result.machine === undefined ? '' : ` on ${shortMachine(result.machine)}`;
+  const path = result.path === '' ? 'this repository' : result.path;
+  const part = describeRegion(result.region);
+  const held =
+    part === null
+      ? `${result.holder}${where} is writing ${path}.`
+      : `${result.holder}${where} is editing ${part} of ${path}. The rest of the file is free.`;
+  /* The way out, named for a person: an agent told only "ask somebody" leaves
+     the somebody with nothing to type. The command asks on a terminal, so the
+     agent reading this cannot run it on itself. */
+  const free =
+    result.leaseId === undefined
+      ? ''
+      : ` A person can free them now by running \`memnox lock --free ${result.leaseId}\`.`;
+  return `${held}${quiet(result, now)}${free}`;
+}
+
+/** The same answer with no lease to name, so no command to free it is offered. */
+function withoutLease(
+  result: Extract<SharedTake, { outcome: typeof SHARED_OUTCOME.HELD_BY_ANOTHER }>,
+): Extract<SharedTake, { outcome: typeof SHARED_OUTCOME.HELD_BY_ANOTHER }> {
+  const { leaseId: _named, ...rest } = result;
+  return rest;
+}
+
+/** How long a holder has done nothing before a refusal says so. */
+const QUIET_AFTER_MS = 2 * 60_000;
+
+/**
+ * Said when the holder has gone quiet, with when its hold lapses.
+ *
+ * A refusal naming an agent that stopped working ten minutes ago sends the waiting
+ * agent away from lines nobody is writing. Saying it has gone quiet, and when the
+ * lines free up on their own, lets it come back then rather than give up the work.
+ */
+function quiet(result: { lastActive?: string; until?: string }, now: string): string {
+  if (result.lastActive === undefined) return '';
+  const idle = Date.parse(now) - Date.parse(result.lastActive);
+  if (!Number.isFinite(idle) || idle < QUIET_AFTER_MS) return '';
+  const minutes = Math.floor(idle / 60_000);
+  const lapse =
+    result.until === undefined ? '' : `, so they free up at ${clock(result.until)}`;
+  return ` It has been quiet for ${minutes} minutes${lapse} unless it comes back.`;
+}
+
+/** `14:40 UTC`, which is what a person and a model both read at a glance. */
+function clock(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? iso : `${at.toISOString().slice(11, 16)} UTC`;
+}
+
+/** `retryCharge (lines 7 to 12)`, or null where nothing narrower than the file is known. */
+function describeRegion(region: WrittenRegion | undefined): string | null {
+  if (region === undefined) return null;
+  const spans = region.lines.map((each) =>
+    each.from === each.to ? `line ${each.from}` : `lines ${each.from} to ${each.to}`,
+  );
+  const names = region.symbols;
+  if (names.length === 0 && spans.length === 0) return null;
+  if (names.length === 0) return spans.join(', ');
+  const named = names.join(', ');
+  return spans.length === 0 ? named : `${named} (${spans.join(', ')})`;
+}
 
 export class LeaseGate {
   constructor(private readonly deps: LeaseGateDeps) {}
@@ -192,10 +280,11 @@ export class LeaseGate {
     );
     if (result.outcome !== SHARED_OUTCOME.HELD_BY_ANOTHER) return null;
 
-    const where = result.machine === undefined ? '' : ` on ${result.machine}`;
     return {
       outcome: LEASE_GATE.REFUSED,
-      message: `${result.holder}${where} holds ${result.path === '' ? 'this repository' : result.path}. ${result.message}`,
+      message: heldElsewhere(result, this.deps.now()),
+      asked: heldElsewhere({ ...withoutLease(result) }, this.deps.now()),
+      ...(result.leaseId === undefined ? {} : { sharedLeaseId: result.leaseId }),
     };
   }
 

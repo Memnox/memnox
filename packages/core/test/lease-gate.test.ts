@@ -218,6 +218,8 @@ describe('two machines on one repository', () => {
   const workspace = (result: unknown): SharedLeases => ({
     take: async () => result as never,
     release: async () => undefined,
+    releaseSession: async () => undefined,
+    renewSession: async () => undefined,
   });
 
   it('refuses when another machine holds it, and names where', async () => {
@@ -239,6 +241,78 @@ describe('two machines on one repository', () => {
     expect(proceeds(verdict)).toBe(false);
     expect(verdict.message).toContain('hermes');
     expect(verdict.message).toContain('vps-1');
+  });
+
+  /* "Somebody holds this file" sends an agent away from all of it, and the part
+     actually taken is usually a few lines. */
+  it('names the lines and function that are taken, and says the rest is free', async () => {
+    const clock = new Clock();
+    const gate = new LeaseGate({
+      registry: new LeaseRegistry(await home(), () => true),
+      shared: workspace({
+        outcome: SHARED_OUTCOME.HELD_BY_ANOTHER,
+        holder: 'claude-code',
+        machine: '0dc8ce0c-1a21-4fd5-8bfb-eb70eb3d52f8',
+        path: 'src/billing/invoice.ts',
+        message: 'held',
+        since: '2026-09-22T10:00:00.000Z',
+        leaseId: 'lse_42',
+        region: { lines: [{ from: 40, to: 44 }], symbols: ['retryCharge'] },
+      }),
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+
+    const verdict = await gate.claim('src/billing/invoice.ts', cursor, 'edit');
+
+    /* Short, because a model reads it on every retry, and it ends on the one
+       command a person can type to step in. */
+    expect(verdict.message).toBe(
+      'claude-code on 0dc8ce0c is editing retryCharge (lines 40 to 44) of src/billing/invoice.ts. The rest of the file is free. A person can free them now by running `memnox lock --free lse_42`.',
+    );
+    /* Asked in the person's own prompt, the command would be a second way to say it. */
+    expect(verdict.asked).not.toContain('memnox lock');
+    expect(verdict.sharedLeaseId).toBe('lse_42');
+  });
+
+  /* A refusal naming an agent that stopped working sends the waiting one away
+     from lines nobody is writing. Saying it went quiet, and when the lines free
+     up, lets it wait a few minutes or ask for the other session to be ended. */
+  it('says when the holder has gone quiet, and when its lines free up', async () => {
+    const clock = new Clock();
+    const quietFor = (minutes: number) =>
+      new Date(Date.parse(clock.now()) - minutes * 60_000).toISOString();
+    const gateWith = (lastActive: string) =>
+      new LeaseGate({
+        registry: new LeaseRegistry(tmpHome, () => true),
+        shared: workspace({
+          outcome: SHARED_OUTCOME.HELD_BY_ANOTHER,
+          holder: 'claude-code',
+          path: 'src/billing/invoice.ts',
+          message: 'held',
+          lastActive,
+          until: '2026-09-22T10:07:00.000Z',
+        }),
+        now: clock.now,
+        sleep: clock.sleep,
+      });
+    const tmpHome = await home();
+
+    const quiet = await gateWith(quietFor(4)).claim(
+      'src/billing/invoice.ts',
+      cursor,
+      'edit',
+    );
+    expect(quiet.message).toContain(
+      'It has been quiet for 4 minutes, so they free up at 10:07 UTC unless it comes back.',
+    );
+
+    const busy = await gateWith(quietFor(0)).claim(
+      'src/billing/invoice.ts',
+      cursor,
+      'edit',
+    );
+    expect(busy.message).not.toContain('quiet');
   });
 
   it('gives the local lease back rather than holding what it may not write', async () => {

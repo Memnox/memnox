@@ -8,6 +8,7 @@ import type { Command } from 'commander';
 import {
   guardFor,
   isEmptyScope,
+  CloudLeases,
   LeaseRegistry,
   MILESTONE_REASON,
   Milestones,
@@ -383,6 +384,13 @@ async function releaseLeases(
       sessionId,
       (deps.now ?? (() => new Date()))().toISOString(),
     );
+    /* And in the workspace, once per agent that held something, or another machine
+       waits out the window on paths nobody here is writing any more. */
+    const shared = new CloudLeases(home);
+    const agents = new Set(released.map((lease) => lease.holder.agent));
+    for (const agent of agents) {
+      await shared.releaseSession({ agent, sessionId, pid: process.pid });
+    }
     return released.length;
   } catch {
     return 0;

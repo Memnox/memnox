@@ -4,6 +4,8 @@ import { MEMNOX_HOME } from '../config/config';
 import { writeJsonAtomic } from '../store/atomic-file';
 import {
   conflicts,
+  DEFAULT_LEASE_MINUTES,
+  extendedTo,
   leasesInForce,
   leaseFor,
   NO_OWNER_PID,
@@ -140,7 +142,11 @@ export class LeaseRegistry {
         (lease) => sameHolder(lease.holder, holder) && conflicts(lease.path, path),
       );
       if (mine !== undefined) {
-        const noted = activity === undefined ? mine : withActivity(mine, activity);
+        const noted = extendedTo(
+          activity === undefined ? mine : withActivity(mine, activity),
+          now,
+          minutes ?? DEFAULT_LEASE_MINUTES,
+        );
         await this.write(noted);
         return { outcome: LEASE_OUTCOME.TAKEN, lease: noted };
       }
@@ -199,6 +205,23 @@ export class LeaseRegistry {
         released.push(done);
       }
       return released;
+    });
+  }
+
+  /**
+   * Everything a session holds, kept for another window, because it is still
+   * working. An editor's hold is short so that one which went quiet lets its lines
+   * go in minutes; its own hook renews it on every tool call while it works.
+   */
+  async renewSession(sessionId: string, now: string, minutes: number): Promise<number> {
+    return this.exclusively(async () => {
+      let renewed = 0;
+      for (const lease of leasesInForce(await this.all(), now, this.alive)) {
+        if (lease.holder.sessionId !== sessionId) continue;
+        await this.write(extendedTo(lease, now, minutes));
+        renewed += 1;
+      }
+      return renewed;
     });
   }
 
