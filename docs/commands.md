@@ -335,6 +335,8 @@ Proposes reversible steps by default and prints the undo before it runs anything
 | `--from-usage <window>` | draft ask rules for what was granted and never used |
 | `--interceptors` | install the PATH wrappers for every CLI this machine has |
 | `--hooks` | install `pre-push` and `pre-commit` in this repository |
+| `--claude-hook` | make Claude Code take a lease before it writes a file |
+| `--revert-claude-hook` | take that hook back out of Claude Code |
 | `--os-guard` | write the kernel sandbox profile from your filesystem rules |
 | `--interactive` / `--yes` | walk the domains, or take the recommendation |
 
@@ -494,6 +496,30 @@ the arguments.
 Answers one. First answer wins; a second is told what already happened rather
 than shown a failure.
 
+### Answering from chat
+
+After setup, the answer to a waiting call does not need a terminal or the
+console. The question is posted in the team's Slack or Discord channel with
+**Allow once**, **Allow for this session** and **Deny**, and the first answer
+from any of those places wins. The same channel carries the other decisions a
+person is asked for: freeing lines another agent holds, acknowledging or
+resolving an incident, approving a decision, verifying a fact, approving a
+policy change. What a person decides without being asked is typed there too:
+
+| Command | What it does |
+|---|---|
+| `/memnox waiting` | how many agents are waiting on a person |
+| `/memnox tell <agent> <message>` | a note the agent reads at its next step |
+| `/memnox freeze 2h [why]` / `/memnox unfreeze` | stop agents shipping until then, or lift it |
+| `/memnox approve-agent <agent>` | let a new agent out of shadow |
+| `/memnox mode <machine> observe` | change how a machine is governed |
+| `/memnox revoke <machine>` | cut a machine off |
+
+A press or a command counts only from a chat account linked to a person with
+the role the action needs. Slack accounts are linked from Slack's member
+directory when Slack is connected; the console's chat settings say how many
+members can act from chat, and where the Slack and Discord apps should point.
+
 ## Running an agent
 
 ### `memnox mcp wrap` / `unwrap`
@@ -607,6 +633,105 @@ Four rules keep this usable rather than a thing people turn off:
 The seams take a lease on their own: a session writing ten files in one
 directory holds one lease, not ten, and `memnox run` releases everything the
 session held when the agent exits — including when it crashed.
+
+**Work that writes no path takes a claim instead.** Posting the message,
+opening the issue, restarting the service: the MCP proxy asks the workspace
+before it forwards one, and is told either that another agent is about to do
+that exact thing or that one is already working on that same issue, page or
+event. Both name who and on which machine, and neither is refused by the
+workspace: the proxy is what stops the repeat, and the people who started both
+agents are written to. Only what changes something outside is claimed, so a
+read never waits. `memnox setup` wraps the servers, which is what puts the
+proxy in front of them, and writes into each wrapped line which agent it
+belongs to, so a refusal names Claude Code or Cursor rather than "an agent".
+
+The shell asks the same register. A command the PATH wrappers run that writes,
+deletes, messages, or sends a body over HTTP is claimed by its exact line, and
+`gh pr` and `gh issue` name the pull request or issue the way the proxy does,
+so `gh pr close 12` on one machine meets `close_pull_request` on another. A
+channel or a repository is never the thing claimed: two different messages to
+one channel, or two new issues in one repository, both go through.
+
+Claude Code's Write and Edit tools write from inside the agent and pass through
+no wrapper, so they take theirs through a hook instead, and so do Codex, Cursor,
+Gemini CLI (`~/.gemini/settings.json`) and Windsurf (`~/.codeium/windsurf/hooks.json`).
+Windsurf reads nothing back from its hooks but a refusal, so its notes reach it
+through the MCP proxy, and it has no session end, so its holds lapse on the idle
+window.
+
+**Everything else is watched.** OpenClaw, Hermes, any agent with no hooks, and a
+person in their own editor run nothing before they write, so the daemon watches
+the repositories agents here work in and claims the lines a saved file changed, a
+moment after the save. It cannot stop that save, and says so: another machine
+reaching for those lines afterwards is stopped, and where another machine already
+had them, a desktop notice says so here and the other side is told the change was
+saved, not stopped. Editors' scratch files, generated folders and anything git
+ignores are left alone, claims are capped per minute, and a change a hooked agent
+here already claimed is skipped. A watcher's claim never stands in the way of an
+agent on its own machine. `setup` adds the repository it runs in to the list, and
+every seam adds the ones it sees.
+
+`memnox setup` installs the one hook wherever each of them is: Claude
+Code's settings, `~/.codex/hooks.json` for Codex's `apply_patch`, and
+`~/.cursor/hooks.json` for Cursor, before a write and just after one, since
+Cursor's write tool does not always say what it is about to change. Each is
+refused in its own words, and `memnox protect --claude-hook` still does Claude
+Code by hand. Some Codex releases ignore a hook's refusal of `apply_patch`
+([openai/codex#27833](https://github.com/openai/codex/issues/27833)); the lines
+are still claimed there, so the other machine is stopped and both people are
+told.
+An editor claims the one file it writes rather than its directory, so two
+sessions in one folder only meet on the same file. The hold lasts five minutes
+and is renewed after each tool call the session makes, so an agent that keeps
+working keeps its lines and one that goes quiet lets them go; a refusal on lines
+whose holder has gone quiet says so, and says when they free up. Across machines it claims
+less than that: the hook reads the lines and the function the edit is about to
+change from the edit itself, so two agents on two computers in one file only
+meet where their edits do, and the one that is stopped is told which lines are
+taken and that the rest of the file is free. A held file is waited on for five
+seconds, then refused with the holder named, and the lease goes when the
+session ends. The people who own both machines are mailed, and the team's
+channel is told.
+
+**A person decides where they already are.** When Claude Code is refused lines
+another machine holds and a person is at the session (the Manual, accept-edits
+and plan modes), it is not refused: the person is asked, in Claude Code's own
+permission prompt, whether to take those lines over. Yes lets the edit through,
+takes the lines over on the record with why, and the agent that held them is
+told in its own session. An unattended session, and every agent that cannot ask
+its person, is refused as before and names `memnox lock --free` for a person to
+run. A note about a collision is also put on the person's desktop as their agent
+reads it, since they are usually in another window.
+
+**Built not to get in the way.** A session asks for notes at most every ten
+seconds, alongside renewing what it holds, so a burst of tool calls is not a
+burst of requests. At the end of a turn only a person's note makes the agent
+carry on; a note Memnox wrote about a collision waits for the agent's next tool
+call or the person's next prompt instead of waking an agent that had finished. A
+refusal is two sentences and ends on the one thing a person can type to step
+in, `memnox lock --free <id>`, which frees another machine's hold on the record
+with a reason. It asks for confirmation and runs only in a terminal, so the
+agent that was refused cannot run it on itself.
+
+**A session is told, and seen, while it works.** The same hook runs after
+every tool call and when a turn ends, in Claude Code, Codex and Cursor, and the
+MCP proxy does the same for an agent with no hooks. At each of those pauses it
+collects what was said to that session in the workspace and hands it to the
+agent: beside the tool result, or, at the end of a turn, as the next thing to
+work on. Two kinds of note arrive this way. When another agent collides with
+lines or an action this session holds, Memnox writes one, so the agent that got
+there first hears of it in its own session. And a person can write one through
+`POST /v1/workspaces/:ws/agents/:agent/control/commands`, naming a `session` to
+reach just that one. Each note is handed over once and recorded with who wrote
+it. What the agent did at that call, names and paths only, is written to the
+ledger and sent within a couple of seconds rather than on the next heartbeat.
+
+A claim on outward work lasts as long as the work. The proxy renews it every
+ten seconds while a call is out and finishes it the moment the call returns,
+so the thing is free again at once. An identical action still counts as a
+repeat for ten seconds after it returns, which is what catches two agents
+reacting to one trigger a second apart, and a claim left by an agent that died
+lapses within thirty.
 
 When the machine is enrolled, the workspace's register is consulted too, so two
 machines on one repository stop being a coin flip. It makes no call at all

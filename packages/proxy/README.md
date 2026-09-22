@@ -41,11 +41,11 @@ test that forgets writes nothing to the developer's own history.
 
 ## Environment
 
-| Variable | Meaning |
-|---|---|
-| `MEMNOX_POLICIES` | rule files, comma-separated |
-| `MEMNOX_TOOLS_ALLOW` | regex — only matching tools are exposed |
-| `MEMNOX_TOOLS_DENY` | regex — matching tools are hidden and denied |
+| Variable             | Meaning                                       |
+| -------------------- | --------------------------------------------- |
+| `MEMNOX_POLICIES`    | rule files, comma-separated                   |
+| `MEMNOX_TOOLS_ALLOW` | a regex: only matching tools are exposed      |
+| `MEMNOX_TOOLS_DENY`  | a regex: matching tools are hidden and denied |
 
 With no rule file configured the proxy still runs: the static tool filters become
 the only gate, and it says so rather than pretending to govern.

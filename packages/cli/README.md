@@ -9,11 +9,11 @@ npx memnox
 
 ## The three questions
 
-| Question | Command |
-|---|---|
-| What can act here, and what can it reach? | `memnox scan` |
-| What changed since last time? | `memnox diff`, `memnox watch` |
-| May this action proceed? | `memnox protect`, `memnox policy test`, `memnox check` |
+| Question                                  | Command                                                |
+| ----------------------------------------- | ------------------------------------------------------ |
+| What can act here, and what can it reach? | `memnox scan`                                          |
+| What changed since last time?             | `memnox diff`, `memnox watch`                          |
+| May this action proceed?                  | `memnox protect`, `memnox policy test`, `memnox check` |
 
 And afterwards: `memnox timeline` for what happened, `memnox why` for why it was
 decided that way, `memnox trace` for one action end to end.
@@ -31,10 +31,10 @@ This is the only package that declares them. `@memnox/proxy` and
 same five names there as well would link each of them twice for anybody who
 installed both.
 
-| Binary | From |
-|---|---|
-| `memnox` | this package |
-| `memnox-mcp-proxy` | `@memnox/proxy` |
+| Binary                                                                       | From                   |
+| ---------------------------------------------------------------------------- | ---------------------- |
+| `memnox`                                                                     | this package           |
+| `memnox-mcp-proxy`                                                           | `@memnox/proxy`        |
 | `memnox-shell`, `memnox-intercept`, `memnox-git-credential`, `memnox-egress` | `@memnox/interceptors` |
 
 ## How a command is put together

@@ -1,7 +1,7 @@
 # @memnox/interceptors
 
 The seams an agent's own actions pass through before they happen. The MCP proxy
-governs what an agent reaches *through a server*; this governs what it does
+governs what an agent reaches _through a server_; this governs what it does
 directly — running a shell command, pushing a branch, opening a URL, handing over
 a credential — which is most of what a coding agent does.
 
@@ -10,13 +10,13 @@ agent which was never written to consult anything ask anyway.
 
 ## The five seams
 
-| Seam | Binary | What it sits in front of |
-|---|---|---|
-| shell | `memnox-shell` | `$SHELL -c "<line>"`, which is what an agent's Bash tool calls |
-| command | `memnox-intercept` | one PATH wrapper per binary — `git`, `aws`, `kubectl`, `docker`… |
-| git credential | `memnox-git-credential` | git asking for a password, before it is handed over |
-| egress | `memnox-egress` | an HTTP request or CONNECT, by destination |
-| tool hook | (in process) | a `PreToolUse` hook, for hosts that offer one |
+| Seam           | Binary                  | What it sits in front of                                         |
+| -------------- | ----------------------- | ---------------------------------------------------------------- |
+| shell          | `memnox-shell`          | `$SHELL -c "<line>"`, which is what an agent's Bash tool calls   |
+| command        | `memnox-intercept`      | one PATH wrapper per binary — `git`, `aws`, `kubectl`, `docker`… |
+| git credential | `memnox-git-credential` | git asking for a password, before it is handed over              |
+| egress         | `memnox-egress`         | an HTTP request or CONNECT, by destination                       |
+| tool hook      | (in process)            | a `PreToolUse` hook, for hosts that offer one                    |
 
 Each answers from the same local gate and the same rule files everything else
 reads. A seam that could not reach the gate evaluates in process rather than
