@@ -35,7 +35,8 @@
     "./interceptor-cli": "./dist/interceptor-cli.js",
     "./shell-cli": "./dist/shell-cli.js",
     "./git-credential-cli": "./dist/git-credential-cli.js",
-    "./egress-cli": "./dist/egress-cli.js"
+    "./egress-cli": "./dist/egress-cli.js",
+    "./edit-hook-cli": "./dist/edit-hook-cli.js"
   },
   "engines": {
     "node": ">=22"

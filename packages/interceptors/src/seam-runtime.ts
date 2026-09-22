@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import {
   CloudLeases,
   GitRegionReader,
@@ -9,10 +9,12 @@ import {
   holdFor,
   LeaseGate,
   LeaseRegistry,
+  rememberRepository,
   SESSION_VAR,
   TtyLeasePrompt,
   type HoldService,
   type LeaseHolder,
+  type WrittenRegion,
 } from '@memnox/core';
 import { HookAuthorizer } from './hook-authorizer';
 import { readHookConfig } from './hook-config';
@@ -45,11 +47,30 @@ export async function readStdin(): Promise<string> {
   return chunks.join('');
 }
 
-interface SeamLeases {
+export interface SeamLeases {
   gate: LeaseGate;
   holder: LeaseHolder;
   repositoryRoot: string;
   isDirectory: (path: string) => boolean;
+}
+
+/**
+ * How a seam with nobody at a terminal takes a lease: an editor's hook.
+ *
+ * A hook shares its host's terminal, so asking on `/dev/tty` would write into the
+ * editor's own screen, and a hook that waits as long as a person may is killed by
+ * its host before it answers.
+ */
+export interface UnattendedLeases {
+  /** The editor's session, which is what makes a second write a renewal. */
+  sessionId: string;
+  /** The longest a held path is waited on. */
+  waitMs: number;
+  /**
+   * What the write is about to touch, where the host said what it writes. A
+   * hook runs before the change lands, so the working tree cannot say.
+   */
+  region?: (path: string) => Promise<WrittenRegion>;
 }
 
 /**
@@ -60,9 +81,15 @@ interface SeamLeases {
  * path that has no root. A single-agent laptop pays nothing for this either way — the
  * register is only ever consulted for a write, and an empty one never refuses.
  */
-export function buildLeases(cwd: string = process.cwd()): SeamLeases | undefined {
+export function buildLeases(
+  cwd: string = process.cwd(),
+  unattended?: UnattendedLeases,
+): SeamLeases | undefined {
   const root = repositoryRoot(cwd);
   if (root === null) return undefined;
+  /* The daemon watches the repositories seams have seen, so an agent with no
+     hooks working in this one is seen too. */
+  rememberRepository(homedir(), root);
 
   return {
     gate: new LeaseGate({
@@ -71,24 +98,35 @@ export function buildLeases(cwd: string = process.cwd()): SeamLeases | undefined
          coin flip. It makes no call at all without an account file, and an
          unreachable control plane never stops a write. */
       shared: new CloudLeases(homedir()),
-      prompt: new TtyLeasePrompt(),
+      ...(unattended === undefined
+        ? { prompt: new TtyLeasePrompt() }
+        : { ceilingMs: unattended.waitMs }),
       /* Which lines and which function this write touches, read off the change
          itself at the moment of the write. Git already computes both and puts
          them in the hunk header, so two agents in one file are told apart
          without either being asked to declare anything. Bounded and failing to
          the whole file, because this sits on the write path. */
-      region: (path) => new GitRegionReader(root).read(path),
+      region:
+        unattended === undefined || unattended.region === undefined
+          ? (path) => new GitRegionReader(root).read(path)
+          : unattended.region,
       now: () => new Date().toISOString(),
     }),
     holder: (() => {
       /* The agent, not this wrapper — but never init, which a reparented seam would
-         otherwise name and which no lease can ever be reclaimed from. */
-      const owner = holderPid(process.ppid, process.pid);
+         otherwise name and which no lease can ever be reclaimed from. A hook is run
+         through a shell that exits the moment it answers, so its owner is the
+         editor above that shell, or every lease it took would read as abandoned. */
+      const parent = unattended === undefined ? process.ppid : pastShell(process.ppid);
+      const owner = holderPid(parent, process.pid);
       return {
         agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
-        /* The session `memnox run` set. Without one, every command would be its own
-           session and a lease would never survive to the next line. */
-        sessionId: process.env[SESSION_VAR] ?? `ses_pid_${owner}`,
+        /* The session `memnox run` set, then the editor's own. Without one, every
+           command would be its own session and a lease would never survive to the
+           next line. */
+        sessionId:
+          process.env[SESSION_VAR] ??
+          (unattended === undefined ? `ses_pid_${owner}` : unattended.sessionId),
         pid: owner,
       };
     })(),
@@ -102,6 +140,31 @@ export function buildLeases(cwd: string = process.cwd()): SeamLeases | undefined
       }
     },
   };
+}
+
+/** Shells a host may run a hook command through. */
+const SHELLS: readonly string[] = ['sh', 'bash', 'zsh', 'dash'];
+
+/**
+ * The process above a shell, where `pid` is one, and `pid` otherwise.
+ *
+ * Asked of `ps` because nothing in Node names a grandparent. Anything it cannot
+ * answer keeps `pid`, which is what this seam named before it knew to look.
+ */
+function pastShell(pid: number): number {
+  try {
+    const line = execFileSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    const match = /^(\d+)\s+(.+)$/.exec(line);
+    if (match === null) return pid;
+    const name = basename((match[2] ?? '').replace(/^-/, ''));
+    return SHELLS.includes(name) ? Number(match[1]) : pid;
+  } catch {
+    // No `ps`, or the shell already gone: the parent is the best answer there is.
+    return pid;
+  }
 }
 
 function repositoryRoot(cwd: string): string | null {

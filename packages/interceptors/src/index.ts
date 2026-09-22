@@ -15,3 +15,6 @@ export * from './record';
 export * from './breaker-seam';
 export * from './seam-runtime';
 export * from './shell-action';
+export * from './edit-hook';
+export * from './agent-edits';
+export * from './session-events';

@@ -14,6 +14,7 @@ export default defineConfig([
       'src/shell-cli.ts',
       'src/git-credential-cli.ts',
       'src/egress-cli.ts',
+      'src/edit-hook-cli.ts',
     ],
     format: ['esm'],
     banner: { js: '#!/usr/bin/env node' },
