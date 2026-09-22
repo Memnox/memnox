@@ -10,3 +10,4 @@ export * from './shared-actions';
 export * from './action-target';
 export * from './session-notes';
 export * from './desktop-notice';
+export * from './watch-list';

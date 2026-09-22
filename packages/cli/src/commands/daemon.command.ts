@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
+import { EditWatcher } from '../edit-watcher';
 import { LocalGate } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { readBudgets, readFleetSpend, SessionPauses } from '@memnox/core';
@@ -187,16 +188,21 @@ async function runDaemon(
     flow.hint('"memnox login" connects this machine.');
   }
 
+  /* Edits by anything with no hooks, claimed from the files as they are saved.
+     Only where the machine is enrolled: a claim is a workspace's to hold. */
+  const watcher = account === null ? null : new EditWatcher(home());
   if (account !== null) {
     void syncLoop(home(), () => running, {
       log: (message) => context.out.note(message),
     });
+    if (watcher !== null) watcher.start();
   }
 
   // Held open deliberately: the command is the daemon, not a launcher for one.
   await new Promise<void>((resolve) => {
     const stop = (): void => {
       running = false;
+      if (watcher !== null) watcher.stop();
       void daemon.close().then(resolve);
     };
     process.once('SIGINT', stop);
