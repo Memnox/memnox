@@ -48,6 +48,24 @@ describe('parseFirewallArgs', () => {
     expect(args?.command).toEqual(['npx', '--name', 'theirs']);
   });
 
+  it('reads the agent the wrapped line was written for', () => {
+    const args = parseFirewallArgs([
+      '--memnox-wrapped',
+      '--name',
+      'slack',
+      '--agent',
+      'cursor',
+      '--',
+      'npx',
+      '--agent',
+      'theirs',
+    ]);
+
+    expect(args?.agent).toBe('cursor');
+    expect(args?.command).toEqual(['npx', '--agent', 'theirs']);
+    expect(parseFirewallArgs(['--name', 'slack', '--', 'npx'])?.agent).toBeUndefined();
+  });
+
   it('splits on the first separator so a later -- belongs to the command', () => {
     const args = parseFirewallArgs(['--name', 'x', '--', 'npx', '--', 'inner']);
 

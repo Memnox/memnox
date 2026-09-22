@@ -1,3 +1,5 @@
+import { AGENT_FLAG } from '@memnox/core';
+
 /** Everything before `--` is ours; everything after is the wrapped server's. */
 const COMMAND_SEPARATOR = '--';
 const NAME_FLAG = '--name';
@@ -7,6 +9,8 @@ interface FirewallArgs {
   /** The wrapped MCP server command, e.g. ["npx", "-y", "@some/mcp-server"]. */
   command: string[];
   serverName: string;
+  /** Absent on a line wrapped before the agent was written into it. */
+  agent?: string;
 }
 
 /** Null means the invocation cannot run and the caller should print usage. */
@@ -16,8 +20,11 @@ export function parseFirewallArgs(argv: readonly string[]): FirewallArgs | null 
 
   const flags = argv.slice(0, separator);
   const nameIndex = flags.indexOf(NAME_FLAG);
+  const agentIndex = flags.indexOf(AGENT_FLAG);
+  const agent = agentIndex === -1 ? undefined : flags[agentIndex + 1];
 
   return {
+    ...(agent === undefined || agent === '' ? {} : { agent }),
     command: argv.slice(separator + 1),
     serverName:
       nameIndex === -1

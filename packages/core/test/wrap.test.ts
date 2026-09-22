@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   planUnwrap,
+  planUpgrade,
   planWrap,
   type ServerLaunch,
   PROXY_BINARY,
@@ -24,6 +25,39 @@ describe('wrapping an MCP server', () => {
       '-y',
       '@modelcontextprotocol/server-github',
     ]);
+  });
+
+  /* A server is started by the agent with that agent's environment, which says
+     nothing about who it is. Written into the line, the proxy can name it. */
+  it('names the agent whose config it is, and still round-trips', () => {
+    const wrapped = wrapLaunch('github', GITHUB, 'claude-code');
+    expect(wrapped.args.slice(0, 6)).toEqual([
+      '--memnox-wrapped',
+      '--name',
+      'github',
+      '--agent',
+      'claude-code',
+      '--',
+    ]);
+    expect(unwrapLaunch(wrapped)).toEqual(GITHUB);
+    expect(planWrap({ github: GITHUB }, 'cursor').wrap[0]?.after.args).toContain(
+      'cursor',
+    );
+  });
+
+  /* A machine wrapped by an older version names no agent, and `setup` fixes
+     that itself rather than asking for an unwrap and a wrap by hand. */
+  it('rewrites an old wrapped line with the agent, keeping the server verbatim', () => {
+    const old = wrapLaunch('github', GITHUB);
+    const [upgrade] = planUpgrade({ github: old, plain: GITHUB }, 'cursor');
+
+    expect(upgrade?.name).toBe('github');
+    expect(upgrade?.after.args).toContain('cursor');
+    expect(unwrapLaunch(upgrade?.after ?? old)).toEqual(GITHUB);
+    expect(
+      planUpgrade({ github: wrapLaunch('github', GITHUB, 'cursor') }, 'cursor'),
+    ).toEqual([]);
+    expect(planUpgrade({ github: old }, undefined)).toEqual([]);
   });
 
   it('round-trips, which is the whole promise of unwrap', () => {

@@ -4,7 +4,12 @@
  * that matters here is leaving somebody's editor unable to start.
  */
 
+import { DISCOVERED_AGENT_KIND, type DiscoveredAgentKind } from './discovery.constants';
+
 export const PROXY_BINARY = 'memnox-mcp-proxy';
+
+/** Which agent launched the proxy, written into the line so the proxy can say. */
+export const AGENT_FLAG = '--agent';
 
 /** Marks a launch line this tool wrote, so unwrap never has to guess. */
 export const WRAP_MARKER = '--memnox-wrapped';
@@ -27,8 +32,8 @@ export interface WrapPlan {
  *
  * A config file is JSON somebody else wrote, and it is read here through a cast:
  * `ServerLaunch` says `command` and `args` are always there and an MCP config is
- * under no obligation to agree. A server declared by URL — `{ type, url, headers }`
- * — has neither, so `launch.args.includes(...)` threw and took `mcp wrap` and
+ * under no obligation to agree. A server declared by URL, `{ type, url, headers }`,
+ * has neither, so `launch.args.includes(...)` threw and took `mcp wrap` and
  * `mcp unwrap` down with it. That is not an exotic shape: it is what a remote
  * server looks like, and it is what Memnox's own cloud server is written as, so
  * the two commands crashed on the entry this product had just added itself.
@@ -50,10 +55,18 @@ function isWrapped(launch: ServerLaunch): boolean {
  * The wrapped line carries the original verbatim after `--`, so unwrapping is a
  * matter of reading it back rather than reconstructing what it might have been.
  */
-export function wrapLaunch(name: string, launch: ServerLaunch): ServerLaunch {
+export function wrapLaunch(
+  name: string,
+  launch: ServerLaunch,
+  agent?: DiscoveredAgentKind,
+): ServerLaunch {
+  /* The agent, where the config belongs to one. A server is started by the agent
+     with that agent's environment, which says nothing about who it is, so a
+     refusal naming the other side could only say "an agent". */
+  const naming = agent === undefined ? [] : [AGENT_FLAG, agent];
   return {
     command: PROXY_BINARY,
-    args: [WRAP_MARKER, '--name', name, '--', launch.command, ...launch.args],
+    args: [WRAP_MARKER, '--name', name, ...naming, '--', launch.command, ...launch.args],
     ...(launch.env === undefined ? {} : { env: launch.env }),
   };
 }
@@ -73,7 +86,10 @@ export function unwrapLaunch(launch: ServerLaunch): ServerLaunch | null {
   };
 }
 
-export function planWrap(servers: Readonly<Record<string, ServerLaunch>>): WrapPlan {
+export function planWrap(
+  servers: Readonly<Record<string, ServerLaunch>>,
+  agent?: DiscoveredAgentKind,
+): WrapPlan {
   const plan: WrapPlan = { wrap: [], alreadyWrapped: [] };
   for (const [name, launch] of Object.entries(servers)) {
     /* A URL server has no command to put anything in front of. Left exactly as
@@ -83,9 +99,32 @@ export function planWrap(servers: Readonly<Record<string, ServerLaunch>>): WrapP
       plan.alreadyWrapped.push(name);
       continue;
     }
-    plan.wrap.push({ name, before: launch, after: wrapLaunch(name, launch) });
+    plan.wrap.push({ name, before: launch, after: wrapLaunch(name, launch, agent) });
   }
   return plan;
+}
+
+/**
+ * Lines this tool wrapped before it wrote the agent into them, rewritten with it.
+ *
+ * `setup` runs this so a machine wrapped by an older version names its agent in a
+ * refusal too, without anybody unwrapping and wrapping again by hand. Only lines
+ * this tool wrote, only where the config belongs to one agent, and the server's
+ * own command carried across untouched.
+ */
+export function planUpgrade(
+  servers: Readonly<Record<string, ServerLaunch>>,
+  agent: DiscoveredAgentKind | undefined,
+): { name: string; after: ServerLaunch }[] {
+  if (agent === undefined) return [];
+  const upgrades: { name: string; after: ServerLaunch }[] = [];
+  for (const [name, launch] of Object.entries(servers)) {
+    if (!isWrapped(launch) || launch.args.includes(AGENT_FLAG)) continue;
+    const original = unwrapLaunch(launch);
+    if (original === null) continue;
+    upgrades.push({ name, after: wrapLaunch(name, original, agent) });
+  }
+  return upgrades;
 }
 
 export function planUnwrap(servers: Readonly<Record<string, ServerLaunch>>): {
@@ -119,27 +158,76 @@ export interface McpConfigLocation {
   scope: 'home' | 'project';
   /** The product that writes it, for a line that names what is not covered. */
   product: string;
+  /**
+   * The agent whose servers these are, where the file belongs to one. Absent
+   * for a file more than one agent reads, which is `.mcp.json`: naming one of
+   * them would be a guess, and a refusal naming the wrong agent is worse than
+   * one naming none.
+   */
+  agent?: DiscoveredAgentKind;
 }
 
 export const MCP_CONFIG_LOCATIONS: readonly McpConfigLocation[] = [
-  { relative: '.claude.json', scope: 'home', product: 'Claude Code' },
+  {
+    relative: '.claude.json',
+    scope: 'home',
+    product: 'Claude Code',
+    agent: DISCOVERED_AGENT_KIND.CLAUDE_CODE,
+  },
   {
     relative: 'Library/Application Support/Claude/claude_desktop_config.json',
     scope: 'home',
     product: 'Claude Desktop',
+    agent: DISCOVERED_AGENT_KIND.CLAUDE_DESKTOP,
   },
   {
     relative: '.config/Claude/claude_desktop_config.json',
     scope: 'home',
     product: 'Claude Desktop',
+    agent: DISCOVERED_AGENT_KIND.CLAUDE_DESKTOP,
   },
-  { relative: '.cursor/mcp.json', scope: 'home', product: 'Cursor' },
-  { relative: '.cline/settings.json', scope: 'home', product: 'Cline' },
-  { relative: '.vscode/mcp.json', scope: 'home', product: 'VS Code' },
-  { relative: '.openclaw/openclaw.json', scope: 'home', product: 'OpenClaw' },
-  { relative: '.codex/config.toml', scope: 'home', product: 'Codex CLI' },
-  { relative: '.hermes/config.yaml', scope: 'home', product: 'Hermes' },
-  { relative: '.hermes/config.yml', scope: 'home', product: 'Hermes' },
+  {
+    relative: '.cursor/mcp.json',
+    scope: 'home',
+    product: 'Cursor',
+    agent: DISCOVERED_AGENT_KIND.CURSOR,
+  },
+  {
+    relative: '.cline/settings.json',
+    scope: 'home',
+    product: 'Cline',
+    agent: DISCOVERED_AGENT_KIND.CLINE,
+  },
+  {
+    relative: '.vscode/mcp.json',
+    scope: 'home',
+    product: 'VS Code',
+    agent: DISCOVERED_AGENT_KIND.VS_CODE,
+  },
+  {
+    relative: '.openclaw/openclaw.json',
+    scope: 'home',
+    product: 'OpenClaw',
+    agent: DISCOVERED_AGENT_KIND.OPENCLAW,
+  },
+  {
+    relative: '.codex/config.toml',
+    scope: 'home',
+    product: 'Codex CLI',
+    agent: DISCOVERED_AGENT_KIND.CODEX_CLI,
+  },
+  {
+    relative: '.hermes/config.yaml',
+    scope: 'home',
+    product: 'Hermes',
+    agent: DISCOVERED_AGENT_KIND.HERMES,
+  },
+  {
+    relative: '.hermes/config.yml',
+    scope: 'home',
+    product: 'Hermes',
+    agent: DISCOVERED_AGENT_KIND.HERMES,
+  },
   { relative: '.mcp.json', scope: 'project', product: 'Ruflo' },
 ];
 
