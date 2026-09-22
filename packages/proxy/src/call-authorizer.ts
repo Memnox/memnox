@@ -21,6 +21,13 @@ export interface CallVerdict {
 /** Decides whether one tool call may reach the wrapped server. */
 export interface CallAuthorizer {
   authorize(call: ToolCall): Promise<CallVerdict>;
+  /**
+   * The call it allowed has returned. Only an authorizer holding something
+   * while the call runs needs this, which is the claim on outward work.
+   */
+  settle?(call: ToolCall): Promise<void>;
+  /** The proxy is going away, so whatever is still held is let go now. */
+  close?(): Promise<void>;
 }
 
 export function isAllowed(verdict: CallVerdict): boolean {

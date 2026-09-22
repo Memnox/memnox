@@ -4,7 +4,9 @@ import {
   digest,
   isAllowed as holdAllowed,
   refusalShapeFor,
+  renderNotes,
   RETRYABILITY,
+  type SessionNote,
   type RefusalShape,
   type HoldRequest,
   type HoldService,
@@ -42,6 +44,12 @@ export interface FirewallSessionDeps {
   /** Groups held calls, and scopes an "allow for this session" grant. */
   sessionId?: string;
   agent?: string;
+  /**
+   * Collects what has been said to this agent in the workspace. Asked when a call
+   * goes out and handed over when its result comes back, so an agent with no
+   * hooks of its own, which reaches the world only through MCP, is still told.
+   */
+  notes?: () => Promise<SessionNote[]>;
 }
 
 type MessageId = string | number;
@@ -70,7 +78,49 @@ export class FirewallSession {
     { call: ToolCall; verdict: CallVerdict }
   >();
 
+  /** Notes collected and not yet handed over, oldest first. */
+  private waiting: SessionNote[] = [];
+  /** One collection at a time, so a burst of calls asks once. */
+  private collecting = false;
+
   constructor(private readonly deps: FirewallSessionDeps) {}
+
+  /**
+   * Asks for notes in the background while the call runs.
+   *
+   * Never awaited: the call must not wait on the control plane, and a result that
+   * comes back before the answer simply carries the notes on the next one. Once
+   * collected a note is the proxy's to deliver, since the workspace has marked it
+   * handed over.
+   */
+  private collectNotes(): void {
+    const notes = this.deps.notes;
+    if (notes === undefined || this.collecting) return;
+    this.collecting = true;
+    void notes()
+      .then((found) => {
+        this.waiting.push(...found);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.collecting = false;
+      });
+  }
+
+  /** The result with whatever notes are waiting added after it, as one more block. */
+  private withNotes(message: JsonRpcMessage): JsonRpcMessage {
+    if (this.waiting.length === 0) return message;
+    const result = message.result;
+    if (result === undefined) return message;
+    const content = result['content'];
+    if (!Array.isArray(content)) return message;
+    const notes = renderNotes(this.waiting);
+    this.waiting = [];
+    return {
+      ...message,
+      result: { ...result, content: [...content, { type: 'text', text: notes }] },
+    };
+  }
 
   async fromClient(line: string): Promise<void> {
     const message = parseMessage(line);
@@ -92,6 +142,7 @@ export class FirewallSession {
          A notification gets no reply, so nothing would ever arrive to write it. */
       if (id === null) this.record(call, verdict, undefined);
       else this.openCalls.set(id, { call, verdict });
+      this.collectNotes();
       return this.forward(message);
     }
 
@@ -150,6 +201,13 @@ export class FirewallSession {
     if (open === undefined) return this.deps.channel.toClient(serializeMessage(message));
     const call = open.call;
     if (id !== null) this.openCalls.delete(id);
+    /* The work is done, so whatever was held while it ran is let go now rather
+       than when its window runs out. Not awaited: the agent is waiting on this
+       result, and a slow control plane must not be what it waits for. */
+    const authorizer = this.deps.authorizer;
+    if (authorizer.settle !== undefined) {
+      void authorizer.settle(call).catch(() => undefined);
+    }
 
     /* Data cannot become authority because an agent read it. The result is wrapped as
        an untrusted context block whatever it says, and instruction-shaped content is
@@ -162,7 +220,9 @@ export class FirewallSession {
         `tool result for "${call.name}" carried instruction-shaped content; it was quoted, not obeyed`,
       );
     }
-    this.deps.channel.toClient(serializeMessage(frameResult(message, result)));
+    this.deps.channel.toClient(
+      serializeMessage(this.withNotes(frameResult(message, result))),
+    );
   }
 
   private record(

@@ -279,3 +279,58 @@ describe('UngovernedAuthorizer', () => {
     });
   });
 });
+
+/* An agent with no hooks of its own reaches the world only through MCP, so this is
+   the one place a note for it can be handed over: with the result of its next call. */
+describe('notes for the agent behind the proxy', () => {
+  it('hands a note over with the next result, once', async () => {
+    const toClient: string[] = [];
+    let asked = 0;
+    const session = new FirewallSession({
+      filter: new ToolFilter(undefined, undefined, () => undefined),
+      authorizer: new UngovernedAuthorizer(),
+      channel: { toServer: () => true, toClient: (line) => toClient.push(line) },
+      log: () => undefined,
+      notes: async () => {
+        asked += 1;
+        return asked === 1
+          ? [
+              {
+                id: 'n1',
+                message: 'wrap up the migration',
+                issuedBy: 'ada',
+                issuedAt: '2026-09-22T10:00:00.000Z',
+              },
+            ]
+          : [];
+      },
+    });
+    const call = (id: number) =>
+      JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'x' } });
+    const result = (id: number) =>
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result: { content: [{ type: 'text', text: 'done' }] },
+      });
+
+    await session.fromClient(call(1));
+    await new Promise((resolve) => setImmediate(resolve));
+    session.fromServer(result(1));
+    await session.fromClient(call(2));
+    await new Promise((resolve) => setImmediate(resolve));
+    session.fromServer(result(2));
+
+    const first = JSON.parse(toClient[0] ?? '{}') as {
+      result: { content: { text: string }[] };
+    };
+    expect(first.result.content.map((each) => each.text)).toEqual([
+      'done',
+      expect.stringContaining('From ada, through Memnox: wrap up the migration'),
+    ]);
+    const second = JSON.parse(toClient[1] ?? '{}') as {
+      result: { content: { text: string }[] };
+    };
+    expect(second.result.content).toHaveLength(1);
+  });
+});

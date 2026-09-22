@@ -9,3 +9,4 @@ export * from './firewall-session';
 export * from './firewall';
 export * from './ledger';
 export * from './session-limits';
+export * from './duplicate-work';

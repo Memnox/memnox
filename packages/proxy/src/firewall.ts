@@ -1,11 +1,19 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { EventSink, HoldService, LocalGate } from '@memnox/core';
+import type {
+  EventSink,
+  HoldService,
+  LocalGate,
+  SessionNote,
+  SessionNotes,
+  SharedActions,
+} from '@memnox/core';
 import {
   LocalGateAuthorizer,
   SessionLimitedAuthorizer,
   UngovernedAuthorizer,
   type CallAuthorizer,
 } from './call-authorizer';
+import { DuplicateWorkAuthorizer } from './duplicate-work';
 import { FirewallSession, type FirewallChannel } from './firewall-session';
 import { LineBuffer } from './json-rpc';
 import { recordToLedger, type LedgerContext } from './ledger';
@@ -46,7 +54,51 @@ export interface FirewallOptions {
    * MCP call hits is a refusal nobody was ever offered the chance to answer.
    */
   hold?: HoldService;
+  /**
+   * The workspace's register of what other agents are about to do, so two machines
+   * do not each send the same message. Absent means nothing is asked, which is what
+   * a test wants and what an unenrolled machine gets.
+   */
+  actions?: SharedActions;
+  /** The workspace's inbox for this agent. Absent means nothing is collected. */
+  notes?: SessionNotes;
 }
+
+/** What a claim is filed under when the wrapper was told no agent. */
+const UNNAMED_AGENT = 'an agent';
+
+/**
+ * The session a claim is filed under when the agent named none.
+ *
+ * One per proxy process, because an agent starts its own servers for each
+ * session it runs. A single shared name made two Claude Code sessions on one
+ * laptop the same claimant, and the second was never told the first had it.
+ */
+function unnamedSession(): string {
+  return `ses_proxy_${process.pid}`;
+}
+
+/**
+ * What this proxy collects notes as: the agent it serves, in the session it was
+ * told or the one this process stands for, the same name its claims are filed under.
+ */
+function notesFor(options: FirewallOptions): { notes?: () => Promise<SessionNote[]> } {
+  const inbox = options.notes;
+  if (inbox === undefined) return {};
+  const agent = options.agent ?? UNNAMED_AGENT;
+  const session = options.sessionId ?? unnamedSession();
+  return { notes: () => inbox.collect(agent, session) };
+}
+
+/** The signals an agent ends its servers with. */
+const ENDING_SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const;
+const ENDING_SIGNAL_NUMBER: Record<(typeof ENDING_SIGNALS)[number], number> = {
+  SIGHUP: 1,
+  SIGINT: 2,
+  SIGTERM: 15,
+};
+/** What a process a signal ended reports: 128 plus the signal. */
+const SIGNALLED_EXIT_BASE = 128;
 
 /** How the proxy reaches the process table and the client stream. */
 export interface FirewallProcessDeps {
@@ -64,6 +116,7 @@ export class McpFirewall {
   private readonly log: (message: string) => void;
   private readonly ledger: EventSink | null;
   private child: ChildProcess | null = null;
+  private readonly authorizer: CallAuthorizer;
 
   constructor(private readonly options: FirewallOptions) {
     this.ledger = options.ledger ?? null;
@@ -73,6 +126,7 @@ export class McpFirewall {
 
     // Built first: it is what gives the session a client to report frames through.
     const authorizer = this.buildAuthorizer();
+    this.authorizer = authorizer;
 
     this.session = new FirewallSession({
       filter: new ToolFilter(options.allowPattern, options.denyPattern, this.log),
@@ -83,6 +137,7 @@ export class McpFirewall {
       ...(options.hold === undefined ? {} : { hold: options.hold }),
       ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
       ...(options.agent === undefined ? {} : { agent: options.agent }),
+      ...notesFor(options),
       // Every call reaches the ledger once, when its outcome is known.
       record: (call) => this.write(call),
     });
@@ -141,7 +196,27 @@ export class McpFirewall {
 
     const child = spawnChild(executable, args);
     this.child = child;
-    child.on('exit', (code) => exit(code === null ? 0 : code));
+    child.on('exit', (code) => {
+      const status = code === null ? 0 : code;
+      /* At once where nothing is held, which is every proxy with no workspace:
+         the exit code is the wrapped server's and nothing should delay it. */
+      if (this.authorizer.close === undefined) return exit(status);
+      void this.close().then(() => exit(status));
+    });
+    /* An agent ends a session by signalling its servers. Whatever this proxy
+       still holds is let go first, or the thing it was on reads as busy for the
+       rest of its window with nobody working on it. Only for a real process: a
+       test that injects its own exit owns its own signals. */
+    if (deps.exit === undefined) {
+      for (const signal of ENDING_SIGNALS) {
+        process.once(signal, () => {
+          void this.close().then(() => {
+            child.kill(signal);
+            exit(SIGNALLED_EXIT_BASE + ENDING_SIGNAL_NUMBER[signal]);
+          });
+        });
+      }
+    }
 
     const clientToServer = new LineBuffer();
     input.on('data', (chunk: Buffer) => {
@@ -179,8 +254,32 @@ export class McpFirewall {
     /* Outside the rules, so a pause and a spent budget hold on a machine with no
        policy file too: neither is a statement about what is allowed. */
     const limits = this.options.limits;
-    if (limits === undefined) return rules;
-    return new SessionLimitedAuthorizer(rules, limits, this.options.sessionId);
+    const limited =
+      limits === undefined
+        ? rules
+        : new SessionLimitedAuthorizer(rules, limits, this.options.sessionId);
+
+    /* Outermost, and asked only of what the rules already allowed: an action
+       about to be refused needs no claim. */
+    const actions = this.options.actions;
+    if (actions === undefined) return limited;
+    return new DuplicateWorkAuthorizer(
+      limited,
+      actions,
+      {
+        agent: this.options.agent ?? UNNAMED_AGENT,
+        sessionId: this.options.sessionId ?? unnamedSession(),
+        pid: process.pid,
+      },
+      this.options.serverName,
+    );
+  }
+
+  /** Lets go of anything held for calls in flight. Never rejects. */
+  private async close(): Promise<void> {
+    const close = this.authorizer.close;
+    if (close === undefined) return;
+    await close.call(this.authorizer).catch(() => undefined);
   }
 
   private buildChannel(): FirewallChannel {

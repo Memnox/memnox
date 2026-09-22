@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { parseFirewallArgs } from './firewall-args';
 import { McpFirewall } from './firewall';
-import { holdFor, SESSION_VAR } from '@memnox/core';
+import { CloudActions, CloudNotes, holdFor, SESSION_VAR } from '@memnox/core';
 import {
   ENV_AGENT_NAME,
   ENV_POLICIES,
@@ -46,7 +46,10 @@ async function main(): Promise<void> {
   // Opened here rather than inside the proxy: this is the only place that may read a disk.
   const ledger = openLedger(home);
   const session = process.env[SESSION_VAR];
-  const agent = process.env[ENV_AGENT_NAME];
+  /* The environment first, which is what `memnox run` sets, and then the agent
+     the wrapped line was written for, which is every server an agent starts on
+     its own. */
+  const agent = process.env[ENV_AGENT_NAME] ?? args.agent;
 
   new McpFirewall({
     command: args.command,
@@ -69,6 +72,14 @@ async function main(): Promise<void> {
       interactive: false,
       announce: (message) => process.stderr.write(`memnox: ${message}\n`),
     }),
+    /* The workspace's register of what other agents are about to do, so two
+       machines do not each send the same message. It makes no call at all
+       without an account file, and an unreachable control plane never stops a
+       call. */
+    actions: new CloudActions(home),
+    /* What has been said to this agent, handed over with its next result. The
+       same account, and nothing at all is asked without one. */
+    notes: new CloudNotes(home),
     allowPattern: process.env[ENV_TOOLS_ALLOW],
     denyPattern: process.env[ENV_TOOLS_DENY],
   }).start();
