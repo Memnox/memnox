@@ -10,6 +10,7 @@ import {
 } from './config';
 import { writeAtomic } from '../store/atomic-file';
 
+/** Where this machine's own settings live, named here so nothing spells the path twice. */
 export function configPathFor(home: string): string {
   return join(home, MEMNOX_HOME, CONFIG_FILE);
 }

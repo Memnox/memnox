@@ -1,15 +1,18 @@
+/** This machine's own settings file, and the names every package shares for where Memnox lives. */
 import {
   ENFORCEMENT_MODE,
   type EnforcementMode,
 } from '../constants/enforcement.constants';
+import { isEnforcementMode } from '../domain/enforcement';
+import { DEFAULT_NOTICE_WARMUP_DAYS } from '../notice/notice.constants';
 
+/** Everything this product writes lives under here, so no command writes where another does not look. */
 export const MEMNOX_HOME = '.memnox';
 
-/**
- * Set by `memnox run` and read by every seam, so one agent's actions group into one
- * session in the timeline. Three packages spelled this themselves; a typo in any of
- * them would have scattered a session silently.
- */
+/** The file naming every rule file in force, which is what the seams load. */
+export const POLICY_REGISTRY_FILE = 'policies.json';
+
+/** Set by `memnox run` and read by every seam, so one agent's actions group into one session. */
 export const SESSION_VAR = 'MEMNOX_SESSION';
 export const CONFIG_FILE = 'config.toml';
 
@@ -25,12 +28,14 @@ export interface MemnoxConfig {
   /** Counts only, opt-in, never contents. Absent means never asked. */
   telemetry: boolean;
   /**
-   * Agents somebody decided are allowed here. Anything else that acts is reported as
-   * unregistered — which is the whole of shadow-agent detection: nobody approved it,
-   * and until now nothing noticed. Empty means nobody has decided yet, which is
-   * reported as such rather than as "everything is approved".
+   * Agents somebody decided are allowed here; anything else that acts is reported as
+   * unregistered. Empty means nobody has decided yet, rather than all approved.
    */
   approvedAgents: string[];
+  /** Ask about an allowed action that is new, completes a chain, or follows injection. */
+  noticeUnusual: boolean;
+  /** Days after setup when unusual actions are only recorded, so day one asks nothing. */
+  noticeWarmupDays: number;
 }
 
 export const DEFAULT_CONFIG: MemnoxConfig = {
@@ -39,6 +44,8 @@ export const DEFAULT_CONFIG: MemnoxConfig = {
   failOpen: false,
   telemetry: false,
   approvedAgents: [],
+  noticeUnusual: true,
+  noticeWarmupDays: DEFAULT_NOTICE_WARMUP_DAYS,
 };
 
 const KEYS = [
@@ -47,6 +54,8 @@ const KEYS = [
   'failOpen',
   'telemetry',
   'approvedAgents',
+  'noticeUnusual',
+  'noticeWarmupDays',
 ] as const;
 export type ConfigKey = (typeof KEYS)[number];
 
@@ -58,14 +67,9 @@ export function configKeys(): readonly ConfigKey[] {
   return KEYS;
 }
 
-function isEnforcementMode(value: string): value is EnforcementMode {
-  return Object.values(ENFORCEMENT_MODE).includes(value as EnforcementMode);
-}
-
 /**
- * A hand-rolled reader for the flat key/value subset this file is: adding a TOML
- * parser to the zero-dependency package to read four scalars is a dependency nobody
- * needs. Anything richer than `key = value` belongs in a policy file.
+ * A hand-rolled reader for the flat `key = value` subset this file is, rather than a TOML
+ * dependency to read four scalars. Anything richer belongs in a policy file.
  */
 export function parseConfig(raw: string): MemnoxConfig {
   const config: MemnoxConfig = { ...DEFAULT_CONFIG };
@@ -87,8 +91,18 @@ export function parseConfig(raw: string): MemnoxConfig {
     if (key === 'failOpen') config.failOpen = value === 'true';
     if (key === 'telemetry') config.telemetry = value === 'true';
     if (key === 'approvedAgents') config.approvedAgents = splitList(value);
+    if (key === 'noticeUnusual') config.noticeUnusual = value !== 'false';
+    if (key === 'noticeWarmupDays' && isWholeDays(value)) {
+      config.noticeWarmupDays = Number(value);
+    }
   }
   return config;
+}
+
+/** Zero is allowed: somebody who wants questions from the first minute can have them. */
+function isWholeDays(value: string): boolean {
+  const days = Number(value);
+  return value !== '' && Number.isInteger(days) && days >= 0;
 }
 
 /** A comma-separated list, which is what a flat key/value file can honestly hold. */
@@ -103,7 +117,7 @@ function splitList(value: string): string[] {
 /** Written with the comments a person reads before changing a mode by hand. */
 export function renderConfig(config: MemnoxConfig): string {
   return [
-    '# Memnox — written on first run, yours to edit.',
+    '# Memnox: written on first run, yours to edit.',
     '',
     '# off | observe | advise | enforce. Observe records the real verdict and denies nothing.',
     `mode = "${config.mode}"`,
@@ -120,6 +134,13 @@ export function renderConfig(config: MemnoxConfig): string {
     '# Agents you have decided are allowed here. Anything else that acts is reported',
     '# as unregistered. Empty means nobody has decided yet, not that all are approved.',
     `approvedAgents = "${config.approvedAgents.join(', ')}"`,
+    '',
+    '# Ask about an allowed action that is new for the agent, completes a chain, or',
+    '# follows a tool result that read like instructions. Follows mode above.',
+    `noticeUnusual = ${config.noticeUnusual}`,
+    '',
+    '# Days after setup when those are only recorded, so day one is not a wall of asks.',
+    `noticeWarmupDays = ${config.noticeWarmupDays}`,
     '',
   ].join('\n');
 }
@@ -148,6 +169,11 @@ export function validateConfigValue(key: ConfigKey, value: string): ConfigParse 
     return { value };
   }
   if (key === 'approvedAgents') return { value };
+  if (key === 'noticeWarmupDays') {
+    return isWholeDays(value)
+      ? { value }
+      : { value, error: 'noticeWarmupDays must be a whole number of days, zero or more' };
+  }
   if (value !== 'true' && value !== 'false') {
     return { value, error: `${key} must be true or false` };
   }
@@ -159,10 +185,13 @@ export function applyConfigValue(
   key: ConfigKey,
   value: string,
 ): MemnoxConfig {
+  // validateConfigValue has already refused anything that is not a mode.
   if (key === 'mode') return { ...config, mode: value as EnforcementMode };
   if (key === 'retentionDays') return { ...config, retentionDays: Number(value) };
   if (key === 'failOpen') return { ...config, failOpen: value === 'true' };
   if (key === 'approvedAgents') return { ...config, approvedAgents: splitList(value) };
+  if (key === 'noticeUnusual') return { ...config, noticeUnusual: value === 'true' };
+  if (key === 'noticeWarmupDays') return { ...config, noticeWarmupDays: Number(value) };
   return { ...config, telemetry: value === 'true' };
 }
 
@@ -172,9 +201,8 @@ export function readConfigValue(config: MemnoxConfig, key: ConfigKey): string {
 }
 
 /**
- * Three states, not two. "Nobody has decided" is different from "this agent is not
- * approved", and reporting the first as the second would flag every agent on a machine
- * where the list was simply never filled in.
+ * Three states, not two, because "nobody has decided" reported as "not approved" would
+ * flag every agent on a machine where the list was never filled in.
  */
 export const AGENT_APPROVAL = {
   APPROVED: 'approved',

@@ -54,6 +54,8 @@ describe('the config file', () => {
       failOpen: true,
       telemetry: true,
       approvedAgents: ['claude-code', 'cursor'],
+      noticeUnusual: false,
+      noticeWarmupDays: 0,
     };
     expect(parseConfig(renderConfig(config))).toEqual(config);
   });
@@ -101,6 +103,22 @@ describe('changing one setting', () => {
   it('refuses a boolean that is not one', () => {
     expect(validateConfigValue('failOpen', 'yes').error).toContain('true or false');
     expect(validateConfigValue('failOpen', 'true').error).toBeUndefined();
+  });
+
+  it('turns noticing the unusual off, and takes a warm-up of zero days but never less', () => {
+    expect(DEFAULT_CONFIG.noticeUnusual).toBe(true);
+    expect(parseConfig('noticeUnusual = false').noticeUnusual).toBe(false);
+    expect(parseConfig('noticeWarmupDays = 0').noticeWarmupDays).toBe(0);
+    expect(parseConfig('noticeWarmupDays = -1').noticeWarmupDays).toBe(
+      DEFAULT_CONFIG.noticeWarmupDays,
+    );
+    expect(validateConfigValue('noticeWarmupDays', '-1').error).toContain('zero or more');
+    expect(validateConfigValue('noticeUnusual', 'maybe').error).toContain(
+      'true or false',
+    );
+    expect(
+      applyConfigValue(DEFAULT_CONFIG, 'noticeWarmupDays', '7').noticeWarmupDays,
+    ).toBe(7);
   });
 
   it('applies a change without touching anything else', () => {
