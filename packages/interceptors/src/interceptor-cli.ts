@@ -1,10 +1,12 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
 import {
+  CloudActions,
   DECISION_EFFECT,
+  holderPid,
   isBrowserLauncher,
   overlaysInForce,
   provenanceOf,
@@ -27,6 +29,8 @@ import { readHookConfig } from './hook-config';
 import { record } from './record';
 import { reportToDaemon } from './daemon-client';
 import { buildHold, log } from './seam-runtime';
+import { claimShellAction, shellAction, type ShellClaim } from './shell-action';
+import { DEFAULT_AGENT_NAME, ENV_AGENT_NAME } from './tool-hook.constants';
 
 /**
  * One binary behind every interceptor. It is invoked through a name in the interceptor directory,
@@ -153,7 +157,7 @@ function openLedger(home: string): EventSink | null {
 }
 
 /**
- * Runs it, records what happened, and only then exits — so the exit code and the
+ * Runs it, records what happened, and only then exits, so the exit code and the
  * duration reach the row rather than being lost with the process.
  */
 async function handAndRecord(
@@ -165,7 +169,30 @@ async function handAndRecord(
   started: number,
   provenance: Awaited<ReturnType<typeof provenanceOf>>,
 ): Promise<never> {
-  const status = hand(binary, args, home);
+  /* Asked only of what the rules allowed, and only here, at the moment it would
+     run: an agent on another machine about to send the same request, or already
+     working on the same pull request, is told before this one repeats it. */
+  const claim = await anotherAgentHasIt(binary, args, home, outcome);
+  if ('refused' in claim) {
+    const refused = claim.refused;
+    process.stderr.write(`memnox: ${refused}\n`);
+    await record(sink, {
+      ...provenance,
+      outcome: { ...outcome, allowed: false },
+      effect: DECISION_EFFECT.DENY,
+      reason: refused,
+      at: new Date().toISOString(),
+      ...(process.env[SESSION_VAR] === undefined
+        ? {}
+        : { sessionId: process.env[SESSION_VAR] }),
+    });
+    process.exit(1);
+  }
+
+  /* Held for as long as the command runs, and let go the moment it exits, so an
+     agent on another machine waits on work being done rather than on a window. */
+  const status = await hand(binary, args, home);
+  await claim.release();
   /* The breaker watches outcomes, and this is the only place one exists. Best effort:
      no daemon means the counters are not kept, never that the command is held up. */
   await reportToDaemon(home, {
@@ -204,21 +231,61 @@ async function handAndRecord(
 }
 
 /**
+ * Refused with who has it, or free to run and holding the claim while it does.
+ *
+ * The same register the MCP proxy asks, so `gh pr close 12` here and a
+ * `close_pull_request` there meet. Makes no call at all without an account file,
+ * and an unreachable control plane lets the command run.
+ */
+async function anotherAgentHasIt(
+  binary: string,
+  args: readonly string[],
+  home: string,
+  outcome: Awaited<ReturnType<typeof ruleOnCommand>>,
+): Promise<ShellClaim> {
+  const action = shellAction(binary, args, outcome);
+  if (action === null) return { release: async () => undefined };
+  const owner = holderPid(process.ppid, process.pid);
+  return claimShellAction(action, new CloudActions(home), {
+    agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
+    /* The session `memnox run` set, and otherwise the agent above this command,
+       which is the same name the file register gives it. */
+    sessionId: process.env[SESSION_VAR] ?? `ses_pid_${owner}`,
+    pid: owner,
+  });
+}
+
+/**
  * Hand over stdio untouched and pass the exit code straight back: anything the agent
  * reads or writes must look exactly as it would have without the interceptor.
  */
-function hand(binary: string, args: readonly string[], home: string): number {
+function hand(binary: string, args: readonly string[], home: string): Promise<number> {
   const path = realPath(process.env['PATH'] ?? '', home);
   const real = resolveReal(binary, path, existsSync);
   if (real === null) {
     process.stderr.write(`memnox: ${binary} is not on PATH behind the interceptor\n`);
     process.exit(127);
   }
-  const result = spawnSync(real, [...args], {
-    stdio: 'inherit',
-    env: { ...process.env, PATH: path },
+  /* Not blocking, so the claim on the work can be renewed while it runs. An
+     interrupt reaches the command from the terminal on its own, and this process
+     only waits to pass its exit code back, as a blocking spawn did. */
+  const ignore = (): void => undefined;
+  for (const signal of FORWARDED) process.on(signal, ignore);
+  return new Promise((resolve) => {
+    const child = spawn(real, [...args], {
+      stdio: 'inherit',
+      env: { ...process.env, PATH: path },
+    });
+    child.on('error', () => resolve(1));
+    child.on('exit', (code) => {
+      for (const each of FORWARDED) process.off(each, ignore);
+      // A signalled child has no code, which a blocking spawn reported as 1 too.
+      resolve(code ?? 1);
+    });
   });
-  return result.status ?? 1;
 }
+
+/** Signals the terminal sends the whole group, which the command answers for itself. */
+const FORWARDED: readonly NodeJS.Signals[] = ['SIGINT', 'SIGQUIT'];
 
 void main();

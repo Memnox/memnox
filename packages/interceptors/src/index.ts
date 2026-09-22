@@ -14,3 +14,4 @@ export * from './browser-seam';
 export * from './record';
 export * from './breaker-seam';
 export * from './seam-runtime';
+export * from './shell-action';
