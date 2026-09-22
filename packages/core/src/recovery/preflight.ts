@@ -1,3 +1,7 @@
+/**
+ * The same engine, rules and state, run ahead of time, so what an agent should not touch is
+ * found before the run. Nothing is executed: this only produces the actions an intent means.
+ */
 import { parseQuestion, QUESTION_VERB, type QuestionVerb } from '../domain/question';
 import {
   resolveAction,
@@ -5,16 +9,6 @@ import {
   type ResolvedAction,
 } from '../intercept/resolve';
 import { verbAction, VERB_TABLES } from '../verbs/index';
-
-/**
- * The decision to let an agent run is made once, at the start, with nothing to go on.
- * Half an hour later it reaches the one thing it should not have touched, and the choice
- * is to abandon the run or approve under pressure — which is always yes.
- *
- * This is the same engine, the same rules and the same state, run ahead of time. Nothing
- * is executed: what it produces is the list of actions an intent resolves to, for the
- * caller to put through the gate it would have gone through anyway.
- */
 
 export const INTENT_KIND = {
   /** A command line. Resolved exactly, because it is exactly what would run. */
@@ -49,9 +43,8 @@ const VERB_WORDS: Readonly<Record<QuestionVerb, readonly string[]>> = {
 };
 
 /**
- * Ranked, most consequential first. A pattern like `release delete` holds a word from
- * two verbs, and the answer has to be "delete" — listing it under "deploy" would put a
- * destructive action in front of somebody who asked about shipping.
+ * Ranked, most consequential first, so `release delete` reads as "delete" rather than
+ * putting a destructive action in front of somebody who asked about shipping.
  */
 const VERB_RANK: readonly QuestionVerb[] = [
   QUESTION_VERB.DELETE,
@@ -93,7 +86,7 @@ export function preflightFor(intent: string, env: NodeJS.ProcessEnv = {}): Prefl
       kind: INTENT_KIND.PHRASE,
       actions: [],
       unrecognized:
-        'No verb in that. Name one — deploy, merge, push, delete, publish, read, write — or type the command itself.',
+        'No verb in that. Name one of deploy, merge, push, delete, publish, read or write, or type the command itself.',
     };
   }
 
@@ -109,10 +102,15 @@ export function preflightFor(intent: string, env: NodeJS.ProcessEnv = {}): Prefl
 
 function verbIn(intent: string): QuestionVerb | null {
   for (const word of intent.toLowerCase().split(/[^a-z]+/)) {
-    const parsed = parseQuestion(`can agent ${word} thing`);
-    if (parsed.question !== undefined) return parsed.question.verb;
+    const verb = verbOfWord(word);
+    if (verb !== null) return verb;
   }
   return null;
+}
+
+/** Asked of the question grammar, so a phrase and a question share one synonym table. */
+function verbOfWord(word: string): QuestionVerb | null {
+  return parseQuestion(`can agent ${word} thing`).question?.verb ?? null;
 }
 
 /** The words after the verb, minus the filler somebody types around it. */
@@ -134,9 +132,7 @@ function subjectIn(intent: string): string | null {
     .toLowerCase()
     .split(/[^a-z0-9._-]+/)
     .filter((word) => word !== '');
-  const at = words.findIndex(
-    (word) => parseQuestion(`can agent ${word} thing`).question !== undefined,
-  );
+  const at = words.findIndex((word) => verbOfWord(word) !== null);
   const rest = (at === -1 ? words : words.slice(at + 1)).filter(
     (word) => !FILLER.has(word),
   );
@@ -144,9 +140,8 @@ function subjectIn(intent: string): string | null {
 }
 
 /**
- * Every action in every verb table this intent could mean. More than one on purpose:
- * "deploy payments" is `railway deploy`, `vercel deploy --prod` and `kubectl apply`
- * until somebody says which, and answering about only the first would be a guess.
+ * Every action in every verb table this intent could mean, because "deploy payments" is
+ * `railway deploy`, `vercel deploy --prod` and `kubectl apply` until somebody says which.
  */
 function candidatesFor(
   verb: QuestionVerb,

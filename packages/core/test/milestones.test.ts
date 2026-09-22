@@ -27,6 +27,7 @@ class FakeGit implements GitPort {
 
 class FakeTree implements WorktreePort {
   readonly removed: string[] = [];
+  copy?: (from: string, to: string) => Promise<boolean>;
   constructor(private readonly present: Set<string> = new Set()) {}
   async exists(path: string): Promise<boolean> {
     return this.present.has(path);
@@ -54,6 +55,23 @@ describe('taking a milestone', () => {
     expect(add).toBeDefined();
     expect(git.calls.some((call) => call[0] === 'stash')).toBe(false);
     expect(git.calls.some((call) => call[0] === 'commit')).toBe(false);
+  });
+
+  /* A hook waits on this. Rebuilding the index from HEAD rehashes every file, while a
+     copy of the person's own keeps the stamps that let git skip the unchanged ones. */
+  it("starts from a copy of the person's index where there is one", async () => {
+    const git = new FakeGit({ 'write-tree': 'tree1', 'commit-tree': 'commit1' });
+    const copied: string[][] = [];
+    const tree = new FakeTree();
+    tree.copy = async (from: string, to: string): Promise<boolean> => {
+      copied.push([from, to]);
+      return true;
+    };
+
+    await new Milestones(git, tree).take({ at: AT });
+
+    expect(copied).toEqual([['/repo/.git/index', '/repo/.git/memnox-index']]);
+    expect(git.calls.some((call) => call[0] === 'read-tree')).toBe(false);
   });
 
   it('parks the milestone under refs/memnox, not on a branch', async () => {

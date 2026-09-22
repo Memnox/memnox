@@ -1,3 +1,7 @@
+/**
+ * Taking and restoring working trees. Every git call is read-only or writes into
+ * `refs/memnox/`, except the restore, which first takes a milestone of what it replaces.
+ */
 import {
   decodeMessage,
   encodeMessage,
@@ -13,14 +17,11 @@ import {
 } from './milestone';
 import { REWIND_REFUSAL, RewindRefused, type GitPort, type WorktreePort } from './ports';
 
-/**
- * Taking and restoring working trees. Every git call here is read-only or writes into
- * `refs/memnox/` — with exactly one exception, the restore, which is the whole point and
- * is guarded by taking a milestone of what it is about to replace.
- */
-
 /** A scratch index, so `git add -A` never touches the one the person is staging into. */
 const SCRATCH_INDEX = '.git/memnox-index';
+
+/** The index the person stages into, only ever read from. */
+const PERSON_INDEX = '.git/index';
 
 const IN_PROGRESS: readonly [string, string][] = [
   ['MERGE_HEAD', 'a merge'],
@@ -36,7 +37,24 @@ export interface TakeMilestone {
   at: string;
   reason?: MilestoneReason;
   sessionId?: string;
+  agent?: string;
   note?: string;
+}
+
+export interface RestoreResult {
+  restored: Milestone;
+  /** The milestone taken of what the restore replaced, so the rewind can itself be undone. */
+  kept: Milestone;
+}
+
+type ScratchEnv = Record<string, string>;
+
+function scratchEnv(root: string): ScratchEnv {
+  return { GIT_INDEX_FILE: `${root}/${SCRATCH_INDEX}` };
+}
+
+function nonEmptyLines(text: string): string[] {
+  return text.split('\n').filter((line) => line !== '');
 }
 
 export class Milestones {
@@ -47,51 +65,57 @@ export class Milestones {
 
   /**
    * The working tree as it is right now, including files git has never seen but not the
-   * ones it is told to ignore — restoring somebody's `node_modules` from a tree object
-   * would take a minute and help nobody.
+   * ones it ignores, because restoring somebody's `node_modules` would help nobody.
    */
   async take(request: TakeMilestone): Promise<Milestone> {
     const root = await this.repositoryRoot();
-    const env = { GIT_INDEX_FILE: `${root}/${SCRATCH_INDEX}` };
-
-    // Seed from HEAD so the tree is a delta and not a fresh copy of the repository.
-    await this.git.run(['read-tree', 'HEAD'], env).catch(async () => {
-      // A repository with no commits yet has no HEAD to read; start from nothing.
-      await this.git.run(['read-tree', '--empty'], env);
-    });
-    await this.git.run(['add', '-A', '--', '.'], env);
-    const tree = await this.git.run(['write-tree'], env);
-    const files = (await this.git.run(['ls-files', '--', '.'], env))
-      .split('\n')
-      .filter((line) => line !== '').length;
-
-    const message = encodeMessage({
+    const { tree, files } = await this.writeWorkingTree(root);
+    const record = {
       takenAt: request.at,
       reason: request.reason ?? MILESTONE_REASON.MANUAL,
       files,
       ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+      ...(request.agent === undefined ? {} : { agent: request.agent }),
       ...(request.note === undefined ? {} : { note: request.note }),
-    });
+    };
     const parent = await this.head();
     const commit = await this.git.run([
       'commit-tree',
       tree,
       ...(parent === null ? [] : ['-p', parent]),
       '-m',
-      message,
+      encodeMessage(record),
     ]);
 
     const id = milestoneIdFor(request.at, commit);
     await this.git.run(['update-ref', refFor(id), commit]);
-    return {
-      id,
-      commit,
-      takenAt: request.at,
-      reason: request.reason ?? MILESTONE_REASON.MANUAL,
-      files,
-      ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
-      ...(request.note === undefined ? {} : { note: request.note }),
-    };
+    return { id, commit, ...record };
+  }
+
+  /** The tree object for the working tree, built in the scratch index, and its file count. */
+  private async writeWorkingTree(root: string): Promise<{ tree: string; files: number }> {
+    const env = scratchEnv(root);
+    await this.seedIndex(root, env);
+    await this.git.run(['add', '-A', '--', '.'], env);
+    const tree = await this.git.run(['write-tree'], env);
+    const files = nonEmptyLines(await this.git.run(['ls-files', '--', '.'], env)).length;
+    return { tree, files };
+  }
+
+  /**
+   * A copy of the person's own index, whose file stamps let `add -A` skip every unchanged
+   * file; a hook waits on this, and rehashing a large tree cost it a third of a second.
+   */
+  private async seedIndex(root: string, env: ScratchEnv): Promise<void> {
+    const copied =
+      this.tree.copy !== undefined &&
+      (await this.tree.copy(`${root}/${PERSON_INDEX}`, `${root}/${SCRATCH_INDEX}`));
+    if (copied) return;
+    // Seed from HEAD so the tree is a delta and not a fresh copy of the repository.
+    await this.git.run(['read-tree', 'HEAD'], env).catch(async () => {
+      // A repository with no commits yet has no HEAD to read; start from nothing.
+      await this.git.run(['read-tree', '--empty'], env);
+    });
   }
 
   async list(): Promise<Milestone[]> {
@@ -122,54 +146,50 @@ export class Milestones {
   }
 
   /**
-   * The working tree, put back. It writes every file the milestone held and deletes the
-   * ones that arrived after it — and it takes a milestone of the current state first,
-   * because a rewind that cannot be undone is a second way to lose work.
+   * The working tree, put back: every file the milestone held is written and the ones that
+   * arrived after it are deleted, after a milestone of the current state so it can be undone.
    */
-  async restore(
-    id: string,
-    at: string,
-  ): Promise<{ restored: Milestone; kept: Milestone }> {
+  async restore(id: string, at: string): Promise<RestoreResult> {
     const root = await this.repositoryRoot();
     await this.refuseIfMidOperation(root);
-
-    const milestones = await this.list();
-    const target = milestones.find((milestone) => milestone.id === id);
-    if (target === undefined) {
-      throw new RewindRefused(
-        REWIND_REFUSAL.UNKNOWN_MILESTONE,
-        `No milestone ${id}. "memnox rewind --list" shows the ones there are.`,
-      );
-    }
-
+    const target = await this.find(id);
     const kept = await this.take({
       at,
       reason: MILESTONE_REASON.REPLACED,
       note: `what ${target.id} replaced`,
     });
 
-    const env = { GIT_INDEX_FILE: `${root}/${SCRATCH_INDEX}` };
-    /* Anything present now and absent from the milestone was created after it, so it is
-       what the agent added. Computed before the checkout, which would blur the two. */
-    const added = (
-      await this.git.run([
-        'diff',
-        '--name-only',
-        '--diff-filter=A',
-        `${target.commit}`,
-        `${kept.commit}`,
-      ])
-    )
-      .split('\n')
-      .filter((line) => line !== '');
-
+    // Computed before the checkout, which would blur what the agent added into the rest.
+    const added = await this.filesAddedBetween(target, kept);
+    const env = scratchEnv(root);
     await this.git.run(['read-tree', target.commit], env);
     await this.git.run(['checkout-index', '-a', '-f'], env);
-    /* Unlinked rather than `git rm`: a file the agent created is untracked in the
-       person's own index, which is exactly the index `git rm` would consult. */
+    // Unlinked rather than `git rm`, which would consult the person's own index.
     for (const path of added) await this.tree.remove(`${root}/${path}`);
-    // The person's own index is left exactly as it was; only the files moved.
     return { restored: target, kept };
+  }
+
+  private async find(id: string): Promise<Milestone> {
+    const target = (await this.list()).find((milestone) => milestone.id === id);
+    if (target === undefined) {
+      throw new RewindRefused(
+        REWIND_REFUSAL.UNKNOWN_MILESTONE,
+        `No milestone ${id}. "memnox rewind --list" shows the ones there are.`,
+      );
+    }
+    return target;
+  }
+
+  /** Present now and absent from the milestone, so created after it. */
+  private async filesAddedBetween(from: Milestone, to: Milestone): Promise<string[]> {
+    const listing = await this.git.run([
+      'diff',
+      '--name-only',
+      '--diff-filter=A',
+      from.commit,
+      to.commit,
+    ]);
+    return nonEmptyLines(listing);
   }
 
   async forget(keep: number = MILESTONE_KEEP): Promise<string[]> {
@@ -209,7 +229,7 @@ export class Milestones {
       if (await this.tree.exists(`${root}/.git/${marker}`)) {
         throw new RewindRefused(
           REWIND_REFUSAL.MID_OPERATION,
-          `${what} is in progress here. Finish or abort it first — a rewind would write over the state that says how.`,
+          `${what} is in progress here. Finish or abort it first, because a rewind would write over the state that says how.`,
         );
       }
     }

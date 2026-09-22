@@ -12,13 +12,14 @@ export interface GitPort {
 
 /**
  * The working tree, as files. A file the agent created is untracked, so `git rm` will not
- * touch it — removing it is an unlink, and it has to be one the domain can be tested
- * without.
+ * touch it and removing it is an unlink, behind a port so it can be tested without one.
  */
 export interface WorktreePort {
   exists(path: string): Promise<boolean>;
   /** Removes a file, and any directory it leaves empty behind it. Never throws. */
   remove(path: string): Promise<void>;
+  /** Copies a file, true when it did. Absent or false means start from nothing instead. */
+  copy?(from: string, to: string): Promise<boolean>;
 }
 
 export const REWIND_REFUSAL = {

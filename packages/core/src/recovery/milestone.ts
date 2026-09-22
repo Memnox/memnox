@@ -1,13 +1,12 @@
 /**
- * A working tree, kept. An agent that runs for three hours unsupervised writes a broken
- * migration, reformats forty files nobody asked about and deletes a directory it misread
- * — none of it committed, so `git checkout .` throws the good away with the bad.
- *
- * What is kept is a tree object under `refs/memnox/`, where nothing else looks. Never a
- * branch, never a commit on one, never the stash: this has to be invisible to everything
- * a person does with git afterwards, or the cure is worse than the mess.
+ * A working tree kept as a tree object under `refs/memnox/`, never a branch or the stash, so
+ * good and bad agent work can be separated without `git checkout .` taking both.
  */
-
+import { msToSeconds, secondsToMs } from '../domain/time';
+import {
+  describeSpan,
+  IN_SECONDS_THEN_MINUTES_THEN_HOURS,
+} from '../domain/duration-text';
 export const MILESTONE_REF_PREFIX = 'refs/memnox/milestones';
 
 export const MILESTONE_REASON = {
@@ -17,6 +16,10 @@ export const MILESTONE_REASON = {
   MANUAL: 'manual',
   /** Taken by a rewind, so the thing it replaced stays reachable. */
   REPLACED: 'replaced',
+  /** Taken by an editor's hook before a session's first write in this repository. */
+  FIRST_WRITE: 'first-write',
+  /** Taken by a seam before a command that deletes or overwrites work. */
+  DESTRUCTIVE: 'destructive',
 } as const;
 
 export type MilestoneReason = (typeof MILESTONE_REASON)[keyof typeof MILESTONE_REASON];
@@ -29,6 +32,8 @@ export interface Milestone {
   reason: MilestoneReason;
   /** The session it belongs to, when one was running. */
   sessionId?: string;
+  /** The agent whose session it was, so a listing says whose work it guards. */
+  agent?: string;
   /** What was about to happen, in the words a listing will show. */
   note?: string;
   /** Counts, so a listing says how much is at stake without reading the tree. */
@@ -62,11 +67,16 @@ export function encodeMessage(milestone: Omit<Milestone, 'id' | 'commit'>): stri
     `files: ${milestone.files}`,
   ];
   if (milestone.sessionId !== undefined) fields.push(`session: ${milestone.sessionId}`);
+  if (milestone.agent !== undefined) fields.push(`agent: ${milestone.agent}`);
   if (milestone.note !== undefined) fields.push(`note: ${milestone.note}`);
   return `${fields.join('\n')}\n`;
 }
 
 const REASONS: readonly string[] = Object.values(MILESTONE_REASON);
+
+function isMilestoneReason(value: string): value is MilestoneReason {
+  return REASONS.includes(value);
+}
 
 export function decodeMessage(message: string): Omit<Milestone, 'id' | 'commit'> | null {
   const [header, ...rest] = message.split('\n');
@@ -80,14 +90,14 @@ export function decodeMessage(message: string): Omit<Milestone, 'id' | 'commit'>
   }
   const reason = fields.get('reason') ?? MILESTONE_REASON.MANUAL;
   const session = fields.get('session');
+  const agent = fields.get('agent');
   const note = fields.get('note');
   return {
     takenAt,
-    reason: (REASONS.includes(reason)
-      ? reason
-      : MILESTONE_REASON.MANUAL) as MilestoneReason,
+    reason: isMilestoneReason(reason) ? reason : MILESTONE_REASON.MANUAL,
     files: Number(fields.get('files') ?? 0),
     ...(session === undefined ? {} : { sessionId: session }),
+    ...(agent === undefined ? {} : { agent }),
     ...(note === undefined ? {} : { note }),
   };
 }
@@ -107,14 +117,27 @@ export function milestonesToForget(
 export function describeMilestone(milestone: Milestone, moment: string): string {
   const seconds = Math.max(
     0,
-    Math.round((Date.parse(moment) - Date.parse(milestone.takenAt)) / 1000),
+    msToSeconds(Date.parse(moment) - Date.parse(milestone.takenAt)),
   );
-  const ago =
-    seconds < 90
-      ? `${seconds}s ago`
-      : seconds < 5400
-        ? `${Math.round(seconds / 60)}m ago`
-        : `${Math.round(seconds / 3600)}h ago`;
+  const ago = `${describeSpan(secondsToMs(seconds), IN_SECONDS_THEN_MINUTES_THEN_HOURS)} ago`;
   const what = milestone.note ?? milestone.reason;
-  return `${milestone.id}  ${ago.padEnd(9)}${String(milestone.files).padStart(4)} file(s)  ${what}`;
+  return `${milestone.id}  ${ago.padEnd(9)}${String(milestone.files).padStart(4)} file(s)  ${what}${whoseOf(milestone)}`;
+}
+
+/** The agent and session a milestone guards, where it was taken for one. */
+function whoseOf(milestone: Milestone): string {
+  const whose = [milestone.agent, milestone.sessionId].filter(
+    (part): part is string => part !== undefined,
+  );
+  return whose.length === 0 ? '' : `  (${whose.join(', ')})`;
+}
+
+/** The milestones a session's own seams took, oldest first. */
+export function milestonesOfSession(
+  milestones: readonly Milestone[],
+  sessionId: string,
+): Milestone[] {
+  return milestones
+    .filter((milestone) => milestone.sessionId === sessionId)
+    .sort((a, b) => a.takenAt.localeCompare(b.takenAt));
 }
