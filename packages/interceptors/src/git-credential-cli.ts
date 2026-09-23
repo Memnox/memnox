@@ -17,8 +17,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  /* Silence on failure, deliberately: writing `quit=1` here would block every clone
-     the moment this seam has a bad day, and a governance tool that breaks git at 2am
-     is the one that gets uninstalled. The gap is logged instead. */
+  // Silent rather than `quit=1`, which would block every clone the day this seam fails.
   log(`git seam failed, ruling on nothing: ${String(err)}`);
 });

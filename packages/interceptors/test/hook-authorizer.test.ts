@@ -27,12 +27,8 @@ const denyEnv = {
 const gate = (): LocalGate => new LocalGate([denyEnv], { agentName: 'claude-code' });
 
 /** Records what was asked, so the arguments never leaving the machine is testable. */
-function authorizer(deps: { gate?: LocalGate; failOpen?: boolean }): HookAuthorizer {
-  return new HookAuthorizer({
-    ...(deps.gate === undefined ? {} : { gate: deps.gate }),
-    ...(deps.failOpen === undefined ? {} : { failOpen: deps.failOpen }),
-    log: () => {},
-  });
+function authorizer(deps: { gate?: LocalGate }): HookAuthorizer {
+  return new HookAuthorizer(deps.gate === undefined ? {} : { gate: deps.gate });
 }
 
 describe('HookAuthorizer', () => {

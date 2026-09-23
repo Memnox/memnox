@@ -1,28 +1,32 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EDIT_HOOK_BINARY, EDIT_HOOK_EVENT, EDIT_TOOLS } from '@memnox/interceptors';
+import { AGENT_FLAG, DISCOVERED_AGENT_KIND } from '@memnox/core';
+import {
+  EDIT_HOOK_BINARY,
+  EDIT_HOOK_EVENT,
+  EDIT_TOOLS,
+  TOOL_POLICY_FLAG,
+} from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
+import { onPath } from '../on-path';
+import { isInPlace, REWRITE, rewriteJsonFile, writeBackedUp } from './json-config';
+import { markHook } from '../keeper/kept';
 
 /**
- * Claude Code's own settings, with the lease hook in them or taken back out.
- *
- * The file is somebody's editor configuration, so three rules hold. It is backed up
- * before it is touched. Only the entries this wrote are ever removed, found by the
- * binary they run, so a hook somebody wrote themselves survives both directions.
- * And a file that is not plain JSON is left alone, because writing it whole would
- * drop whatever could not be understood.
+ * Claude Code's own settings, with the lease hook in them or taken back out. Only the
+ * entries this wrote are removed, found by the binary they run.
  */
 
-const CLAUDE_SETTINGS = join('.claude', 'settings.json');
+export const CLAUDE_SETTINGS = join('.claude', 'settings.json');
 
-/** Only the file tools, so a read never so much as starts this process before it runs. */
+/** Only the file tools, for an install that takes leases and rules on nothing. */
 const MATCHER = EDIT_TOOLS.join('|');
 
-/** Every tool, for the moment after one returns. */
-const EVERY_TOOL = '*';
+/** Every tool, before it runs and after it returns, since a read is ruled on too. */
+export const EVERY_TOOL = '*';
 
 interface HookCommand {
   type: string;
@@ -45,9 +49,8 @@ export interface HookEvent {
 }
 
 /**
- * Claude Code's events. Before a write, to take the lines; after every tool call,
- * at the end of a turn and when the person asks for something, which are the
- * moments a session can be handed a note; and when the session ends.
+ * Before a write, to take the lines; after a tool call, a turn or a prompt, where a
+ * session can be handed a note; and when the session starts and ends.
  */
 export function claudeEvents(editMatcher: string = MATCHER): HookEvent[] {
   return [
@@ -56,14 +59,14 @@ export function claudeEvents(editMatcher: string = MATCHER): HookEvent[] {
     { event: EDIT_HOOK_EVENT.POST_TOOL_USE, matcher: EVERY_TOOL },
     { event: EDIT_HOOK_EVENT.STOP },
     { event: EDIT_HOOK_EVENT.USER_PROMPT_SUBMIT },
+    // Where the session is told its boundary once, as added context.
+    { event: EDIT_HOOK_EVENT.SESSION_START },
   ];
 }
 
 /**
- * The settings with the hook added on each event. Adding it twice changes nothing.
- *
- * Claude Code, Codex and Gemini CLI all read hooks of this shape and differ only
- * in their event and tool names, so each passes its own list.
+ * The settings with the hook added on each event, and adding it twice changes nothing.
+ * Codex and Gemini CLI read the same shape, so each passes its own events.
  */
 export function withEditHook(
   settings: Settings,
@@ -107,25 +110,42 @@ export function withoutEditHook(settings: Settings): Settings {
 }
 
 /**
- * What the settings should run, which is the bare binary only where it is on
- * PATH.
- *
- * A hook whose command is not found fails on every write and says so in a way
- * the editor shows and nobody reads, so the lease would silently not be taken.
- * Run from a checkout rather than a global install, the binary sits beside this
- * one and is named by its path. The name rides as a trailing argument so the
- * entry is still found as ours when it is taken back out.
+ * The bare binary only where it is on PATH, otherwise the path beside this one, because
+ * a hook whose command is not found fails every write silently.
  */
 export function editHookCommand(
   path: string | undefined = process.env['PATH'],
   exists: (file: string) => boolean = existsSync,
   sibling: string = fileURLToPath(new URL('./bin/edit-hook.js', import.meta.url)),
 ): string {
-  const onPath = (path ?? '')
-    .split(delimiter)
-    .some((dir) => dir !== '' && exists(join(dir, EDIT_HOOK_BINARY)));
-  if (onPath || !exists(sibling)) return EDIT_HOOK_BINARY;
+  if (onPath(EDIT_HOOK_BINARY, path ?? '', exists) || !exists(sibling)) {
+    return EDIT_HOOK_BINARY;
+  }
   return `"${process.execPath}" "${sibling}" --${EDIT_HOOK_BINARY}`;
+}
+
+/** The hook that takes leases and also rules on every tool call against the rules in force. */
+function policyHookCommand(): string {
+  return `${editHookCommand()} ${TOOL_POLICY_FLAG}`;
+}
+
+/** The policy hook naming the agent it runs for, so no action it rules on is anonymous. */
+export function namedHookCommand(agent: string): string {
+  return `${policyHookCommand()} ${AGENT_FLAG} ${agent}`;
+}
+
+/** Claude Code's, named by the kind its census row carries, like every other host's. */
+function claudeHookCommand(): string {
+  return namedHookCommand(DISCOVERED_AGENT_KIND.CLAUDE_CODE);
+}
+
+/**
+ * Whether a hooks file holds our hook in its current shape, not only the lease half,
+ * and naming its agent where one is given, so an install from before the flag is upgraded.
+ */
+export function holdsPolicyHook(text: string, agent?: string): boolean {
+  const named = agent === undefined || text.includes(`${AGENT_FLAG} ${agent}`);
+  return text.includes(EDIT_HOOK_BINARY) && text.includes(TOOL_POLICY_FLAG) && named;
 }
 
 function isOurs(hook: HookCommand): boolean {
@@ -133,47 +153,53 @@ function isOurs(hook: HookCommand): boolean {
 }
 
 /**
- * Writes the hook into Claude Code's settings, or takes it back out.
- *
- * Machine-wide rather than per repository, because a lease is keyed on the
- * repository the write lands in and the hook works that out for itself: a session
- * outside any repository takes nothing and waits on nothing.
+ * Writes the hook into Claude Code's settings, or takes it back out. Machine-wide,
+ * because the hook works out which repository a write lands in.
  */
 export async function runClaudeHook(
   context: CliContext,
   reverting: boolean,
   home: () => string = homedir,
 ): Promise<void> {
-  const { flow } = context;
   const path = join(home(), CLAUDE_SETTINGS);
   const raw = existsSync(path) ? await readFile(path, 'utf8') : '{}';
+  const settings = parseSettings(path, raw);
 
-  let settings: Settings;
-  try {
-    settings = JSON.parse(raw) as Settings;
-  } catch {
-    throw new Error(
-      `${path} is not plain JSON, so it was left alone. Add a PreToolUse hook running "${EDIT_HOOK_BINARY}" for ${MATCHER} yourself.`,
-    );
-  }
-
-  if (existsSync(path)) await writeFile(`${path}.memnox-backup`, raw, 'utf8');
   await mkdir(dirname(path), { recursive: true });
   const next = reverting
     ? withoutEditHook(settings)
-    : withEditHook(settings, editHookCommand());
-  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    : withEditHook(settings, claudeHookCommand(), claudeEvents(EVERY_TOOL));
+  await writeBackedUp(path, raw, next);
+  // A hook taken out on purpose stays out, rather than coming back on the daemon's next pass.
+  await markHook(home(), 'Claude Code', !reverting);
+  renderClaudeHook(context, path, reverting);
+}
 
+function parseSettings(path: string, raw: string): Settings {
+  try {
+    // Somebody else's file: only `hooks` is read, and everything else is copied through.
+    return JSON.parse(raw) as Settings;
+  } catch {
+    throw new Error(
+      `${path} is not plain JSON, so it was left alone. Add a PreToolUse hook running "${claudeHookCommand()}" for every tool yourself.`,
+    );
+  }
+}
+
+function renderClaudeHook(context: CliContext, path: string, reverting: boolean): void {
+  const { flow } = context;
   flow.rows(reverting ? 'Removed' : 'Installed', [
     { label: 'where', value: path },
-    { label: 'runs', value: `${EDIT_HOOK_BINARY} before ${MATCHER}` },
+    { label: 'runs', value: `${EDIT_HOOK_BINARY} before every tool call` },
   ]);
   if (reverting) {
-    flow.close('Claude Code no longer takes a lease before it writes a file.');
+    flow.close(
+      'Claude Code no longer checks your rules or takes a lease from its own tools.',
+    );
     return;
   }
   flow.close(
-    'Claude Code now takes a lease before it writes a file, and lets go when the session ends.',
+    'Claude Code now checks every tool call against your rules and takes a lease before it writes a file.',
   );
   flow.hint('Two sessions on one file: the second waits, then is told who holds it.');
   flow.hint('Enrolled with "memnox login", the lease is shared with every machine.');
@@ -181,50 +207,35 @@ export async function runClaudeHook(
 }
 
 /**
- * Puts the hook in where Claude Code is installed, for the wiring `setup` does.
- *
- * Only where `~/.claude` already exists: creating it would be this command deciding
- * somebody uses an editor they do not have. Quiet on a file it cannot read, for the
- * same reason an uninstall is. True when the hook is now in place.
+ * For the wiring `setup` does, only where `~/.claude` exists, since creating it would
+ * assume an editor nobody has. True when the hook is in place.
  */
 export async function installClaudeHook(home: string): Promise<boolean> {
   return installSettingsHook(
     join(home, CLAUDE_SETTINGS),
-    editHookCommand(),
-    claudeEvents(),
+    claudeHookCommand(),
+    claudeEvents(EVERY_TOOL),
   );
 }
 
 /**
- * The same hook written into a settings file shaped like Claude Code's.
- *
- * Only where the file's directory already exists, which is where the agent is
- * installed. Quiet on a file it cannot read. True when the hook is now in place.
+ * The same hook written into a settings file shaped like Claude Code's, only where its
+ * directory exists. Quiet on a file it cannot read, and true when the hook is in place.
  */
 export async function installSettingsHook(
   path: string,
   command: string,
   events: readonly HookEvent[],
 ): Promise<boolean> {
-  if (!existsSync(dirname(path))) return false;
-  try {
-    const raw = existsSync(path) ? await readFile(path, 'utf8') : '{}';
-    const settings = JSON.parse(raw) as Settings;
-    const next = withEditHook(settings, command, events);
-    if (JSON.stringify(next) === JSON.stringify(settings)) return true;
-    if (existsSync(path)) await writeFile(`${path}.memnox-backup`, raw, 'utf8');
-    await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-    return true;
-  } catch {
-    // Not plain JSON: left alone, and `protect --claude-hook` says how to add it.
-    return false;
-  }
+  const outcome = await rewriteJsonFile<Settings>(path, (settings) =>
+    withEditHook(settings, command, events),
+  );
+  return isInPlace(outcome);
 }
 
 /**
  * Takes the hook out, where it was ever put in. Quiet on anything it cannot read,
- * because an uninstall must not stop over somebody's editor settings. True when it
- * removed something.
+ * because an uninstall must not stop over somebody's editor settings.
  */
 export async function removeClaudeHook(home: string): Promise<boolean> {
   return removeSettingsHook(join(home, CLAUDE_SETTINGS));
@@ -232,17 +243,5 @@ export async function removeClaudeHook(home: string): Promise<boolean> {
 
 /** Takes the hook back out of a settings file shaped like Claude Code's. */
 export async function removeSettingsHook(path: string): Promise<boolean> {
-  if (!existsSync(path)) return false;
-  try {
-    const raw = await readFile(path, 'utf8');
-    const settings = JSON.parse(raw) as Settings;
-    const next = withoutEditHook(settings);
-    if (JSON.stringify(next) === JSON.stringify(settings)) return false;
-    await writeFile(`${path}.memnox-backup`, raw, 'utf8');
-    await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-    return true;
-  } catch {
-    // Not plain JSON, or not ours to read: it is left exactly as it was.
-    return false;
-  }
+  return (await rewriteJsonFile(path, withoutEditHook)) === REWRITE.WRITTEN;
 }

@@ -1,26 +1,40 @@
-import type { ActionRequest } from '@memnox/core';
 import {
+  containmentAsk,
   DECISION_EFFECT,
   describeEgress,
   digest,
+  hostOfDestination,
   inspectEgress,
   isAllowed as holdAllowed,
+  UNNAMED_AGENT,
+  UNNAMED_SESSION,
+  type ActionRequest,
+  type Containment,
+  type DecisionEffect,
   type HoldService,
 } from '@memnox/core';
-import type { HookAuthorizer, HookVerdict } from './hook-authorizer';
 
-export const EGRESS_REQUEST_ACTION = 'http.request';
-/** A tunnel is a different question from a request: only the destination is knowable. */
-export const EGRESS_CONNECT_ACTION = 'http.connect';
+import {
+  describeVerdict,
+  type HookAuthorizer,
+  type HookVerdict,
+} from './hook-authorizer';
+import { EGRESS_CONNECT_ACTION, EGRESS_REQUEST_ACTION } from './tool-hook.constants';
 
 /**
- * Declared, and the first one is the whole reason this seam is honest about itself.
- * A governed agent with an unwatched side channel is worse than an ungoverned one.
+ * Whether one outbound request may go, by destination and by what it carries. Nothing is
+ * ever rewritten on the way through: this reports and the caller decides.
+ */
+
+/**
+ * Declared, so a screen can print them: a governed agent
+ * with an unwatched side channel is worse than none.
  */
 export const EGRESS_BLIND_SPOTS: readonly string[] = [
-  'the payload inside an HTTPS tunnel — the destination is gated, the body is not',
+  'the payload inside an HTTPS tunnel, where the destination is gated and the body is not',
   'any connection that does not go through this proxy',
   'a protocol that is not HTTP or CONNECT',
+  'which agent sent a request, beyond the session its proxy URL declares',
 ];
 
 export interface EgressOutcome {
@@ -38,14 +52,36 @@ export interface HttpAttempt {
   body?: string;
 }
 
+/**
+ * Who is asking, as the client declared it in the proxy URL `memnox run` handed it.
+ * Declared rather than proven, so it attributes a request and never loosens one.
+ */
+export interface EgressCaller {
+  sessionId?: string;
+  agent?: string;
+}
+
+/** One ruling, as the ledger and the destination record take it. */
+export interface EgressRuling {
+  caller: EgressCaller;
+  action: string;
+  target: string;
+  effect: DecisionEffect;
+  reason: string;
+}
+
 export interface EgressSeamDeps {
   authorizer: HookAuthorizer;
   /**
-   * Somebody to ask. Absent means an ask does not go and says so, which is right for
-   * a test and wrong for a proxy an agent is reaching the network through.
+   * Somebody to ask. Absent means an ask does not
+   * go and says so, which is right for a test only.
    */
   hold?: HoldService;
   sessionId?: string;
+  /** The session's containment: untrusted, or an agent on probation. */
+  contain?: (caller: EgressCaller) => Promise<Containment | null>;
+  /** Told every ruling, for the ledger and the per-agent destination record. */
+  ruled?: (ruling: EgressRuling) => Promise<void>;
 }
 
 /** Headers worth ruling on. The rest are transport noise and are not carried. */
@@ -56,82 +92,127 @@ const CARRIED_HEADERS: readonly string[] = [
   'proxy-authorization',
 ];
 
-/**
- * Destination and payload, both, where both are visible. An allowed host carrying a
- * credential is still a refusal, and nothing is ever rewritten on the way through —
- * modifying a payload and letting it pass is a bug the agent cannot see.
- */
 export class EgressSeam {
   constructor(private readonly deps: EgressSeamDeps) {}
 
-  async gateRequest(attempt: HttpAttempt): Promise<EgressOutcome> {
+  async gateRequest(
+    attempt: HttpAttempt,
+    caller: EgressCaller = {},
+  ): Promise<EgressOutcome> {
     const fields = fieldsOf(attempt);
+    const request = {
+      action: EGRESS_REQUEST_ACTION,
+      target: attempt.url,
+      arguments: fields,
+      ...this.session(caller),
+    };
 
     // Cheap and certain, and before anything is asked: this never leaves the machine.
     const inspection = inspectEgress({ destination: attempt.url, fields });
     if (inspection.findings.length > 0) {
-      return { allowed: false, message: describeEgress(inspection) };
+      const refused = { allowed: false, message: describeEgress(inspection) };
+      return this.told(request, caller, refused);
     }
-
-    return this.rule({
-      action: EGRESS_REQUEST_ACTION,
-      target: attempt.url,
-      arguments: fields,
-      ...(this.deps.sessionId === undefined ? {} : { sessionId: this.deps.sessionId }),
-    });
+    return this.told(request, caller, await this.rule(request, caller));
   }
 
   /**
-   * All that is knowable about a tunnel is where it goes. Ruling on the destination and
-   * saying plainly that the body is unseen beats pretending to inspect it.
+   * All that is knowable about a tunnel is where it goes, so that is all it is ruled on.
    */
-  async gateConnect(authority: string): Promise<EgressOutcome> {
-    return this.rule({
+  async gateConnect(
+    authority: string,
+    caller: EgressCaller = {},
+  ): Promise<EgressOutcome> {
+    const request = {
       action: EGRESS_CONNECT_ACTION,
       target: authority,
-      ...(this.deps.sessionId === undefined ? {} : { sessionId: this.deps.sessionId }),
-    });
+      ...this.session(caller),
+    };
+    return this.told(request, caller, await this.rule(request, caller));
   }
 
-  private async rule(request: ActionRequest): Promise<EgressOutcome> {
-    const verdict = await this.deps.authorizer.authorize(request);
+  private session(caller: EgressCaller): { sessionId?: string } {
+    const sessionId = caller.sessionId ?? this.deps.sessionId;
+    return sessionId === undefined ? {} : { sessionId };
+  }
+
+  private async rule(
+    request: ActionRequest,
+    caller: EgressCaller,
+  ): Promise<EgressOutcome> {
+    const verdict = await this.contained(
+      request,
+      caller,
+      await this.deps.authorizer.authorize(request),
+    );
     if (verdict.effect === DECISION_EFFECT.ALLOW) return { allowed: true };
     if (verdict.effect === DECISION_EFFECT.ASK) {
-      const asked = await this.ask(request, verdict);
-      if (asked === null) return { allowed: true };
-      return asked;
+      const asked = await this.ask(request, verdict, caller);
+      return asked ?? { allowed: true };
     }
-    return { allowed: false, message: describe(verdict) };
+    return { allowed: false, message: describeVerdict(verdict) };
   }
 
-  /**
-   * Puts an ask to a person. Null when it was allowed and the request may go.
-   *
-   * Without this an `ask` rule refused the request outright and told the reader "you
-   * chose to be asked about this" while nobody had been asked — the rule's own words
-   * arguing with what had just happened to them.
-   */
+  /** The rules' allow, turned into an ask where the session or its agent is contained. */
+  private async contained(
+    request: ActionRequest,
+    caller: EgressCaller,
+    verdict: HookVerdict,
+  ): Promise<HookVerdict> {
+    const contain = this.deps.contain;
+    if (verdict.effect !== DECISION_EFFECT.ALLOW || contain === undefined) return verdict;
+    const containment = await contain(caller);
+    const asked = containment === null ? null : containmentAsk(request, containment);
+    return asked === null
+      ? verdict
+      : { effect: DECISION_EFFECT.ASK, reason: asked.reason };
+  }
+
+  /** Every ruling reaches the ledger and the destination record. Never fails the request. */
+  private async told(
+    request: ActionRequest,
+    caller: EgressCaller,
+    outcome: EgressOutcome,
+  ): Promise<EgressOutcome> {
+    const ruled = this.deps.ruled;
+    if (ruled === undefined) return outcome;
+    await ruled({
+      caller,
+      action: request.action,
+      target: request.target ?? '',
+      effect: outcome.allowed ? DECISION_EFFECT.ALLOW : DECISION_EFFECT.DENY,
+      reason: outcome.message ?? 'allowed',
+    }).catch(() => undefined);
+    return outcome;
+  }
+
+  /** Puts an ask to a person. Null when it was allowed and the request may go. */
   private async ask(
     request: ActionRequest,
     verdict: HookVerdict,
+    caller: EgressCaller,
   ): Promise<EgressOutcome | null> {
     const hold = this.deps.hold;
     if (hold === undefined) {
       return {
         allowed: false,
-        message: `${describe(verdict)} Nobody could be asked, so it did not go.`,
+        message: `${describeVerdict(verdict)} Nobody could be asked, so it did not go.`,
       };
     }
 
     const result = await hold.hold({
-      sessionId: this.deps.sessionId ?? 'ses_local',
-      agent: 'an agent',
+      sessionId: request.sessionId ?? UNNAMED_SESSION,
+      agent: caller.agent ?? UNNAMED_AGENT,
       operation: request.action,
       fingerprint: digest(`${request.action}:${request.target ?? ''}`),
       reason: verdict.reason,
       ...(request.target === undefined ? {} : { target: request.target }),
     });
-    return holdAllowed(result) ? null : { allowed: false, message: describe(verdict) };
+    if (!holdAllowed(result)) {
+      return { allowed: false, message: describeVerdict(verdict) };
+    }
+    this.deps.authorizer.personAllowed(request);
+    return null;
   }
 }
 
@@ -139,7 +220,7 @@ export class EgressSeam {
 function fieldsOf(attempt: HttpAttempt): Record<string, string> {
   const fields: Record<string, string> = { method: attempt.method, url: attempt.url };
   for (const name of CARRIED_HEADERS) {
-    const value = attempt.headers === undefined ? undefined : attempt.headers[name];
+    const value = attempt.headers?.[name];
     if (value !== undefined && value.length > 0) fields[name] = value;
   }
   if (attempt.body !== undefined && attempt.body.length > 0)
@@ -147,23 +228,7 @@ function fieldsOf(attempt: HttpAttempt): Record<string, string> {
   return fields;
 }
 
-/** The alternative rides all the way to whoever made the call. */
-function describe(verdict: HookVerdict): string {
-  const parts = [verdict.reason];
-  if (verdict.alternative !== undefined) {
-    const target =
-      verdict.alternative.resource === undefined
-        ? ''
-        : ` ${verdict.alternative.resource}`;
-    parts.push(
-      `Instead: ${verdict.alternative.action}${target} — ${verdict.alternative.note}`,
-    );
-  }
-  if (verdict.approvalId !== undefined) {
-    parts.push(`Ask a person: memnox approvals resolve ${verdict.approvalId} --by <you>`);
-  }
-  if (verdict.decisionId !== undefined) {
-    parts.push(`Why: memnox why ${verdict.decisionId}`);
-  }
-  return parts.join(' ');
+/** Where a request went, without its path or query, which is where a secret would ride. */
+export function destinationOf(target: string): string {
+  return hostOfDestination(target) ?? target;
 }

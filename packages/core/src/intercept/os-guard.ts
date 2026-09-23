@@ -1,8 +1,9 @@
 /**
- * The layer under the interceptors. An interceptor is a gate an agent walks through; this is a wall
- * the kernel holds, so a denied path stays unreadable even to a binary that never saw
- * an interceptor. Generated from the same filesystem policy, so the two cannot disagree.
+ * The layer under the interceptors: a wall the kernel holds, so a denied path stays unreadable
+ * even to a binary that never saw an interceptor. Generated from the same filesystem policy.
  */
+import { ACTION } from '../constants/action.constants';
+import { DECISION_EFFECT } from '../constants/decision.constants';
 
 export const OS_GUARD = {
   /** macOS: a seatbelt profile handed to sandbox-exec. */
@@ -142,10 +143,8 @@ export interface GuardPlan {
 }
 
 /**
- * `**` is not a path. Seatbelt and Landlock both take literal subpaths, so a rule
- * written as `**\/.ssh/**` becomes `$HOME/.ssh` — and a pattern with a wildcard left in
- * the middle becomes nothing at all, and is named. A guard that quietly covered less
- * than the rules do would be the worst of both.
+ * Seatbelt and Landlock take literal subpaths, so `**\/.ssh/**` becomes `$HOME/.ssh`. A
+ * pattern with a wildcard left in the middle becomes null, so the caller can name it.
  */
 export function guardPathFor(pattern: string, home: string): string | null {
   let path = pattern;
@@ -156,8 +155,11 @@ export function guardPathFor(pattern: string, home: string): string | null {
 }
 
 /** What a rule has to say to be worth handing to the kernel. */
-const READ_ACTIONS = new Set(['filesystem.read']);
-const WRITE_ACTIONS = new Set(['filesystem.write', 'filesystem.delete']);
+const READ_ACTIONS = new Set<string>([ACTION.FILESYSTEM_READ]);
+const WRITE_ACTIONS = new Set<string>([
+  ACTION.FILESYSTEM_WRITE,
+  ACTION.FILESYSTEM_DELETE,
+]);
 
 /** The shape a rule already has, so nothing has to be flattened before asking. */
 interface GuardRule {
@@ -165,11 +167,7 @@ interface GuardRule {
   decision: { effect: string };
 }
 
-/**
- * Only denials, and only the ones naming a path. The kernel is a second line under the
- * interceptors, not a replacement: what it adds is that a binary which never saw a
- * wrapper still cannot read the file.
- */
+/** Only denials, and only the ones naming a path: the kernel is a second line under the interceptors. */
 export function guardPlanFrom(
   rules: readonly GuardRule[],
   home: string,
@@ -181,7 +179,7 @@ export function guardPlanFrom(
 
   for (const rule of rules) {
     const targets = rule.match.targets;
-    if (rule.decision.effect !== 'deny' || targets === undefined) continue;
+    if (rule.decision.effect !== DECISION_EFFECT.DENY || targets === undefined) continue;
     const actions = rule.match.actions ?? [];
     const reads = actions.some((action) => READ_ACTIONS.has(action));
     const writes = actions.some((action) => WRITE_ACTIONS.has(action));

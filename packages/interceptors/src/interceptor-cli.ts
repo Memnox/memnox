@@ -2,41 +2,77 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
-import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
+
 import {
+  agentBehind,
   CloudActions,
   DECISION_EFFECT,
+  ENV_AGENT_NAME,
+  EXIT,
   holderPid,
   isBrowserLauncher,
+  openLedger,
   overlaysInForce,
+  protectionStopped,
   provenanceOf,
   SESSION_VAR,
   splitCommandLine,
-  SqliteEventStore,
   urlArgumentIn,
   type EventSink,
+  type LocalGate,
+  type Overlay,
 } from '@memnox/core';
+
+import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
+import { BrowserSeam } from './browser-seam';
+import { checkpointBeforeCommand } from './checkpoint-seam';
+import { reportToDaemon } from './daemon-client';
+import { readHookConfig } from './hook-config';
+import { loadHookGate } from './hook-gate-loader';
 import {
   INTERCEPT_BINARY,
   invokedFor,
   realPath,
   resolveReal,
   ruleOnCommand,
+  type InterceptOutcome,
 } from './interceptor';
-import { BrowserSeam } from './browser-seam';
-import { loadHookGate } from './hook-gate-loader';
-import { readHookConfig } from './hook-config';
-import { record } from './record';
-import { reportToDaemon } from './daemon-client';
-import { buildHold, log } from './seam-runtime';
+import { record, type Provenance } from './record';
+import { buildHold, log, pidSessionId } from './seam-runtime';
+import { ancestorsOf } from './process-ancestry';
 import { claimShellAction, shellAction, type ShellClaim } from './shell-action';
-import { DEFAULT_AGENT_NAME, ENV_AGENT_NAME } from './tool-hook.constants';
+import { DEFAULT_AGENT_NAME } from './tool-hook.constants';
 
 /**
- * One binary behind every interceptor. It is invoked through a name in the interceptor directory,
- * reads which name it was called as, rules on the arguments, and only then hands over
- * to the real binary with our directory taken off PATH.
+ * One binary behind every interceptor: it reads which name it was called as, rules on the
+ * arguments, and only then hands over to the real binary with our directory off PATH.
  */
+
+/** Signals the terminal sends the whole group, which the command answers for itself. */
+const FORWARDED: readonly NodeJS.Signals[] = ['SIGINT', 'SIGQUIT'];
+
+/**
+ * What one intercepted command is ruled on and recorded with, read once when it arrives.
+ */
+interface RunContext {
+  home: string;
+  gate: LocalGate | null;
+  overlays: readonly Overlay[];
+  /**
+   * Read at arrival, so a verdict replays against the bundle and freeze in force then.
+   */
+  provenance: Provenance;
+  sink: EventSink | null;
+  sessionId: string | undefined;
+  started: number;
+}
+
+/** One command line, as it will be run. */
+interface Command {
+  binary: string;
+  args: readonly string[];
+}
+
 async function main(): Promise<void> {
   const invocation = invokedFor(process.argv);
   if (invocation === null) {
@@ -44,248 +80,251 @@ async function main(): Promise<void> {
       'memnox-intercept is run through the wrappers in ~/.memnox/bin, not directly.\n' +
         'Usage: memnox-intercept <binary> [args...]\n',
     );
-    process.exit(2);
+    process.exit(EXIT.MISUSED);
   }
-  const { binary, args } = invocation;
   const home = homedir();
+  // A person typing git in their own terminal is not an agent, and `memnox stop` rules on
+  // nobody, so in either case nothing stands between the command and the real binary.
+  const person = agentBehind(process.env, ancestorsOf(process.ppid)) === null;
+  if (person || (await protectionStopped(home))) {
+    process.exit(await hand(invocation, home));
+  }
+  const sessionId = process.env[SESSION_VAR];
 
-  const config = await readHookConfig(process.env, home);
-  const gate = await loadHookGate(config);
-
-  const overlays = await overlaysInForce(home);
-  /* Read once, at the moment the command arrives: a verdict has to be replayable
-     against the bundle and the freeze that were in force when it was reached, not
-     against whichever ones happen to be there when somebody asks. */
-  const provenance = await provenanceOf(home, overlays, new Date().toISOString());
-  const sink = openLedger(home);
-  const started = Date.now();
-  const outcome = await ruleOnCommand(binary, args, {
-    ...(gate === null ? {} : { gate }),
-    overlays,
-    env: process.env,
-    /* Without this an `ask` rule denies instead of asking, which is the difference
-       between an agent that can be left running and one that cannot. */
-    hold: buildHold(),
-    ...(process.env[SESSION_VAR] === undefined
-      ? {}
-      : { sessionId: process.env[SESSION_VAR] }),
-    log,
-  });
-
-  /* A held session runs nothing. Checked before the rules rather than after, because
-     the point of a pause is that the agent stops, not that it keeps asking. */
-  const held = await pauseHolding(home, process.env[SESSION_VAR]);
+  // A held session runs nothing, and is checked first so a paused agent asks nobody.
+  const held = await pauseHolding(home, sessionId);
   if (held !== null) {
     process.stderr.write(`${pauseMessage(held)}\n`);
-    process.exit(1);
+    process.exit(EXIT.FAILED);
   }
 
-  if (!outcome.allowed) {
-    process.stderr.write(`${outcome.message ?? 'denied'}\n`);
-    /* An edited command is a new command: it goes through the rules from the start.
-       Running it because a person typed it would make "[e]" the way around all of them. */
-    if (outcome.edited !== undefined) {
-      const replacement = splitCommandLine(outcome.edited);
-      const [next, ...rest] = replacement;
-      if (next !== undefined && basename(next) !== INTERCEPT_BINARY) {
-        process.stderr.write(`memnox: ruling on the replacement\n`);
-        const again = await ruleOnCommand(basename(next), rest, {
-          ...(gate === null ? {} : { gate }),
-          overlays,
-          env: process.env,
-          hold: buildHold(),
-          log,
-        });
-        if (again.allowed) {
-          await handAndRecord(
-            basename(next),
-            rest,
-            home,
-            sink,
-            again,
-            started,
-            provenance,
-          );
-          return;
-        }
-        process.stderr.write(`${again.message ?? 'denied'}\n`);
-      }
-    }
-    await record(sink, {
-      ...provenance,
-      outcome,
-      effect: DECISION_EFFECT.DENY,
-      reason: outcome.reason ?? 'denied',
-      ...(outcome.rule === undefined ? {} : { rule: outcome.rule }),
-      at: new Date().toISOString(),
-      ...(process.env[SESSION_VAR] === undefined
-        ? {}
-        : { sessionId: process.env[SESSION_VAR] }),
-    });
-    process.exit(1);
-  }
-
-  /* A launcher is ruled on again by where it is going. The host is the thing worth
-     asking about: the driver arrives carrying the person's own signed-in session. */
-  if (isBrowserLauncher(binary)) {
-    const url = urlArgumentIn(args);
-    if (url !== null) {
-      const seam = new BrowserSeam({
-        ...(gate === null ? {} : { gate }),
-        ...(process.env[SESSION_VAR] === undefined
-          ? {}
-          : { sessionId: process.env[SESSION_VAR] }),
-      });
-      const visit = await seam.navigate(url);
-      if (!visit.allowed) {
-        process.stderr.write(`${visit.message ?? 'denied'}\n`);
-        process.exit(1);
-      }
-    }
-  }
-
-  await handAndRecord(binary, args, home, sink, outcome, started, provenance);
+  const context = await readRunContext(home, sessionId);
+  const outcome = await ruleOn(invocation, context);
+  if (!outcome.allowed) return refuse(outcome, context);
+  await ruleOnBrowser(invocation, context);
+  await handAndRecord(invocation, outcome, context);
 }
 
-/** The ledger, or null when it will not open. A lost row never stops a command. */
-function openLedger(home: string): EventSink | null {
-  try {
-    return SqliteEventStore.forHome(home);
-  } catch {
-    return null;
-  }
+async function readRunContext(
+  home: string,
+  sessionId: string | undefined,
+): Promise<RunContext> {
+  const gate = await loadHookGate(await readHookConfig(process.env, home));
+  const overlays = await overlaysInForce(home);
+  const provenance = await provenanceOf(home, overlays, new Date().toISOString());
+  return {
+    home,
+    gate,
+    overlays,
+    provenance,
+    sink: openLedger(home),
+    sessionId,
+    started: Date.now(),
+  };
+}
+
+function ruleOn(command: Command, context: RunContext): Promise<InterceptOutcome> {
+  return ruleOnCommand(command.binary, command.args, {
+    ...(context.gate === null ? {} : { gate: context.gate }),
+    overlays: context.overlays,
+    env: process.env,
+    // Without a hold an `ask` rule denies instead of asking.
+    hold: buildHold(),
+    ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+  });
 }
 
 /**
- * Runs it, records what happened, and only then exits, so the exit code and the
- * duration reach the row rather than being lost with the process.
+ * A refusal is printed and recorded, unless a person typed a replacement the rules allow.
+ */
+async function refuse(outcome: InterceptOutcome, context: RunContext): Promise<never> {
+  process.stderr.write(`${outcome.message ?? 'denied'}\n`);
+  if (outcome.edited !== undefined) await ruleOnEdited(outcome.edited, context);
+  await record(context.sink, {
+    ...context.provenance,
+    outcome,
+    effect: DECISION_EFFECT.DENY,
+    reason: outcome.reason ?? 'denied',
+    ...(outcome.rule === undefined ? {} : { rule: outcome.rule }),
+    at: new Date().toISOString(),
+    ...sessionField(context),
+  });
+  process.exit(EXIT.FAILED);
+}
+
+/**
+ * An edited command is a new command, ruled on from
+ * the start, or "[e]" is the way around every rule.
+ */
+async function ruleOnEdited(edited: string, context: RunContext): Promise<void> {
+  const [next, ...rest] = splitCommandLine(edited);
+  if (next === undefined || basename(next) === INTERCEPT_BINARY) return;
+  process.stderr.write(`memnox: ruling on the replacement\n`);
+  const replacement = { binary: basename(next), args: rest };
+  const again = await ruleOn(replacement, context);
+  if (again.allowed) return handAndRecord(replacement, again, context);
+  process.stderr.write(`${again.message ?? 'denied'}\n`);
+}
+
+/**
+ * A launcher is ruled on again by where it is going,
+ * since it carries the person's signed-in session.
+ */
+async function ruleOnBrowser(command: Command, context: RunContext): Promise<void> {
+  if (!isBrowserLauncher(command.binary)) return;
+  const url = urlArgumentIn(command.args);
+  if (url === null) return;
+  const seam = new BrowserSeam({
+    ...(context.gate === null ? {} : { gate: context.gate }),
+    ...sessionField(context),
+  });
+  const visit = await seam.navigate(url);
+  if (visit.allowed) return;
+  process.stderr.write(`${visit.message ?? 'denied'}\n`);
+  process.exit(EXIT.FAILED);
+}
+
+function sessionField(context: RunContext): { sessionId?: string } {
+  return context.sessionId === undefined ? {} : { sessionId: context.sessionId };
+}
+
+/**
+ * Runs it, records what happened, and only then
+ * exits, so the exit code and duration reach the row.
  */
 async function handAndRecord(
-  binary: string,
-  args: readonly string[],
-  home: string,
-  sink: EventSink | null,
-  outcome: Awaited<ReturnType<typeof ruleOnCommand>>,
-  started: number,
-  provenance: Awaited<ReturnType<typeof provenanceOf>>,
+  command: Command,
+  outcome: InterceptOutcome,
+  context: RunContext,
 ): Promise<never> {
-  /* Asked only of what the rules allowed, and only here, at the moment it would
-     run: an agent on another machine about to send the same request, or already
-     working on the same pull request, is told before this one repeats it. */
-  const claim = await anotherAgentHasIt(binary, args, home, outcome);
-  if ('refused' in claim) {
-    const refused = claim.refused;
-    process.stderr.write(`memnox: ${refused}\n`);
-    await record(sink, {
-      ...provenance,
-      outcome: { ...outcome, allowed: false },
-      effect: DECISION_EFFECT.DENY,
-      reason: refused,
-      at: new Date().toISOString(),
-      ...(process.env[SESSION_VAR] === undefined
-        ? {}
-        : { sessionId: process.env[SESSION_VAR] }),
-    });
-    process.exit(1);
-  }
+  // Asked only of what the rules allowed, at the moment it would run.
+  const claim = await anotherAgentHasIt(command, outcome, context);
+  if ('refused' in claim) return refuseAsClaimed(claim.refused, outcome, context);
 
-  /* Held for as long as the command runs, and let go the moment it exits, so an
-     agent on another machine waits on work being done rather than on a window. */
-  const status = await hand(binary, args, home);
+  await keepBeforeDestroying(command, context);
+  // Held while the command runs, so another machine
+  // waits on work being done rather than a window.
+  const status = await hand(command, context.home);
   await claim.release();
-  /* The breaker watches outcomes, and this is the only place one exists. Best effort:
-     no daemon means the counters are not kept, never that the command is held up. */
-  await reportToDaemon(home, {
+  // The breaker watches outcomes; no daemon means no counters, never a held command.
+  await reportToDaemon(context.home, {
     action: outcome.action,
     exitCode: status,
     ...(outcome.target === undefined ? {} : { target: outcome.target }),
-    ...(process.env[SESSION_VAR] === undefined
-      ? {}
-      : { sessionId: process.env[SESSION_VAR] }),
+    ...sessionField(context),
   });
-  await record(sink, {
-    ...provenance,
+  await recordAllowed(outcome, status, context);
+
+  // Reported now and enforced on the next command, because this one has already run.
+  const tripped = await observeSession({
+    home: context.home,
+    sessionId: context.sessionId,
+  });
+  if (tripped !== null) process.stderr.write(`${pauseMessage(tripped)}\n`);
+  process.exit(status);
+}
+
+/** The tree before `rm -r` or `git reset --hard` runs, so `memnox rewind` can undo it. */
+async function keepBeforeDestroying(
+  command: Command,
+  context: RunContext,
+): Promise<void> {
+  await checkpointBeforeCommand(
+    {
+      home: context.home,
+      sessionId: context.sessionId ?? pidSessionId(holderPid(process.ppid, process.pid)),
+      agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
+      place: process.cwd(),
+      now: () => new Date(),
+      log,
+    },
+    [command.binary, ...command.args],
+  );
+}
+
+async function refuseAsClaimed(
+  refused: string,
+  outcome: InterceptOutcome,
+  context: RunContext,
+): Promise<never> {
+  process.stderr.write(`memnox: ${refused}\n`);
+  await record(context.sink, {
+    ...context.provenance,
+    outcome: { ...outcome, allowed: false },
+    effect: DECISION_EFFECT.DENY,
+    reason: refused,
+    at: new Date().toISOString(),
+    ...sessionField(context),
+  });
+  process.exit(EXIT.FAILED);
+}
+
+async function recordAllowed(
+  outcome: InterceptOutcome,
+  status: number,
+  context: RunContext,
+): Promise<void> {
+  await record(context.sink, {
+    ...context.provenance,
     outcome,
     effect: DECISION_EFFECT.ALLOW,
     reason: outcome.reason ?? 'no rule matched',
     ...(outcome.rule === undefined ? {} : { rule: outcome.rule }),
     at: new Date().toISOString(),
     exitCode: status,
-    durationMs: Date.now() - started,
-    ...(process.env[SESSION_VAR] === undefined
-      ? {}
-      : { sessionId: process.env[SESSION_VAR] }),
+    durationMs: Date.now() - context.started,
+    ...sessionField(context),
   });
-
-  /* The row is written, so the session can be replayed. This is what makes the breaker
-     work without a daemon: the ledger is the session, and every seam already writes to
-     it. A trip is reported here and enforced on the next command, because this one has
-     already run — stopping it now would be a receipt rather than a control. */
-  const tripped = await observeSession({
-    home,
-    sessionId: process.env[SESSION_VAR],
-  });
-  if (tripped !== null) process.stderr.write(`${pauseMessage(tripped)}\n`);
-
-  process.exit(status);
 }
 
 /**
- * Refused with who has it, or free to run and holding the claim while it does.
- *
- * The same register the MCP proxy asks, so `gh pr close 12` here and a
- * `close_pull_request` there meet. Makes no call at all without an account file,
- * and an unreachable control plane lets the command run.
+ * Refused with who has it, or free to run and holding the claim while it does. The same
+ * register the MCP proxy asks, so `gh pr close 12` and `close_pull_request` meet.
  */
 async function anotherAgentHasIt(
-  binary: string,
-  args: readonly string[],
-  home: string,
-  outcome: Awaited<ReturnType<typeof ruleOnCommand>>,
+  command: Command,
+  outcome: InterceptOutcome,
+  context: RunContext,
 ): Promise<ShellClaim> {
-  const action = shellAction(binary, args, outcome);
+  const action = shellAction(command.binary, command.args, outcome);
   if (action === null) return { release: async () => undefined };
   const owner = holderPid(process.ppid, process.pid);
-  return claimShellAction(action, new CloudActions(home), {
+  return claimShellAction(action, new CloudActions(context.home), {
     agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
-    /* The session `memnox run` set, and otherwise the agent above this command,
-       which is the same name the file register gives it. */
-    sessionId: process.env[SESSION_VAR] ?? `ses_pid_${owner}`,
+    sessionId: context.sessionId ?? pidSessionId(owner),
     pid: owner,
   });
 }
 
 /**
- * Hand over stdio untouched and pass the exit code straight back: anything the agent
- * reads or writes must look exactly as it would have without the interceptor.
+ * Stdio untouched and the exit code passed straight
+ * back, so the agent sees what it would without us.
  */
-function hand(binary: string, args: readonly string[], home: string): Promise<number> {
+function hand(command: Command, home: string): Promise<number> {
   const path = realPath(process.env['PATH'] ?? '', home);
-  const real = resolveReal(binary, path, existsSync);
+  const real = resolveReal(command.binary, path, existsSync);
   if (real === null) {
-    process.stderr.write(`memnox: ${binary} is not on PATH behind the interceptor\n`);
-    process.exit(127);
+    process.stderr.write(
+      `memnox: ${command.binary} is not on PATH behind the interceptor\n`,
+    );
+    process.exit(EXIT.NOT_FOUND);
   }
-  /* Not blocking, so the claim on the work can be renewed while it runs. An
-     interrupt reaches the command from the terminal on its own, and this process
-     only waits to pass its exit code back, as a blocking spawn did. */
+  // Not blocking, so the claim can be renewed while
+  // it runs; an interrupt reaches the command itself.
   const ignore = (): void => undefined;
   for (const signal of FORWARDED) process.on(signal, ignore);
   return new Promise((resolve) => {
-    const child = spawn(real, [...args], {
+    const child = spawn(real, [...command.args], {
       stdio: 'inherit',
       env: { ...process.env, PATH: path },
     });
-    child.on('error', () => resolve(1));
+    child.on('error', () => resolve(EXIT.FAILED));
     child.on('exit', (code) => {
       for (const each of FORWARDED) process.off(each, ignore);
       // A signalled child has no code, which a blocking spawn reported as 1 too.
-      resolve(code ?? 1);
+      resolve(code ?? EXIT.FAILED);
     });
   });
 }
-
-/** Signals the terminal sends the whole group, which the command answers for itself. */
-const FORWARDED: readonly NodeJS.Signals[] = ['SIGINT', 'SIGQUIT'];
 
 void main();

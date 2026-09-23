@@ -3,13 +3,18 @@ import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import {
+  ownProcessEnv,
   CloudLeases,
   GitRegionReader,
   holderPid,
   holdFor,
   LeaseGate,
   LeaseRegistry,
+  protectionStopped,
   rememberRepository,
+  SHARED_LEASE_TIMEOUT_MS,
+  ENV_AGENT_NAME,
+  ENV_POLICIES,
   SESSION_VAR,
   TtyLeasePrompt,
   type HoldService,
@@ -19,24 +24,30 @@ import {
 import { HookAuthorizer } from './hook-authorizer';
 import { readHookConfig } from './hook-config';
 import { loadHookGate } from './hook-gate-loader';
-import { DEFAULT_AGENT_NAME, ENV_AGENT_NAME, ENV_POLICIES } from './tool-hook.constants';
+import { DEFAULT_AGENT_NAME } from './tool-hook.constants';
 
-/** stderr is the safe side channel — stdout belongs to whatever protocol is speaking. */
-export const log = (message: string): void => {
+/**
+ * What every seam process builds the same way:
+ * its log, its authorizer, its leases, its hold.
+ */
+
+/**
+ * stderr is the safe side channel, because stdout
+ * belongs to whatever protocol is speaking.
+ */
+export function log(message: string): void {
   process.stderr.write(`[memnox] ${message}\n`);
-};
+}
 
-// The environment first, then what was written to config: shared by every local interceptor.
+// The environment first, then what was written
+// to config: shared by every local interceptor.
 export async function buildAuthorizer(): Promise<HookAuthorizer> {
   const config = await readHookConfig(process.env, homedir());
   const gate = await loadHookGate(config);
-  if (gate === null) {
-    log(`no gate configured — set ${ENV_POLICIES}`);
-  }
-
+  if (gate === null) log(`no gate configured, so set ${ENV_POLICIES}`);
   return new HookAuthorizer({
     ...(gate === null ? {} : { gate }),
-    log,
+    stopped: () => protectionStopped(homedir()),
   });
 }
 
@@ -47,6 +58,14 @@ export async function readStdin(): Promise<string> {
   return chunks.join('');
 }
 
+/**
+ * The session a seam files its work under when `memnox
+ * run` named none: the agent process above it.
+ */
+export function pidSessionId(pid: number): string {
+  return `ses_pid_${pid}`;
+}
+
 export interface SeamLeases {
   gate: LeaseGate;
   holder: LeaseHolder;
@@ -55,101 +74,91 @@ export interface SeamLeases {
 }
 
 /**
- * How a seam with nobody at a terminal takes a lease: an editor's hook.
- *
- * A hook shares its host's terminal, so asking on `/dev/tty` would write into the
- * editor's own screen, and a hook that waits as long as a person may is killed by
- * its host before it answers.
+ * How a seam with nobody at a terminal takes a lease: an editor's hook, which shares its
+ * host's terminal and is killed by its host if it waits as long as a person may.
  */
 export interface UnattendedLeases {
   /** The editor's session, which is what makes a second write a renewal. */
   sessionId: string;
   /** The longest a held path is waited on. */
   waitMs: number;
-  /**
-   * What the write is about to touch, where the host said what it writes. A
-   * hook runs before the change lands, so the working tree cannot say.
-   */
+  /** The agent the hook was installed for, when the environment does not name one. */
+  agent?: string;
+  /** What the write is about to touch, since a hook runs before the change lands. */
   region?: (path: string) => Promise<WrittenRegion>;
 }
 
 /**
- * The register, when there is a repository to have one about.
- *
- * Undefined outside a checkout, and undefined is the right answer rather than a
- * degraded one: a lease is repository-relative, and two machines cannot agree about a
- * path that has no root. A single-agent laptop pays nothing for this either way — the
- * register is only ever consulted for a write, and an empty one never refuses.
+ * The register, when there is a repository to have one about. Undefined outside a
+ * checkout, because a lease is repository relative, and an empty register never refuses.
  */
 export function buildLeases(
   cwd: string = process.cwd(),
   unattended?: UnattendedLeases,
 ): SeamLeases | undefined {
-  const root = repositoryRoot(cwd);
+  const root = repositoryRootOf(cwd);
   if (root === null) return undefined;
-  /* The daemon watches the repositories seams have seen, so an agent with no
-     hooks working in this one is seen too. */
+  // The daemon watches the repositories seams have
+  // seen, so an agent with no hooks is seen too.
   rememberRepository(homedir(), root);
 
   return {
     gate: new LeaseGate({
       registry: new LeaseRegistry(homedir()),
-      /* The workspace's register too, so two machines on one repository stop being a
-         coin flip. It makes no call at all without an account file, and an
-         unreachable control plane never stops a write. */
-      shared: new CloudLeases(homedir()),
+      // The workspace's register too; it makes no call
+      // without an account and never stops a write.
+      shared: new CloudLeases(
+        homedir(),
+        globalThis.fetch,
+        SHARED_LEASE_TIMEOUT_MS,
+        basename(root),
+      ),
       ...(unattended === undefined
         ? { prompt: new TtyLeasePrompt() }
         : { ceilingMs: unattended.waitMs }),
-      /* Which lines and which function this write touches, read off the change
-         itself at the moment of the write. Git already computes both and puts
-         them in the hunk header, so two agents in one file are told apart
-         without either being asked to declare anything. Bounded and failing to
-         the whole file, because this sits on the write path. */
-      region:
-        unattended === undefined || unattended.region === undefined
-          ? (path) => new GitRegionReader(root).read(path)
-          : unattended.region,
+      // The lines and function a write touches, read off the change itself and bounded.
+      region: unattended?.region ?? ((path) => new GitRegionReader(root).read(path)),
       now: () => new Date().toISOString(),
     }),
-    holder: (() => {
-      /* The agent, not this wrapper — but never init, which a reparented seam would
-         otherwise name and which no lease can ever be reclaimed from. A hook is run
-         through a shell that exits the moment it answers, so its owner is the
-         editor above that shell, or every lease it took would read as abandoned. */
-      const parent = unattended === undefined ? process.ppid : pastShell(process.ppid);
-      const owner = holderPid(parent, process.pid);
-      return {
-        agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
-        /* The session `memnox run` set, then the editor's own. Without one, every
-           command would be its own session and a lease would never survive to the
-           next line. */
-        sessionId:
-          process.env[SESSION_VAR] ??
-          (unattended === undefined ? `ses_pid_${owner}` : unattended.sessionId),
-        pid: owner,
-      };
-    })(),
+    holder: holderFor(unattended),
     repositoryRoot: root,
-    isDirectory: (path: string) => {
-      try {
-        return statSync(resolve(root, path)).isDirectory();
-      } catch {
-        // Not there yet: a file about to be written, which claims its directory.
-        return false;
-      }
-    },
+    isDirectory: (path: string) => isDirectoryIn(root, path),
   };
 }
 
+/**
+ * The agent, never this wrapper, and never init, which no lease could be reclaimed from.
+ */
+function holderFor(unattended: UnattendedLeases | undefined): LeaseHolder {
+  // A hook runs through a shell that exits the moment
+  // it answers, so its owner is the editor above.
+  const parent = unattended === undefined ? process.ppid : pastShell(process.ppid);
+  const owner = holderPid(parent, process.pid);
+  return {
+    agent: process.env[ENV_AGENT_NAME] ?? unattended?.agent ?? DEFAULT_AGENT_NAME,
+    // Without a session every command would be its own,
+    // and no lease would survive to the next line.
+    sessionId:
+      process.env[SESSION_VAR] ??
+      (unattended === undefined ? pidSessionId(owner) : unattended.sessionId),
+    pid: owner,
+  };
+}
+
+function isDirectoryIn(root: string, path: string): boolean {
+  try {
+    return statSync(resolve(root, path)).isDirectory();
+  } catch {
+    // Not there yet: a file about to be written, which claims its directory.
+    return false;
+  }
+}
 /** Shells a host may run a hook command through. */
 const SHELLS: readonly string[] = ['sh', 'bash', 'zsh', 'dash'];
 
 /**
- * The process above a shell, where `pid` is one, and `pid` otherwise.
- *
- * Asked of `ps` because nothing in Node names a grandparent. Anything it cannot
- * answer keeps `pid`, which is what this seam named before it knew to look.
+ * The process above a shell, asked of `ps` because
+ * Node names no grandparent. Falls back to `pid`.
  */
 function pastShell(pid: number): number {
   try {
@@ -167,10 +176,13 @@ function pastShell(pid: number): number {
   }
 }
 
-function repositoryRoot(cwd: string): string | null {
+/** The checkout `cwd` is in, or null outside one. */
+export function repositoryRootOf(cwd: string): string | null {
   try {
     return execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd,
+      // The real git: the one on PATH is this interceptor, which would ask this again.
+      env: ownProcessEnv(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -181,21 +193,15 @@ function repositoryRoot(cwd: string): string | null {
 }
 
 /**
- * Somebody to ask.
- *
- * Every seam took an optional hold service and nothing ever built one, so an `ask`
- * rule reached "nobody could be asked, so it was denied" — which made `ask` a synonym
- * for `deny` and left no way to run an agent unattended at all.
- *
- * The question is written to `~/.memnox/pending` first and answered from wherever an
- * answer turns up: this terminal when there is one, `memnox approve` in another, or
- * the control plane reading the same directory.
+ * Somebody to ask, so an `ask` rule is not a synonym for
+ * `deny`. The question is written to `~/.memnox/pending` first
+ * and answered from this terminal, another, or the workspace.
  */
 export function buildHold(timeoutMs?: number): HoldService {
   return holdFor({
     home: homedir(),
-    /* Opening /dev/tty on a headless box succeeds often enough that asking there
-       would swallow the question, so this is asked of stdin instead. */
+    // /dev/tty opens on a headless box often enough
+    // to swallow the question, so stdin decides.
     interactive: process.stdin.isTTY === true,
     announce: log,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),

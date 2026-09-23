@@ -25,6 +25,7 @@ class StubAuthorizer {
     this.seen.push(request);
     return this.verdict;
   }
+  personAllowed(): void {}
 }
 
 const as = (stub: StubAuthorizer): HookAuthorizer => stub as unknown as HookAuthorizer;
@@ -106,7 +107,7 @@ describe('the shell seam', () => {
     );
 
     const seam = new ShellSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      authorizer: new RealAuthorizer({ gate }),
     });
 
     expect((await seam.gate(['rm', '-rf', 'build'])).run).toBeUndefined();
@@ -212,7 +213,7 @@ describe('what the shell seam hands back to be recorded', () => {
       { agentName: 'agent' },
     );
     const outcome = await new ShellSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      authorizer: new RealAuthorizer({ gate }),
     }).gate(['git push --force origin main']);
 
     expect(outcome.run).toBeUndefined();
@@ -234,7 +235,7 @@ describe('what the shell seam hands back to be recorded', () => {
       { agentName: 'agent' },
     );
     const outcome = await new ShellSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      authorizer: new RealAuthorizer({ gate }),
       hold: {
         hold: async () => ({ outcome: 'allowed', answeredBy: 'somebody' }),
       } as never,
@@ -266,7 +267,7 @@ describe('a command naming more than one file', () => {
       { agentName: 'agent' },
     );
     const seam = new ShellSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      authorizer: new RealAuthorizer({ gate }),
       env: { HOME: '/Users/me', PWD: '/work' },
     });
 
@@ -303,7 +304,6 @@ describe('what an agent is told when a hold does not end in yes', () => {
     new ShellSeam({
       authorizer: new RealAuthorizer({
         gate: new LocalGate(askRule as never, { agentName: 'agent' }),
-        log: () => {},
       }),
       hold: { hold: async () => ({ outcome }) } as never,
     });

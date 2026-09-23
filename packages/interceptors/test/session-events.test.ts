@@ -66,6 +66,16 @@ describe('the pauses a session is handed notes at', () => {
     });
   });
 
+  it('keeps what the person asked, so a decision it names can be found', () => {
+    const prompt = sessionEventOf({
+      hook_event_name: 'UserPromptSubmit',
+      session_id: 's',
+      prompt: 'refactor payments/',
+    });
+
+    expect(prompt?.prompt).toBe('refactor payments/');
+  });
+
   it("answers Cursor in Cursor's fields, and with an empty object when there is nothing", () => {
     const after = {
       moment: SESSION_MOMENT.AFTER_TOOL,

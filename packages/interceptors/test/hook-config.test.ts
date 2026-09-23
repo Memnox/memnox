@@ -76,8 +76,15 @@ describe('readHookConfig', () => {
   it('reads an unconfigured machine as empty rather than failing', async () => {
     const { dir } = home();
     const config = await readHookConfig({}, dir);
-    expect(config).toEqual({ policyFiles: [] });
-    expect(await loadHookGate(config)).toBeNull();
+    expect(config).toEqual({ policyFiles: [], fromRegistry: true });
+    // This suite runs inside a checkout, so the only gate left is the repository boundary.
+    const gate = await loadHookGate(config, dir);
+    expect(
+      gate?.evaluate({ action: 'filesystem.read', target: '/etc/hosts' }).effect,
+    ).toBe('allow');
+    expect(
+      gate?.evaluate({ action: 'filesystem.write', target: '/etc/hosts' }).effect,
+    ).toBe('ask');
   });
 
   it('builds a working gate from the registered policy files', async () => {
@@ -86,6 +93,38 @@ describe('readHookConfig', () => {
     expect(
       gate?.evaluate({ action: 'filesystem.read', target: '/srv/.env' }).effect,
     ).toBe('deny');
+  });
+
+  /* protect --revert deleted its rule files and left them in the registry, and from
+     then on every intercepted command, git status included, died on the first one. */
+  it('skips a registered file that is gone, says so, and keeps the rest in force', async () => {
+    const { dir, policyFile } = home();
+    const gone = join(dir, '.memnox', 'policies', 'reverted.yaml');
+    writeFileSync(
+      join(dir, '.memnox', 'policies.json'),
+      JSON.stringify({ files: [gone, policyFile] }),
+    );
+    const warnings: string[] = [];
+
+    const gate = await loadHookGate(
+      await readHookConfig({}, dir),
+      dir,
+      () => new Date().toISOString(),
+      (message) => warnings.push(message),
+    );
+
+    expect(
+      gate?.evaluate({ action: 'filesystem.read', target: '/srv/.env' }).effect,
+    ).toBe('deny');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(gone);
+  });
+
+  it('still refuses a file the environment named that is not there', async () => {
+    const { dir } = home();
+    const config = await readHookConfig({ MEMNOX_POLICIES: join(dir, 'typo.yaml') }, dir);
+
+    await expect(loadHookGate(config, dir)).rejects.toThrow(/No policy file at/);
   });
 
   /* The gate read only the local freeze file, and `memnox sync` wrote what the

@@ -31,6 +31,10 @@ describe("Claude Code's settings with the lease hook", () => {
     expect(next.hooks?.['SessionEnd']).toEqual([
       { hooks: [{ type: 'command', command: OURS }] },
     ]);
+    // Where the session is told its boundary once.
+    expect(next.hooks?.['SessionStart']).toEqual([
+      { hooks: [{ type: 'command', command: OURS }] },
+    ]);
   });
 
   it('installs once however many times it is asked', () => {

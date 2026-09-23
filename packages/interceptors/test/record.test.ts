@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTOR_TYPE, DECISION_EFFECT, EVENT_SURFACE, TOOL_CLASS } from '@memnox/core';
-import { eventFor } from '../src/record';
+import { commandEventFor } from '../src/record';
 import type { InterceptOutcome } from '../src/interceptor';
 
 const outcome = (over: Partial<InterceptOutcome> = {}): InterceptOutcome => ({
@@ -19,7 +19,7 @@ describe('the row behind why, timeline and trace', () => {
   /* Every reader of the ledger existed before any writer did, so "nothing recorded yet"
      was the answer on a machine that had been governing commands all day. */
   it('records what was attempted and what was decided', () => {
-    const event = eventFor({
+    const event = commandEventFor({
       outcome: outcome(),
       effect: DECISION_EFFECT.DENY,
       reason: 'payments is frozen',
@@ -36,7 +36,7 @@ describe('the row behind why, timeline and trace', () => {
   /* An argument list is where a secret would be, so the row carries a digest of it and
      the arguments themselves never reach the database. */
   it('carries a digest of the arguments and never the arguments', () => {
-    const event = eventFor({
+    const event = commandEventFor({
       outcome: outcome({ args: ['delete', '--token', 'sk_live_not_a_real_one'] }),
       effect: DECISION_EFFECT.DENY,
       reason: 'no',
@@ -48,7 +48,7 @@ describe('the row behind why, timeline and trace', () => {
   });
 
   it('records git under its own surface, so a timeline can be read by it', () => {
-    const git = eventFor({
+    const git = commandEventFor({
       outcome: outcome({ binary: 'git', action: 'git.push-force' }),
       effect: DECISION_EFFECT.ALLOW,
       reason: 'no rule matched',
@@ -60,7 +60,7 @@ describe('the row behind why, timeline and trace', () => {
 
   // A class the ledger does not know is unknown, and unknown is never a safe one.
   it('never records a class it does not know as a harmless one', () => {
-    const event = eventFor({
+    const event = commandEventFor({
       outcome: outcome({ class: 'martian' }),
       effect: DECISION_EFFECT.ALLOW,
       reason: 'no rule matched',
@@ -71,7 +71,7 @@ describe('the row behind why, timeline and trace', () => {
   });
 
   it('carries the exit code and the duration, which is what trace is for', () => {
-    const event = eventFor({
+    const event = commandEventFor({
       outcome: outcome({ allowed: true }),
       effect: DECISION_EFFECT.ALLOW,
       reason: 'no rule matched',

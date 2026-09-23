@@ -25,9 +25,9 @@ const GITHUB_TOOLS = [
 async function tools(lister: () => McpLister) {
   return runCommand(
     (program, context) =>
-      registerScanCommand(program, context, () =>
-        fakeSeams(FakeMachine.from(MACHINE), { lister }),
-      ),
+      registerScanCommand(program, context, {
+        buildSeams: () => fakeSeams(FakeMachine.from(MACHINE), { lister }),
+      }),
     ['scan', '--tools'],
   );
 }
@@ -91,7 +91,9 @@ describe('memnox --tools', () => {
   it('reads as an answer when nothing was probed', async () => {
     const { out } = await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(FakeMachine.from(MACHINE))),
+        registerScanCommand(program, context, {
+          buildSeams: () => fakeSeams(FakeMachine.from(MACHINE)),
+        }),
       ['scan', '--tools', '--no-probe'],
     );
 

@@ -1,11 +1,8 @@
-import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
-
 /**
- * A database client takes its statement as an argument, so the argv that reaches an
- * interceptor already contains the whole thing. `psql -c "DROP TABLE users"` is not a
- * database connection, it is a delete — and reading which one it is from the statement
- * is the only way a rule about dropping tables can ever match.
+ * A database client takes its statement as an argument, so `psql -c "DROP TABLE users"`
+ * is ruled on as a drop rather than as a connection.
  */
+import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
 
 /** Flags whose value is the statement itself, per client. */
 const STATEMENT_FLAGS: Readonly<Record<string, readonly string[]>> = {
@@ -56,59 +53,68 @@ const WRITING = /\b(INSERT|ALTER|CREATE|GRANT|REVOKE|REPLACE|MERGE)\b/i;
 const READING = /\b(SELECT|SHOW|EXPLAIN|DESCRIBE|WITH)\b/i;
 const HAS_WHERE = /\bWHERE\b/i;
 
-/**
- * Read from the statement rather than the tool. A `WHERE` clause is the difference
- * between deleting a row and deleting a table's worth of rows, and it is the only
- * signal available before the query runs.
- */
+interface SqlRule {
+  applies: (sql: string) => boolean;
+  risk: SqlRisk;
+  class: ToolClass;
+  because: (statement: string) => string;
+}
+
+function isUnbounded(pattern: RegExp): (sql: string) => boolean {
+  return (sql) => pattern.test(sql) && !HAS_WHERE.test(sql);
+}
+
+/** First match wins, most dangerous first. A `WHERE` is the difference between a row and every row. */
+const SQL_RULES: readonly SqlRule[] = [
+  {
+    applies: (sql) => DROPPING.test(sql),
+    risk: SQL_RISK.DROPS,
+    class: TOOL_CLASS.DESTRUCTIVE,
+    because: () => 'it drops or truncates, and no transaction brings that back',
+  },
+  {
+    applies: isUnbounded(DELETING),
+    risk: SQL_RISK.UNBOUNDED,
+    class: TOOL_CLASS.DESTRUCTIVE,
+    because: () => 'a DELETE with no WHERE is every row',
+  },
+  {
+    applies: isUnbounded(UPDATING),
+    risk: SQL_RISK.UNBOUNDED,
+    class: TOOL_CLASS.DESTRUCTIVE,
+    because: () => 'an UPDATE with no WHERE is every row',
+  },
+  {
+    applies: (sql) => DELETING.test(sql) || UPDATING.test(sql) || WRITING.test(sql),
+    risk: SQL_RISK.WRITES,
+    class: TOOL_CLASS.WRITE,
+    because: (statement) => `it is a ${statement}`,
+  },
+  {
+    applies: (sql) => READING.test(sql),
+    risk: SQL_RISK.READS,
+    class: TOOL_CLASS.READ,
+    because: (statement) => `it is a ${statement}`,
+  },
+];
+
+/** Read from the statement rather than the tool, which is the only signal before the query runs. */
 export function inspectSql(raw: string): SqlFinding {
   const sql = scrub(raw);
   const statement = (/^[A-Za-z]+/.exec(sql)?.[0] ?? 'unknown').toUpperCase();
-
-  if (DROPPING.test(sql)) {
+  const rule = SQL_RULES.find((candidate) => candidate.applies(sql));
+  if (rule === undefined) {
     return {
-      risk: SQL_RISK.DROPS,
-      class: TOOL_CLASS.DESTRUCTIVE,
-      because: 'it drops or truncates, and no transaction brings that back',
-      statement,
-    };
-  }
-  if (DELETING.test(sql) && !HAS_WHERE.test(sql)) {
-    return {
-      risk: SQL_RISK.UNBOUNDED,
-      class: TOOL_CLASS.DESTRUCTIVE,
-      because: 'a DELETE with no WHERE is every row',
-      statement,
-    };
-  }
-  if (UPDATING.test(sql) && !HAS_WHERE.test(sql)) {
-    return {
-      risk: SQL_RISK.UNBOUNDED,
-      class: TOOL_CLASS.DESTRUCTIVE,
-      because: 'an UPDATE with no WHERE is every row',
-      statement,
-    };
-  }
-  if (DELETING.test(sql) || UPDATING.test(sql) || WRITING.test(sql)) {
-    return {
-      risk: SQL_RISK.WRITES,
-      class: TOOL_CLASS.WRITE,
-      because: `it is a ${statement}`,
-      statement,
-    };
-  }
-  if (READING.test(sql)) {
-    return {
-      risk: SQL_RISK.READS,
-      class: TOOL_CLASS.READ,
-      because: `it is a ${statement}`,
+      risk: SQL_RISK.UNKNOWN,
+      class: TOOL_CLASS.UNKNOWN,
+      because: 'no statement here was recognised',
       statement,
     };
   }
   return {
-    risk: SQL_RISK.UNKNOWN,
-    class: TOOL_CLASS.UNKNOWN,
-    because: 'no statement here was recognised',
+    risk: rule.risk,
+    class: rule.class,
+    because: rule.because(statement),
     statement,
   };
 }
@@ -119,6 +125,7 @@ export function statementIn(binary: string, args: readonly string[]): string | n
   if (flags === undefined) return null;
 
   for (let index = 0; index < args.length; index += 1) {
+    // Inside the bounds the loop checks, so never undefined.
     const arg = args[index] as string;
     for (const flag of flags) {
       if (arg === flag) return args[index + 1] ?? null;
@@ -136,27 +143,35 @@ export function isDatabaseClient(binary: string): boolean {
   return STATEMENT_FLAGS[binary] !== undefined;
 }
 
+const HOST_FLAGS = ['-h', '--host'];
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1', '0.0.0.0'];
+
 /** The host a client is pointed at, which decides whether this is somebody else's data. */
 export function nonLocalHost(
   args: readonly string[],
   env: NodeJS.ProcessEnv,
 ): string | null {
-  const url = env['DATABASE_URL'] ?? env['MONGODB_URI'];
-  const flagged = args[args.indexOf('-h') + 1] ?? args[args.indexOf('--host') + 1];
-  const candidate = flagged !== undefined && args.includes('-h') ? flagged : url;
-  if (candidate === undefined) return null;
+  const target = hostFlagIn(args) ?? env['DATABASE_URL'] ?? env['MONGODB_URI'];
+  if (target === undefined) return null;
+  const host = hostnameOf(target);
+  return LOCAL_HOSTS.includes(host) ? null : host;
+}
 
-  const host = /^\w+:\/\//.test(candidate)
-    ? (() => {
-        try {
-          return new URL(candidate).hostname;
-        } catch {
-          // Not a URL after all; the raw value is the best answer available.
-          return candidate;
-        }
-      })()
-    : candidate;
+/** The value after `-h` or `--host`, or glued to `--host=`; a flag given last has none. */
+function hostFlagIn(args: readonly string[]): string | undefined {
+  for (const [index, arg] of args.entries()) {
+    if (HOST_FLAGS.includes(arg)) return args[index + 1];
+    if (arg.startsWith('--host=')) return arg.slice('--host='.length);
+  }
+  return undefined;
+}
 
-  const local = ['localhost', '127.0.0.1', '::1', '0.0.0.0'];
-  return local.includes(host) ? null : host;
+function hostnameOf(target: string): string {
+  if (!/^\w+:\/\//.test(target)) return target;
+  try {
+    return new URL(target).hostname;
+  } catch {
+    // Not a URL after all; the raw value is the best answer available.
+    return target;
+  }
 }

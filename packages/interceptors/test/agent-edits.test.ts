@@ -5,8 +5,8 @@ import {
   beforeEdit,
   EDIT_HOST,
   endedSessionOf,
-  parsePatch,
 } from '../src/agent-edits';
+import { parsePatch } from '../src/codex-patch';
 import { afterEdit } from '../src/edit-hook';
 
 /* Claude Code was the only editor whose writes met a lease, so an edit Codex or

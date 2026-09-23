@@ -1,12 +1,11 @@
 /**
- * What one command line is asking for, read from argv rather than from a string. A
- * interceptor sees the arguments already split by the kernel, so there is nothing to parse
- * and nothing to be fooled by: quoting tricks live in shell strings, not in argv.
+ * What one command line is asking for, read from argv rather than from a string. An
+ * interceptor sees arguments the kernel already split, so no quoting trick can fool it.
  */
-
 import { verbTableNames } from '../verbs/tables';
 import { TOOL_CLASS } from '../discovery/classify';
 import { BROWSER_LAUNCHERS } from '../discovery/browser';
+import { ACTION } from '../constants/action.constants';
 
 export const COMMAND_CLASS = {
   NORMAL: 'normal',
@@ -45,18 +44,41 @@ function hostOf(candidate: string): string | undefined {
 }
 
 function classifyRm(args: readonly string[]): BinaryVerdict {
-  const recursive = args.some((arg) => RECURSIVE_FORCE.includes(arg));
   const target = firstNonFlag(args);
-  const atRoot = target !== undefined && ROOTS.includes(target);
   return {
-    action: 'filesystem.delete',
+    action: ACTION.FILESYSTEM_DELETE,
     class: COMMAND_CLASS.DESTRUCTIVE,
     ...(target === undefined ? {} : { target }),
-    because: atRoot
-      ? 'a recursive delete at a filesystem root'
-      : recursive
-        ? 'a recursive, forced delete'
-        : 'a delete',
+    because: describeRm(args, target),
+  };
+}
+
+function describeRm(args: readonly string[], target: string | undefined): string {
+  if (target !== undefined && ROOTS.includes(target)) {
+    return 'a recursive delete at a filesystem root';
+  }
+  if (args.some((arg) => RECURSIVE_FORCE.includes(arg)))
+    return 'a recursive, forced delete';
+  return 'a delete';
+}
+
+function classifyDd(args: readonly string[]): BinaryVerdict {
+  const output = args.find((arg) => arg.startsWith('of='));
+  return {
+    action: ACTION.FILESYSTEM_WRITE,
+    class: COMMAND_CLASS.DESTRUCTIVE,
+    ...(output === undefined ? {} : { target: output }),
+    because: 'dd writes raw blocks and does not ask twice',
+  };
+}
+
+function classifySsh(args: readonly string[]): BinaryVerdict {
+  const host = firstNonFlag(args);
+  return {
+    action: 'network.ssh',
+    class: COMMAND_CLASS.NETWORK,
+    ...(host === undefined ? {} : { target: host }),
+    because: 'ssh reaches another machine',
   };
 }
 
@@ -87,9 +109,13 @@ const CURL_VALUE_FLAGS = new Set([
   '--upload-file',
 ]);
 
-function positionalArgs(args: readonly string[], valueFlags: Set<string>): string[] {
+function positionalArgs(
+  args: readonly string[],
+  valueFlags: ReadonlySet<string>,
+): string[] {
   const positional: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
+    // Inside the bounds the loop checks, so never undefined.
     const arg = args[index] as string;
     if (valueFlags.has(arg)) {
       index += 1;
@@ -104,8 +130,7 @@ function positionalArgs(args: readonly string[], valueFlags: Set<string>): strin
 function classifyCurl(binary: string, args: readonly string[]): BinaryVerdict {
   const candidates = positionalArgs(args, CURL_VALUE_FLAGS);
   const host = candidates.map(hostOf).find((each) => each !== undefined);
-  /* `curl | sh` cannot be seen from argv — the pipe belongs to the shell that built
-     it — so the shell interceptor is what catches that, and this names the destination. */
+  // `curl | sh` is invisible in argv because the shell owns the pipe, so this names the destination.
   return {
     action: 'http.request',
     class: COMMAND_CLASS.NETWORK,
@@ -120,7 +145,7 @@ function classifyPackageManager(binary: string, args: readonly string[]): Binary
   const verb = firstNonFlag(args);
   const installing = verb !== undefined && PACKAGE_INSTALL_VERBS.includes(verb);
   return {
-    action: installing ? 'package.install' : 'shell.execute',
+    action: installing ? 'package.install' : ACTION.SHELL_EXECUTE,
     class: installing ? COMMAND_CLASS.PACKAGE_INSTALL : COMMAND_CLASS.NORMAL,
     ...(args[1] === undefined ? {} : { target: args[1] }),
     because: installing
@@ -132,72 +157,91 @@ function classifyPackageManager(binary: string, args: readonly string[]): Binary
 /** Git subcommands that change something somebody else can see. */
 const GIT_REMOTE = ['push', 'fetch', 'pull', 'clone'];
 
+const FORCE_FLAGS = ['--force', '-f', '--force-with-lease'];
+
+/** Git's own flags that take a value, so the value is never read as the subcommand. */
+const GIT_VALUE_FLAGS = new Set([
+  '-C',
+  '-c',
+  '--git-dir',
+  '--work-tree',
+  '--namespace',
+  '--exec-path',
+]);
+
 function classifyGit(args: readonly string[]): BinaryVerdict {
-  const sub = firstNonFlag(args);
-  if (sub === undefined) {
+  // Skips flag values, so `git -C <path> diff` is a diff rather than an action named for the path.
+  const subcommand = firstNonFlag(positionalArgs(args, GIT_VALUE_FLAGS));
+  if (subcommand === undefined) {
     return { action: 'git.status', class: COMMAND_CLASS.NORMAL, because: 'git' };
   }
-
-  const forced = args.some(
-    (arg) => arg === '--force' || arg === '-f' || arg === '--force-with-lease',
-  );
   const positional = args.filter((arg) => !arg.startsWith('-'));
   const target = positional.slice(1).join(' ');
+  const verdict = classifyGitSubcommand(subcommand, args);
+  // A forced clean names no target, since what it deletes is whatever is untracked.
+  if (target === '' || verdict.action === 'git.clean') return verdict;
+  return { ...verdict, target };
+}
 
-  if (sub === 'push') {
+function classifyGitSubcommand(
+  subcommand: string,
+  args: readonly string[],
+): BinaryVerdict {
+  const destructive = destructiveGitVerdict(subcommand, args);
+  if (destructive !== null) return destructive;
+  if (subcommand === 'push') {
     return {
       action: 'git.push',
-      class: forced ? COMMAND_CLASS.DESTRUCTIVE : COMMAND_CLASS.NETWORK,
-      ...(target === '' ? {} : { target }),
-      because: forced
-        ? 'a force push rewrites history somebody else may have pulled'
-        : 'a push reaches the remote',
+      class: COMMAND_CLASS.NETWORK,
+      because: 'a push reaches the remote',
     };
   }
-  if (sub === 'reset' && args.includes('--hard')) {
+  if (GIT_REMOTE.includes(subcommand)) {
+    return {
+      action: `git.${subcommand}`,
+      class: COMMAND_CLASS.NETWORK,
+      because: `git ${subcommand} reaches the remote`,
+    };
+  }
+  return {
+    action: `git.${subcommand}`,
+    class: COMMAND_CLASS.NORMAL,
+    because: `git ${subcommand}`,
+  };
+}
+
+/** A force push, a hard reset or a forced clean: the git commands with no undo. */
+function destructiveGitVerdict(
+  subcommand: string,
+  args: readonly string[],
+): BinaryVerdict | null {
+  if (subcommand === 'push' && args.some((arg) => FORCE_FLAGS.includes(arg))) {
+    return {
+      action: 'git.push',
+      class: COMMAND_CLASS.DESTRUCTIVE,
+      because: 'a force push rewrites history somebody else may have pulled',
+    };
+  }
+  if (subcommand === 'reset' && args.includes('--hard')) {
     return {
       action: 'git.reset',
       class: COMMAND_CLASS.DESTRUCTIVE,
-      ...(target === '' ? {} : { target }),
       because: 'a hard reset discards work that was never committed',
     };
   }
-  if (sub === 'clean' && args.some((arg) => arg.includes('f'))) {
+  if (subcommand === 'clean' && args.some((arg) => arg.includes('f'))) {
     return {
       action: 'git.clean',
       class: COMMAND_CLASS.DESTRUCTIVE,
       because: 'a forced clean deletes untracked files with no undo',
     };
   }
-  if (GIT_REMOTE.includes(sub)) {
-    return {
-      action: `git.${sub}`,
-      class: COMMAND_CLASS.NETWORK,
-      ...(target === '' ? {} : { target }),
-      because: `git ${sub} reaches the remote`,
-    };
-  }
-  return {
-    action: `git.${sub}`,
-    class: COMMAND_CLASS.NORMAL,
-    ...(target === '' ? {} : { target }),
-    because: `git ${sub}`,
-  };
+  return null;
 }
 
 /**
- * Binaries whose whole job is to hand a file's contents to whoever asked, and the
- * arguments of theirs that are not files.
- *
- * Without these a `filesystem.read` rule matched nothing any seam ever produced: the
- * deny that `scan`, `explain` and `doctor` all promise about `~/.ssh/id_ed25519` was
- * written, registered, reported in force, and fired on nothing. `cat` is the command
- * an agent reaches for, so it is the one the rule has to see.
- *
- * They stay out of `CLASSIFIERS` on purpose. That map decides which wrappers go on
- * PATH, and putting `cat` behind a node process would tax every read an agent makes
- * for a gate the shell seam already applies. What skips the seams is the kernel
- * guard's job, which is what `doctor` has always said.
+ * Readers' flags that take a value, so a `filesystem.read` rule fires on the files. Kept out
+ * of `CLASSIFIERS`, which decides what goes on PATH, because the shell seam already gates reads.
  */
 const READER_VALUE_FLAGS: Readonly<Record<string, readonly string[]>> = {
   head: ['-n', '-c', '--lines', '--bytes'],
@@ -228,24 +272,12 @@ const READERS = new Set([
   'cp',
 ]);
 
-export function isReader(binary: string): boolean {
-  return READERS.has(binary);
-}
-
 /**
  * Absolute, because a rule names an absolute path and a command names whatever was
- * convenient. `~` and `$HOME` are expanded and a relative path is resolved against the
- * directory the command ran in, so `cat .ssh/id_ed25519` and `cat ~/.ssh/id_ed25519`
- * reach the same rule rather than one of them slipping past it.
+ * convenient, so `cat .ssh/id_ed25519` and `cat ~/.ssh/id_ed25519` reach one rule.
  */
 function absolutePath(candidate: string, env: NodeJS.ProcessEnv): string {
-  const home = env['HOME'] ?? env['USERPROFILE'];
-  let path = candidate;
-  if (home !== undefined) {
-    if (path === '~') path = home;
-    else if (path.startsWith('~/')) path = `${home}/${path.slice(2)}`;
-    else if (path.startsWith('$HOME/')) path = `${home}/${path.slice(6)}`;
-  }
+  const path = withHomeExpanded(candidate, env['HOME'] ?? env['USERPROFILE']);
   if (path.startsWith('/')) return path;
 
   const cwd = env['PWD'];
@@ -253,13 +285,21 @@ function absolutePath(candidate: string, env: NodeJS.ProcessEnv): string {
   return `${cwd.replace(/\/$/, '')}/${path.replace(/^\.\//, '')}`;
 }
 
+const HOME_PREFIXES = ['~/', '$HOME/'];
+
+function withHomeExpanded(path: string, home: string | undefined): string {
+  if (home === undefined) return path;
+  if (path === '~') return home;
+  const prefix = HOME_PREFIXES.find((each) => path.startsWith(each));
+  return prefix === undefined ? path : `${home}/${path.slice(prefix.length)}`;
+}
+
 export interface ReaderVerdict {
   action: string;
   /** A read, so nothing here ever takes a lease or reads as a conflict. */
   class: typeof TOOL_CLASS.READ;
   target?: string;
-  /** Every file named, because a rule that only saw the first would miss
-      `cat README ~/.ssh/id_ed25519` — which is one argument away from no gate at all. */
+  /** Every file named, because a rule that only saw the first would miss `cat README ~/.ssh/id_ed25519`. */
   targets: readonly string[];
   because: string;
 }
@@ -272,21 +312,10 @@ export function classifyReader(
 ): ReaderVerdict | null {
   if (!READERS.has(binary)) return null;
 
-  const valueFlags = new Set(READER_VALUE_FLAGS[binary] ?? []);
-  const positional = positionalArgs(args, valueFlags);
-  /* `cp a b` writes to `b`, and the read that matters is the source — which is how a
-     credential leaves a machine that denied `cat`. The destination is the last one. */
-  const files =
-    binary === 'cp'
-      ? positional.slice(0, -1)
-      : PATTERN_FIRST.has(binary)
-        ? positional.slice(1)
-        : positional;
-
-  const targets = files.map((file) => absolutePath(file, env));
+  const targets = filesReadBy(binary, args).map((file) => absolutePath(file, env));
   const first = targets[0];
   return {
-    action: 'filesystem.read',
+    action: ACTION.FILESYSTEM_READ,
     class: TOOL_CLASS.READ,
     ...(first === undefined ? {} : { target: first }),
     targets,
@@ -294,30 +323,26 @@ export function classifyReader(
   };
 }
 
+function filesReadBy(binary: string, args: readonly string[]): string[] {
+  const positional = positionalArgs(args, new Set(READER_VALUE_FLAGS[binary] ?? []));
+  // `cp a b` reads `a`, which is how a credential leaves a machine that denied `cat`.
+  if (binary === 'cp') return positional.slice(0, -1);
+  if (PATTERN_FIRST.has(binary)) return positional.slice(1);
+  return positional;
+}
+
 type Classifier = (binary: string, args: readonly string[]) => BinaryVerdict;
 
 /**
- * One row per binary the interceptor directory holds. A binary absent here is not interceptormed,
- * and what is not interceptormed is named rather than left to be assumed.
+ * One row per binary the interceptor directory holds. A binary absent here is not
+ * intercepted, and what is not intercepted is named rather than left to be assumed.
  */
 const CLASSIFIERS: Readonly<Record<string, Classifier>> = {
   rm: (_binary, args) => classifyRm(args),
-  dd: (_binary, args) => ({
-    action: 'filesystem.write',
-    class: COMMAND_CLASS.DESTRUCTIVE,
-    ...(args.find((arg) => arg.startsWith('of=')) === undefined
-      ? {}
-      : { target: args.find((arg) => arg.startsWith('of=')) as string }),
-    because: 'dd writes raw blocks and does not ask twice',
-  }),
+  dd: (_binary, args) => classifyDd(args),
   curl: classifyCurl,
   wget: classifyCurl,
-  ssh: (_binary, args) => ({
-    action: 'network.ssh',
-    class: COMMAND_CLASS.NETWORK,
-    ...(firstNonFlag(args) === undefined ? {} : { target: firstNonFlag(args) as string }),
-    because: 'ssh reaches another machine',
-  }),
+  ssh: (_binary, args) => classifySsh(args),
   git: (_binary, args) => classifyGit(args),
   npm: classifyPackageManager,
   pnpm: classifyPackageManager,

@@ -9,12 +9,8 @@ import { LocalGate } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
 import type { HookAuthorizer } from '../src/hook-authorizer';
 import { HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
-import {
-  EgressSeam,
-  EGRESS_BLIND_SPOTS,
-  EGRESS_CONNECT_ACTION,
-  EGRESS_REQUEST_ACTION,
-} from '../src/egress-seam';
+import { EgressSeam, EGRESS_BLIND_SPOTS } from '../src/egress-seam';
+import { EGRESS_CONNECT_ACTION, EGRESS_REQUEST_ACTION } from '../src/tool-hook.constants';
 
 const AWS_KEY = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
 
@@ -138,7 +134,7 @@ describe('the egress seam', () => {
       { agentName: 'claude-code' },
     );
     const seam = new EgressSeam({
-      authorizer: new RealAuthorizer({ gate, log: () => {} }),
+      authorizer: new RealAuthorizer({ gate }),
     });
 
     expect(
@@ -155,6 +151,7 @@ describe('an ask on the network seam reaches a person', () => {
     async authorize() {
       return { effect: DECISION_EFFECT.ASK, reason: 'unknown host' };
     },
+    personAllowed() {},
   } as unknown as HookAuthorizer;
 
   const answering = (answer: HoldAnswer | null): HoldService =>

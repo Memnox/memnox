@@ -97,3 +97,18 @@ describe('git, which is most of what an agent does', () => {
     expect(classifyBinary('git', [])?.action).toBe('git.status');
   });
 });
+
+/* `git -C <path> diff` is a diff. Reading the path as the subcommand invented an
+   action name, `git./Users/ana/repo`, that no rule can be written about and no
+   ledger reader recognises. */
+describe('git with its own flags', () => {
+  it('reads the subcommand past a flag that takes a value', () => {
+    expect(classifyBinary('git', ['-C', '/tmp/repo', 'diff'])?.action).toBe('git.diff');
+    expect(classifyBinary('git', ['-c', 'user.name=ana', 'commit'])?.action).toBe(
+      'git.commit',
+    );
+    expect(classifyBinary('git', ['--git-dir', '/tmp/x/.git', 'push'])?.action).toBe(
+      'git.push',
+    );
+  });
+});

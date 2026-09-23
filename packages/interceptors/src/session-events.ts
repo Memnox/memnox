@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { relative, isAbsolute } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
+
 import {
   ACTOR_TYPE,
   DECISION_EFFECT,
@@ -7,24 +7,37 @@ import {
   ENFORCEMENT_MODE,
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
+  newEventId,
   TOOL_CLASS,
   type MemnoxEvent,
+  type ToolClass,
 } from '@memnox/core';
-import { EDIT_HOST, parsePatch, type EditHost } from './agent-edits';
+
+import {
+  CURSOR_EDIT_TOOLS,
+  CURSOR_EVENT,
+  EDIT_HOST,
+  GEMINI_EDIT_TOOLS,
+  GEMINI_EVENT,
+  WINDSURF_EVENT,
+  type EditHost,
+} from './agent-edits';
+import { parsePatch } from './codex-patch';
+import { EDIT_HOOK_EVENT, EDIT_TOOLS } from './edit-hook';
+import {
+  CODEX_PATCH_TOOL,
+  cwdOf,
+  fieldsOf,
+  firstText,
+  folderOf,
+  sessionOf,
+  type HookFields,
+} from './hook-payload';
 
 /**
- * The two pauses every coding agent already has, as this hook reads them: a tool
- * call just returned, and a turn just ended.
- *
- * Both are where a note waiting for the session is handed over, which is how a
- * person steers a running agent and how the agent that got there first hears that
- * another collided with it. The first is also where what the agent just did is
- * written down, so the workspace sees each session as it works rather than a
- * minute later in a batch.
- *
- * Claude Code and Codex name these `PostToolUse` and `Stop` and read
- * `hookSpecificOutput`; Cursor names them `postToolUse` and `stop` and reads its
- * own fields. Anything else is not this module's.
+ * The pauses every coding agent has: a tool call returned, a turn ended, a person asked.
+ * Each is where a waiting note is handed over, and the first is where what the agent did
+ * is written down, so the workspace sees each session as it works.
  */
 
 export const SESSION_MOMENT = {
@@ -46,185 +59,185 @@ export interface SessionEvent {
   /** The tool that just ran, on an `after-tool` event. */
   tool?: string;
   input?: Record<string, unknown>;
+  /** What the person asked, on a `prompt` event, read for a decision it names. */
+  prompt?: string;
 }
 
-/** The pause in this payload, or null where it is not one of the two. */
+/** Which agent sent a pause and which pause it is, by the event name each one uses. */
+const PAUSE_EVENTS: Readonly<Record<string, { host: EditHost; moment: SessionMoment }>> =
+  {
+    [EDIT_HOOK_EVENT.POST_TOOL_USE]: {
+      host: EDIT_HOST.PRE_TOOL_USE,
+      moment: SESSION_MOMENT.AFTER_TOOL,
+    },
+    [EDIT_HOOK_EVENT.STOP]: {
+      host: EDIT_HOST.PRE_TOOL_USE,
+      moment: SESSION_MOMENT.TURN_END,
+    },
+    [EDIT_HOOK_EVENT.USER_PROMPT_SUBMIT]: {
+      host: EDIT_HOST.PRE_TOOL_USE,
+      moment: SESSION_MOMENT.PROMPT,
+    },
+    [CURSOR_EVENT.POST_TOOL_USE]: {
+      host: EDIT_HOST.CURSOR,
+      moment: SESSION_MOMENT.AFTER_TOOL,
+    },
+    [CURSOR_EVENT.STOP]: { host: EDIT_HOST.CURSOR, moment: SESSION_MOMENT.TURN_END },
+    [GEMINI_EVENT.AFTER_TOOL]: {
+      host: EDIT_HOST.GEMINI,
+      moment: SESSION_MOMENT.AFTER_TOOL,
+    },
+    [GEMINI_EVENT.AFTER_AGENT]: {
+      host: EDIT_HOST.GEMINI,
+      moment: SESSION_MOMENT.TURN_END,
+    },
+    [GEMINI_EVENT.BEFORE_AGENT]: {
+      host: EDIT_HOST.GEMINI,
+      moment: SESSION_MOMENT.PROMPT,
+    },
+  };
+
+/** The pause in this payload, or null where it is not one. */
 export function sessionEventOf(payload: unknown): SessionEvent | null {
-  if (payload === null || typeof payload !== 'object') return null;
-  const hook = payload as Record<string, unknown>;
-  const event = hook['hook_event_name'];
+  const hook = fieldsOf(payload);
+  if (hook === null) return null;
   const windsurf = windsurfPause(hook);
   if (windsurf !== undefined) return windsurf;
-  const host =
-    event === 'PostToolUse' || event === 'Stop' || event === 'UserPromptSubmit'
-      ? EDIT_HOST.PRE_TOOL_USE
-      : event === 'postToolUse' || event === 'stop'
-        ? EDIT_HOST.CURSOR
-        : event === 'AfterTool' || event === 'AfterAgent' || event === 'BeforeAgent'
-          ? EDIT_HOST.GEMINI
-          : null;
-  if (host === null) return null;
 
-  let sessionId = '';
-  for (const key of ['session_id', 'conversation_id']) {
-    const value = hook[key];
-    if (typeof value === 'string' && value.trim() !== '') {
-      sessionId = value;
-      break;
-    }
-  }
-  if (sessionId === '') return null;
+  const event = hook['hook_event_name'];
+  const pause = typeof event === 'string' ? PAUSE_EVENTS[event] : undefined;
+  const sessionId = sessionOf(hook);
+  if (pause === undefined || sessionId === '') return null;
 
   const cwd = cwdOf(hook);
-  if (event === 'UserPromptSubmit' || event === 'BeforeAgent') {
-    return {
-      moment: SESSION_MOMENT.PROMPT,
-      host,
-      sessionId,
-      ...(cwd === undefined ? {} : { cwd }),
-    };
+  const base = { ...pause, sessionId, ...(cwd === undefined ? {} : { cwd }) };
+  if (pause.moment === SESSION_MOMENT.PROMPT) {
+    const prompt = hook['prompt'];
+    return typeof prompt === 'string' ? { ...base, prompt } : base;
   }
-  if (event === 'Stop' || event === 'stop' || event === 'AfterAgent') {
-    return {
-      moment: SESSION_MOMENT.TURN_END,
-      host,
-      sessionId,
-      ...(cwd === undefined ? {} : { cwd }),
-    };
-  }
+  if (pause.moment !== SESSION_MOMENT.AFTER_TOOL) return base;
   const tool = hook['tool_name'];
-  const input = hook['tool_input'];
+  const input = fieldsOf(hook['tool_input']);
   return {
-    moment: SESSION_MOMENT.AFTER_TOOL,
-    host,
-    sessionId,
-    ...(cwd === undefined ? {} : { cwd }),
+    ...base,
     ...(typeof tool === 'string' ? { tool } : {}),
-    ...(input !== null && typeof input === 'object'
-      ? { input: input as Record<string, unknown> }
-      : {}),
+    ...(input === null ? {} : { input }),
   };
 }
 
-/** Windsurf's events after a read, a write, a command or an MCP call. */
+/**
+ * Windsurf's events after a read, a write, a command
+ * or an MCP call, as the tool each stands for.
+ */
 const WINDSURF_AFTER: Readonly<Record<string, string>> = {
-  post_write_code: 'Write',
-  post_read_code: 'Read',
-  post_run_command: 'Bash',
-  post_mcp_tool_use: 'mcp',
+  [WINDSURF_EVENT.POST_WRITE]: 'Write',
+  [WINDSURF_EVENT.POST_READ]: 'Read',
+  [WINDSURF_EVENT.POST_COMMAND]: 'Bash',
+  [WINDSURF_EVENT.POST_MCP]: 'mcp',
 };
 
 /**
- * A Windsurf pause, or undefined where this is not a Windsurf payload at all.
- *
- * Only the moment after a tool: Windsurf has no event that ends a turn in a way
- * that can carry words back, and none that ends a session, so its holds lapse on
- * the idle window and its notes reach it through the MCP proxy.
+ * A Windsurf pause, or undefined where this is not
+ * a Windsurf payload; it has no turn end to answer.
  */
-function windsurfPause(hook: Record<string, unknown>): SessionEvent | null | undefined {
+function windsurfPause(hook: HookFields): SessionEvent | null | undefined {
   const action = hook['agent_action_name'];
   if (typeof action !== 'string') return undefined;
   const tool = WINDSURF_AFTER[action];
-  if (tool === undefined) return null;
-  const session = hook['trajectory_id'];
-  if (typeof session !== 'string' || session === '') return null;
-  const info = hook['tool_info'];
-  const input =
-    info !== null && typeof info === 'object' ? (info as Record<string, unknown>) : {};
+  const session = firstText(hook, ['trajectory_id']);
+  if (tool === undefined || session === undefined) return null;
+  const input = fieldsOf(hook['tool_info']) ?? {};
   const path = input['file_path'];
+  const cwd = typeof path === 'string' ? folderOf(path) : undefined;
   return {
     moment: SESSION_MOMENT.AFTER_TOOL,
     host: EDIT_HOST.WINDSURF,
     sessionId: session,
     tool,
     input,
-    ...(typeof path === 'string' && path.includes('/')
-      ? { cwd: path.slice(0, path.lastIndexOf('/')) }
-      : {}),
+    ...(cwd === undefined ? {} : { cwd }),
   };
 }
 
-function cwdOf(hook: Record<string, unknown>): string | undefined {
-  const cwd = hook['cwd'];
-  if (typeof cwd === 'string' && cwd !== '') return cwd;
-  const roots = hook['workspace_roots'];
-  if (Array.isArray(roots) && typeof roots[0] === 'string' && roots[0] !== '') {
-    return roots[0];
-  }
-  return undefined;
+/** The event names a host reads added context under, at a prompt and after a tool. */
+interface ContextEvents {
+  prompt: string;
+  afterTool: string;
 }
 
+const GEMINI_CONTEXT: ContextEvents = {
+  prompt: GEMINI_EVENT.BEFORE_AGENT,
+  afterTool: GEMINI_EVENT.AFTER_TOOL,
+};
+
+const PRE_TOOL_USE_CONTEXT: ContextEvents = {
+  prompt: EDIT_HOOK_EVENT.USER_PROMPT_SUBMIT,
+  afterTool: EDIT_HOOK_EVENT.POST_TOOL_USE,
+};
+
 /**
- * What the host reads back: the notes, in the field that puts them in front of the
- * model at this pause. `null` notes is the ordinary case, and says nothing.
- *
- * After a tool call the notes ride as added context beside the result. At the end
- * of a turn they become the next thing the agent works on, which is how a note
- * reaches an agent that has stopped to wait: Claude Code and Codex continue with the
- * reason as their prompt, and Cursor submits the follow-up as the next message.
- * Cursor is answered with an empty object when there is nothing, because it reads a
- * reply that is not JSON as one that blocks.
+ * What the host reads back: the notes in the field that puts them in front of the model,
+ * as added context after a tool and as the next thing to do at a turn's end. Cursor gets
+ * an empty object when there is nothing, because it reads a non-JSON reply as a block.
  */
 export function sessionAnswer(event: SessionEvent, notes: string | null): string {
-  /* Windsurf reads nothing back from these, so there is nothing to say. */
+  // Windsurf reads nothing back from these, so there is nothing to say.
   if (event.host === EDIT_HOST.WINDSURF) return '';
-  if (event.host === EDIT_HOST.GEMINI) {
-    if (notes === null) return '';
-    if (event.moment === SESSION_MOMENT.TURN_END) {
-      return JSON.stringify({ decision: 'deny', reason: notes });
-    }
-    return JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName:
-          event.moment === SESSION_MOMENT.PROMPT ? 'BeforeAgent' : 'AfterTool',
-        additionalContext: notes,
-      },
-    });
-  }
-  if (event.host === EDIT_HOST.CURSOR) {
-    if (notes === null) return '{}';
-    return JSON.stringify(
-      event.moment === SESSION_MOMENT.TURN_END
-        ? { followup_message: notes }
-        : { additional_context: notes },
-    );
-  }
+  if (event.host === EDIT_HOST.CURSOR) return cursorAnswer(event, notes);
   if (notes === null) return '';
   if (event.moment === SESSION_MOMENT.TURN_END) {
-    return JSON.stringify({ decision: 'block', reason: notes });
+    const decision = event.host === EDIT_HOST.GEMINI ? 'deny' : 'block';
+    return JSON.stringify({ decision, reason: notes });
   }
+  const names = event.host === EDIT_HOST.GEMINI ? GEMINI_CONTEXT : PRE_TOOL_USE_CONTEXT;
+  const hookEventName =
+    event.moment === SESSION_MOMENT.PROMPT ? names.prompt : names.afterTool;
   return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName:
-        event.moment === SESSION_MOMENT.PROMPT ? 'UserPromptSubmit' : 'PostToolUse',
-      additionalContext: notes,
-    },
+    hookSpecificOutput: { hookEventName, additionalContext: notes },
   });
+}
+
+function cursorAnswer(event: SessionEvent, notes: string | null): string {
+  if (notes === null) return '{}';
+  return JSON.stringify(
+    event.moment === SESSION_MOMENT.TURN_END
+      ? { followup_message: notes }
+      : { additional_context: notes },
+  );
 }
 
 /** The tools that read a file, by the names the agents give them. */
 const READ_TOOLS: readonly string[] = ['Read', 'NotebookRead', 'read_file'];
-/* `write_file` and `replace` are Gemini CLI's, and read the same as the rest. */
-/** The tools that write one. Codex's patch is read apart, since it names several. */
-const WRITE_TOOLS: readonly string[] = [
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'StrReplace',
-  'search_replace',
-  'edit_file',
-  'write_file',
-  'replace',
-];
-const CODEX_PATCH_TOOL = 'apply_patch';
 
 /**
- * What the agent just did, as rows for the ledger. Names and paths only.
- *
- * Only the tools that work inside the agent, which nothing else here sees: a shell
- * command is already a row from the interceptor that ran it, and an MCP call from
- * the proxy it went through, so recording those again would count each twice.
+ * The tools that write one, in any agent's words.
+ * Codex's patch is read apart, since it names several.
+ */
+const WRITE_TOOLS: readonly string[] = [
+  ...new Set([...EDIT_TOOLS, ...CURSOR_EDIT_TOOLS, ...GEMINI_EDIT_TOOLS]),
+];
+
+/** Where any agent's file tool names its file. */
+const PATH_KEYS: readonly string[] = [
+  'file_path',
+  'notebook_path',
+  'path',
+  'target_file',
+];
+
+/** One file an in-agent tool touched, as the row will name it. */
+interface FileTouch {
+  operation: string;
+  toolClass: ToolClass;
+  path?: string;
+}
+
+const FILE_READ = { operation: 'file.read', toolClass: TOOL_CLASS.READ } as const;
+const FILE_EDIT = { operation: 'file.edit', toolClass: TOOL_CLASS.WRITE } as const;
+
+/**
+ * What the agent just did, as rows for the ledger, names and paths only. A shell command
+ * or an MCP call is already a row from its own seam, so only in-agent tools are recorded.
  */
 export function activityOf(
   event: SessionEvent,
@@ -232,45 +245,36 @@ export function activityOf(
   root: string | undefined,
   at: string,
 ): MemnoxEvent[] {
+  return filesTouched(event).map((file) =>
+    fileRow({
+      event,
+      agent,
+      at,
+      operation: file.operation,
+      toolClass: file.toolClass,
+      target: file.path === undefined ? undefined : shown(file.path, root, event.cwd),
+    }),
+  );
+}
+
+function filesTouched(event: SessionEvent): FileTouch[] {
   if (event.moment !== SESSION_MOMENT.AFTER_TOOL || event.tool === undefined) return [];
   const input = event.input ?? {};
   if (event.tool === CODEX_PATCH_TOOL) {
     const patch = input['command'];
     if (typeof patch !== 'string') return [];
-    return parsePatch(patch).map((file) =>
-      row(
-        event,
-        agent,
-        at,
-        'file.edit',
-        TOOL_CLASS.WRITE,
-        shown(file.path, root, event.cwd),
-      ),
-    );
+    return parsePatch(patch).map((file) => ({ ...FILE_EDIT, path: file.path }));
   }
-  const reading = READ_TOOLS.includes(event.tool);
-  if (!reading && !WRITE_TOOLS.includes(event.tool)) return [];
-  let path: string | undefined;
-  for (const key of ['file_path', 'notebook_path', 'path', 'target_file']) {
-    const value = input[key];
-    if (typeof value === 'string' && value !== '') {
-      path = value;
-      break;
-    }
-  }
-  return [
-    row(
-      event,
-      agent,
-      at,
-      reading ? 'file.read' : 'file.edit',
-      reading ? TOOL_CLASS.READ : TOOL_CLASS.WRITE,
-      path === undefined ? undefined : shown(path, root, event.cwd),
-    ),
-  ];
+  const path = firstText(input, PATH_KEYS);
+  const named = path === undefined ? {} : { path };
+  if (READ_TOOLS.includes(event.tool)) return [{ ...FILE_READ, ...named }];
+  if (WRITE_TOOLS.includes(event.tool)) return [{ ...FILE_EDIT, ...named }];
+  return [];
 }
 
-/** Relative to the repository where the file is inside it, so no home directory is sent. */
+/**
+ * Relative to the repository where the file is inside it, so no home directory is sent.
+ */
 function shown(path: string, root: string | undefined, cwd: string | undefined): string {
   const base = root ?? cwd;
   if (base === undefined || !isAbsolute(path)) return path;
@@ -278,24 +282,27 @@ function shown(path: string, root: string | undefined, cwd: string | undefined):
   return inside.startsWith('..') ? path : inside;
 }
 
-function row(
-  event: SessionEvent,
-  agent: string,
-  at: string,
-  operation: string,
-  toolClass: (typeof TOOL_CLASS)[keyof typeof TOOL_CLASS],
-  target: string | undefined,
-): MemnoxEvent {
+interface FileRowInput {
+  event: SessionEvent;
+  agent: string;
+  at: string;
+  operation: string;
+  toolClass: ToolClass;
+  target: string | undefined;
+}
+
+function fileRow(input: FileRowInput): MemnoxEvent {
+  const { event, target } = input;
   return {
-    id: `evt_${randomUUID().replace(/-/g, '').slice(0, 20)}`,
+    id: newEventId(),
     schemaVersion: EVENT_SCHEMA_VERSION,
-    at,
+    at: input.at,
     sessionId: event.sessionId,
-    agent,
+    agent: input.agent,
     actorType: ACTOR_TYPE.AGENT,
     surface: EVENT_SURFACE.FILESYSTEM,
-    operation,
-    class: toolClass,
+    operation: input.operation,
+    class: input.toolClass,
     effect: DECISION_EFFECT.ALLOW,
     mode: ENFORCEMENT_MODE.ENFORCE,
     reason: `${event.tool ?? 'a tool'} ran in the agent`,

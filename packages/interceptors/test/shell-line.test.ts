@@ -9,7 +9,7 @@ import { ShellSeam, SHELL_EXIT_OK, SHELL_EXIT_WITHHELD } from '../src/shell-seam
 import {
   FALLBACK_SHELL,
   realShell,
-  shellInvocation,
+  parseShellInvocation,
   SHELL_MODE,
 } from '../src/shell-invocation';
 
@@ -89,7 +89,6 @@ policies:
     const seam = new ShellSeam({
       authorizer: new RealAuthorizer({
         gate: await LocalGate.fromFiles([file], { agentName: 'test' }),
-        log: () => {},
       }),
     });
 
@@ -106,27 +105,27 @@ describe('how a shell was invoked', () => {
   /* `memnox run` sets this binary as SHELL, and an agent's Bash tool then calls it
      `$SHELL -c "<line>"`. Reading argv as a command made that `spawn -c`. */
   it('reads the -c form every shell is called with', () => {
-    const invocation = shellInvocation(['-c', 'git push --force']);
+    const invocation = parseShellInvocation(['-c', 'git push --force']);
 
     expect(invocation.mode).toBe(SHELL_MODE.COMMAND);
     expect(invocation.line).toBe('git push --force');
   });
 
   it('reads a login or interactive shell asked to run one line', () => {
-    expect(shellInvocation(['-lc', 'echo hi']).line).toBe('echo hi');
-    expect(shellInvocation(['-lc', 'echo hi']).flags).toEqual([]);
+    expect(parseShellInvocation(['-lc', 'echo hi']).line).toBe('echo hi');
+    expect(parseShellInvocation(['-lc', 'echo hi']).flags).toEqual([]);
   });
 
   it('keeps the flags that came before -c, so the real shell starts as asked', () => {
-    expect(shellInvocation(['-l', '-c', 'echo hi']).flags).toEqual(['-l']);
+    expect(parseShellInvocation(['-l', '-c', 'echo hi']).flags).toEqual(['-l']);
   });
 
   it('still reads the argv form a person or a test drives it with', () => {
-    expect(shellInvocation(['--', 'npm', 'test']).argv).toEqual(['npm', 'test']);
+    expect(parseShellInvocation(['--', 'npm', 'test']).argv).toEqual(['npm', 'test']);
   });
 
   it('treats no command as a shell somebody wants to type into', () => {
-    expect(shellInvocation([]).mode).toBe(SHELL_MODE.INTERACTIVE);
+    expect(parseShellInvocation([]).mode).toBe(SHELL_MODE.INTERACTIVE);
   });
 });
 

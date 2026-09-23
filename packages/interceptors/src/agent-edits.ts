@@ -1,26 +1,24 @@
+import { patchEditsOf } from './codex-patch';
+import { COME_BACK, EDIT_HOOK_EVENT, editDenial, editOf } from './edit-hook';
 import {
-  COME_BACK,
-  editDenial,
-  editOf,
+  changeIn,
+  CODEX_PATCH_TOOL,
+  cwdOf,
+  EDIT_CHANGE,
+  fieldsOf,
+  firstText,
+  folderOf,
+  replacementsIn,
+  sessionOf,
   type EditChange,
   type EditIntent,
-  type Replacement,
-} from './edit-hook';
+  type HookFields,
+} from './hook-payload';
 
 /**
  * The writes in any coding agent's hook payload, and the refusal in that agent's words.
- *
- * Claude Code was the only editor whose file writes met a lease, so an edit Codex or
- * Cursor made on another computer was invisible to it, and theirs to it. Each of
- * the three runs a program before it writes and reads a refusal back, and each
- * spells both halves its own way: Claude Code and Codex share `PreToolUse` and
- * `hookSpecificOutput`, Codex sends its edits as one patch, and Cursor has its own
- * event names and answers with `permission` and `agent_message`.
- *
- * **Read by exact field, never by shape.** A payload this does not recognise is one
- * it says nothing about, and the write goes through. A field it cannot find narrows
- * nothing and the whole file is claimed, which is what a lease meant before any of
- * this.
+ * Read by exact field, never by shape: an unrecognised payload goes through, and a field
+ * that cannot be found claims the whole file.
  */
 
 /** The agents whose hooks this reads, by how the payload says which one it is. */
@@ -31,14 +29,24 @@ export const EDIT_HOST = {
   /** Gemini CLI: `BeforeTool`, and a refusal is `{ decision: "deny" }`. */
   GEMINI: 'gemini',
   /**
-   * Windsurf's Cascade: `pre_write_code`, and a refusal is exit code 2 with the
-   * reason on stderr, which Cascade shows the model. Nothing else it reads back.
+   * Windsurf's Cascade: `pre_write_code`, refused
+   * by exit code 2 with the reason on stderr.
    */
   WINDSURF: 'windsurf',
 } as const;
 
+export type EditHost = (typeof EDIT_HOST)[keyof typeof EDIT_HOST];
+
 /** Gemini CLI's own file tools, by the names its hooks report them under. */
 export const GEMINI_EDIT_TOOLS: readonly string[] = ['write_file', 'replace'];
+
+/** Gemini CLI's events, which name the turn after the agent rather than a stop. */
+export const GEMINI_EVENT = {
+  BEFORE_TOOL: 'BeforeTool',
+  AFTER_TOOL: 'AfterTool',
+  BEFORE_AGENT: 'BeforeAgent',
+  AFTER_AGENT: 'AfterAgent',
+} as const;
 
 /** Windsurf's events around a write, by the name each payload carries. */
 export const WINDSURF_EVENT = {
@@ -47,12 +55,11 @@ export const WINDSURF_EVENT = {
   POST_READ: 'post_read_code',
   POST_COMMAND: 'post_run_command',
   POST_MCP: 'post_mcp_tool_use',
+  /** Before a read, a command or an MCP call, where a rule can still refuse it. */
+  PRE_READ: 'pre_read_code',
+  PRE_COMMAND: 'pre_run_command',
+  PRE_MCP: 'pre_mcp_tool_use',
 } as const;
-
-export type EditHost = (typeof EDIT_HOST)[keyof typeof EDIT_HOST];
-
-/** Codex's patch tool, whose input is one patch string that may touch several files. */
-const CODEX_PATCH_TOOL = 'apply_patch';
 
 /** The tools Cursor names for a write, as its `preToolUse` reports them. */
 export const CURSOR_EDIT_TOOLS: readonly string[] = [
@@ -71,92 +78,103 @@ export const CURSOR_EVENT = {
   SESSION_END: 'sessionEnd',
   POST_TOOL_USE: 'postToolUse',
   STOP: 'stop',
+  /** Before a command, an MCP call or a read, where a rule can still refuse it. */
+  BEFORE_SHELL: 'beforeShellExecution',
+  BEFORE_MCP: 'beforeMCPExecution',
+  BEFORE_READ: 'beforeReadFile',
 } as const;
 
 /**
- * What a hook payload asks of the lease register.
- *
- * `before` is a write about to happen, which can be refused. `after` is one that
- * already happened, which is Cursor's `afterFileEdit`: it cannot be refused, and it
- * is still claimed, so the lines are held against every other machine and the
- * people are told of a collision with the lines it actually changed.
+ * `before` is a write that can be refused; `after` is
+ * already on disk and is claimed to report a collision.
  */
-export type AgentEdits =
-  | { moment: 'before'; host: EditHost; edits: EditIntent[] }
-  | { moment: 'after'; host: EditHost; edits: EditIntent[] };
+export const EDIT_MOMENT = { BEFORE: 'before', AFTER: 'after' } as const;
+
+export type EditMoment = (typeof EDIT_MOMENT)[keyof typeof EDIT_MOMENT];
+
+/** What a hook payload asks of the lease register. */
+export interface AgentEdits {
+  moment: EditMoment;
+  host: EditHost;
+  edits: EditIntent[];
+}
+
+/** Where Cursor and Gemini put a whole new file's content. */
+const CONTENT_KEYS: readonly string[] = ['content', 'contents'];
+
+/** Where Cursor names the file a write goes to. */
+const CURSOR_PATH_KEYS: readonly string[] = ['file_path', 'path', 'target_file'];
 
 /** Every write in this payload, or null where it is not one this reads. */
 export function agentEditsOf(payload: unknown): AgentEdits | null {
-  if (payload === null || typeof payload !== 'object') return null;
-  const hook = payload as Record<string, unknown>;
+  const hook = fieldsOf(payload);
+  if (hook === null) return null;
   const event = hook['hook_event_name'];
 
-  if (event === 'PreToolUse') {
-    if (hook['tool_name'] === CODEX_PATCH_TOOL) {
-      const edits = patchEditsOf(hook);
-      return edits === null
-        ? null
-        : { moment: 'before', host: EDIT_HOST.PRE_TOOL_USE, edits };
-    }
-    const one = editOf(payload);
-    return one === null
-      ? null
-      : { moment: 'before', host: EDIT_HOST.PRE_TOOL_USE, edits: [one] };
+  if (event === EDIT_HOOK_EVENT.PRE_TOOL_USE) {
+    return editsAt(EDIT_MOMENT.BEFORE, EDIT_HOST.PRE_TOOL_USE, preToolUseEdits(hook));
   }
-
   if (event === CURSOR_EVENT.PRE_TOOL_USE) {
-    const tool = hook['tool_name'];
-    if (typeof tool !== 'string' || !CURSOR_EDIT_TOOLS.includes(tool)) return null;
-    const one = cursorEdit(hook, hook['tool_input']);
-    return one === null
-      ? null
-      : { moment: 'before', host: EDIT_HOST.CURSOR, edits: [one] };
+    const edit = usesTool(hook, CURSOR_EDIT_TOOLS)
+      ? cursorEdit(hook, hook['tool_input'])
+      : null;
+    return editsAt(EDIT_MOMENT.BEFORE, EDIT_HOST.CURSOR, listOf(edit));
   }
-
-  if (event === 'BeforeTool') {
-    const tool = hook['tool_name'];
-    if (typeof tool !== 'string' || !GEMINI_EDIT_TOOLS.includes(tool)) return null;
-    const one = geminiEdit(hook);
-    return one === null
-      ? null
-      : { moment: 'before', host: EDIT_HOST.GEMINI, edits: [one] };
+  if (event === GEMINI_EVENT.BEFORE_TOOL) {
+    const edit = usesTool(hook, GEMINI_EDIT_TOOLS) ? geminiEdit(hook) : null;
+    return editsAt(EDIT_MOMENT.BEFORE, EDIT_HOST.GEMINI, listOf(edit));
   }
-
   const windsurf = hook['agent_action_name'];
   if (windsurf === WINDSURF_EVENT.PRE_WRITE || windsurf === WINDSURF_EVENT.POST_WRITE) {
-    const one = windsurfEdit(hook);
-    if (one === null) return null;
-    return {
-      moment: windsurf === WINDSURF_EVENT.PRE_WRITE ? 'before' : 'after',
-      host: EDIT_HOST.WINDSURF,
-      edits: [one],
-    };
+    const moment =
+      windsurf === WINDSURF_EVENT.PRE_WRITE ? EDIT_MOMENT.BEFORE : EDIT_MOMENT.AFTER;
+    return editsAt(moment, EDIT_HOST.WINDSURF, listOf(windsurfEdit(hook)));
   }
-
   if (event === CURSOR_EVENT.AFTER_FILE_EDIT) {
-    const one = cursorEdit(hook, hook);
-    return one === null
-      ? null
-      : { moment: 'after', host: EDIT_HOST.CURSOR, edits: [one] };
+    return editsAt(EDIT_MOMENT.AFTER, EDIT_HOST.CURSOR, listOf(cursorEdit(hook, hook)));
   }
   return null;
 }
 
+function editsAt(
+  moment: EditMoment,
+  host: EditHost,
+  edits: EditIntent[] | null,
+): AgentEdits | null {
+  return edits === null ? null : { moment, host, edits };
+}
+
+function listOf(edit: EditIntent | null): EditIntent[] | null {
+  return edit === null ? null : [edit];
+}
+
+function usesTool(hook: HookFields, tools: readonly string[]): boolean {
+  const tool = hook['tool_name'];
+  return typeof tool === 'string' && tools.includes(tool);
+}
+
+/**
+ * Claude Code's write, or every file in Codex's patch, since both arrive as `PreToolUse`.
+ */
+function preToolUseEdits(hook: HookFields): EditIntent[] | null {
+  if (hook['tool_name'] === CODEX_PATCH_TOOL) return patchEditsOf(hook);
+  return listOf(editOf(hook));
+}
+
 /** The session that ended, in whichever agent's words, or null for any other payload. */
 export function endedSessionOf(payload: unknown): string | null {
-  if (payload === null || typeof payload !== 'object') return null;
-  const hook = payload as Record<string, unknown>;
+  const hook = fieldsOf(payload);
+  if (hook === null) return null;
   const event = hook['hook_event_name'];
-  if (event !== 'SessionEnd' && event !== CURSOR_EVENT.SESSION_END) return null;
+  if (event !== EDIT_HOOK_EVENT.SESSION_END && event !== CURSOR_EVENT.SESSION_END)
+    return null;
   const session = sessionOf(hook);
   return session === '' ? null : session;
 }
 
 /**
- * The refusal, in the words the host reads back.
- *
- * Cursor shows `user_message` to the person and hands `agent_message` to the model;
- * the other two read one reason out of `hookSpecificOutput`.
+ * The refusal, in the words the host reads back:
+ * Cursor splits the person's line from the model's.
  */
 export function agentDenial(host: EditHost, reason: string): string {
   if (host === EDIT_HOST.GEMINI) {
@@ -171,258 +189,63 @@ export function agentDenial(host: EditHost, reason: string): string {
   });
 }
 
-/** A Gemini CLI write: `write_file` with its content, or `replace` with its text. */
-function geminiEdit(hook: Record<string, unknown>): EditIntent | null {
-  const input = hook['tool_input'];
-  if (input === null || typeof input !== 'object') return null;
-  const fields = input as Record<string, unknown>;
-  const session = sessionOf(hook);
-  const path = fields['file_path'];
-  if (session === '' || typeof path !== 'string' || path === '') return null;
-  const change = cursorChange(fields);
-  const cwd = cwdOf(hook);
+function intentOf(
+  path: string,
+  sessionId: string,
+  cwd: string | undefined,
+  change: EditChange | null,
+): EditIntent {
   return {
     path,
-    sessionId: session,
+    sessionId,
     ...(cwd === undefined ? {} : { cwd }),
     ...(change === null ? {} : { change }),
   };
 }
 
+/** A Gemini CLI write: `write_file` with its content, or `replace` with its text. */
+function geminiEdit(hook: HookFields): EditIntent | null {
+  const fields = fieldsOf(hook['tool_input']);
+  if (fields === null) return null;
+  const session = sessionOf(hook);
+  const path = firstText(fields, ['file_path']);
+  if (session === '' || path === undefined) return null;
+  return intentOf(path, session, cwdOf(hook), changeIn(fields, CONTENT_KEYS));
+}
+
 /**
- * A Windsurf write, with its edits. Windsurf names no working directory, so the
- * file's own folder stands in: the repository is found from there, and the path is
- * absolute anyway.
+ * A Windsurf write. Windsurf names no working
+ * directory, so the file's own folder stands in.
  */
-function windsurfEdit(hook: Record<string, unknown>): EditIntent | null {
-  const info = hook['tool_info'];
-  if (info === null || typeof info !== 'object') return null;
-  const fields = info as Record<string, unknown>;
-  const session = hook['trajectory_id'];
-  const path = fields['file_path'];
-  if (typeof session !== 'string' || session === '') return null;
-  if (typeof path !== 'string' || path === '') return null;
+function windsurfEdit(hook: HookFields): EditIntent | null {
+  const fields = fieldsOf(hook['tool_info']);
+  if (fields === null) return null;
+  const session = firstText(hook, ['trajectory_id']);
+  const path = firstText(fields, ['file_path']);
+  if (session === undefined || path === undefined) return null;
   const replacements = replacementsIn(fields);
-  const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : undefined;
-  return {
-    path,
-    sessionId: session,
-    ...(folder === undefined || folder === '' ? {} : { cwd: folder }),
-    ...(replacements === null ? {} : { change: { kind: 'edit', replacements } }),
-  };
-}
-
-/** Cursor calls its session a conversation everywhere but the event that ends it. */
-function sessionOf(hook: Record<string, unknown>): string {
-  for (const key of ['session_id', 'conversation_id']) {
-    const value = hook[key];
-    if (typeof value === 'string' && value.trim() !== '') return value;
-  }
-  return '';
-}
-
-/** Where the agent is working: its own `cwd`, or the first folder Cursor has open. */
-function cwdOf(hook: Record<string, unknown>): string | undefined {
-  const cwd = hook['cwd'];
-  if (typeof cwd === 'string' && cwd !== '') return cwd;
-  const roots = hook['workspace_roots'];
-  if (Array.isArray(roots) && typeof roots[0] === 'string' && roots[0] !== '')
-    return roots[0];
-  return undefined;
+  const change: EditChange | null =
+    replacements === null ? null : { kind: EDIT_CHANGE.EDIT, replacements };
+  return intentOf(path, session, folderOf(path), change);
 }
 
 /** A Cursor write, from `preToolUse`'s input or from `afterFileEdit` itself. */
-function cursorEdit(hook: Record<string, unknown>, input: unknown): EditIntent | null {
-  if (input === null || typeof input !== 'object') return null;
-  const fields = input as Record<string, unknown>;
+function cursorEdit(hook: HookFields, input: unknown): EditIntent | null {
+  const fields = fieldsOf(input);
+  if (fields === null) return null;
   const session = sessionOf(hook);
-  if (session === '') return null;
-  let path: unknown;
-  for (const key of ['file_path', 'path', 'target_file']) {
-    if (typeof fields[key] === 'string' && fields[key] !== '') {
-      path = fields[key];
-      break;
-    }
-  }
-  if (typeof path !== 'string') return null;
-
-  const change = cursorChange(fields);
-  const cwd = cwdOf(hook);
-  return {
-    path,
-    sessionId: session,
-    ...(cwd === undefined ? {} : { cwd }),
-    ...(change === null ? {} : { change }),
-  };
-}
-
-function cursorChange(fields: Record<string, unknown>): EditChange | null {
-  for (const key of ['content', 'contents']) {
-    const content = fields[key];
-    if (typeof content === 'string') return { kind: 'write', content };
-  }
-  const replacements = replacementsIn(fields);
-  return replacements === null ? null : { kind: 'edit', replacements };
-}
-
-function replacementsIn(fields: Record<string, unknown>): Replacement[] | null {
-  const single = replacement(fields);
-  if (single !== null) return [single];
-  const edits = fields['edits'];
-  if (!Array.isArray(edits) || edits.length === 0) return null;
-  const found: Replacement[] = [];
-  for (const each of edits) {
-    if (each === null || typeof each !== 'object') return null;
-    const read = replacement(each as Record<string, unknown>);
-    if (read === null) return null;
-    found.push(read);
-  }
-  return found;
-}
-
-function replacement(fields: Record<string, unknown>): Replacement | null {
-  const from = fields['old_string'];
-  const to = fields['new_string'];
-  if (typeof from !== 'string' || typeof to !== 'string' || from === '') return null;
-  return { from, to, all: fields['replace_all'] === true };
-}
-
-/** Codex's patch markers, as its `apply_patch` tool writes them. */
-const PATCH = {
-  UPDATE: '*** Update File: ',
-  ADD: '*** Add File: ',
-  DELETE: '*** Delete File: ',
-  MOVE: '*** Move to: ',
-  END_OF_FILE: '*** End of File',
-  HUNK: '@@',
-  MARKER: '***',
-} as const;
-
-/** Every file a Codex patch writes, each with the change it makes to it. */
-function patchEditsOf(hook: Record<string, unknown>): EditIntent[] | null {
-  const session = sessionOf(hook);
-  const input = hook['tool_input'];
-  if (session === '' || input === null || typeof input !== 'object') return null;
-  const patch = (input as Record<string, unknown>)['command'];
-  if (typeof patch !== 'string') return null;
-  const cwd = cwdOf(hook);
-  const files = parsePatch(patch);
-  if (files.length === 0) return null;
-  return files.map((file) => ({
-    path: file.path,
-    sessionId: session,
-    ...(cwd === undefined ? {} : { cwd }),
-    ...(file.change === undefined ? {} : { change: file.change }),
-  }));
-}
-
-interface PatchedFile {
-  path: string;
-  change?: EditChange;
+  const path = firstText(fields, CURSOR_PATH_KEYS);
+  if (session === '' || path === undefined) return null;
+  return intentOf(path, session, cwdOf(hook), changeIn(fields, CONTENT_KEYS));
 }
 
 /**
- * The files in a Codex patch and what each hunk replaces.
- *
- * A hunk's context and removed lines are the text it replaces, and its context and
- * added lines are what replaces it, which is exactly a replacement the edit tools
- * already describe. A hunk that adds with no context has nothing to find its place
- * by, so that file is claimed whole. A deleted file is the whole file too.
- */
-export function parsePatch(patch: string): PatchedFile[] {
-  const files: PatchedFile[] = [];
-  let current: {
-    path: string;
-    added: string[] | null;
-    hunks: Replacement[];
-    whole: boolean;
-  } | null = null;
-  let old: string[] = [];
-  let next: string[] = [];
-
-  const closeHunk = (): void => {
-    if (current === null || current.added !== null) return;
-    if (old.length > 0 || next.length > 0) {
-      if (old.length === 0) current.whole = true;
-      else current.hunks.push({ from: old.join('\n'), to: next.join('\n'), all: false });
-    }
-    old = [];
-    next = [];
-  };
-  const closeFile = (): void => {
-    closeHunk();
-    if (current === null) return;
-    if (current.added !== null) {
-      files.push({
-        path: current.path,
-        change: { kind: 'write', content: `${current.added.join('\n')}\n` },
-      });
-    } else if (current.whole || current.hunks.length === 0) {
-      files.push({ path: current.path });
-    } else {
-      files.push({
-        path: current.path,
-        change: { kind: 'edit', replacements: current.hunks },
-      });
-    }
-    current = null;
-  };
-
-  for (const line of patch.split('\n')) {
-    if (line.startsWith(PATCH.UPDATE)) {
-      closeFile();
-      current = {
-        path: line.slice(PATCH.UPDATE.length).trim(),
-        added: null,
-        hunks: [],
-        whole: false,
-      };
-    } else if (line.startsWith(PATCH.ADD)) {
-      closeFile();
-      current = {
-        path: line.slice(PATCH.ADD.length).trim(),
-        added: [],
-        hunks: [],
-        whole: false,
-      };
-    } else if (line.startsWith(PATCH.DELETE)) {
-      closeFile();
-      files.push({ path: line.slice(PATCH.DELETE.length).trim() });
-    } else if (
-      current === null ||
-      line.startsWith(PATCH.MOVE) ||
-      line === PATCH.END_OF_FILE
-    ) {
-      continue;
-    } else if (line.startsWith(PATCH.HUNK)) {
-      closeHunk();
-    } else if (line.startsWith(PATCH.MARKER)) {
-      closeFile();
-    } else if (current.added !== null) {
-      if (line.startsWith('+')) current.added.push(line.slice(1));
-    } else if (line.startsWith('-')) {
-      old.push(line.slice(1));
-    } else if (line.startsWith('+')) {
-      next.push(line.slice(1));
-    } else if (line.startsWith(' ')) {
-      old.push(line.slice(1));
-      next.push(line.slice(1));
-    }
-  }
-  closeFile();
-  return files.filter((file) => file.path !== '');
-}
-
-/**
- * The file as it was before a change that has already been written.
- *
- * Cursor's `afterFileEdit` reports its edits once they are on disk, so the lines
- * they changed are found by taking them back out: each replacement undone, last
- * first. Null where the new text is not in the file, which is a file something else
- * changed since.
+ * The file as it was before a change already written, found by undoing each replacement
+ * last first, because Cursor reports its edits once they are on disk. Null where the new
+ * text is not in the file, which means something else changed it.
  */
 export function beforeEdit(after: string, change: EditChange): string | null {
-  if (change.kind === 'write') return null;
+  if (change.kind === EDIT_CHANGE.WRITE) return null;
   let text = after;
   for (const each of [...change.replacements].reverse()) {
     if (each.to === '' || !text.includes(each.to)) return null;

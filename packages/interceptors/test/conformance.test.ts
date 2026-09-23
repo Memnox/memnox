@@ -69,7 +69,6 @@ describe('the conformance matrix', () => {
           gate: gateFor(action, effect, ENFORCEMENT_MODE.ENFORCE),
           // A person is present and says yes, so ASK resolves to allowed.
           hold: new HoldService({ ask: async () => ({ answer: HOLD_ANSWER.ONCE }) }),
-          log: () => {},
         });
 
         expect(outcome.allowed).toBe(effect !== DECISION_EFFECT.DENY);
@@ -86,7 +85,6 @@ describe('the conformance matrix', () => {
 
       const outcome = await ruleOnCommand(binary as string, args, {
         gate: gateFor(action, DECISION_EFFECT.ASK, ENFORCEMENT_MODE.ENFORCE),
-        log: () => {},
       });
       expect(outcome.allowed).toBe(false);
     }
@@ -95,7 +93,7 @@ describe('the conformance matrix', () => {
   it('lets everything through when no rules are configured at all', async () => {
     for (const argv of Object.values(COMMANDS)) {
       const [binary, ...args] = argv;
-      const outcome = await ruleOnCommand(binary as string, args, { log: () => {} });
+      const outcome = await ruleOnCommand(binary as string, args, {});
       expect(outcome.allowed).toBe(true);
     }
   });

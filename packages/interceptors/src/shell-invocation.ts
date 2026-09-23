@@ -2,8 +2,7 @@ import { basename } from 'node:path';
 
 /**
  * What a shell was asked to do. `memnox run` sets this binary as `SHELL`, and an agent's
- * Bash tool then calls it the way it calls any shell — `$SHELL -c "<line>"`. Reading
- * argv as a command to spawn made that `spawn -c` and every command failed with ENOENT.
+ * Bash tool then calls it the way it calls any shell, as `$SHELL -c "<line>"`.
  */
 
 export const SHELL_MODE = {
@@ -28,11 +27,11 @@ export interface ShellInvocation {
 }
 
 /** `-c`, and the combined forms a login or interactive shell arrives as: `-lc`, `-ic`. */
-function commandFlag(argument: string): boolean {
+function isCommandFlag(argument: string): boolean {
   return /^-[a-z]*c$/.test(argument);
 }
 
-export function shellInvocation(argv: readonly string[]): ShellInvocation {
+export function parseShellInvocation(argv: readonly string[]): ShellInvocation {
   const separator = argv.indexOf('--');
   if (separator !== -1) {
     return { mode: SHELL_MODE.ARGV, argv: [...argv.slice(separator + 1)], flags: [] };
@@ -40,7 +39,7 @@ export function shellInvocation(argv: readonly string[]): ShellInvocation {
 
   const flags: string[] = [];
   for (const [index, argument] of argv.entries()) {
-    if (commandFlag(argument)) {
+    if (isCommandFlag(argument)) {
       const line = argv[index + 1];
       if (line === undefined) break;
       return { mode: SHELL_MODE.COMMAND, line, flags };
@@ -58,26 +57,24 @@ export function shellInvocation(argv: readonly string[]): ShellInvocation {
 
 export const REAL_SHELL_VAR = 'MEMNOX_REAL_SHELL';
 
-/** The last shell that is not this one; `/bin/sh` exists on every machine this runs on. */
+/**
+ * The last shell that is not this one; `/bin/sh` exists on every machine this runs on.
+ */
 export const FALLBACK_SHELL = '/bin/sh';
 
 /**
- * Never this binary. `memnox run` overwrites `SHELL`, so reading `SHELL` back here
- * would make the wrapper exec itself for ever — the same shape as the interceptor
- * fork bomb, and just as invisible until a terminal stops answering.
+ * Never this binary: `memnox run` overwrites `SHELL`,
+ * so reading it back would exec the wrapper for ever.
  */
 export function realShell(env: NodeJS.ProcessEnv, self: string): string {
-  const named = env[REAL_SHELL_VAR];
-  if (named !== undefined && named !== '' && basename(named) !== basename(self)) {
-    return named;
-  }
-  const inherited = env['SHELL'];
-  if (
-    inherited !== undefined &&
-    inherited !== '' &&
-    basename(inherited) !== basename(self)
-  ) {
-    return inherited;
+  for (const candidate of [env[REAL_SHELL_VAR], env['SHELL']]) {
+    if (isOtherShell(candidate, self)) return candidate;
   }
   return FALLBACK_SHELL;
+}
+
+function isOtherShell(candidate: string | undefined, self: string): candidate is string {
+  return (
+    candidate !== undefined && candidate !== '' && basename(candidate) !== basename(self)
+  );
 }

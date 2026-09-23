@@ -1,19 +1,35 @@
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
 import { interceptableBinaries } from '@memnox/core';
+
 import { interceptorDirFor, realPath, resolveReal } from './interceptor';
 
 /**
- * A tiny shell script per binary rather than a symlink, because a symlink loses the
- * name it was invoked as on some platforms, and the name is how one binary serves ten
- * interceptors. Each script is two lines and states what it is.
+ * Installing and removing the per-binary shims
+ * that put the interceptor in front of a CLI.
+ */
+
+/**
+ * Readable and runnable by this user only, since
+ * every shim stands in front of a real binary.
+ */
+const OWNER_ONLY = 0o700;
+
+/**
+ * A shell script per binary rather than a symlink, which loses the name it was run as.
+ * It steps aside once Memnox is gone, or removing the package broke git and npm.
  */
 function scriptFor(binary: string, interceptBinary: string): string {
   return [
     '#!/bin/sh',
     `# Memnox interceptor for ${binary}. Remove this file, or run "memnox uninstall", to undo.`,
-    `exec "${interceptBinary}" "${binary}" "$@"`,
+    `if command -v "${interceptBinary}" >/dev/null 2>&1; then exec "${interceptBinary}" "${binary}" "$@"; fi`,
+    '# Memnox is not installed, so run the real one with this directory off PATH.',
+    'here=$(cd "$(dirname "$0")" && pwd)',
+    `PATH=$(printf '%s\\n' "$PATH" | tr ':' '\\n' | grep -vxF "$here" | paste -sd: -)`,
+    `exec "${binary}" "$@"`,
     '',
   ].join('\n');
 }
@@ -21,7 +37,9 @@ function scriptFor(binary: string, interceptBinary: string): string {
 export interface InterceptorInstallReport {
   directory: string;
   installed: string[];
-  /** Known to the rules, absent from this machine. Named so the list is never a mystery. */
+  /**
+   * Known to the rules, absent from this machine. Named so the list is never a mystery.
+   */
   absent: string[];
   /** What to add to PATH, printed rather than written into somebody's shell profile. */
   pathLine: string;
@@ -34,7 +52,7 @@ export interface InstallSeams {
 
 /**
  * Only binaries this machine actually has. A shim for an absent `aws` would answer
- * `command -v aws` and make every script that checks for it take the wrong branch —
+ * `command -v aws` and make every script that checks for it take the wrong branch, and
  * a governance tool that breaks a build is a governance tool somebody removes.
  */
 export async function installInterceptors(
@@ -43,7 +61,7 @@ export async function installInterceptors(
   seams: InstallSeams = {},
 ): Promise<InterceptorInstallReport> {
   const directory = interceptorDirFor(home);
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await mkdir(directory, { recursive: true, mode: OWNER_ONLY });
   // Our own directory removed, or a re-install would see its own shims and call the
   // binary present when the machine never had it.
   const path = realPath(seams.path ?? process.env['PATH'] ?? '', home);
@@ -59,9 +77,9 @@ export async function installInterceptors(
     const scriptPath = join(directory, binary);
     await writeFile(scriptPath, scriptFor(binary, interceptBinary), {
       encoding: 'utf8',
-      mode: 0o700,
+      mode: OWNER_ONLY,
     });
-    await chmod(scriptPath, 0o700);
+    await chmod(scriptPath, OWNER_ONLY);
     installed.push(binary);
   }
 
@@ -73,7 +91,9 @@ export async function installInterceptors(
   };
 }
 
-/** Removes every interceptor and the directory, so a machine goes back exactly as it was. */
+/**
+ * Removes every interceptor and the directory, so a machine goes back exactly as it was.
+ */
 export async function removeInterceptors(home: string): Promise<string[]> {
   const directory = interceptorDirFor(home);
   let names: string[];

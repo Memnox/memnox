@@ -10,8 +10,8 @@ import {
   editAsk,
   editDenial,
   editOf,
-  sessionEndOf,
 } from '../src/edit-hook';
+import { endedSessionOf } from '../src/agent-edits';
 import type { SeamLeases } from '../src/seam-runtime';
 
 const ROOT = '/work/repo';
@@ -67,8 +67,10 @@ describe('reading what an editor is about to write', () => {
   });
 
   it('knows a session ending apart from a write', () => {
-    expect(sessionEndOf({ hook_event_name: 'SessionEnd', session_id: 's1' })).toBe('s1');
-    expect(sessionEndOf(edit('s1'))).toBeNull();
+    expect(endedSessionOf({ hook_event_name: 'SessionEnd', session_id: 's1' })).toBe(
+      's1',
+    );
+    expect(endedSessionOf(edit('s1'))).toBeNull();
   });
 
   it('refuses in the shape the host reads, naming why', () => {
@@ -100,8 +102,8 @@ describe('two editor sessions on one file', () => {
     expect(await claimEdit(parsedFirst, leasesFor(registry, first))).toBeNull();
     const refused = await claimEdit(parsedSecond, leasesFor(registry, second));
 
-    expect(refused).toContain('claude-code');
-    expect(refused).toContain('src/billing/invoice.ts');
+    expect(refused?.reason).toContain('claude-code');
+    expect(refused?.reason).toContain('src/billing/invoice.ts');
   });
 
   it('lets two sessions write two files in one folder', async () => {
@@ -123,11 +125,13 @@ describe('two editor sessions on one file', () => {
     const registry = new LeaseRegistry(await home(), () => true);
     const shell = { agent: 'cursor', sessionId: 's0', pid: 100 };
     const editor = { agent: 'claude-code', sessionId: 's1', pid: 101 };
-    await registry.take('src/billing', shell, NOW);
+    await registry.take({ path: 'src/billing', holder: shell }, NOW);
     const parsed = editOf(edit('s1'));
     if (parsed === null) throw new Error('unread');
 
-    expect(await claimEdit(parsed, leasesFor(registry, editor))).toContain('cursor');
+    expect((await claimEdit(parsed, leasesFor(registry, editor)))?.reason).toContain(
+      'cursor',
+    );
   });
 
   it('lets one session keep writing the file it already holds', async () => {

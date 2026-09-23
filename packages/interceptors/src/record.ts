@@ -1,53 +1,67 @@
-import { randomUUID } from 'node:crypto';
 import {
   ACTOR_TYPE,
   ENFORCEMENT_MODE,
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
+  newEventId,
   TOOL_CLASS,
+  UNNAMED_AGENT,
+  UNNAMED_SESSION,
   type DecisionEffect,
+  type EventRuleRef,
   type EventSink,
   type MemnoxEvent,
   type ToolClass,
 } from '@memnox/core';
+
 import type { InterceptOutcome } from './interceptor';
 
 /**
- * The row behind `why`, `timeline`, `trace`, `collisions` and every export. Without it
- * the ledger has readers and no writer, and every one of those commands answers "nothing
- * recorded yet" about a machine that has been governing commands all day.
+ * The row behind `why`, `timeline`, `trace`, `collisions` and every export, written by
+ * the command seams once a verdict has been reached.
  */
 
-export interface RecordInput {
+/**
+ * The bundle and the freeze in force when the
+ * command arrived, so a verdict can be replayed.
+ */
+export interface Provenance {
+  bundleHash?: string;
+  conditionsInForce?: readonly string[];
+}
+
+export interface RecordInput extends Provenance {
   outcome: InterceptOutcome;
   effect: DecisionEffect;
   reason: string;
   at: string;
   sessionId?: string;
   agent?: string;
-  rule?: { name: string; layer: string; file: string; line?: number };
+  rule?: EventRuleRef;
   policyHash?: string;
-  bundleHash?: string;
-  conditionsInForce?: readonly string[];
   exitCode?: number;
   durationMs?: number;
 }
 
 const CLASSES: readonly string[] = Object.values(TOOL_CLASS);
 
-/** A class the ledger does not know is recorded as unknown, never as a safe one. */
-function classOf(value: string): ToolClass {
-  return (CLASSES.includes(value) ? value : TOOL_CLASS.UNKNOWN) as ToolClass;
+function isToolClass(value: string): value is ToolClass {
+  return CLASSES.includes(value);
 }
 
-export function eventFor(input: RecordInput): MemnoxEvent {
+/** A class the ledger does not know is recorded as unknown, never as a safe one. */
+function classOf(value: string): ToolClass {
+  return isToolClass(value) ? value : TOOL_CLASS.UNKNOWN;
+}
+
+export function commandEventFor(input: RecordInput): MemnoxEvent {
   const { outcome } = input;
   return {
-    id: `evt_${randomUUID().replace(/-/g, '').slice(0, 20)}`,
+    id: newEventId(),
     schemaVersion: EVENT_SCHEMA_VERSION,
     at: input.at,
-    sessionId: input.sessionId ?? 'ses_local',
-    agent: input.agent ?? 'an agent',
+    sessionId: input.sessionId ?? UNNAMED_SESSION,
+    agent: input.agent ?? UNNAMED_AGENT,
     actorType: ACTOR_TYPE.AGENT,
     surface: outcome.binary === 'git' ? EVENT_SURFACE.GIT : EVENT_SURFACE.SHELL,
     operation: outcome.action,
@@ -58,6 +72,12 @@ export function eventFor(input: RecordInput): MemnoxEvent {
     // A digest, never the arguments: an argument list is where a secret would be.
     argsDigest: outcome.argsDigest,
     ...(outcome.target === undefined ? {} : { target: outcome.target }),
+    ...optionalFields(input),
+  };
+}
+
+function optionalFields(input: RecordInput): Partial<MemnoxEvent> {
+  return {
     ...(input.rule === undefined ? {} : { rule: input.rule }),
     ...(input.policyHash === undefined ? {} : { policyHash: input.policyHash }),
     ...(input.bundleHash === undefined ? {} : { bundleHash: input.bundleHash }),
@@ -70,14 +90,13 @@ export function eventFor(input: RecordInput): MemnoxEvent {
 }
 
 /**
- * Best effort, and silent about failing. A ledger that cannot be written is a lost row;
- * a ledger that stops the command is a tool somebody uninstalls. The gate has already
- * decided by the time this runs, so nothing here can change the answer.
+ * Best effort, and silent about failing: a ledger that stops the command is a tool
+ * somebody uninstalls, and the gate has already decided by the time this runs.
  */
 export async function record(sink: EventSink | null, input: RecordInput): Promise<void> {
   if (sink === null) return;
   try {
-    await sink.append(eventFor(input));
+    await sink.append(commandEventFor(input));
   } catch {
     // Nothing to do about it here, and nothing worth interrupting the agent for.
   }

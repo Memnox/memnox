@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { installClaudeHook } from '../src/protect/claude-hook';
 import {
+  holdsOwnPolicyHook,
   installCursorHook,
   installGeminiHook,
   installWindsurfHook,
@@ -58,8 +60,13 @@ describe('Gemini CLI and Windsurf settings', () => {
       hooks: Record<string, { matcher?: string; hooks: { command: string }[] }[]>;
     };
     expect(installed.theme).toBe('dark');
-    expect(installed.hooks['BeforeTool']?.[0]?.matcher).toBe('write_file|replace');
+    // Every tool, since a read and a command are ruled on as well as a write.
+    expect(installed.hooks['BeforeTool']?.[0]?.matcher).toBe('.*');
+    expect(installed.hooks['BeforeTool']?.[0]?.hooks[0]?.command).toContain('--policy');
     expect(installed.hooks['AfterAgent']?.[0]?.hooks[0]?.command).toContain(
+      '--agent gemini-cli',
+    );
+    expect(installed.hooks['SessionStart']?.[0]?.hooks[0]?.command).toContain(
       '--agent gemini-cli',
     );
 
@@ -82,9 +89,27 @@ describe('Gemini CLI and Windsurf settings', () => {
       'post_read_code',
       'post_run_command',
       'post_mcp_tool_use',
+      'pre_read_code',
+      'pre_run_command',
+      'pre_mcp_tool_use',
     ]);
     expect(installed.hooks['pre_write_code']?.[0]?.command).toContain('--agent windsurf');
 
     expect(await removeWindsurfHook(home)).toBe(true);
+  });
+});
+
+/* explain counts an agent's own hook as a seam, so it has to find the one setup wrote
+   in that agent's own file and nowhere else. */
+describe("an agent's own policy hook, as explain reads it", () => {
+  it("finds it in Claude Code's settings and not for an agent without one", async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-own-hook-'));
+    await mkdir(join(home, '.claude'));
+
+    expect(await holdsOwnPolicyHook(home, 'claude-code')).toBe(false);
+    expect(await installClaudeHook(home)).toBe(true);
+    expect(await holdsOwnPolicyHook(home, 'claude-code')).toBe(true);
+    expect(await holdsOwnPolicyHook(home, 'cursor')).toBe(false);
+    expect(await holdsOwnPolicyHook(home, 'hermes')).toBe(false);
   });
 });

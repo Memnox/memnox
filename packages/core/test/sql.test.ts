@@ -97,6 +97,16 @@ describe('which database it is pointed at', () => {
       nonLocalHost([], { DATABASE_URL: 'postgres://u:p@db.prod.internal/app' }),
     ).toBe('db.prod.internal');
     expect(nonLocalHost(['-h', 'db.prod.internal'], {})).toBe('db.prod.internal');
+    expect(nonLocalHost(['--host', 'db.prod.internal'], {})).toBe('db.prod.internal');
+    expect(nonLocalHost(['--host=db.prod.internal'], {})).toBe('db.prod.internal');
+  });
+
+  it('reads --host ahead of the environment, because the flag is what the client uses', () => {
+    const env = { DATABASE_URL: 'postgres://u:p@localhost/app' };
+    expect(nonLocalHost(['--host', 'db.prod.internal', 'app'], env)).toBe(
+      'db.prod.internal',
+    );
+    expect(nonLocalHost(['app'], env)).toBeNull();
   });
 
   it('never carries the password out of the URL', () => {

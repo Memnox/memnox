@@ -1,6 +1,8 @@
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DECISION_EFFECT, HOLD_ANSWER, HoldService, LocalGate } from '@memnox/core';
 import {
@@ -15,7 +17,6 @@ import {
 } from '../src/index';
 
 const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-int-'));
-const log = (): void => {};
 
 function gate(effect: string, action: string): LocalGate {
   return new LocalGate(
@@ -36,7 +37,7 @@ function gate(effect: string, action: string): LocalGate {
 
 describe('the interceptor runtime', () => {
   it('allows anything no rule covers, and still names what it was', async () => {
-    const outcome = await ruleOnCommand('git', ['status'], { log });
+    const outcome = await ruleOnCommand('git', ['status'], {});
     expect(outcome.allowed).toBe(true);
     // From the verb table, so what `memnox scan` promised is what happens here.
     expect(outcome.action).toBe('git.status');
@@ -47,7 +48,6 @@ describe('the interceptor runtime', () => {
     // Precise actions, so a rule about force-pushing names force-pushing.
     const outcome = await ruleOnCommand('git', ['push', '--force'], {
       gate: gate(DECISION_EFFECT.DENY, 'git.push-force'),
-      log,
     });
     expect(outcome.allowed).toBe(false);
     expect(outcome.message).toContain('history is shared');
@@ -61,7 +61,6 @@ describe('the interceptor runtime', () => {
     const outcome = await ruleOnCommand('rm', ['-rf', 'build'], {
       gate: gate(DECISION_EFFECT.ASK, 'filesystem.delete'),
       hold,
-      log,
     });
     expect(outcome.allowed).toBe(true);
   });
@@ -69,7 +68,6 @@ describe('the interceptor runtime', () => {
   it('denies an ASK when nobody can be asked, and says how to fix that', async () => {
     const outcome = await ruleOnCommand('rm', ['-rf', 'build'], {
       gate: gate(DECISION_EFFECT.ASK, 'filesystem.delete'),
-      log,
     });
     expect(outcome.allowed).toBe(false);
     expect(outcome.message).toContain('memnox run');
@@ -79,7 +77,7 @@ describe('the interceptor runtime', () => {
     const outcome = await ruleOnCommand(
       'curl',
       ['-H', 'Authorization: Bearer sekret', 'https://x.example'],
-      { log },
+      {},
     );
     expect(outcome.argsDigest).toHaveLength(16);
     expect(JSON.stringify({ digest: outcome.argsDigest })).not.toContain('sekret');
@@ -122,6 +120,11 @@ describe('finding the real binary', () => {
     expect(realPath(path, '/home/dev')).toBe('/usr/bin:/bin');
   });
 
+  it("drops another home's interceptors too, so a borrowed HOME cannot loop", () => {
+    const path = '/Users/me/.memnox/bin/:/usr/bin';
+    expect(realPath(path, '/tmp/test-home')).toBe('/usr/bin');
+  });
+
   it('finds the first match along what is left', () => {
     const exists = (p: string): boolean => p === '/usr/bin/git';
     expect(resolveReal('git', '/nope:/usr/bin', exists)).toBe('/usr/bin/git');
@@ -153,6 +156,22 @@ describe('installing the interceptors', () => {
     expect(script).toContain('exec "/usr/local/bin/memnox-intercept" "git" "$@"');
     // Somebody reading the file has to be told how to undo it.
     expect(script).toContain('memnox uninstall');
+  });
+
+  it('runs the real binary once Memnox itself is gone', async () => {
+    const dir = await home();
+    await installInterceptors(dir, 'memnox-intercept-not-installed');
+    const real = await home();
+    await writeFile(join(real, 'git'), '#!/bin/sh\necho "real git $1"\n', {
+      mode: 0o755,
+    });
+
+    const { stdout } = await promisify(execFile)(
+      join(interceptorDirFor(dir), 'git'),
+      ['status'],
+      { env: { PATH: [interceptorDirFor(dir), real, '/usr/bin', '/bin'].join(':') } },
+    );
+    expect(stdout.trim()).toBe('real git status');
   });
 
   it('removes every one, so the machine goes back as it was', async () => {

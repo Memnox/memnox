@@ -93,7 +93,10 @@ describe('taking a lease where the write happens', () => {
   it('withholds the command when another agent holds the path, and names them', async () => {
     const where = await home();
     const registry = new LeaseRegistry(where, () => true);
-    await registry.take('src/billing', cursor, NOW, 60, 'wrote invoice.ts');
+    await registry.take(
+      { path: 'src/billing', holder: cursor, minutes: 60, activity: 'wrote invoice.ts' },
+      NOW,
+    );
 
     const outcome = await seamFor(registry, claude).gate([
       'rm',
@@ -109,7 +112,10 @@ describe('taking a lease where the write happens', () => {
   it('runs the command once the holder is overruled, on the record', async () => {
     const where = await home();
     const registry = new LeaseRegistry(where, () => true);
-    await registry.take('src/billing', cursor, NOW, 60, 'wrote invoice.ts');
+    await registry.take(
+      { path: 'src/billing', holder: cursor, minutes: 60, activity: 'wrote invoice.ts' },
+      NOW,
+    );
 
     const outcome = await seamFor(registry, claude, {
       answer: LEASE_ANSWER.TAKE,

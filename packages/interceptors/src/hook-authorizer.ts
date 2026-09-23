@@ -1,8 +1,21 @@
-import type { ActionRequest, Alternative, DecisionEffect } from '@memnox/core';
-import { DECISION_EFFECT, describeEgress, inspectEgress } from '@memnox/core';
-import type { LocalGate } from '@memnox/core';
+import {
+  DECISION_EFFECT,
+  PROTECTION_STOPPED_REASON,
+  describeAlternative,
+  describeEgress,
+  inspectEgress,
+  type ActionRequest,
+  type Alternative,
+  type DecisionEffect,
+  type LocalGate,
+} from '@memnox/core';
+
 import { EGRESS_ACTIONS } from './tool-hook.constants';
 
+/**
+ * The verdict a hook gets: egress first, then the local rules, in-process, so a local
+ * refusal never becomes a network request and its arguments stay on this machine.
+ */
 export interface HookVerdict {
   effect: DecisionEffect;
   reason: string;
@@ -14,44 +27,40 @@ export interface HookVerdict {
   approvalId?: string;
   /** The verdict this came from, so a hooked call joins its decision in the ledger. */
   decisionId?: string;
-  /**
-   * Set when nobody could be asked, rather than when somebody said no. A seam that
-   * can only ever subtract needs to tell those apart before it decides what to do.
-   */
-  unreachable?: true;
+  /** What an observed rule would have decided, had it been enforcing. */
+  shadowEffect?: DecisionEffect;
 }
 
 export interface HookAuthorizerDeps {
   /** Evaluated in-process against this machine's policy files; sees the arguments. */
   gate?: LocalGate;
-  /** The runtime, which alone can resolve an alternative and raise an approval. */
-  /** Allow the tool when the runtime is unreachable. Default false — fail closed. */
-  failOpen?: boolean;
-  /** Which seam is reporting, so coverage and drift can tell them apart. */
-  seam?: string;
-  log: (message: string) => void;
+  /** True while `memnox stop` holds. Absent means never, which is right for a test. */
+  stopped?: () => Promise<boolean>;
 }
 
-/**
- * Local first, runtime second, strictest wins — the same order the MCP seam uses. A
- * local refusal never becomes a network request, so the arguments that produced it
- * stay on this machine.
- */
 export class HookAuthorizer {
   constructor(private readonly deps: HookAuthorizerDeps) {}
 
   async authorize(request: ActionRequest): Promise<HookVerdict> {
-    // Destination and payload, both, and before anything leaves this machine: an
-    // allowed host carrying a credential is still a refusal.
+    // Asked per call, so a stop or a start reaches a long-lived proxy at its next request.
+    if (this.deps.stopped !== undefined && (await this.deps.stopped())) {
+      return { effect: DECISION_EFFECT.ALLOW, reason: PROTECTION_STOPPED_REASON };
+    }
+    // Destination and payload both: an allowed host
+    // carrying a credential is still a refusal.
     const leaking = this.egress(request);
     if (leaking !== null) return leaking;
+    return (
+      this.locally(request) ?? {
+        effect: DECISION_EFFECT.ALLOW,
+        reason: 'no rules configured',
+      }
+    );
+  }
 
-    const local = this.locally(request);
-    if (local !== null && local.effect === DECISION_EFFECT.DENY) {
-      return local;
-    }
-
-    return local ?? { effect: DECISION_EFFECT.ALLOW, reason: 'no rules configured' };
+  /** A person said yes to what was asked, so the same new thing is not asked twice. */
+  personAllowed(request?: ActionRequest): void {
+    this.deps.gate?.personAllowed(request);
   }
 
   // Nothing is modified: silently stripping a payload is a bug nobody can audit.
@@ -88,6 +97,25 @@ export class HookAuthorizer {
       reason: verdict.reason,
       ...(rule === undefined ? {} : { rule: rule.name }),
       ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
+      ...(verdict.shadowEffect === undefined
+        ? {}
+        : { shadowEffect: verdict.shadowEffect }),
     };
   }
+}
+
+/**
+ * A verdict as the caller reads it: the reason,
+ * the way forward, and where to answer or ask why.
+ */
+export function describeVerdict(verdict: HookVerdict): string {
+  const parts = [verdict.reason];
+  if (verdict.alternative !== undefined)
+    parts.push(describeAlternative(verdict.alternative));
+  if (verdict.approvalId !== undefined) {
+    parts.push(`Ask a person: memnox approvals resolve ${verdict.approvalId} --by <you>`);
+  }
+  if (verdict.decisionId !== undefined)
+    parts.push(`Why: memnox why ${verdict.decisionId}`);
+  return parts.join(' ');
 }
