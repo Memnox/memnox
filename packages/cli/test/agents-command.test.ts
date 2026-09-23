@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentSnapshot } from '@memnox/core';
-import { chooseCloudName, registerAgentsCommand } from '../src/commands/agents.command';
+import { registerAgentsCommand } from '../src/commands/agents.command';
+import { chooseCloudName } from '../src/commands/agents/shared';
 import type { NameAsker } from '../src/agents/name-prompt';
 import { readNames, workspaceShown } from '../src/agents/names';
 import { CliContext } from '../src/cli-context';
@@ -68,14 +69,12 @@ describe('the agents on this machine', () => {
   ) =>
     runCommand(
       (program, context) =>
-        registerAgentsCommand(
-          program,
-          context,
-          () => home,
-          () => seams,
+        registerAgentsCommand(program, context, {
+          home: () => home,
+          seams: () => seams,
           ask,
-          () => interactive,
-        ),
+          interactive: () => interactive,
+        }),
       args,
     );
 
@@ -380,16 +379,16 @@ describe('the agents on this machine', () => {
       const context = new CliContext(new RecordedOutput());
       // The rail is the command's to open, and this drives one step of it.
       context.flow.open('memnox agents onboard');
-      const chosen = await chooseCloudName(
+      const chosen = await chooseCloudName({
         context,
         home,
-        CLAUDE,
-        await readNames(home),
+        agent: CLAUDE,
+        names: await readNames(home),
         account,
         options,
         interactive,
         ask,
-      );
+      });
       return { chosen, out: context.out as RecordedOutput };
     };
 

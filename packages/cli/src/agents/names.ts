@@ -1,29 +1,14 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { MEMNOX_HOME } from '@memnox/core';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { AGENT_ID_PREFIX, MEMNOX_HOME, readJsonFile, writeJsonFile } from '@memnox/core';
 
 /**
- * What a person calls the agents on their own machine.
- *
- * `agt_claude-code` is what the detector proved and it has to stay the identity,
- * because a name somebody can change is not one a ledger row can be keyed on.
- * So the name is a second field over the top: the id is what everything stores
- * and the name is what everything prints, and the two never compete.
- *
- * A name is chosen for a workspace and travels to it as a label, because the
- * alternative is a console listing `agt_claude-desktop` beside an agent a
- * person has already named. What never travels is authority: a label is what a
- * row is printed as, and the id is what every row is keyed on, so two machines
- * disagreeing about what to call an agent is two labels rather than two agents.
- *
- * Chosen for a workspace, so `forgetNames` runs when a machine moves to another
- * one, and that function says why a name carries no workspace stamp of its own.
+ * What a person calls the agents on their own machine. The id is the identity, because a
+ * name somebody can change cannot key a ledger row: ids are stored, names are printed.
  */
 
 const AGENTS_DIR = 'agents';
 const NAMES_FILE = 'names.json';
-/** Owner-only, because the file names the agents this person runs and where. */
-const OWNER_ONLY = 0o600;
 
 /** Long enough for "Frontend refactor agent", short enough to stay in a column. */
 export const NAME_LIMIT = 40;
@@ -36,28 +21,19 @@ function namesPath(home: string): string {
 }
 
 export async function readNames(home: string): Promise<AgentNames> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(namesPath(home), 'utf8'));
-    if (parsed === null || typeof parsed !== 'object') return {};
-    const kept: Record<string, string> = {};
-    for (const [id, name] of Object.entries(parsed as Record<string, unknown>)) {
-      // A hand-edited file is untrusted input like any other: keep only strings.
-      if (typeof name === 'string' && name.trim() !== '') kept[id] = name.trim();
-    }
-    return kept;
-  } catch {
-    // No file is the ordinary case: nobody has named anything yet.
-    return {};
+  const parsed = await readJsonFile<unknown>(namesPath(home));
+  if (parsed === null || typeof parsed !== 'object') return {};
+  const kept: Record<string, string> = {};
+  // Narrowed to an object above, and every value is checked below.
+  for (const [id, name] of Object.entries(parsed as Record<string, unknown>)) {
+    // A hand-edited file is untrusted input like any other: keep only strings.
+    if (typeof name === 'string' && name.trim() !== '') kept[id] = name.trim();
   }
+  return kept;
 }
 
 async function writeNames(home: string, names: AgentNames): Promise<void> {
-  const path = namesPath(home);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(names, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: OWNER_ONLY,
-  });
+  await writeJsonFile(namesPath(home), names);
 }
 
 const NAME_REFUSED = {
@@ -77,9 +53,8 @@ interface NameOutcome {
 }
 
 /**
- * Checked before it is written, because a name is read back into a column and a
- * prompt. A tab or a newline in one would corrupt every screen that prints it,
- * and a duplicate would make `memnox agents status "Backend"` ambiguous.
+ * Checked before it is written, because a control character would corrupt every screen
+ * that prints it and a duplicate would make `memnox agents status "Backend"` ambiguous.
  */
 export function checkName(
   wanted: string,
@@ -87,6 +62,23 @@ export function checkName(
   taken: AgentNames,
 ): NameOutcome {
   const name = wanted.trim();
+  const refused = refusalOf(name);
+  if (refused !== null) return refused;
+  const clash = Object.entries(taken).find(
+    ([id, each]) => id !== agentId && same(each, name),
+  );
+  if (clash !== undefined) {
+    return {
+      ok: false,
+      refused: NAME_REFUSED.TAKEN,
+      because: `${clash[0]} is already called "${clash[1]}"`,
+    };
+  }
+  return { ok: true, name };
+}
+
+/** Why this name cannot be anybody's, whatever else is taken. */
+function refusalOf(name: string): NameOutcome | null {
   if (name === '') {
     return { ok: false, refused: NAME_REFUSED.EMPTY, because: 'a name cannot be blank' };
   }
@@ -104,17 +96,7 @@ export function checkName(
       because: 'a name cannot hold a tab, a newline or a control character',
     };
   }
-  const clash = Object.entries(taken).find(
-    ([id, each]) => id !== agentId && same(each, name),
-  );
-  if (clash !== undefined) {
-    return {
-      ok: false,
-      refused: NAME_REFUSED.TAKEN,
-      because: `${clash[0]} is already called "${clash[1]}"`,
-    };
-  }
-  return { ok: true, name };
+  return null;
 }
 
 export async function setName(
@@ -129,22 +111,7 @@ export async function setName(
   return checked;
 }
 
-/**
- * Every name on this machine, forgotten.
- *
- * For a move between control planes, and nothing else. The prompt asks for a
- * name the workspace will recognise, so these are one workspace's vocabulary:
- * a laptop that moved from a control plane on localhost to the real one kept
- * offering "Moise claude" as the name the new workspace knew it by, which was
- * a name nobody there had ever seen. There is nothing better to fall back to
- * than what the detector proved, and that is what `displayName` answers once
- * this has run.
- *
- * Names are not stamped with the workspace they were chosen in, the way an
- * onboarding record is, because there is no second answer to keep: an agent
- * has one name on one machine, and a person moving plane is renaming it for
- * the plane they are moving to.
- */
+/** Every name on this machine, forgotten on a move between control planes, since names are one workspace's vocabulary. */
 export async function forgetNames(home: string): Promise<number> {
   const names = await readNames(home);
   const count = Object.keys(names).length;
@@ -162,11 +129,8 @@ export async function clearName(home: string, agentId: string): Promise<boolean>
 }
 
 /**
- * The name to print: what a person chose, or a readable form of what was detected.
- *
- * Derived from the id rather than from the kind, because the id is what every
- * detector builds out of the product it found and the kind is free to be a
- * category. `agt_claude-code` reads back as "Claude Code" either way.
+ * The name to print: what a person chose, or a readable form of the id, which every
+ * detector builds from the product while the kind may be a category.
  */
 export function displayName(
   names: AgentNames,
@@ -179,18 +143,8 @@ export function displayName(
 }
 
 /**
- * The workspace as a sentence can carry it, which is not always its id.
- *
- * A deployment that names its workspaces sends `acme`, and "In acme" is exactly
- * the right line. One that keys them by UUID sends thirty-six characters of
- * hex, and "Call it something 789fdf81-0ecc-4d17-a234-464bc0a8ecf4 will
- * recognise" is a sentence nobody reads to the end. Which of the two you get is
- * the control plane's business rather than something this side can fix, so the
- * rule is about the reader instead: an id belongs on the line that states
- * facts, where it can be copied, and prose gets a word.
- *
- * Length is the test rather than the UUID shape, because the next deployment to
- * key workspaces on something unreadable will not use a UUID to do it.
+ * The workspace as a sentence can carry it: a short name reads in prose and thirty-six
+ * characters of hex does not, so length is the test rather than the UUID shape.
  */
 export function workspaceShown(workspaceId: string): string {
   const id = workspaceId.trim();
@@ -207,10 +161,8 @@ export function isDefaultName(names: AgentNames, agent: { id: string }): boolean
 }
 
 /**
- * `claude-code` reads as "Claude Code" and `codex-cli` as "Codex CLI".
- *
- * Derived rather than tabulated, so a detector added tomorrow gets a readable
- * name without anybody remembering to extend a list.
+ * `claude-code` reads as "Claude Code" and `codex-cli` as "Codex CLI", derived rather
+ * than tabulated so a new detector needs no list extended.
  */
 function defaultName(kind: string): string {
   const words = kind
@@ -233,12 +185,8 @@ function capital(word: string): string {
 }
 
 /**
- * One agent, by whatever a person typed.
- *
- * The name they chose comes first, because somebody who renamed an agent is
- * going to type the name. The full id, the id without its prefix and the
- * product all resolve too, so nothing a person can see on a screen fails to
- * work when they type it back.
+ * One agent, by whatever a person typed: the chosen name first, then the full id, the
+ * id without its prefix, and the product, so nothing on a screen fails when typed back.
  */
 export function resolveAgent<T extends { id: string; kind: string }>(
   agents: readonly T[],
@@ -258,10 +206,8 @@ export function resolveAgent<T extends { id: string; kind: string }>(
 
 /** `agt_claude-code` typed as `claude-code`, which is what is on every other screen. */
 function bare(id: string): string {
-  return id.startsWith(ID_PREFIX) ? id.slice(ID_PREFIX.length) : id;
+  return id.startsWith(AGENT_ID_PREFIX) ? id.slice(AGENT_ID_PREFIX.length) : id;
 }
-
-const ID_PREFIX = 'agt_';
 
 /** Case and spacing are not identity: "backend coder" is "Backend Coder". */
 function same(left: string, right: string): boolean {

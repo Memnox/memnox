@@ -160,7 +160,14 @@ describe('onboarding an agent', () => {
   const config = () => readFile(join(home, '.cursor', 'mcp.json'), 'utf8');
 
   it('writes the Memnox server into the agent own config', async () => {
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.DONE);
     const written = JSON.parse(await config());
@@ -175,7 +182,15 @@ describe('onboarding an agent', () => {
        the only readable answer to which agent a principal belongs to: without
        them a workspace holds five names somebody typed and nothing saying
        which of them is Cursor. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out(), 'Editor');
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+      shownAs: 'Editor',
+    });
 
     expect(sent[0]).toMatchObject({
       agentId: AGENT,
@@ -187,7 +202,14 @@ describe('onboarding an agent', () => {
   it('keeps everything it does not own', async () => {
     /* Losing an agent's own servers or its editor settings would be a far worse
        outcome than not onboarding at all. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     const written = JSON.parse(await config());
     expect(written.mcpServers['next-devtools']).toEqual(
@@ -200,7 +222,14 @@ describe('onboarding an agent', () => {
     /* An agent onboarded before the enrolment door carried an id leaves a row
        the console cannot join to anything the ledger recorded, and this is the
        half that lets the machine say afterwards which agent it was for. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const record = await readRecord(home, AGENT);
 
     expect(record?.agentKind).toBe('cursor');
@@ -210,7 +239,14 @@ describe('onboarding an agent', () => {
     /* A record without it says only that this machine onboarded this agent
        somewhere, and a laptop moved from localhost to the real control plane
        then read its own records as proof the new workspace already had them. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const record = await readRecord(home, AGENT);
 
     expect(record?.workspaceId).toBe('acme');
@@ -218,7 +254,14 @@ describe('onboarding an agent', () => {
   });
 
   it('belongs to the plane it was written against, and to no other', async () => {
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const record = (await readRecord(home, AGENT)) as OnboardRecord;
 
     expect(onboardedInto(record, account)).toBe(true);
@@ -246,7 +289,14 @@ describe('onboarding an agent', () => {
   });
 
   it('lists what it has onboarded, so a beat can report every one', async () => {
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     const records = await listRecords(home);
     expect(records.map((record) => record.agentId)).toEqual([AGENT]);
@@ -263,7 +313,14 @@ describe('onboarding an agent', () => {
   });
 
   it('backs the config up before it writes, verbatim', async () => {
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const backup = await readFile(result.record?.backupPath ?? '', 'utf8');
 
     expect(JSON.parse(backup)).toEqual(ORIGINAL);
@@ -272,7 +329,14 @@ describe('onboarding an agent', () => {
   it('mints one credential per agent, not per host', async () => {
     /* Two agents on one laptop are two machines, so revoking one does not
        silence the other. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     expect(enrolments).toBe(1);
   });
@@ -281,7 +345,14 @@ describe('onboarding an agent', () => {
     /* A person approved this laptop once. Asking them again per agent is the
        same decision put five times, and the fifth answer never comes. */
     const said = out();
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', said);
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: said,
+    });
 
     expect(result.outcome).toBe(ONBOARD.DONE);
     expect(result.approvedInBrowser).toBe(false);
@@ -295,7 +366,14 @@ describe('onboarding an agent', () => {
       noSponsoredDoor(String(url))) as typeof fetch);
 
     const said = out();
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', said);
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: said,
+    });
 
     expect(result.outcome).toBe(ONBOARD.DONE);
     expect(result.approvedInBrowser).toBe(true);
@@ -307,7 +385,14 @@ describe('onboarding an agent', () => {
       noSponsoredDoor(String(url))) as typeof fetch);
 
     const said = out();
-    await onboardAgent(home, home, account, AGENT, 'cursor', said);
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: said,
+    });
 
     expect(said.lines.join('\n')).toContain('without a person');
   });
@@ -321,7 +406,14 @@ describe('onboarding an agent', () => {
     );
 
     const before = await config();
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.FAILED);
     expect(await config()).toBe(before);
@@ -331,14 +423,28 @@ describe('onboarding an agent', () => {
   it('says so rather than rewriting a config it could not read back', async () => {
     await writeFile(join(home, '.cursor', 'mcp.json'), 'not json at all', 'utf8');
 
-    const result = await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.UNSUPPORTED);
     expect(await config()).toBe('not json at all');
   });
 
   it('says so where this machine keeps no config for that agent', async () => {
-    const result = await onboardAgent(home, home, account, 'agt_hermes', 'hermes', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: 'agt_hermes',
+      agentKind: 'hermes',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.NOT_FOUND);
   });
@@ -385,7 +491,14 @@ describe('offboarding an agent', () => {
   const config = () => readFile(join(home, '.cursor', 'mcp.json'), 'utf8');
 
   it('puts the config back exactly as it was', async () => {
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const result = await offboardAgent(home, account, AGENT);
 
     expect(result.outcome).toBe(OFFBOARD.DONE);
@@ -396,7 +509,14 @@ describe('offboarding an agent', () => {
   it('takes the credential away, not only the configuration', async () => {
     /* Restoring the config and leaving a live credential would take the agent's
        settings away and leave its reach. */
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     const result = await offboardAgent(home, account, AGENT);
 
     expect(result.revoked).toBe(true);
@@ -404,7 +524,14 @@ describe('offboarding an agent', () => {
   });
 
   it('stops reading as onboarded afterwards', async () => {
-    await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     await offboardAgent(home, account, AGENT);
 
     expect(await readRecord(home, AGENT)).toBeNull();
@@ -413,7 +540,14 @@ describe('offboarding an agent', () => {
   it('removes only the Memnox entry where the backup has gone', async () => {
     /* A weaker undo, and it is reported as one: anything a person changed since
        stays rather than being reverted. */
-    const onboarded = await onboardAgent(home, home, account, AGENT, 'cursor', out());
+    const onboarded = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: AGENT,
+      agentKind: 'cursor',
+      report: out(),
+    });
     await rm(onboarded.record?.backupPath ?? '', { force: true });
 
     const result = await offboardAgent(home, account, AGENT);
@@ -465,14 +599,14 @@ describe('onboarding an agent that does not keep JSON', () => {
   });
 
   it('puts the entry into a Codex TOML config', async () => {
-    const result = await onboardAgent(
+    const result = await onboardAgent({
       home,
-      home,
+      project: home,
       account,
-      'agt_codex-cli',
-      'codex-cli',
-      out(),
-    );
+      agentId: 'agt_codex-cli',
+      agentKind: 'codex-cli',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.DONE);
     const written = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
@@ -483,7 +617,14 @@ describe('onboarding an agent that does not keep JSON', () => {
   });
 
   it('puts the entry into a Hermes YAML config', async () => {
-    const result = await onboardAgent(home, home, account, 'agt_hermes', 'hermes', out());
+    const result = await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: 'agt_hermes',
+      agentKind: 'hermes',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.DONE);
     const written = await readFile(join(home, '.hermes', 'config.yaml'), 'utf8');
@@ -496,7 +637,14 @@ describe('onboarding an agent that does not keep JSON', () => {
     /* The backup is the honest undo for every format, because it restores the
        bytes rather than reconstructing what they might have been. */
     const before = await readFile(join(home, '.codex', 'config.toml'), 'utf8');
-    await onboardAgent(home, home, account, 'agt_codex-cli', 'codex-cli', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: 'agt_codex-cli',
+      agentKind: 'codex-cli',
+      report: out(),
+    });
 
     await offboardAgent(home, account, 'agt_codex-cli');
 
@@ -505,7 +653,14 @@ describe('onboarding an agent that does not keep JSON', () => {
 
   it('puts a YAML config back exactly as it was', async () => {
     const before = await readFile(join(home, '.hermes', 'config.yaml'), 'utf8');
-    await onboardAgent(home, home, account, 'agt_hermes', 'hermes', out());
+    await onboardAgent({
+      home,
+      project: home,
+      account,
+      agentId: 'agt_hermes',
+      agentKind: 'hermes',
+      report: out(),
+    });
 
     await offboardAgent(home, account, 'agt_hermes');
 
@@ -513,14 +668,14 @@ describe('onboarding an agent that does not keep JSON', () => {
   });
 
   it('removes only its own entry where the backup has gone', async () => {
-    const onboarded = await onboardAgent(
+    const onboarded = await onboardAgent({
       home,
-      home,
+      project: home,
       account,
-      'agt_codex-cli',
-      'codex-cli',
-      out(),
-    );
+      agentId: 'agt_codex-cli',
+      agentKind: 'codex-cli',
+      report: out(),
+    });
     await rm(onboarded.record?.backupPath ?? '', { force: true });
 
     const result = await offboardAgent(home, account, 'agt_codex-cli');
@@ -534,14 +689,14 @@ describe('onboarding an agent that does not keep JSON', () => {
   it('says so rather than rewriting a TOML config it could not read back', async () => {
     await writeFile(join(home, '.codex', 'config.toml'), 'not toml at all [[[', 'utf8');
 
-    const result = await onboardAgent(
+    const result = await onboardAgent({
       home,
-      home,
+      project: home,
       account,
-      'agt_codex-cli',
-      'codex-cli',
-      out(),
-    );
+      agentId: 'agt_codex-cli',
+      agentKind: 'codex-cli',
+      report: out(),
+    });
 
     expect(result.outcome).toBe(ONBOARD.UNSUPPORTED);
     expect(await readFile(join(home, '.codex', 'config.toml'), 'utf8')).toBe(

@@ -1,9 +1,6 @@
 /**
- * What the Memnox entry says, in whichever format the agent keeps its config.
- *
- * One name, `memnox`, so onboarding twice replaces its own entry rather than
- * leaving two, and so offboarding removes exactly what onboarding added and
- * nothing a person put there.
+ * What the Memnox entry says, in whichever format the agent keeps its config. One name,
+ * so onboarding twice replaces its own entry and offboarding removes exactly its own.
  */
 
 export const MANAGED_SERVER = 'memnox';
@@ -19,9 +16,7 @@ export function managedServerFor(mcpUrl: string, token: string): ManagedServer {
   return {
     type: 'http',
     url: mcpUrl,
-    /* The machine credential this agent was enrolled under. It reaches its own
-       workspace and nothing else, and it is the same credential the control
-       plane checks on every other machine route. */
+    // The machine credential this agent was enrolled under, which reaches its own workspace only.
     headers: { Authorization: `Bearer ${token}` },
   };
 }
@@ -41,14 +36,8 @@ export const CONFIG_FORMAT = {
 
 export type ConfigFormat = (typeof CONFIG_FORMAT)[keyof typeof CONFIG_FORMAT];
 
-/**
- * Which format a config file is, from its name.
- *
- * By extension rather than by sniffing the contents, because the extension is
- * what the agent that owns the file goes by: a `.toml` holding something that
- * happens to parse as YAML is still a file Codex will read as TOML.
- */
-export function formatOf(path: string): ConfigFormat | null {
+/** Which format a config file is, by extension, because that is what its agent goes by. */
+export function configFormatOf(path: string): ConfigFormat | null {
   const lower = path.toLowerCase();
   if (lower.endsWith('.json')) return CONFIG_FORMAT.JSON;
   if (lower.endsWith('.toml')) return CONFIG_FORMAT.TOML;

@@ -1,27 +1,22 @@
 import { parse } from 'smol-toml';
+
+import { TOML_SERVER_TABLES } from '@memnox/core';
+
 import { MANAGED_SERVER, type ManagedServer, type RewriteResult } from './managed-shape';
 
 /**
- * The Memnox entry in a TOML config, added and removed as text.
- *
- * Never parsed and re-serialized. `smol-toml` reads TOML and writes it back
- * without the comments, the ordering or the spacing somebody put there, so a
- * round-trip through it would hand back a file that means the same thing and
- * looks nothing like the one they wrote. Appending a table is valid TOML
- * whatever came before it, because a `[header]` ends whichever table was open,
- * so every original byte survives untouched.
- *
- * Codex is the config this is for. It accepts either spelling of the servers
- * table, so whichever the file already uses is the one that gets the entry.
+ * The Memnox entry in a TOML config, appended and cut as text rather than re-serialized,
+ * because a `[header]` ends whichever table was open and so every original byte survives.
  */
 
-const TABLES: readonly string[] = ['mcp_servers', 'mcpServers'];
+const TABLES: readonly string[] = TOML_SERVER_TABLES;
 
-/** The spelling this file already uses, or the modern one for a file with neither. */
+/** The spelling this file already uses, since Codex accepts either, or the modern one for a file with neither. */
 function tableIn(raw: string): string {
   for (const table of TABLES) {
     if (new RegExp(`^\\s*\\[\\s*${table}\\s*[.\\]]`, 'm').test(raw)) return table;
   }
+  // TOML_SERVER_TABLES is a non-empty constant.
   return TABLES[0] as string;
 }
 
@@ -32,8 +27,7 @@ function quoted(value: string): string {
 
 export function withManagedTomlServer(raw: string, server: ManagedServer): RewriteResult {
   const table = tableIn(raw);
-  /* Removed first, so onboarding twice replaces its own entry rather than
-     leaving two tables with the same name, which is not valid TOML at all. */
+  // Removed first, because two tables with the same name is not valid TOML.
   const stripped = withoutManagedTomlServer(raw);
   if (stripped.next === null) return stripped;
 
@@ -50,14 +44,30 @@ export function withManagedTomlServer(raw: string, server: ManagedServer): Rewri
   return { next: body + entry };
 }
 
+/** A server started by command, such as the session server, appended the same way. */
+export function withTomlStdioServer(
+  raw: string,
+  name: string,
+  launch: { command: string; args: readonly string[] },
+): RewriteResult {
+  const table = tableIn(raw);
+  const stripped = withoutManagedTomlServer(raw, name);
+  if (stripped.next === null) return stripped;
+  const body = stripped.next.trim() === '' ? '' : stripped.next.replace(/\s*$/, '\n\n');
+  const args = launch.args.map(quoted).join(', ');
+  return {
+    next: `${body}[${table}.${name}]\ncommand = ${quoted(launch.command)}\nargs = [${args}]\n`,
+  };
+}
+
 /**
- * Cuts the managed table back out, and any sub-table belonging to it.
- *
- * From its own header to the next header that is not one of its children, so
- * `[mcp_servers.memnox.http_headers]` goes with it and `[mcp_servers.github]`
- * does not.
+ * Cuts the managed table back out, and any sub-table belonging to it: from its header
+ * to the next one that is not its child.
  */
-export function withoutManagedTomlServer(raw: string): RewriteResult {
+export function withoutManagedTomlServer(
+  raw: string,
+  name: string = MANAGED_SERVER,
+): RewriteResult {
   const lines = raw.split('\n');
   const kept: string[] = [];
   let dropping = false;
@@ -65,11 +75,10 @@ export function withoutManagedTomlServer(raw: string): RewriteResult {
   for (const line of lines) {
     const header = /^\s*\[\s*([^\]]+?)\s*\]/.exec(line);
     if (header !== null) {
+      // The capture group is not optional, so a match always holds it.
       const path = header[1] as string;
       dropping = TABLES.some(
-        (table) =>
-          path === `${table}.${MANAGED_SERVER}` ||
-          path.startsWith(`${table}.${MANAGED_SERVER}.`),
+        (table) => path === `${table}.${name}` || path.startsWith(`${table}.${name}.`),
       );
     }
     if (!dropping) kept.push(line);
@@ -90,6 +99,7 @@ export function withoutManagedTomlServer(raw: string): RewriteResult {
 export function tomlServerNames(raw: string): string[] | null {
   let parsed: Record<string, unknown>;
   try {
+    // A TOML document always parses to a table.
     parsed = parse(raw) as Record<string, unknown>;
   } catch {
     return null;
@@ -98,7 +108,7 @@ export function tomlServerNames(raw: string): string[] | null {
   for (const table of TABLES) {
     const held = parsed[table];
     if (held === null || typeof held !== 'object') continue;
-    for (const name of Object.keys(held as Record<string, unknown>)) names.add(name);
+    for (const name of Object.keys(held)) names.add(name);
   }
   return [...names];
 }

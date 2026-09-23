@@ -1,6 +1,7 @@
-import type { Account } from '@memnox/core';
-import { callCloud } from '../sync/client';
+import { HTTP, isCredentialRefused, isRouteMissing, type Account } from '@memnox/core';
+
 import { openBrowser } from '../sync/browser';
+import { callCloud } from '../sync/client';
 import {
   approvalUrl,
   goodFor,
@@ -8,33 +9,16 @@ import {
   pageCarriesCode,
   requestCode,
   waitForApproval,
+  type DeviceOffer,
 } from '../sync/enrol';
 
 /**
- * An agent, enrolled as an advisory principal of its own.
- *
- * **On the credential this machine already holds, wherever the control plane
- * will take it.** A person approved this laptop once, in a browser, and every
- * agent on it is a thing that laptop hosts. Asking them to approve again per
- * agent was the same decision put five times, and the fifth answer is the one
- * somebody never gives: a run that opens five browser tabs is a run that ends
- * half finished, with two agents governed and three believed to be.
- * `POST :ws/machines/:id/agents` is the door, and the guard pins a machine
- * credential to its own `:id`, so what this can enrol is the agents on the box
- * that was approved and nothing anywhere else.
- *
- * The device flow is still here and still the fallback, because a control plane
- * older than that route answers 404 and somebody upgrading their laptop before
- * their cloud must not be stopped. It is also what runs when the machine has no
- * credential at all. One path tried, one path behind it, and the screen says
- * which happened rather than leaving a browser to explain itself.
- *
- * One enrolment per agent rather than per host, so revoking one agent's access
- * does not take the others on that laptop with it. The row remembers which
- * machine vouched for it, so revoking the laptop still takes them all.
+ * An agent, enrolled as an advisory principal of its own on the credential this machine
+ * already holds, because five browser approvals is a run that ends half finished. The
+ * device flow stays as the fallback for a control plane older than that route.
  */
 
-interface EnrolledAgent {
+export interface EnrolledAgent {
   machineId: string;
   token: string;
   mcpUrl: string;
@@ -50,15 +34,8 @@ interface EnrolFailure {
 }
 
 /**
- * The one thing enrolment has to say, which is that it is waiting on a person.
- *
- * Injected because the two callers draw different screens: the guided run has a
- * rail down the left and `agents onboard` prints plain lines. Printing through
- * `console.log` here put the one step that can block forever outside whatever
- * was drawing the rest of the run, which is how a wait reads as a hang.
- *
- * Nothing reports success. A caller that got a credential back knows it did,
- * and says so in its own shape rather than being narrated at.
+ * The one thing enrolment has to say, which is that it is waiting on a person. Injected
+ * because the callers draw different screens; success is theirs to render.
  */
 export interface EnrolReporter {
   approve(question: Approval): void;
@@ -93,40 +70,25 @@ export function sponsorOf(account: Account): Sponsor {
   };
 }
 
-export async function enrolAgent(
-  sponsor: Sponsor,
-  agentId: string,
-  hostname: string,
-  report: EnrolReporter,
+export interface EnrolAgentInput {
+  sponsor: Sponsor;
+  agentId: string;
+  hostname: string;
+  report: EnrolReporter;
   /** What to call it on screen. The id stays the identity the credential is cut for. */
-  shownAs: string = agentId,
-  /**
-   * What product it is, sent because the hostname above is not.
-   *
-   * The control plane hashes the hostname, so the id and this are the only
-   * readable answers to which agent a credential belongs to. Without the kind
-   * a workspace lists five names somebody typed and cannot say which of them
-   * is Claude Code.
-   */
-  agentKind?: string,
+  shownAs: string;
+  /** What product it is: the control plane hashes the hostname, so this and the id are all it can read. */
+  agentKind?: string;
+}
+
+export async function enrolAgent(
+  input: EnrolAgentInput,
 ): Promise<EnrolledAgent | EnrolFailure> {
-  const sponsored = await enrolOnThisMachine(sponsor, agentId, shownAs, agentKind);
+  const sponsored = await enrolOnThisMachine(input);
   if ('machineId' in sponsored) return sponsored;
   if (sponsored.outcome === ENROL_FAILED) return sponsored;
-
-  /* Only two things land here: a control plane with no such route, or one that
-     would not take this machine's credential. The reason travels to the screen,
-     because a browser opening after a run that said it would not open one is
-     the kind of surprise people read as a bug. */
-  return askAPerson(
-    sponsor.baseUrl,
-    agentId,
-    hostname,
-    report,
-    shownAs,
-    sponsored.because,
-    agentKind,
-  );
+  // A missing route or a refused credential, and the reason travels so a browser opening is explained.
+  return askAPerson(input, sponsored.because);
 }
 
 /** The sponsored door did not answer, and why that is not yet a failure. */
@@ -137,66 +99,61 @@ interface FallBack {
   because: string;
 }
 
-/**
- * The credential this machine already holds, spent on the agents it hosts.
- *
- * A 404 or a 405 is a control plane older than the route, and a 401 or a 403 is
- * one that will not take this machine's credential, which is a revoked laptop or
- * a hand-edited `account.json`. Both are cases where a person in a browser is
- * still a true answer, so both fall back rather than fail. Anything else is a
- * refusal with a reason, and a refusal is reported rather than worked around.
- */
-async function enrolOnThisMachine(
-  sponsor: Sponsor,
-  agentId: string,
-  shownAs: string,
-  agentKind?: string,
-): Promise<EnrolledAgent | FallBack | EnrolFailure> {
-  let answer: Awaited<ReturnType<typeof callCloud<EnrolledPrincipal>>>;
-  try {
-    answer = await callCloud<EnrolledPrincipal>({
-      baseUrl: sponsor.baseUrl,
-      path: `/v1/workspaces/${encodeURIComponent(sponsor.workspaceId)}/machines/${encodeURIComponent(sponsor.machineId)}/agents`,
-      method: 'POST',
-      token: sponsor.token,
-      body: {
-        agentId,
-        label: shownAs,
-        ...(agentKind === undefined ? {} : { agentKind }),
-      },
-    });
-  } catch (err) {
-    /* Unreachable is not "this control plane cannot do it", and a browser
-       cannot reach it either. Reported rather than fallen back from. */
-    return {
-      outcome: ENROL_FAILED,
-      because: err instanceof Error ? err.message : String(err),
-    };
-  }
+function failureOf(err: unknown): EnrolFailure {
+  return {
+    outcome: ENROL_FAILED,
+    because: err instanceof Error ? err.message : String(err),
+  };
+}
 
-  if (answer.status === 404 || answer.status === 405 || answer.status === 501) {
+/** The product, where it is known, in the shape both doors take. */
+function kindField(agentKind: string | undefined): { agentKind?: string } {
+  return agentKind === undefined ? {} : { agentKind };
+}
+
+/** The credential this machine already holds, spent on the agents it hosts. */
+async function enrolOnThisMachine(
+  input: EnrolAgentInput,
+): Promise<EnrolledAgent | FallBack | EnrolFailure> {
+  const { sponsor } = input;
+  // Unreachable is reported rather than fallen back from, since a browser cannot reach it either.
+  const answer = await callCloud<EnrolledPrincipal>({
+    baseUrl: sponsor.baseUrl,
+    path: `/v1/workspaces/${encodeURIComponent(sponsor.workspaceId)}/machines/${encodeURIComponent(sponsor.machineId)}/agents`,
+    method: 'POST',
+    token: sponsor.token,
+    body: { agentId: input.agentId, label: input.shownAs, ...kindField(input.agentKind) },
+  }).catch(failureOf);
+  if ('outcome' in answer) return answer;
+  return readSponsoredAnswer(answer);
+}
+
+/**
+ * 404 and 405 mean a control plane older than the route, 401 and 403 a revoked laptop:
+ * a person in a browser still answers both. Anything else is a refusal.
+ */
+function readSponsoredAnswer(answer: {
+  status: number;
+  body?: EnrolledPrincipal;
+}): EnrolledAgent | FallBack | EnrolFailure {
+  if (isRouteMissing(answer.status)) {
     return {
       outcome: FALL_BACK,
       because: 'this control plane cannot enrol an agent without a person',
     };
   }
-  if (answer.status === 401 || answer.status === 403) {
-    return {
-      outcome: FALL_BACK,
-      because: "this machine's own credential was refused",
-    };
+  if (isCredentialRefused(answer.status)) {
+    return { outcome: FALL_BACK, because: "this machine's own credential was refused" };
   }
-  if (answer.status !== 200 && answer.status !== 201) {
+  if (answer.status !== HTTP.OK && answer.status !== HTTP.CREATED) {
     return { outcome: ENROL_FAILED, because: refusalOf(answer) };
   }
-
   const body = answer.body;
   if (body?.id === undefined || body.token === undefined) {
     return { outcome: ENROL_FAILED, because: 'the control plane sent no credential' };
   }
+  // The credential is readable once, so a reply with no address is not half written into a config.
   if (body.mcpUrl === undefined) {
-    /* The credential is readable once. A reply with no address to use it
-       against is not one to write half of into somebody's config. */
     return {
       outcome: ENROL_FAILED,
       because: 'the control plane enrolled it but returned no MCP address',
@@ -226,53 +183,25 @@ function refusalOf(answer: { status: number; body?: unknown }): string {
 }
 
 /**
- * The device flow, for a control plane that has no other door.
- *
- * Unchanged in shape from when it was the only path: the link carries the code,
- * so a browser is the whole step, and the code is printed only where one could
- * not be opened.
+ * The device flow, for a control plane that has no other door. The link carries the
+ * code, so a browser is the whole step and the code is printed only where none opened.
  */
 async function askAPerson(
-  baseUrl: string,
-  agentId: string,
-  hostname: string,
-  report: EnrolReporter,
-  shownAs: string,
+  input: EnrolAgentInput,
   because: string,
-  agentKind?: string,
 ): Promise<EnrolledAgent | EnrolFailure> {
+  const baseUrl = input.sponsor.baseUrl;
   try {
-    /* A key is generated and then not sent: an advisory principal signs no
-       batches, so the door refuses a public key from one. Generating it anyway
-       keeps one path through `requestCode` rather than two. */
-    const { publicKey } = machineKeypair();
-    const offer = await requestCode(
-      {
-        baseUrl,
-        host: `${agentId}@${hostname}`,
-        /* The name travels, because the hostname above does not: the control
-           plane hashes it. Without this the console shows a hex id and the
-           name a person just chose lives only on their laptop. */
-        label: shownAs,
-        /* The same two the sponsored door takes, so an agent that had to go
-           through a browser still lands as the product it is. */
-        agentId,
-        ...(agentKind === undefined ? {} : { agentKind }),
-        connection: 'mcp',
-      },
-      publicKey,
-    );
-
+    const offer = await requestAgentCode(input);
     const url = approvalUrl(baseUrl, offer.userCode, offer);
     const opened = await openBrowser(url);
-    report.approve({
-      what: shownAs,
+    input.report.approve({
+      what: input.shownAs,
       url,
       because,
       deadline: goodFor(offer),
       ...(opened && pageCarriesCode(offer) ? {} : { code: offer.userCode }),
     });
-
     const collected = await waitForApproval(baseUrl, offer);
     if (collected.mcpUrl === undefined) {
       return {
@@ -280,18 +209,28 @@ async function askAPerson(
         because: 'the control plane approved it but returned no MCP address',
       };
     }
-    return {
-      machineId: collected.machineId,
-      token: collected.token,
-      mcpUrl: collected.mcpUrl,
-      approvedInBrowser: true,
-    };
+    const { machineId, token, mcpUrl } = collected;
+    return { machineId, token, mcpUrl, approvedInBrowser: true };
   } catch (err) {
-    return {
-      outcome: ENROL_FAILED,
-      because: err instanceof Error ? err.message : String(err),
-    };
+    return failureOf(err);
   }
+}
+
+function requestAgentCode(input: EnrolAgentInput): Promise<DeviceOffer> {
+  // Generated and not sent, since an advisory principal signs nothing, to keep one path through requestCode.
+  const { publicKey } = machineKeypair();
+  return requestCode(
+    {
+      baseUrl: input.sponsor.baseUrl,
+      host: `${input.agentId}@${input.hostname}`,
+      // The name travels because the control plane hashes the hostname above.
+      label: input.shownAs,
+      agentId: input.agentId,
+      ...kindField(input.agentKind),
+      connection: 'mcp',
+    },
+    publicKey,
+  );
 }
 
 /** Best effort: a config already restored must not fail over a revocation. */
@@ -306,7 +245,7 @@ export async function revokeAgent(
       method: 'DELETE',
       token: account.token,
     });
-    return answer.status === 200 || answer.status === 204;
+    return answer.status === HTTP.OK || answer.status === HTTP.NO_CONTENT;
   } catch {
     return false;
   }

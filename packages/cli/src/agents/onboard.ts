@@ -1,13 +1,18 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { MCP_CONFIG_LOCATIONS, type Account } from '@memnox/core';
+
+import { DEFAULT_SERVER_KEY, MCP_CONFIG_LOCATIONS, type Account } from '@memnox/core';
+
+import { undecline } from './declined';
 import {
   ENROL_FAILED,
   enrolAgent,
   revokeAgent,
   sponsorOf,
+  type EnrolledAgent,
   type EnrolReporter,
 } from './enrol-agent';
+import { jsonServersKey } from './managed-json';
 import {
   canRewrite,
   MANAGED_SERVER,
@@ -15,10 +20,8 @@ import {
   withManagedServer,
   withoutManagedServer,
 } from './managed-server';
-import { jsonServersKey } from './managed-json';
-import { undecline } from './declined';
 import {
-  backupPathFor,
+  onboardBackupPath,
   readRecord,
   retireRecord,
   writeRecord,
@@ -26,14 +29,9 @@ import {
 } from './onboarding';
 
 /**
- * Putting an agent under Memnox, and taking it back out.
- *
- * The order is the whole design. The credential is minted first, because an
- * enrolment that fails must leave the config untouched; the backup is taken
- * before the write, because a rewrite with no backup is not reversible; and the
- * record is written before the config, because a process killed between them
- * must leave something that knows what to undo. The other orders each lose one
- * of those.
+ * Putting an agent under Memnox, and taking it back out. The credential comes first so a
+ * failed enrolment leaves the config untouched, and the backup and the record come
+ * before the rewrite so a process killed between them leaves something that can undo it.
  */
 
 export const ONBOARD = {
@@ -46,7 +44,7 @@ export const ONBOARD = {
 
 type Outcome = (typeof ONBOARD)[keyof typeof ONBOARD];
 
-interface OnboardResult {
+export interface OnboardResult {
   outcome: Outcome;
   record?: OnboardRecord;
   because?: string;
@@ -66,13 +64,8 @@ export interface Manageable {
 }
 
 /**
- * Whether this agent can be onboarded at all, and which file would change.
- *
- * Asked before a person is, because the alternative is answering two questions
- * about an agent and then being told the third step was never going to work. It
- * reads the same files onboarding rewrites, so the two never disagree, and the
- * path it returns is the one to put on screen: a detector proves an agent from
- * several files and only one of them is the one that would be edited.
+ * Whether this agent can be onboarded at all, and which file would change, asked before
+ * a person is so nobody answers two questions only to be told the third cannot work.
  */
 export async function manageable(
   home: string,
@@ -80,20 +73,11 @@ export async function manageable(
   agentKind: string,
 ): Promise<Manageable> {
   const config = await configFor(home, project, agentKind);
-  if (config === null) {
-    return {
-      because: `nothing on this machine keeps ${agentKind}'s servers where Memnox looks`,
-    };
-  }
+  if (config === null) return { because: notFound(agentKind) };
   if (!canRewrite(config.path)) {
-    return {
-      path: config.path,
-      because: `${config.product} keeps its config in a format this cannot rewrite safely`,
-    };
+    return { path: config.path, because: unsupported(config) };
   }
-  /* A dry run of the real rewrite, thrown away. Checking that the file parses
-     is weaker than checking that the edit we would make survives being read
-     back, and this is the one place the difference is free to find out. */
+  // A dry run of the real rewrite, because surviving a read back is stronger than parsing.
   const raw = await readFile(config.path, 'utf8');
   const trial = withManagedServer(
     raw,
@@ -110,78 +94,73 @@ export async function manageable(
   return { path: config.path };
 }
 
-/**
- * Where this agent keeps its servers.
- *
- * Matched on the product name the scan already uses, so the two never disagree
- * about which file belongs to which agent.
- */
+function notFound(agentKind: string): string {
+  return `nothing on this machine keeps ${agentKind}'s servers where Memnox looks`;
+}
+
+function unsupported(config: AgentConfig): string {
+  return `${config.product} keeps its config in a format this cannot rewrite safely`;
+}
+
+/** Letters only, so "Claude Code" and `claude-code` name the same product. */
+function productKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/** Where this agent keeps its servers, matched on the product name the scan already uses. */
 async function configFor(
   home: string,
   project: string,
   agentKind: string,
 ): Promise<AgentConfig | null> {
-  const wanted = agentKind.toLowerCase().replace(/[^a-z]/g, '');
+  const wanted = productKey(agentKind);
   for (const location of MCP_CONFIG_LOCATIONS) {
-    const product = location.product.toLowerCase().replace(/[^a-z]/g, '');
-    if (product !== wanted) continue;
+    if (productKey(location.product) !== wanted) continue;
     const path = join(location.scope === 'home' ? home : project, location.relative);
     try {
       await readFile(path, 'utf8');
       return { product: location.product, path };
     } catch {
-      // A config this machine does not have: keep looking, the same product
-      // ships more than one location.
+      // Not on this machine: keep looking, since one product ships more than one location.
       continue;
     }
   }
   return null;
 }
 
-export async function onboardAgent(
-  home: string,
-  project: string,
-  account: Account,
-  agentId: string,
-  agentKind: string,
-  report: EnrolReporter,
+export interface OnboardInput {
+  home: string;
+  project: string;
+  account: Account;
+  agentId: string;
+  agentKind: string;
+  report: EnrolReporter;
   /** What the person calls this agent, so the approval screen says it back to them. */
-  shownAs: string = agentId,
-  now: () => string = () => new Date().toISOString(),
-): Promise<OnboardResult> {
-  const config = await configFor(home, project, agentKind);
-  if (config === null) {
-    return {
-      outcome: ONBOARD.NOT_FOUND,
-      because: `nothing on this machine keeps ${agentKind}'s servers where Memnox looks`,
-    };
-  }
+  shownAs?: string;
+  now?: () => string;
+}
 
-  const raw = await readFile(config.path, 'utf8');
-  if (!canRewrite(config.path)) {
-    /* Never rewrite what we could not read back: we would lose what it held.
-       The same rule `memnox mcp wrap` follows. */
-    return {
-      outcome: ONBOARD.UNSUPPORTED,
-      because: `${config.product} keeps its config in a format this cannot rewrite safely`,
-    };
-  }
-  const serversKey = serversKeyFor(raw, config.path);
+/** The config onboarding will rewrite, read once. */
+interface ReadConfig {
+  config: AgentConfig;
+  raw: string;
+  serversKey: string;
+}
 
-  /* First, because an enrolment that fails must leave the config untouched.
-     It spends the credential this machine already holds where the control plane
-     takes one, and asks a person only where it will not. */
-  const enrolled = await enrolAgent(
-    sponsorOf(account),
+export async function onboardAgent(input: OnboardInput): Promise<OnboardResult> {
+  const { home, account, agentId, agentKind } = input;
+  const read = await readManagedConfig(home, input.project, agentKind);
+  if ('outcome' in read) return read;
+
+  // First, because an enrolment that fails must leave the config untouched.
+  const enrolled = await enrolAgent({
+    sponsor: sponsorOf(account),
     agentId,
-    hostOf(home),
-    report,
-    shownAs,
-    /* The product, because the hostname beside it is hashed on the way in: the
-       workspace would otherwise hold five names somebody typed and nothing
-       saying which of them is Claude Code. */
+    hostname: hostOf(home),
+    report: input.report,
+    shownAs: input.shownAs ?? agentId,
     agentKind,
-  );
+  });
   if ('outcome' in enrolled && enrolled.outcome === ENROL_FAILED) {
     return { outcome: ONBOARD.FAILED, because: enrolled.because };
   }
@@ -189,53 +168,72 @@ export async function onboardAgent(
     return { outcome: ONBOARD.FAILED, because: 'the control plane said nothing' };
   }
 
-  const at = now();
-  const backupPath = backupPathFor(home, agentId, config.path, at);
-  await mkdir(dirname(backupPath), { recursive: true });
-  await copyFile(config.path, backupPath);
-
-  const record: OnboardRecord = {
-    agentId,
-    product: config.product,
-    /* What the control plane is told and what a console draws a mark from,
-       which is not the same string a person reads. */
-    agentKind,
-    configPath: config.path,
-    backupPath,
-    machineId: enrolled.machineId,
-    /* Which control plane minted it. Without this a record says only that the
-       agent was onboarded somewhere, and a machine that moves plane reads its
-       own records as proof the new workspace already has these agents. */
-    workspaceId: account.workspaceId,
-    baseUrl: account.baseUrl,
-    serverName: MANAGED_SERVER,
-    onboardedAt: at,
-  };
-  /* Before the config, so a process killed between the two leaves a record
-     pointing at a backup that exists rather than a rewrite nothing remembers. */
-  await writeRecord(home, record);
-
+  const now = input.now ?? ((): string => new Date().toISOString());
+  const record = await backUpAndRecord(input, read.config, enrolled, now());
   const rewritten = withManagedServer(
-    raw,
-    serversKey,
+    read.raw,
+    read.serversKey,
     managedServerFor(enrolled.mcpUrl, enrolled.token),
-    config.path,
+    read.config.path,
   );
   if (rewritten.next === null) {
     return { outcome: ONBOARD.UNSUPPORTED, because: rewritten.because ?? '' };
   }
-  await writeFile(config.path, rewritten.next, 'utf8');
-
-  /* Whatever this machine last said about the agent, it says the opposite now.
-     Here rather than in the guided run, so a `memnox agents onboard` next week
-     clears a no from today and the census stops reporting one. */
+  await writeFile(read.config.path, rewritten.next, 'utf8');
+  // Here rather than in the guided run, so any later onboarding clears an earlier no.
   await undecline(home, agentId);
+  return { outcome: ONBOARD.DONE, record, approvedInBrowser: enrolled.approvedInBrowser };
+}
 
-  return {
-    outcome: ONBOARD.DONE,
-    record,
-    approvedInBrowser: enrolled.approvedInBrowser,
+/** The config to rewrite, or why onboarding stops before anything is asked of the cloud. */
+async function readManagedConfig(
+  home: string,
+  project: string,
+  agentKind: string,
+): Promise<ReadConfig | OnboardResult> {
+  const config = await configFor(home, project, agentKind);
+  if (config === null) {
+    return { outcome: ONBOARD.NOT_FOUND, because: notFound(agentKind) };
+  }
+  const raw = await readFile(config.path, 'utf8');
+  // Never rewrite what we could not read back, the same rule `memnox mcp wrap` follows.
+  if (!canRewrite(config.path)) {
+    return { outcome: ONBOARD.UNSUPPORTED, because: unsupported(config) };
+  }
+  return { config, raw, serversKey: serversKeyFor(raw, config.path) };
+}
+
+/** The backup, then the record naming it, both before the config is touched. */
+async function backUpAndRecord(
+  input: OnboardInput,
+  config: AgentConfig,
+  enrolled: EnrolledAgent,
+  at: string,
+): Promise<OnboardRecord> {
+  const backupPath = onboardBackupPath({
+    home: input.home,
+    agentId: input.agentId,
+    configPath: config.path,
+    at,
+  });
+  await mkdir(dirname(backupPath), { recursive: true });
+  await copyFile(config.path, backupPath);
+
+  const record: OnboardRecord = {
+    agentId: input.agentId,
+    product: config.product,
+    agentKind: input.agentKind,
+    configPath: config.path,
+    backupPath,
+    machineId: enrolled.machineId,
+    // Which control plane minted it, so a move between planes cannot read this as done there.
+    workspaceId: input.account.workspaceId,
+    baseUrl: input.account.baseUrl,
+    serverName: MANAGED_SERVER,
+    onboardedAt: at,
   };
+  await writeRecord(input.home, record);
+  return record;
 }
 
 export const OFFBOARD = {
@@ -254,15 +252,8 @@ interface OffboardResult {
 }
 
 /**
- * Puts the config back and takes the credential away.
- *
- * The backup is the honest undo, because it restores exactly what was there.
- * Where it has gone missing the entry is removed instead, which is a weaker
- * answer and is said as one: anything else a person changed since stays.
- *
- * Revoking is not optional. An offboard that restored the config and left a
- * live credential would have taken the agent's *configuration* away and left
- * its *reach*, which is the wrong half.
+ * Puts the config back, from the backup where it still exists, and takes the credential
+ * away, because a restored config beside a live credential leaves the agent its reach.
  */
 export async function offboardAgent(
   home: string,
@@ -278,30 +269,13 @@ export async function offboardAgent(
     };
   }
 
-  let restoredFromBackup = false;
-  try {
-    const backup = await readFile(record.backupPath, 'utf8');
-    await writeFile(record.configPath, backup, 'utf8');
-    restoredFromBackup = true;
-  } catch {
-    /* No backup: take out only what onboarding added, and say that this is the
-       weaker undo. */
-    try {
-      const raw = await readFile(record.configPath, 'utf8');
-      const stripped = withoutManagedServer(
-        raw,
-        serversKeyFor(raw, record.configPath),
-        record.configPath,
-      );
-      if (stripped.next !== null)
-        await writeFile(record.configPath, stripped.next, 'utf8');
-    } catch {
-      return {
-        outcome: OFFBOARD.FAILED,
-        record,
-        because: `could not put ${record.configPath} back; the backup is at ${record.backupPath}`,
-      };
-    }
+  const restoredFromBackup = await restoreBackup(record);
+  if (!restoredFromBackup && !(await stripManagedEntry(record))) {
+    return {
+      outcome: OFFBOARD.FAILED,
+      record,
+      because: `could not put ${record.configPath} back; the backup is at ${record.backupPath}`,
+    };
   }
 
   const revoked = await revokeAgent(account, record.machineId);
@@ -309,18 +283,36 @@ export async function offboardAgent(
   return { outcome: OFFBOARD.DONE, record, revoked, restoredFromBackup };
 }
 
-/**
- * Which key holds the servers, for the one format with two spellings in the wild.
- *
- * Only JSON needs asking: TOML and YAML each have one spelling their own tooling
- * goes by, and their modules decide it rather than being told.
- */
+async function restoreBackup(record: OnboardRecord): Promise<boolean> {
+  try {
+    await writeFile(record.configPath, await readFile(record.backupPath, 'utf8'), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The weaker undo, for a missing backup: only what onboarding added comes out. */
+async function stripManagedEntry(record: OnboardRecord): Promise<boolean> {
+  try {
+    const raw = await readFile(record.configPath, 'utf8');
+    const stripped = withoutManagedServer(
+      raw,
+      serversKeyFor(raw, record.configPath),
+      record.configPath,
+    );
+    if (stripped.next !== null) await writeFile(record.configPath, stripped.next, 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Which key holds the servers. Only JSON needs asking; TOML and YAML each have one spelling. */
 function serversKeyFor(raw: string, path: string): string {
-  if (!path.toLowerCase().endsWith('.json')) return 'mcp_servers';
-  /* Read the tolerant way the rewrite reads it: a config with a comment in it
-     would otherwise fall back to the default spelling and add a second servers
-     block beside the one the file already has. */
-  return jsonServersKey(raw) ?? 'mcpServers';
+  if (!path.toLowerCase().endsWith('.json')) return DEFAULT_SERVER_KEY.toml;
+  // Read the tolerant way the rewrite reads it, or a commented file gets a second servers block.
+  return jsonServersKey(raw) ?? DEFAULT_SERVER_KEY.json;
 }
 
 /** The machine's own name, for an enrolment that has to be unique per host. */

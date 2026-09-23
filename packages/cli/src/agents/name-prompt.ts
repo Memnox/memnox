@@ -2,61 +2,47 @@ import type { CliContext } from '../cli-context';
 import { checkName, displayName, setName, type AgentNames, NAME_LIMIT } from './names';
 
 /**
- * Asking what to call each agent, at the one moment a person is looking at them.
- *
- * Injected the way `protect` injects its domain asker, so a test names five
- * agents without a terminal and the default is the only thing that touches
- * stdin. Nothing here fails a discovery: naming is a convenience, and a scan
- * that refused to finish because a name was rejected would be a scan people
- * learn to run with a flag.
+ * Asking what to call each agent, at the moment a person is looking at them. Nothing
+ * here fails a discovery, because naming is a convenience.
  */
 
 export interface NameQuestion {
   /** What it is called now, and what pressing Enter keeps. */
   shown: string;
-  /**
-   * Context printed above the prompt, given by the caller rather than built here.
-   *
-   * The guided run has already put the agent's name and reach on screen by the
-   * time it asks; the bulk pass over a discovery has not. A prompt that always
-   * printed the name printed it twice in the one flow that matters most.
-   */
+  /** Context printed above the prompt, given by the caller, which knows what is already on screen. */
   lines: readonly string[];
   /** Why it is being asked, which differs between finding one and enrolling one. */
   because: string;
-  /**
-   * What every line of the question starts with, so a prompt can sit on a rail.
-   *
-   * The guided run draws one down the left and readline cannot be handed a
-   * renderer, so it is handed the gutter instead. Two spaces where nobody says,
-   * which is the indent this had before anything was drawing a rail.
-   */
+  /** What every line starts with, so a prompt sits on a rail: readline takes a gutter, not a renderer. */
   gutter?: string;
 }
 
 /** The question, asked wherever the caller says. `null` means keep the default. */
 export type NameAsker = (question: NameQuestion) => Promise<string | null>;
 
-export const askOnTerminal: NameAsker = async ({ shown, lines, because, gutter }) => {
+export async function askOnTerminal({
+  shown,
+  lines,
+  because,
+  gutter,
+}: NameQuestion): Promise<string | null> {
   const { createInterface } = await import('node:readline/promises');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
   const lead = gutter ?? '  ';
   const above = lines.map((line) => `${lead}${line}\n`).join('');
   try {
-    const answer = await rl.question(
+    const answer = await prompt.question(
       `\n${above}${lead}${because}, or press Enter to keep "${shown}"  > `,
     );
     const wanted = answer.trim();
     return wanted === '' ? null : wanted;
   } catch {
-    /* Ctrl+D, or a stdin that closed under us. Both mean no answer, and a scan
-       that threw here would be one somebody lost because they declined to name
-       something. */
+    // Ctrl+D, or a stdin that closed under us: both mean no answer, never a lost scan.
     return null;
   } finally {
-    rl.close();
+    prompt.close();
   }
-};
+}
 
 interface Named {
   agentId: string;
@@ -64,23 +50,24 @@ interface Named {
   to: string;
 }
 
+export interface AskForNamesInput<T extends { id: string; kind: string }> {
+  context: CliContext;
+  home: string;
+  agents: readonly T[];
+  names: AgentNames;
+  detailOf: (agent: T) => string;
+  ask: NameAsker;
+}
+
 /**
- * Walks the agents that were found and writes whatever names come back.
- *
- * Re-read between answers rather than batched at the end, because the clash
- * check has to see the name given two questions ago. Batching would let
- * somebody call two agents "Backend" and only find out at the write.
+ * Walks the agents that were found and writes whatever names come back, re-reading
+ * between answers because the clash check has to see the name given a question ago.
  */
 export async function askForNames<T extends { id: string; kind: string }>(
-  context: CliContext,
-  home: string,
-  agents: readonly T[],
-  names: AgentNames,
-  detailOf: (agent: T) => string,
-  ask: NameAsker,
+  input: AskForNamesInput<T>,
 ): Promise<Named[]> {
-  const { flow, style } = context;
-  if (agents.length === 0) return [];
+  const { flow } = input.context;
+  if (input.agents.length === 0) return [];
 
   flow.step(
     'What do you want to call them',
@@ -88,57 +75,65 @@ export async function askForNames<T extends { id: string; kind: string }>(
   );
 
   const given: Named[] = [];
-  let taken = names;
-  for (const agent of agents) {
-    const before = displayName(taken, agent);
-    /* A failing asker keeps the default rather than taking the scan down with
-       it: everything above this point is already on screen and worth keeping. */
-    const wanted = await ask({
-      shown: before,
-      lines: [before, detailOf(agent)],
-      gutter: flow.prompt,
-      because: 'Name it',
-    }).catch(() => null);
-    if (wanted === null) continue;
-
-    const checked = checkName(wanted, agent.id, taken);
-    if (!checked.ok) {
-      /* Said and skipped rather than asked again. A loop here is a scan that
-         cannot be finished by pressing Enter, and `memnox agents name` is one
-         command away. */
-      flow.aside(
-        style.warn(`Kept "${before}": ${checked.because ?? 'that name was refused'}`),
-      );
-      continue;
-    }
-    const written = await setName(home, agent.id, wanted);
-    if (!written.ok || written.name === undefined) continue;
-    taken = { ...taken, [agent.id]: written.name };
-    given.push({ agentId: agent.id, from: before, to: written.name });
+  let taken = input.names;
+  for (const agent of input.agents) {
+    const named = await askForAgentName(input, agent, taken);
+    if (named === null) continue;
+    taken = { ...taken, [agent.id]: named.to };
+    given.push(named);
   }
   return given;
 }
 
+/** One agent of the walk, or null where the default was kept. */
+async function askForAgentName<T extends { id: string; kind: string }>(
+  input: AskForNamesInput<T>,
+  agent: T,
+  taken: AgentNames,
+): Promise<Named | null> {
+  const { flow, style } = input.context;
+  const before = displayName(taken, agent);
+  // A failing asker keeps the default rather than taking the scan down with it.
+  const wanted = await input
+    .ask({
+      shown: before,
+      lines: [before, input.detailOf(agent)],
+      gutter: flow.prompt,
+      because: 'Name it',
+    })
+    .catch(() => null);
+  if (wanted === null) return null;
+
+  const checked = checkName(wanted, agent.id, taken);
+  if (!checked.ok) {
+    // Said and skipped rather than asked again, so Enter always finishes the scan.
+    flow.aside(
+      style.warn(`Kept "${before}": ${checked.because ?? 'that name was refused'}`),
+    );
+    return null;
+  }
+  const written = await setName(input.home, agent.id, wanted);
+  if (!written.ok || written.name === undefined) return null;
+  return { agentId: agent.id, from: before, to: written.name };
+}
+
+export interface AskForOneNameInput {
+  home: string;
+  agent: { id: string; kind: string };
+  names: AgentNames;
+  because: string;
+  lines: readonly string[];
+  ask: NameAsker;
+}
+
 /**
- * One name, asked once, at the moment it becomes an identity somewhere else.
- *
- * Separate from `askForNames` because the question is a different one. There it
- * is a convenience over a list somebody is reading; here the answer is what a
- * workspace will call this agent from now on, and a person choosing deserves to
- * be told that before they press Enter.
- *
- * A refused name keeps the current one rather than asking again. The enrolment
- * behind this waits on a person in a browser, and a prompt loop in front of it
- * is where somebody gives up on onboarding entirely.
+ * One name, asked at the moment it becomes what a workspace calls this agent. A refused
+ * name keeps the current one rather than looping in front of a browser wait.
  */
 export async function askForOneName(
-  home: string,
-  agent: { id: string; kind: string },
-  names: AgentNames,
-  because: string,
-  lines: readonly string[],
-  ask: NameAsker,
+  input: AskForOneNameInput,
 ): Promise<{ name: string; because?: string }> {
+  const { home, agent, names, because, lines, ask } = input;
   const before = displayName(names, agent);
   const wanted = await ask({ shown: before, lines, because }).catch(() => null);
   if (wanted === null) return { name: before };
@@ -153,10 +148,7 @@ export async function askForOneName(
   return { name: written.name };
 }
 
-/**
- * `--name claude-code="Backend Coder"`, for anything that is not a person at a
- * terminal. One flag rather than a prompt, so a setup script can name a fleet.
- */
+/** `--name claude-code="Backend Coder"`, so a setup script can name a fleet without a prompt. */
 export function parseNameFlag(raw: string): { query: string; name: string } | null {
   const at = raw.indexOf('=');
   if (at <= 0) return null;

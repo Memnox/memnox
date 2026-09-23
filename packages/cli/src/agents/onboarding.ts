@@ -1,20 +1,13 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { MEMNOX_HOME } from '@memnox/core';
+
+import { agentNameIn, MEMNOX_HOME, readJsonFile, shortDigest } from '@memnox/core';
+
 import { sameControlPlane } from '../sync/client';
 
 /**
- * What onboarding an agent did, so it can be undone exactly.
- *
- * This is the part of onboarding a person actually feels: it backs up the
- * config, rewrites it, and can put it back. The rewrite is the easy half. The
- * record is what makes `offboard` an undo rather than a second guess at what
- * the file used to say.
- *
- * Written before the config is touched and removed only after it is restored,
- * so a process killed in the middle leaves a record pointing at a backup that
- * exists. The other order leaves a rewritten config nothing remembers.
+ * What onboarding an agent did, so `offboard` is an exact undo. Written before the config
+ * is touched and retired only after it is restored, so a killed process leaves a backup.
  */
 
 const AGENTS_DIR = 'agents';
@@ -27,13 +20,7 @@ export interface OnboardRecord {
   agentId: string;
   /** The product whose config was rewritten, for what a person reads. */
   product: string;
-  /**
-   * The product as the scan names it: `claude-code`, `cursor`, `codex-cli`.
-   *
-   * Apart from `product`, which is what a person reads, because this is what
-   * the control plane is told and what a console draws a mark from. Absent on
-   * a record written before it was kept, where the id still carries it.
-   */
+  /** The product as the scan names it, which the control plane is told. Absent on older records. */
   agentKind?: string;
   /** The config file that was changed. */
   configPath: string;
@@ -42,14 +29,8 @@ export interface OnboardRecord {
   /** The machine this agent was enrolled as, so offboard can revoke it. */
   machineId: string;
   /**
-   * The workspace the credential was minted in, and where it was asked for.
-   *
-   * Kept because a record without them says only that this machine onboarded
-   * this agent *somewhere*. A laptop moved from a control plane on localhost to
-   * the real one then read its own records as proof the agents were already
-   * governed, and reported five agents to a workspace that had never heard of
-   * them. Absent on a record written before the fields existed, which is read
-   * as belonging to whatever plane is asking: there is nothing better to say.
+   * The workspace the credential was minted in, and where it was asked for. Absent on
+   * older records, which are read as belonging to whatever plane is asking.
    */
   workspaceId?: string;
   baseUrl?: string;
@@ -66,35 +47,31 @@ function recordPathFor(home: string, agentId: string): string {
   return join(agentsDir(home), `${safe(agentId)}.json`);
 }
 
+/** Colons, dots and dashes out of an ISO time, so it can sit inside a file name. */
+function stampOf(at: string): string {
+  return at.replace(/[:.]/g, '').replace(/-/g, '');
+}
+
+export interface OnboardBackupInput {
+  home: string;
+  agentId: string;
+  configPath: string;
+  at: string;
+}
+
 /**
- * A backup per onboarding, stamped, rather than one per config.
- *
- * Onboarding twice must not overwrite the only copy of what the file said
- * before Memnox ever touched it. The stamp is what lets a second run be
- * reversible too.
- *
- * The name carries the file's own name and a digest of the directory it came
- * from, rather than the whole path flattened into it. One agent can keep more
- * than one config and both may be called `mcp.json`, so something has to tell
- * them apart; the digest does it in eight characters. Flattening the path did
- * it in ninety, and a screen that prints a backup path is a screen where that
- * line wraps three times and buries every line beside it. Nothing reconstructs
- * a path from this name: `OnboardRecord` holds both, and that is what offboard
- * reads.
+ * A stamped backup per onboarding, named for the file and a digest of its directory,
+ * since one agent can keep two configs both called `mcp.json`.
  */
-export function backupPathFor(
-  home: string,
-  agentId: string,
-  configPath: string,
-  at: string,
-): string {
-  const stamp = at.replace(/[:.]/g, '').replace(/-/g, '');
-  const where = createHash('sha256')
-    .update(dirname(configPath))
-    .digest('hex')
-    .slice(0, 8);
-  const name = safe(basename(configPath));
-  return join(agentsDir(home), BACKUPS_DIR, safe(agentId), `${stamp}-${where}-${name}`);
+export function onboardBackupPath(input: OnboardBackupInput): string {
+  const where = shortDigest(dirname(input.configPath));
+  const name = safe(basename(input.configPath));
+  return join(
+    agentsDir(input.home),
+    BACKUPS_DIR,
+    safe(input.agentId),
+    `${stampOf(input.at)}-${where}-${name}`,
+  );
 }
 
 export async function writeRecord(home: string, record: OnboardRecord): Promise<void> {
@@ -111,24 +88,12 @@ export async function readRecord(
   home: string,
   agentId: string,
 ): Promise<OnboardRecord | null> {
-  try {
-    const raw = await readFile(recordPathFor(home, agentId), 'utf8');
-    return JSON.parse(raw) as OnboardRecord;
-  } catch {
-    return null;
-  }
+  return readJsonFile<OnboardRecord>(recordPathFor(home, agentId));
 }
 
 /**
- * Every agent this machine has onboarded and not taken back out.
- *
- * Retired records are skipped by their own suffix: an offboarded agent has
- * had its credential revoked, and reporting it would be this machine claiming
- * a principal that is gone.
- *
- * Unreadable is empty rather than an error. This is read on the sync loop,
- * and a heartbeat that failed over a half-written file would stop a machine
- * pulling its rules to fix a name on a screen.
+ * Every agent this machine has onboarded and not taken back out, skipping unreadable and
+ * retired records, because this is read on the sync loop and must never fail it.
  */
 export async function listRecords(home: string): Promise<OnboardRecord[]> {
   let names: string[];
@@ -141,31 +106,19 @@ export async function listRecords(home: string): Promise<OnboardRecord[]> {
   const records: OnboardRecord[] = [];
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
-    try {
-      const raw = await readFile(join(agentsDir(home), name), 'utf8');
-      const record = JSON.parse(raw) as OnboardRecord;
-      if (typeof record.agentId === 'string' && typeof record.machineId === 'string') {
-        records.push(record);
-      }
-    } catch {
-      continue; // One unreadable record must not hide the rest.
+    // One unreadable record reads as null and must not hide the rest.
+    const record = await readJsonFile<OnboardRecord>(join(agentsDir(home), name));
+    if (typeof record?.agentId === 'string' && typeof record.machineId === 'string') {
+      records.push(record);
     }
   }
   return records;
 }
 
 /**
- * Whether this record was written against the control plane now in hand.
- *
- * An agent onboarded into one workspace is not onboarded into the next one: its
- * credential was minted there, its config points at that plane's MCP address,
- * and the only thing that can revoke it is the account that sponsored it. So a
- * record naming another workspace is reported as what it is rather than as
- * "already done", which is how a move between planes ended with nothing moved.
- *
- * A record naming no plane belongs to this one. That is the answer for every
- * record written before the field existed, and guessing the other way would
- * re-onboard every agent on every laptop that upgrades.
+ * Whether this record was written against the control plane now in hand, since a
+ * credential minted in one workspace is not one in the next. A record naming no plane
+ * predates the field and belongs to this one.
  */
 export function onboardedInto(
   record: OnboardRecord,
@@ -174,42 +127,28 @@ export function onboardedInto(
   if (record.workspaceId === undefined) return true;
   return (
     record.workspaceId === account.workspaceId &&
-    /* The URL as well as the workspace, because two deployments can hold a
-       workspace of the same name: a seeded `acme` on localhost and an `acme` in
-       the real one are different rows with different credentials. Undefined is
-       an older record, where the workspace was all it kept. */
+    // The URL too, because two deployments can each hold a workspace called `acme`.
     (record.baseUrl === undefined || sameControlPlane(record.baseUrl, account.baseUrl))
   );
 }
 
 /**
- * The product an onboarded agent is, from the record or from its own id.
- *
- * `agt_claude-code` is the id a scan gives Claude Code, so the kind is in it
- * for every record written before the field existed. Derived rather than
- * guessed: the scan builds the id from the kind, so this reverses exactly
- * what that did.
+ * The product an onboarded agent is, from the record or from its own id, which carries
+ * the kind for every record written before the field existed.
  */
 export function kindOf(record: OnboardRecord): string {
-  return record.agentKind ?? record.agentId.replace(/^agt_/, '');
+  return record.agentKind ?? agentNameIn(record.agentId);
 }
 
-/**
- * Kept rather than deleted, so an offboard is still findable afterwards.
- *
- * A record that vanishes leaves nobody able to answer "was this agent ever
- * onboarded, and what happened to it". Renaming keeps the answer and stops
- * `status` reading it as live.
- */
+/** Kept rather than deleted, so whether an agent was ever onboarded stays answerable. */
 export async function retireRecord(
   home: string,
   agentId: string,
   at: string,
 ): Promise<void> {
   const path = recordPathFor(home, agentId);
-  const stamp = at.replace(/[:.]/g, '').replace(/-/g, '');
   try {
-    await rename(path, `${path}.offboarded-${stamp}`);
+    await rename(path, `${path}.offboarded-${stampOf(at)}`);
   } catch {
     // Never onboarded, or already retired. Both are the state offboard wants.
   }
