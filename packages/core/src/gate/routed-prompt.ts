@@ -1,7 +1,7 @@
 import {
   DEFAULT_HOLD_TIMEOUT_MS,
   DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS,
-  HOLD_ANSWER,
+  describeHeldCall,
   HOLD_OUTCOME,
   HoldService,
   isUnanswered,
@@ -12,19 +12,11 @@ import {
 } from './hold';
 import { PendingApprovals, waitForAnswer } from './pending';
 import { TtyHoldPrompt } from './tty-prompt';
+import { msToSeconds } from '../domain/time';
 
 /**
- * A held call, asked of whoever is actually there.
- *
- * Every seam had an optional hold and none of them ever built one, so an `ask` rule
- * reached `Nobody could be asked, so it was denied` — on a laptop with somebody
- * sitting at it, and on a VPS at three in the morning alike. That made `ask` a
- * synonym for `deny`, which is the single thing that stops an agent being left to run.
- *
- * So the question is written down first and answered from wherever an answer turns
- * up: the terminal, if there is one; a second terminal running `memnox approve`; or
- * the control plane, which reads the same file. The waiting side does not know or
- * care which, and that is what makes an unattended run possible at all.
+ * A held call, written down first and answered from wherever an answer turns up: this
+ * terminal, a second one running `memnox approve`, or the control plane reading the file.
  */
 export interface RoutedPromptDeps {
   approvals: PendingApprovals;
@@ -50,32 +42,25 @@ export class RoutedHoldPrompt implements HoldPrompt {
     const pending = await this.deps.approvals.raise(request, askedAt, timeoutMs);
     this.announce(pending.id, request, timeoutMs);
 
-    const deadline = now() + timeoutMs;
-    /* Both at once, and the first answer wins. A person at the keyboard should not
-       have to wait out a remote approver, and a remote approver should not be locked
-       out because somebody happens to be logged in. */
+    // Both routes at once and the first answer wins, so neither approver waits on the other.
     const answers: Promise<HoldAsked | null>[] = [
-      waitForAnswer(
-        this.deps.approvals,
-        pending.id,
-        deadline,
+      waitForAnswer({
+        approvals: this.deps.approvals,
+        id: pending.id,
+        deadline: now() + timeoutMs,
         now,
-        this.deps.sleep,
-        this.deps.pollMs,
-      ).then((answer) => (answer === null ? null : { answer })),
+        ...(this.deps.sleep === undefined ? {} : { sleep: this.deps.sleep }),
+        ...(this.deps.pollMs === undefined ? {} : { intervalMs: this.deps.pollMs }),
+      }).then((answer) => (answer === null ? null : { answer })),
     ];
     if (this.deps.tty !== undefined) {
       answers.push(this.askTty(this.deps.tty, request, timeoutMs, pending.id));
     }
 
-    const answer = await first(answers);
-    /* Cleared either way. A record that outlived its question is one somebody answers
-       later, for a command that stopped running an hour ago. */
+    const answer = await firstAnswer(answers);
+    // Cleared either way, or somebody answers it later for a command long gone.
     await this.deps.approvals.clear(pending.id);
-    /* The record was raised, so somebody could have answered this and nobody did. That
-       is a timeout, and it must not reach the agent wearing the words of the rule that
-       asked — a person who approved a minute too late would otherwise read that their
-       approval was a refusal. */
+    // Somebody could have answered and nobody did, which is a timeout and not the rule's refusal.
     return answer ?? { unanswered: HOLD_OUTCOME.TIMED_OUT };
   }
 
@@ -87,8 +72,7 @@ export class RoutedHoldPrompt implements HoldPrompt {
     id: string,
   ): Promise<HoldAsked | null> {
     const asked = await tty.ask(request, timeoutMs);
-    /* A terminal that ran out of time is this route giving nothing, not an answer: the
-       remote one may still be about to arrive, and `first` is waiting on both. */
+    // A terminal that ran out of time gives nothing, since the remote answer may still arrive.
     if (asked === null || isUnanswered(asked)) return null;
     await this.deps.approvals.answer(
       id,
@@ -102,11 +86,8 @@ export class RoutedHoldPrompt implements HoldPrompt {
   private announce(id: string, request: HoldRequest, timeoutMs: number): void {
     const say = this.deps.announce;
     if (say === undefined) return;
-    const what =
-      request.target === undefined
-        ? request.operation
-        : `${request.operation} ${request.target}`;
-    const seconds = Math.round(timeoutMs / 1000);
+    const what = describeHeldCall(request);
+    const seconds = msToSeconds(timeoutMs);
     say(
       `held ${what} for a person (${seconds}s): memnox approve ${id}  |  memnox deny ${id}`,
     );
@@ -114,13 +95,10 @@ export class RoutedHoldPrompt implements HoldPrompt {
 }
 
 /**
- * The first answer, ignoring the ones that never come.
- *
- * `Promise.race` would settle on the first *rejection* or the first null, so a
- * terminal that nobody is sitting at would cancel a remote approval that was about to
- * arrive. This waits for a real answer, and only gives up when every route has.
+ * The first real answer, giving up only when every route has. `Promise.race` would settle
+ * on the first null, so an empty terminal would cancel a remote approval about to arrive.
  */
-async function first(
+async function firstAnswer(
   answers: readonly Promise<HoldAsked | null>[],
 ): Promise<HoldAsked | null> {
   return new Promise((resolve) => {
@@ -129,61 +107,37 @@ async function first(
       resolve(null);
       return;
     }
-    let settled = false;
+    function settle(value: HoldAsked | null): void {
+      if (value !== null) {
+        resolve(value);
+        return;
+      }
+      outstanding -= 1;
+      if (outstanding === 0) resolve(null);
+    }
     for (const answer of answers) {
-      void answer
-        .then((value) => {
-          if (settled) return;
-          if (value !== null) {
-            settled = true;
-            resolve(value);
-            return;
-          }
-          outstanding -= 1;
-          if (outstanding === 0) {
-            settled = true;
-            resolve(null);
-          }
-        })
-        .catch(() => {
-          if (settled) return;
-          outstanding -= 1;
-          if (outstanding === 0) {
-            settled = true;
-            resolve(null);
-          }
-        });
+      void answer.then(settle, () => settle(null));
     }
   });
 }
 
-export { HOLD_ANSWER };
-
-/**
- * Somebody to ask, composed for a seam.
- *
- * Lives here rather than beside one seam because two of them need it and neither is
- * allowed to depend on the other: the shell wrapper and the MCP proxy are both
- * transports, and a transport importing another transport is how a layering rule
- * stops meaning anything.
- */
-export function holdFor(deps: {
+export interface HoldForInput {
   home: string;
   /** Only when a person could actually see it. A headless box has nobody at /dev/tty. */
   interactive: boolean;
   announce?: (message: string) => void;
   timeoutMs?: number;
-}): HoldService {
+}
+
+/** Somebody to ask, composed here because the shell wrapper and the MCP proxy both need it. */
+export function holdFor(deps: HoldForInput): HoldService {
   return new HoldService(
     new RoutedHoldPrompt({
       approvals: new PendingApprovals(deps.home),
       ...(deps.interactive ? { tty: new TtyHoldPrompt() } : {}),
       ...(deps.announce === undefined ? {} : { announce: deps.announce }),
     }),
-    /* How long is worth waiting depends on who can answer. Somebody at the keyboard is
-       already reading it; somebody elsewhere has to be found first, and their answer
-       has to travel back. One window for both meant the remote half could not finish
-       inside it. */
+    // Somebody elsewhere has to be found and their answer travel back, so they get longer.
     deps.timeoutMs ??
       (deps.interactive ? DEFAULT_HOLD_TIMEOUT_MS : DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS),
   );

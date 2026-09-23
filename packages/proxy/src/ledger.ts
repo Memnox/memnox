@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   ACTOR_TYPE,
   classifyTool,
@@ -7,18 +6,18 @@ import {
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
   EXECUTION,
-  SqliteEventStore,
+  localRuleRef,
+  newEventId,
+  UNNAMED_AGENT,
+  UNNAMED_SESSION,
   type EventSink,
   type MemnoxEvent,
 } from '@memnox/core';
+
 import { MCP_ACTION_PREFIX } from './firewall.constants';
 import type { McpCallRecord } from './result-guard';
 
-/**
- * The row behind `why`, `timeline` and `trace` for a proxied call. Without it the
- * ledger holds the shell and git seams alone, and "what did this agent do" answers
- * short about an agent whose whole day went through an MCP server.
- */
+/** The row behind `why`, `timeline` and `trace` for a proxied call, one per call. */
 
 export interface LedgerContext {
   /** Groups a client's calls, so a timeline reads as one session rather than a list. */
@@ -28,25 +27,25 @@ export interface LedgerContext {
 }
 
 /**
- * The action name the gate matched on, so `why` names the same thing the rule did.
- * `call-authorizer` builds `mcp.<tool>` and this must not drift from it.
+ * The action name the gate matches on, so a rule,
+ * a budget and `why` all name the same thing.
  */
 export function operationFor(tool: string): string {
   return `${MCP_ACTION_PREFIX}.${tool}`;
 }
 
-export function eventFor(
+export function callEventFor(
   record: McpCallRecord,
   at: string,
   context: LedgerContext = {},
 ): MemnoxEvent {
   const blocked = record.effect !== DECISION_EFFECT.ALLOW;
   return {
-    id: `evt_${randomUUID().replace(/-/g, '').slice(0, 20)}`,
+    id: newEventId(),
     schemaVersion: EVENT_SCHEMA_VERSION,
     at,
-    sessionId: context.sessionId ?? 'ses_local',
-    agent: context.agent ?? 'an agent',
+    sessionId: context.sessionId ?? UNNAMED_SESSION,
+    agent: context.agent ?? UNNAMED_AGENT,
     actorType: ACTOR_TYPE.AGENT,
     surface: EVENT_SURFACE.MCP,
     operation: operationFor(record.tool),
@@ -59,19 +58,13 @@ export function eventFor(
     // A digest, never the arguments: an argument list is where a secret would be.
     argsDigest: record.argsDigest,
     execution: blocked ? EXECUTION.BLOCKED : EXECUTION.COMPLETED,
-    /* The layer and file are what this seam can honestly say: a matched policy carries
-       its name and nothing else, the same placeholder the interceptors write. */
-    ...(record.rule === undefined
-      ? {}
-      : { rule: { name: record.rule, layer: 'project', file: 'policy' } }),
+    ...(record.rule === undefined ? {} : { rule: localRuleRef(record.rule) }),
   };
 }
 
 /**
- * Best effort, and silent about failing — the same bargain the interceptors make. A
- * ledger that cannot be written is a lost row; a ledger that breaks the JSON-RPC
- * stream is a proxy that wedges somebody's agent. The verdict has already been
- * applied by the time this runs, so nothing here can change what happened.
+ * Best effort and silent about failing, as the interceptors are: a lost row costs less
+ * than a broken JSON-RPC stream, and the verdict is already applied by now.
  */
 export function recordToLedger(
   sink: EventSink,
@@ -80,19 +73,10 @@ export function recordToLedger(
   context: LedgerContext = {},
 ): void {
   try {
-    void sink.append(eventFor(record, at, context)).catch(() => {
+    void sink.append(callEventFor(record, at, context)).catch(() => {
       // Nothing to do about it here, and nothing worth interrupting the agent for.
     });
   } catch {
     // Same again: a row is not worth a wedged proxy.
-  }
-}
-
-/** The ledger, or null when it will not open. A lost row never stops a call. */
-export function openLedger(home: string): SqliteEventStore | null {
-  try {
-    return SqliteEventStore.forHome(home);
-  } catch {
-    return null;
   }
 }

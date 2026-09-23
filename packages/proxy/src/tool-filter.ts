@@ -27,7 +27,7 @@ function compilePattern(
   try {
     return new RegExp(pattern);
   } catch (err) {
-    // An unusable filter must not crash the proxy — report and ignore it.
+    // An unusable filter must not crash the proxy, so report and ignore it.
     if (onInvalid) onInvalid(`invalid tool filter pattern "${pattern}": ${String(err)}`);
     return null;
   }

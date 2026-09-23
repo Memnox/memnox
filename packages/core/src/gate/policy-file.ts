@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import { parse, stringify } from 'yaml';
@@ -8,12 +8,13 @@ import {
   PolicyValidationError,
   validatePolicyDocument,
 } from '../policy/index';
+import { writeAtomic } from '../store/atomic-file';
 
 /**
- * TOML is the format the build plan specifies and what new files are written in. YAML
- * is still read, because a rule file somebody already has must not stop working on an
- * upgrade — the shape both produce is identical, so only the parser differs.
+ * Reading and writing rule files. New files are TOML, and YAML is still read so a file
+ * somebody already has keeps working; both parse to the same shape.
  */
+
 export function parsePolicySource(raw: string, filePath: string): unknown {
   return extname(filePath).toLowerCase() === '.toml' ? parseToml(raw) : parse(raw);
 }
@@ -35,7 +36,7 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
     }
     throw err;
   }
-  const document = named(filePath, () =>
+  const document = withFileNamed(filePath, () =>
     validatePolicyDocument(parsePolicySource(raw, filePath)),
   );
   if (document.project === undefined) return document.policies;
@@ -45,7 +46,7 @@ export async function loadPoliciesFromFile(filePath: string): Promise<Policy[]> 
 }
 
 /** Re-raises a validation failure carrying the file it came from. */
-function named<T>(filePath: string, read: () => T): T {
+function withFileNamed<T>(filePath: string, read: () => T): T {
   try {
     return read();
   } catch (err) {
@@ -71,10 +72,8 @@ export async function loadPolicyFiles(
 ): Promise<Policy[]> {
   const policies: Policy[] = [];
   for (const filePath of filePaths) {
-    // A path this run named itself must exist — a typo has to be loud. A path
-    // another repo registered belongs to a checkout that may since have been
-    // deleted or moved, and one dead entry must not stop every other project
-    // on the machine from starting.
+    // A path this run named must exist so a typo is loud, but one another repository
+    // registered may be a deleted checkout, which must not stop every other project.
     if (sources !== undefined && sources.optional.has(filePath)) {
       const loaded = await loadOptionalPolicyFile(filePath);
       if (loaded === null) {
@@ -90,9 +89,8 @@ export async function loadPolicyFiles(
 }
 
 /**
- * Null when the file is gone; a malformed one still throws — that is a real fault, and
- * skipping it would start the runtime with a repository's rules silently not in force,
- * which is worse than not starting. It throws naming the file, so the fix is findable.
+ * Null when the file is gone. A malformed one still throws, naming the file, because
+ * starting with a repository's rules silently not in force is worse than not starting.
  */
 async function loadOptionalPolicyFile(filePath: string): Promise<Policy[] | null> {
   try {
@@ -112,7 +110,7 @@ interface PolicyRegistry {
   files?: string[];
 }
 
-/** Paths only — rule content never travels, so a rule stays in its own repo's diff. */
+/** Paths only, because rule content never travels, so a rule stays in its own repo's diff. */
 export async function readPolicyRegistry(filePath: string): Promise<string[]> {
   let raw: string;
   try {
@@ -122,6 +120,8 @@ export async function readPolicyRegistry(filePath: string): Promise<string[]> {
     if (isMissingFile(err)) return [];
     throw err;
   }
+  // Unguarded on purpose: reading a corrupt registry as empty would let the next
+  // registration overwrite it and silently drop every other repository's rules.
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== 'object' || parsed === null) return [];
   const files = (parsed as PolicyRegistry).files;
@@ -166,9 +166,7 @@ export async function writePolicyDocumentFile(
     extname(filePath).toLowerCase() === POLICY_FILE_EXTENSION
       ? stringifyToml(shape)
       : stringify(shape);
-  const temporary = `${filePath}.tmp`;
-  await writeFile(temporary, serialized, 'utf8');
-  await rename(temporary, filePath);
+  await writeAtomic(filePath, serialized);
 }
 
 /** One file that is there, will not load, and everything wrong with it. */
@@ -193,11 +191,8 @@ export interface PolicySet {
 }
 
 /**
- * Every registered file, loaded one at a time. One repository's stale file must not
- * blank every other repository's rules on a report: a reader told "nothing governs
- * this" about a governed machine acts on it. The gate keeps `loadPolicyFiles`, which
- * still throws — refusing to start is right where the answer decides whether a call
- * proceeds, and wrong where it only describes.
+ * Every registered file, loaded one at a time so one stale file cannot blank the rest.
+ * The gate keeps `loadPolicyFiles`, which throws, because there the answer decides a call.
  */
 export async function loadPolicySet(filePaths: readonly string[]): Promise<PolicySet> {
   const set: PolicySet = { policies: [], loaded: [], unreadable: [], missing: [] };

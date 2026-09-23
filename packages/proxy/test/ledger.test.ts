@@ -9,7 +9,7 @@ import {
   type MemnoxEvent,
 } from '@memnox/core';
 import {
-  eventFor,
+  callEventFor,
   FirewallSession,
   ToolFilter,
   type CallAuthorizer,
@@ -149,7 +149,7 @@ describe('the row a proxied call becomes', () => {
   const at = '2026-09-05T12:00:00.000Z';
 
   it('is a valid v1 event', () => {
-    const problems = validateEvent(eventFor(record, at) as unknown as MemnoxEvent);
+    const problems = validateEvent(callEventFor(record, at) as unknown as MemnoxEvent);
 
     expect(problems).toEqual([]);
   });
@@ -157,44 +157,47 @@ describe('the row a proxied call becomes', () => {
   /* The same action name the gate matched on. Two spellings would mean `why` could not
      find the rule that decided the row it is explaining. */
   it('names the action the way the authorizer asked about it', () => {
-    expect(eventFor(record, at).operation).toBe('mcp.merge_pull_request');
+    expect(callEventFor(record, at).operation).toBe('mcp.merge_pull_request');
   });
 
   it('records the server as what the call reached through', () => {
-    expect(eventFor(record, at).target).toBe('github');
+    expect(callEventFor(record, at).target).toBe('github');
   });
 
   /* `why` answered "none matched — the default applied" about a call a rule had just
      refused, which reads as "we checked and there was no rule" when there was one. */
   it('names the rule that decided, so why does not claim none matched', () => {
-    const event = eventFor({ ...record, rule: 'no-repo-deletion' }, at);
+    const event = callEventFor({ ...record, rule: 'no-repo-deletion' }, at);
 
     expect(event.rule?.name).toBe('no-repo-deletion');
   });
 
   it('leaves the rule out when nothing matched', () => {
-    expect(eventFor(record, at).rule).toBeUndefined();
+    expect(callEventFor(record, at).rule).toBeUndefined();
   });
 
   it('marks a refused call as never having run', () => {
-    expect(eventFor(record, at).execution).toBe(EXECUTION.BLOCKED);
+    expect(callEventFor(record, at).execution).toBe(EXECUTION.BLOCKED);
   });
 
   it('marks an allowed call as completed', () => {
     const allowed = { ...record, effect: DECISION_EFFECT.ALLOW, reason: 'no rule' };
 
-    expect(eventFor(allowed, at).execution).toBe(EXECUTION.COMPLETED);
+    expect(callEventFor(allowed, at).execution).toBe(EXECUTION.COMPLETED);
   });
 
   it('groups a call into the session the agent was started with', () => {
-    const event = eventFor(record, at, { sessionId: 'ses_abc', agent: 'claude-code' });
+    const event = callEventFor(record, at, {
+      sessionId: 'ses_abc',
+      agent: 'claude-code',
+    });
 
     expect(event.sessionId).toBe('ses_abc');
     expect(event.agent).toBe('claude-code');
   });
 
   it('lands on the mcp surface, so a timeline can be narrowed to it', () => {
-    const event = eventFor(record, at);
+    const event = callEventFor(record, at);
 
     expect(event.surface).toBe(EVENT_SURFACE.MCP);
     expect(event.schemaVersion).toBe(EVENT_SCHEMA_VERSION);
@@ -204,7 +207,9 @@ describe('the row a proxied call becomes', () => {
   // A destructive tool must not be recorded as an ordinary one; the class is read
   // from the same classifier the scan uses.
   it('classifies the tool the way the scan does', () => {
-    expect(eventFor(record, at).class).toBe('write');
-    expect(eventFor({ ...record, tool: 'delete_repo' }, at).class).toBe('destructive');
+    expect(callEventFor(record, at).class).toBe('write');
+    expect(callEventFor({ ...record, tool: 'delete_repo' }, at).class).toBe(
+      'destructive',
+    );
   });
 });

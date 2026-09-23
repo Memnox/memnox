@@ -6,50 +6,46 @@ import { PolicyEngine, type Policy } from '../policy/index';
 import { matchesAny } from '../policy/pattern-matcher';
 import { scopeOf, type SessionTask } from '../session/session-task';
 import { SCOPE_MATCH, type ScopeComparison } from '../domain/task';
-import { loadPolicyFiles } from './policy-file';
+import { containmentAsk, type Containment, type ContainmentAsk } from './containment';
+import type { NoticePort } from '../notice/unusual-notice';
+import { loadPolicyFiles, type OptionalPolicySources } from './policy-file';
+
+/**
+ * The rules this machine holds, asked one action at a time by the seams. Nothing on this
+ * path makes a network call, so an agent stays governed with the wifi off.
+ */
 
 const SIGNAL_POLICY_PREFIX = 'policy:';
 
 export interface LocalGateOptions {
   /** Matched against a rule's `agents` patterns, exactly as the runtime does. */
   agentName: string;
-  /**
-   * The job this agent was enrolled under, matched by a rule's `roles`. A workforce
-   * is several agents with different authority, and without this a `roles` rule
-   * parses, validates and then never fires — which reads as working and is worse
-   * than absent.
-   */
+  /** The job this agent was enrolled under, so a rule's `roles` has something to match. */
   agentRole?: string;
   /**
-   * What somebody asked for, so a rule can match on `scope`. Null is `undeclared`
-   * rather than out of scope: most sessions declare nothing and treating those as
-   * drift would make the signal worthless.
+   * What somebody asked for, so a rule can match on `scope`. Null is `undeclared` rather
+   * than out of scope, because most sessions declare nothing.
    */
   task?: SessionTask | null;
-  /** Effect when no rule matches. Defaults to allow — the runtime is still asked. */
+  /** Effect when no rule matches. Defaults to allow, because the runtime is still asked. */
   defaultEffect?: DecisionEffect;
   /** Supplied by the caller so a verdict stays reproducible on replay. */
   now?: Date;
-  /**
-   * What is in force, handed in rather than queried. A gate that cannot see a freeze
-   * allows through the one action the freeze was declared for, which is the failure
-   * that makes the next freeze get ignored.
-   */
+  /** What is in force, handed in, since a gate blind to a freeze lets its one action through. */
   stateFacts?: readonly string[];
+  /** The session's repository, and whether it or its agent is on a shorter leash. */
+  containment?: Containment;
 }
 
 export interface LocalVerdict {
   effect: DecisionEffect;
   reason: string;
-  /** Findings safe to send onward — rule ids only, never the matched text. */
+  /** Findings safe to send onward: rule ids only, never the matched text. */
   signals: string[];
   matchedPolicies: MatchedPolicy[];
-  /** What a observed rule would have decided, had it been enforcing. */
+  /** What an observed rule would have decided, had it been enforcing. */
   shadowEffect?: DecisionEffect;
-  /**
-   * Resolved from the rule that denied, never invented. Without it an offline
-   * refusal is a dead end, and an agent told only no abandons the task.
-   */
+  /** Resolved from the rule that denied, never invented, so a refusal is not a dead end. */
   alternative?: Alternative;
   /** How this sat against the declared task, so a caller can report drift. */
   scope?: ScopeComparison;
@@ -58,6 +54,7 @@ export interface LocalVerdict {
 /** Evaluated where the call is made, so arguments never travel; only ids and signals do. */
 export class LocalGate {
   private readonly engine: PolicyEngine;
+  private notice: NoticePort | null = null;
 
   constructor(
     policies: readonly Policy[],
@@ -72,16 +69,33 @@ export class LocalGate {
   static async fromFiles(
     filePaths: readonly string[],
     options: LocalGateOptions,
+    sources?: OptionalPolicySources,
   ): Promise<LocalGate> {
-    return new LocalGate(await loadPolicyFiles(filePaths), options);
+    return new LocalGate(await loadPolicyFiles(filePaths, sources), options);
   }
 
-  /** The rule set in force locally — for `memnox policy` style reporting. */
+  /** The rule set in force locally, for `memnox policy` style reporting. */
   rules(): Policy[] {
     return this.engine.rules();
   }
 
+  /** Noticing the unusual, attached by a seam, since only a seam has a session to notice in. */
+  attachNotice(notice: NoticePort): void {
+    this.notice = notice;
+  }
+
+  /** The rules first, then a second look at what they allowed. */
   evaluate(request: ActionRequest): LocalVerdict {
+    const verdict = this.ruled(request);
+    return this.notice === null ? verdict : this.notice.consider(request, verdict);
+  }
+
+  /** A person said yes to what was asked, so noticing learns it rather than asking again. */
+  personAllowed(request?: ActionRequest): void {
+    this.notice?.personAllowed(request);
+  }
+
+  private ruled(request: ActionRequest): LocalVerdict {
     const at = this.options.now ?? new Date();
     const drift = scopeOf(this.options.task ?? null, request, (patterns, value) =>
       matchesAny([...patterns], value),
@@ -97,12 +111,16 @@ export class LocalGate {
         ? {}
         : { state: this.options.stateFacts }),
     });
+    const contained = this.contained(request, evaluation.effect);
     return {
-      effect: evaluation.effect,
-      reason: evaluation.reason,
-      signals: evaluation.matchedPolicies.map(
-        (policy) => `${SIGNAL_POLICY_PREFIX}${policy.name}`,
-      ),
+      effect: contained === null ? evaluation.effect : DECISION_EFFECT.ASK,
+      reason: contained === null ? evaluation.reason : contained.reason,
+      signals: [
+        ...evaluation.matchedPolicies.map(
+          (policy) => `${SIGNAL_POLICY_PREFIX}${policy.name}`,
+        ),
+        ...(contained === null ? [] : [contained.signal]),
+      ],
       matchedPolicies: evaluation.matchedPolicies,
       ...(evaluation.shadowEffect === undefined
         ? {}
@@ -112,5 +130,15 @@ export class LocalGate {
         : { alternative: evaluation.alternative }),
       ...(drift.match === SCOPE_MATCH.UNDECLARED ? {} : { scope: drift }),
     };
+  }
+
+  /** Only an allow is ever turned into an ask; a rule that asks or denies already said more. */
+  private contained(
+    request: ActionRequest,
+    effect: DecisionEffect,
+  ): ContainmentAsk | null {
+    const containment = this.options.containment;
+    if (containment === undefined || effect !== DECISION_EFFECT.ALLOW) return null;
+    return containmentAsk(request, containment);
   }
 }

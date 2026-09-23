@@ -1,7 +1,6 @@
 /**
- * Cheap and certain only. Credential shapes and marked fields, never a general
- * classifier: a model on the hot path of every action is the first slow week away from
- * enforcement being switched off, and phase 09 is where probabilistic work belongs.
+ * Cheap and certain only: credential shapes and marked fields, never a general classifier,
+ * because a model on the hot path of every action gets enforcement switched off.
  */
 export const CREDENTIAL_SHAPE = {
   AWS_ACCESS_KEY: 'aws access key id',
@@ -80,8 +79,8 @@ export interface EgressPayload {
 
 /**
  * Destination and payload, both: an allowed host carrying a credential is still a
- * refusal. Nothing is modified — silently stripping a payload is a bug the agent cannot
- * see and the reader cannot audit — so this reports and the caller decides.
+ * refusal. Nothing is modified, because silently stripping a payload is a bug the agent cannot
+ * see and the reader cannot audit, so this reports and the caller decides.
  */
 export function inspectEgress(payload: EgressPayload): EgressInspection {
   const findings: EgressFinding[] = [];

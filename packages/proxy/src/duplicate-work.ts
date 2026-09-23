@@ -13,45 +13,29 @@ import {
   type SharedActions,
   type ToolClass,
 } from '@memnox/core';
-import { isAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
+import { isCallAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import type { ToolCall } from './tool-call';
 
+/**
+ * The other agent, on the other machine, about to send the same message: once work leaves
+ * the machine there is no path to hold, so the workspace is asked first.
+ */
+
 /** A read is never claimed; anything that names one thing and is not a read is. */
-function worthClaiming(toolClass: ToolClass, resource: string | undefined): boolean {
+function isWorthClaiming(toolClass: ToolClass, resource: string | undefined): boolean {
   if (changesExternalState(toolClass)) return true;
   return toolClass === TOOL_CLASS.UNKNOWN && resource !== undefined;
 }
 
 /**
- * The other agent, on the other machine, about to send the same message.
- *
- * A lease covers two agents writing one file, and the moment work leaves this
- * machine there is no path to hold: two agents each deciding to post the same
- * Slack message, open the same issue or restart the same service collide in the
- * same way and nothing local can see it. The workspace can, so this asks it before
- * a call that changes anything outside goes through.
- *
- * Four rules keep it from becoming the thing people turn off:
- *
- * **Only what leaves the machine.** A read is never claimed, so nothing here can
- * make a lookup wait, and two agents reading one channel is normal.
- *
- * **Unknown is not taken.** Not enrolled, unreachable, too slow, or a plan without
- * it: the call goes through. This is coordination rather than safety, and the
- * rules are what refuse an action.
- *
- * **A duplicate is refused with a name, never a bare no.** The agent is told who
- * has it and when, which is what lets it do something else rather than retry.
- *
- * **Wrapped around the rules rather than folded into them**, like the pause and
- * the budget beside it: this is not a statement about what an agent is allowed to
- * do, and it has to hold on a machine with no policy file at all.
+ * Only what leaves the machine is claimed, an unknown answer
+ * lets the call go, and a duplicate is refused with the holder's
+ * name. It wraps the rules, holding with no policy file.
  */
 export class DuplicateWorkAuthorizer implements CallAuthorizer {
   /**
-   * Claims held while their calls run, by fingerprint. Counted, because one
-   * session may have the same call out twice, and the claim is let go only when
-   * the last of them returns.
+   * Claims held while their calls run, by fingerprint,
+   * counted since one call may be out twice.
    */
   private readonly running = new Map<
     string,
@@ -66,26 +50,13 @@ export class DuplicateWorkAuthorizer implements CallAuthorizer {
     private readonly actions: SharedActions,
     private readonly holder: LeaseHolder,
     private readonly serverName: string,
-    /** What the server said each tool is, where it said anything. */
-    private readonly classOf: (call: ToolCall) => ToolClass = (call) =>
-      classifyTool({ name: call.name }).class,
   ) {}
 
-  /**
-   * Whether this call is one two agents could collide over.
-   *
-   * A write or a message always is. A call this cannot classify counts too, but
-   * only where the provider named the one thing it acts on: `close_pull_request`
-   * is not in anybody's verb table and is plainly work on that pull request. A
-   * **read** never counts, whatever it names, so nothing here can make a lookup
-   * wait, which is the same rule `takesLease` holds the file register to.
-   */
+  /** The inner verdict, or a refusal naming who already has this call's work. */
   async authorize(call: ToolCall): Promise<CallVerdict> {
     const verdict = await this.inner.authorize(call);
-    /* Asked only of a call the rules already allow: an action that is about to be
-       refused needs no claim, and claiming it would have the refused agent hold a
-       thing it never does. */
-    if (!isAllowed(verdict)) return verdict;
+    // Asked only of an allowed call, or a refused agent would hold a thing it never does.
+    if (!isCallAllowed(verdict)) return verdict;
     const action = this.actionOf(call);
     if (action === null) return verdict;
 
@@ -98,6 +69,10 @@ export class DuplicateWorkAuthorizer implements CallAuthorizer {
 
     const reason = meetingReason(outcome);
     return { effect: DECISION_EFFECT.DENY, reason };
+  }
+
+  personAllowed(call: ToolCall): void {
+    this.inner.personAllowed?.(call);
   }
 
   /** The call returned, so its claim is let go now rather than when it lapses. */
@@ -114,18 +89,15 @@ export class DuplicateWorkAuthorizer implements CallAuthorizer {
   }
 
   /**
-   * Let go of everything still held, because the proxy is exiting.
-   *
-   * An agent that ends its session right after a call takes the proxy down
-   * with it, and a claim the proxy never finished would leave the thing busy
-   * for the rest of its window with nobody working on it.
+   * Let go of everything still held, or a claim
+   * outlives the proxy with nobody working on it.
    */
   async close(): Promise<void> {
     const held = [...this.running.values()];
     this.running.clear();
     for (const each of held) void this.track(each.release());
-    /* Including the ones a returned call already started: the process ending
-       now would cut them off halfway and leave their claims standing. */
+    // Including those a returned call started, or
+    // exiting now leaves their claims standing.
     await Promise.all([...this.finishing]);
   }
 
@@ -141,7 +113,7 @@ export class DuplicateWorkAuthorizer implements CallAuthorizer {
   /** What this call claims, or null where it is not one two agents collide over. */
   private actionOf(call: ToolCall): IntendedAction | null {
     const resource = actionResource(this.serverName, call.arguments);
-    if (!worthClaiming(this.classOf(call), resource)) return null;
+    if (!isWorthClaiming(classifyTool({ name: call.name }).class, resource)) return null;
     return {
       operation: `${this.serverName}.${call.name}`,
       arguments: call.arguments,

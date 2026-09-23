@@ -1,17 +1,28 @@
-import type { DecisionEffect } from '@memnox/core';
-import { DECISION_EFFECT } from '@memnox/core';
-import type { LocalGate } from '@memnox/core';
-import { MCP_ACTION_PREFIX } from './firewall.constants';
+import {
+  DECISION_EFFECT,
+  PROTECTION_STOPPED_REASON,
+  type ActionRequest,
+  type Alternative,
+  type DecisionEffect,
+  type LocalGate,
+} from '@memnox/core';
+
+import { operationFor } from './ledger';
 import { heldReason, type SessionLimits } from './session-limits';
 import type { ToolCall } from './tool-call';
+
+/**
+ * Whether one tool call may proceed, as a chain: the rules are one link, and a pause, a
+ * budget and another machine's claim wrap them, since each must hold with no rule file.
+ */
 
 export interface CallVerdict {
   effect: DecisionEffect;
   reason: string;
-  /** What the local pass found — rule ids only, safe to send onward. */
+  /** What the local pass found: rule ids only, safe to send onward. */
   signals?: string[];
   /** What the agent may use instead, carried into the denial the client reads. */
-  alternative?: { action: string; resource?: string; note: string };
+  alternative?: Alternative;
   /** The verdict this came from, so a proxied call joins its decision in the ledger. */
   decisionId?: string;
   /** The rule that decided, by name, so `why` does not answer "none matched". */
@@ -28,16 +39,45 @@ export interface CallAuthorizer {
   settle?(call: ToolCall): Promise<void>;
   /** The proxy is going away, so whatever is still held is let go now. */
   close?(): Promise<void>;
+  /** A person allowed what this asked about, so the same new thing is not asked twice. */
+  personAllowed?(call: ToolCall): void;
 }
 
-export function isAllowed(verdict: CallVerdict): boolean {
+export function isCallAllowed(verdict: CallVerdict): boolean {
   return verdict.effect === DECISION_EFFECT.ALLOW;
 }
 
-/** No runtime configured — the static tool filters are the only gate. */
+/** No runtime configured, so the static tool filters are the only gate. */
 export class UngovernedAuthorizer implements CallAuthorizer {
   async authorize(): Promise<CallVerdict> {
     return { effect: DECISION_EFFECT.ALLOW, reason: 'no runtime configured' };
+  }
+}
+
+/** Outermost: while protection is stopped every call passes, asked per call so a start bites at once. */
+export class StoppedAuthorizer implements CallAuthorizer {
+  constructor(
+    private readonly inner: CallAuthorizer,
+    private readonly stopped: () => Promise<boolean>,
+  ) {}
+
+  async authorize(call: ToolCall): Promise<CallVerdict> {
+    if (await this.stopped()) {
+      return { effect: DECISION_EFFECT.ALLOW, reason: PROTECTION_STOPPED_REASON };
+    }
+    return this.inner.authorize(call);
+  }
+
+  async settle(call: ToolCall): Promise<void> {
+    await this.inner.settle?.(call);
+  }
+
+  async close(): Promise<void> {
+    await this.inner.close?.();
+  }
+
+  personAllowed(call: ToolCall): void {
+    this.inner.personAllowed?.(call);
   }
 }
 
@@ -50,12 +90,7 @@ export class LocalGateAuthorizer implements CallAuthorizer {
   ) {}
 
   async authorize(call: ToolCall): Promise<CallVerdict> {
-    const verdict = this.gate.evaluate({
-      action: `${MCP_ACTION_PREFIX}.${call.name}`,
-      target: this.serverName,
-      arguments: call.arguments,
-      ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
-    });
+    const verdict = this.gate.evaluate(this.requestFor(call));
     const decided = verdict.matchedPolicies[0];
     return {
       effect: verdict.effect,
@@ -66,22 +101,25 @@ export class LocalGateAuthorizer implements CallAuthorizer {
       ...(decided === undefined ? {} : { rule: decided.name }),
     };
   }
+
+  personAllowed(call: ToolCall): void {
+    this.gate.personAllowed(this.requestFor(call));
+  }
+
+  private requestFor(call: ToolCall): ActionRequest {
+    return {
+      action: operationFor(call.name),
+      target: this.serverName,
+      arguments: call.arguments,
+      ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
+    };
+  }
 }
 
 /**
- * A pause and a budget, asked before the rules are.
- *
- * Wrapped around whatever authorizer this proxy ended up with rather than folded
- * into `LocalGateAuthorizer`, because neither of these is a policy decision and
- * both must hold on a machine that has no policy file at all. A session the
- * breaker stopped is stopped; a day's allowance that is spent is spent; and
- * `UngovernedAuthorizer` allowing everything is a statement about *rules*, not a
- * statement that nothing else may hold a call back.
- *
- * Order matters. The pause is read first because it is the stronger fact — the
- * session has already been judged to be getting nowhere — and a budget message
- * offered to somebody whose agent is looping would send them editing allowances
- * instead of looking at the loop.
+ * A pause and a budget, asked before the rules, around whatever
+ * authorizer this proxy has. The pause first, since a budget
+ * message sends somebody editing allowances, not at the loop.
  */
 export class SessionLimitedAuthorizer implements CallAuthorizer {
   constructor(
@@ -99,14 +137,15 @@ export class SessionLimitedAuthorizer implements CallAuthorizer {
       }
     }
 
-    /* Asked with the same action string the gate matches on, so one budget covers
-       a tool call and the shell command that does the same thing. */
-    const spent = await this.limits.exhausted(
-      `${MCP_ACTION_PREFIX}.${call.name}`,
-      sessionId,
-    );
+    // The action string the gate matches on, so
+    // one budget covers a call and its shell twin.
+    const spent = await this.limits.exhausted(operationFor(call.name), sessionId);
     if (spent !== null) return { effect: DECISION_EFFECT.DENY, reason: spent };
 
     return this.inner.authorize(call);
+  }
+
+  personAllowed(call: ToolCall): void {
+    this.inner.personAllowed?.(call);
   }
 }

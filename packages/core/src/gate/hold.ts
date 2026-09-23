@@ -1,7 +1,8 @@
+import { minutesToMs } from '../domain/time';
+
 /**
- * Holding a call for a person. The agent is waiting on the other end of a pipe, so
- * every path here ends in a decision: answered, timed out, or refused because nobody
- * could be asked. A hold that could hang forever would be worse than a denial.
+ * Holding a call for a person while the agent waits on the other end of a pipe, so every
+ * path ends in a decision: answered, timed out, or refused because nobody could be asked.
  */
 
 export const HOLD_ANSWER = {
@@ -10,10 +11,7 @@ export const HOLD_ANSWER = {
   /** Every identical call for the rest of this session. */
   SESSION: 'session',
   DENY: 'deny',
-  /**
-   * The command was wrong, not the rule. The person fixes it and the agent's loop
-   * survives — which is the difference between a gate people keep and one they remove.
-   */
+  /** The command was wrong rather than the rule, so the person fixes it and the loop survives. */
   EDIT: 'edit',
 } as const;
 
@@ -32,21 +30,14 @@ export const HOLD_OUTCOME = {
 
 export type HoldOutcome = (typeof HOLD_OUTCOME)[keyof typeof HOLD_OUTCOME];
 
-/** Seconds. Long enough to read the prompt, short enough that a walk-away ends. */
-export const DEFAULT_HOLD_TIMEOUT_MS = 120_000;
+/** Long enough to read the prompt, short enough that a walk-away ends. */
+export const DEFAULT_HOLD_TIMEOUT_MS = minutesToMs(2);
 
 /**
- * The window when there is no terminal, so the only possible answerer is somewhere else.
- *
- * Two minutes is right for somebody already looking at the prompt and wrong for a
- * machine nobody is sitting at: the question has to reach a person who is not there
- * yet, and the answer has to travel back. Measured against a running daemon, a person
- * who clicked approve with a minute to spare still watched the agent be refused. The
- * product's own remote ask, `memnox_request_approval`, already defaults to thirty
- * minutes for exactly this reason; this is the same judgement, kept shorter because a
- * shell command is blocked while it waits.
+ * With no terminal the answer has to reach somebody elsewhere and travel back, but a
+ * shell command is blocked while it waits, so this stays under the MCP tool's thirty.
  */
-export const DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS = 10 * 60_000;
+export const DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS = minutesToMs(10);
 
 export interface HoldRequest {
   sessionId: string;
@@ -69,14 +60,8 @@ export interface HoldAsked {
 }
 
 /**
- * Returned instead of an answer when a prompt put the question to somebody and nothing
- * came back before the deadline.
- *
- * Additive on purpose: a prompt that only ever returns `null` keeps meaning "there was
- * nobody to ask at all", which is a different thing and has to read differently. Until
- * this existed `TIMED_OUT` was declared, documented as reading differently, and
- * produced by nothing — so an agent whose approver was simply slow was told the same
- * sentence as one a person had refused.
+ * The question reached somebody and no answer came in time. Distinct from `null`, which
+ * is nobody to ask, because a slow approver and a refusal have to read differently.
  */
 export interface HoldUnanswered {
   unanswered: typeof HOLD_OUTCOME.TIMED_OUT;
@@ -91,7 +76,7 @@ export function isUnanswered(
 /** Where the question is actually asked. Injected, so tests need no terminal. */
 export interface HoldPrompt {
   /**
-   * Null when there was nobody to ask — no TTY, or a non-interactive run. A
+   * Null when there was nobody to ask, meaning no TTY or a non-interactive run. A
    * `HoldUnanswered` when somebody could have answered and nobody did in time.
    */
   ask(
@@ -114,9 +99,8 @@ export function isAllowed(result: HoldResult): boolean {
 }
 
 /**
- * Grants live for one session and in memory only. A grant that survived a restart
- * would be a permission nobody remembers giving, which is the thing policy files are
- * for and this is not.
+ * Grants live for one session and in memory only, because one that survived a restart
+ * would be a permission nobody remembers giving.
  */
 export class HoldService {
   private readonly granted = new Map<string, Set<string>>();
@@ -146,33 +130,29 @@ export class HoldService {
     try {
       asked = await this.prompt.ask(request, this.timeoutMs);
     } catch {
-      /* A prompt that threw is a prompt nobody saw. Failing closed is the only safe
-         reading, and it is reported as unattended rather than as somebody's denial. */
+      // A prompt that threw is one nobody saw, so it fails closed as unattended.
       return { outcome: HOLD_OUTCOME.UNATTENDED };
     }
 
     if (asked === null) return { outcome: HOLD_OUTCOME.UNATTENDED };
-    // Waited on, and nothing came back: refused either way, said as the thing it was.
     if (isUnanswered(asked)) return { outcome: asked.unanswered };
+    return this.resultOf(asked, request);
+  }
+
+  private resultOf(asked: HoldAsked, request: HoldRequest): HoldResult {
     const answer = asked.answer;
     if (answer === HOLD_ANSWER.DENY) {
       return { outcome: HOLD_OUTCOME.DENIED, answer };
     }
-    /* An edit is not an approval of anything: the replacement goes back through the
-       rules from the start, or "[e]" would be the way around every one of them. */
-    if (answer === HOLD_ANSWER.EDIT) {
-      const edited = asked.command?.trim() ?? '';
-      if (edited === '' || edited === request.command) {
-        return { outcome: HOLD_OUTCOME.DENIED, answer: HOLD_ANSWER.DENY };
-      }
-      return { outcome: HOLD_OUTCOME.EDITED, answer, edited };
-    }
-    if (answer === HOLD_ANSWER.SESSION) {
-      const grants = this.granted.get(request.sessionId) ?? new Set<string>();
-      grants.add(request.fingerprint);
-      this.granted.set(request.sessionId, grants);
-    }
+    if (answer === HOLD_ANSWER.EDIT) return editedResult(asked, request);
+    if (answer === HOLD_ANSWER.SESSION) this.grant(request);
     return { outcome: HOLD_OUTCOME.ALLOWED, answer };
+  }
+
+  private grant(request: HoldRequest): void {
+    const grants = this.granted.get(request.sessionId) ?? new Set<string>();
+    grants.add(request.fingerprint);
+    this.granted.set(request.sessionId, grants);
   }
 
   /** Ends a session's grants. Called when the session does. */
@@ -181,12 +161,30 @@ export class HoldService {
   }
 }
 
+/**
+ * An edit approves nothing: the replacement goes back through the rules from the start,
+ * or "[e]" would be the way around every one of them.
+ */
+function editedResult(asked: HoldAsked, request: HoldRequest): HoldResult {
+  const edited = asked.command?.trim() ?? '';
+  if (edited === '' || edited === request.command) {
+    return { outcome: HOLD_OUTCOME.DENIED, answer: HOLD_ANSWER.DENY };
+  }
+  return { outcome: HOLD_OUTCOME.EDITED, answer: HOLD_ANSWER.EDIT, edited };
+}
+
+/** The call as a person reads it: the operation, and its target where it has one. */
+export function describeHeldCall(
+  request: Pick<HoldRequest, 'operation' | 'target'>,
+): string {
+  return request.target === undefined
+    ? request.operation
+    : `${request.operation} ${request.target}`;
+}
+
 /** What the caller is told when a hold did not end in an allow. */
 export function describeHold(result: HoldResult, request: HoldRequest): string {
-  const what =
-    request.target === undefined
-      ? request.operation
-      : `${request.operation} ${request.target}`;
+  const what = describeHeldCall(request);
   if (result.outcome === HOLD_OUTCOME.DENIED) {
     return `A person denied ${what}.`;
   }

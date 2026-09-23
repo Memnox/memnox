@@ -72,19 +72,19 @@ describe('waiting for somebody to answer', () => {
     const raised = await approvals.raise(REQUEST, NOW, 120_000);
 
     let ticks = 0;
-    const answer = await waitForAnswer(
+    const answer = await waitForAnswer({
       approvals,
-      raised.id,
-      Date.now() + 5000,
-      () => Date.now(),
-      async () => {
+      id: raised.id,
+      deadline: Date.now() + 5000,
+      now: () => Date.now(),
+      sleep: async () => {
         ticks += 1;
         if (ticks === 2) {
           await approvals.answer(raised.id, HOLD_ANSWER.SESSION, 'tresor', NOW);
         }
       },
-      0,
-    );
+      intervalMs: 0,
+    });
     expect(answer).toBe(HOLD_ANSWER.SESSION);
   });
 
@@ -93,14 +93,14 @@ describe('waiting for somebody to answer', () => {
     const raised = await approvals.raise(REQUEST, NOW, 120_000);
 
     let clock = 0;
-    const answer = await waitForAnswer(
+    const answer = await waitForAnswer({
       approvals,
-      raised.id,
-      100,
-      () => (clock += 60),
-      async () => undefined,
-      0,
-    );
+      id: raised.id,
+      deadline: 100,
+      now: () => (clock += 60),
+      sleep: async () => undefined,
+      intervalMs: 0,
+    });
     expect(answer).toBeNull();
   });
 
@@ -110,14 +110,14 @@ describe('waiting for somebody to answer', () => {
     await approvals.clear(raised.id);
 
     expect(
-      await waitForAnswer(
+      await waitForAnswer({
         approvals,
-        raised.id,
-        Date.now() + 1000,
-        () => Date.now(),
-        async () => undefined,
-        0,
-      ),
+        id: raised.id,
+        deadline: Date.now() + 1000,
+        now: () => Date.now(),
+        sleep: async () => undefined,
+        intervalMs: 0,
+      }),
     ).toBeNull();
   });
 });

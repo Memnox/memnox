@@ -1,19 +1,16 @@
 import { createInterface } from 'node:readline';
-import { createReadStream, createWriteStream } from 'node:fs';
 import {
+  describeHeldCall,
   HOLD_ANSWER,
   type HoldAnswer,
   type HoldAsked,
   type HoldPrompt,
   type HoldRequest,
 } from './hold';
+import { riskLabelFor } from '../notice/action-shape';
+import { openTerminal, type TerminalStreams } from './terminal';
 
-/**
- * Asks on the controlling terminal rather than on stdin, because stdin belongs to the
- * MCP protocol the agent is speaking. Writing a question into that stream would
- * corrupt the conversation the question is about.
- */
-const TTY = '/dev/tty';
+/** A held call asked on the controlling terminal, never on the agent's own stdin. */
 
 const KEYS: Readonly<Record<string, HoldAnswer>> = {
   a: HOLD_ANSWER.ONCE,
@@ -25,18 +22,16 @@ const KEYS: Readonly<Record<string, HoldAnswer>> = {
 };
 
 export function questionFor(request: HoldRequest): string {
-  const what =
-    request.target === undefined
-      ? request.operation
-      : `${request.operation} ${request.target}`;
-
+  const what = describeHeldCall(request);
   const lines = [
     '',
     `  MEMNOX  ${request.agent} wants to ${what}`,
     `          ${request.reason}`,
   ];
-  /* The evidence is why this is arguable rather than annoying: a person who can see the
-     freeze and the rule argues with whoever set them, not with the tool. */
+  // Said beside the reason, since "allow once" on a force push is not a small yes.
+  const label = riskLabelFor(request.operation);
+  if (label !== null && !request.reason.includes(label)) lines.push(`          ${label}`);
+  // Evidence makes it arguable: a person who sees the freeze argues with whoever set it.
   if (request.evidence !== undefined && request.evidence.length > 0) {
     lines.push('');
     lines.push(...request.evidence);
@@ -58,18 +53,15 @@ export function editPromptFor(request: HoldRequest): string {
 
 export interface TtyPromptDeps {
   /** Opening the terminal is the one thing here that touches the machine. */
-  open?: () => { input: NodeJS.ReadableStream; output: NodeJS.WritableStream };
+  open?: () => TerminalStreams;
 }
 
 export class TtyHoldPrompt implements HoldPrompt {
   constructor(private readonly deps: TtyPromptDeps = {}) {}
 
   async ask(request: HoldRequest, timeoutMs: number): Promise<HoldAsked | null> {
-    const open =
-      this.deps.open ??
-      (() => ({ input: createReadStream(TTY), output: createWriteStream(TTY) }));
-
-    let streams: { input: NodeJS.ReadableStream; output: NodeJS.WritableStream };
+    const open = this.deps.open ?? openTerminal;
+    let streams: TerminalStreams;
     try {
       streams = open();
     } catch {

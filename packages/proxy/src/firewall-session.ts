@@ -1,27 +1,38 @@
 import {
   DECISION_EFFECT,
+  describeAlternative,
   describeHold,
   digest,
   isAllowed as holdAllowed,
   refusalShapeFor,
   renderNotes,
   RETRYABILITY,
-  type SessionNote,
-  type RefusalShape,
+  UNNAMED_AGENT,
+  UNNAMED_SESSION,
+  type Alternative,
   type HoldRequest,
   type HoldService,
+  type RefusalShape,
+  type SessionNote,
 } from '@memnox/core';
-import { isAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
+
+import { isCallAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
 import { parseMessage, serializeMessage, type JsonRpcMessage } from './json-rpc';
 import {
   digestArguments,
   frameResult,
-  recordResult,
+  resultRecordOf,
   type McpCallRecord,
+  type McpResultRecord,
 } from './result-guard';
 import { readToolCall, type ToolCall } from './tool-call';
 import type { ToolFilter } from './tool-filter';
+
+/**
+ * One client's session through the proxy: each call checked on the way out, each result
+ * framed on the way back, and every message it does not own forwarded untouched.
+ */
 
 /** The two directions a proxied message can travel. */
 export interface FirewallChannel {
@@ -45,19 +56,20 @@ export interface FirewallSessionDeps {
   sessionId?: string;
   agent?: string;
   /**
-   * Collects what has been said to this agent in the workspace. Asked when a call
-   * goes out and handed over when its result comes back, so an agent with no
-   * hooks of its own, which reaches the world only through MCP, is still told.
+   * What has been said to this agent in the workspace,
+   * handed over with a result, for agents with no hooks.
    */
   notes?: () => Promise<SessionNote[]>;
+  /** A result read like instructions, so the session is put under suspicion for a while. */
+  onInstruction?: (call: ToolCall) => void;
 }
 
 type MessageId = string | number;
 
 const SERVER_GONE_REASON =
-  'the wrapped MCP server is no longer running — restart the client to reconnect';
+  'the wrapped MCP server is no longer running, so restart the client to reconnect';
 
-function describe(message: JsonRpcMessage): string {
+function describeMessage(message: JsonRpcMessage): string {
   return message.method ?? 'response';
 }
 
@@ -69,9 +81,8 @@ function describe(message: JsonRpcMessage): string {
 export class FirewallSession {
   private readonly listRequestIds = new Set<MessageId>();
   /**
-   * Open tool calls, so a reply can be matched to the call that asked for it. The
-   * verdict rides along because the row is written when the outcome is known, and by
-   * then the decision that allowed it is several messages behind.
+   * Open tool calls, with the verdict that let each
+   * out, since the row is written when it returns.
    */
   private readonly openCalls = new Map<
     MessageId,
@@ -86,12 +97,8 @@ export class FirewallSession {
   constructor(private readonly deps: FirewallSessionDeps) {}
 
   /**
-   * Asks for notes in the background while the call runs.
-   *
-   * Never awaited: the call must not wait on the control plane, and a result that
-   * comes back before the answer simply carries the notes on the next one. Once
-   * collected a note is the proxy's to deliver, since the workspace has marked it
-   * handed over.
+   * Asks for notes in the background while the call runs, never awaited, so the call does
+   * not wait on the control plane and a note that arrives late rides on the next one.
    */
   private collectNotes(): void {
     const notes = this.deps.notes;
@@ -137,9 +144,9 @@ export class FirewallSession {
     let verdict = await this.verdictFor(call);
     if (verdict.effect === DECISION_EFFECT.ASK)
       verdict = await this.askPerson(call, verdict);
-    if (isAllowed(verdict)) {
-      /* The row waits for the result, so one call is one row carrying what came back.
-         A notification gets no reply, so nothing would ever arrive to write it. */
+    if (isCallAllowed(verdict)) {
+      // One call is one row, written when its result
+      // arrives; a notification gets no reply to wait for.
       if (id === null) this.record(call, verdict, undefined);
       else this.openCalls.set(id, { call, verdict });
       this.collectNotes();
@@ -160,8 +167,8 @@ export class FirewallSession {
   private async askPerson(call: ToolCall, verdict: CallVerdict): Promise<CallVerdict> {
     const hold = this.deps.hold;
     const request: HoldRequest = {
-      sessionId: this.deps.sessionId ?? 'ses_local',
-      agent: this.deps.agent ?? 'an agent',
+      sessionId: this.deps.sessionId ?? UNNAMED_SESSION,
+      agent: this.deps.agent ?? UNNAMED_AGENT,
       operation: call.name,
       fingerprint: digest(`${call.name}:${JSON.stringify(call.arguments ?? {})}`),
       reason: verdict.reason,
@@ -178,6 +185,7 @@ export class FirewallSession {
 
     const result = await hold.hold(request);
     if (holdAllowed(result)) {
+      this.deps.authorizer.personAllowed?.(call);
       return { ...verdict, effect: DECISION_EFFECT.ALLOW, reason: 'a person allowed it' };
     }
     return {
@@ -201,24 +209,22 @@ export class FirewallSession {
     if (open === undefined) return this.deps.channel.toClient(serializeMessage(message));
     const call = open.call;
     if (id !== null) this.openCalls.delete(id);
-    /* The work is done, so whatever was held while it ran is let go now rather
-       than when its window runs out. Not awaited: the agent is waiting on this
-       result, and a slow control plane must not be what it waits for. */
+    // Whatever was held while it ran is let go now, not
+    // awaited, so the agent never waits on the plane.
     const authorizer = this.deps.authorizer;
     if (authorizer.settle !== undefined) {
       void authorizer.settle(call).catch(() => undefined);
     }
 
-    /* Data cannot become authority because an agent read it. The result is wrapped as
-       an untrusted context block whatever it says, and instruction-shaped content is
-       recorded and framed rather than removed: silently editing a payload is a bug the
-       agent cannot see and the reader cannot audit. */
-    const result = recordResult(message);
+    // Data cannot become authority because an agent read it, so instruction-shaped
+    // content is framed rather than removed: a silent edit is a bug nobody can audit.
+    const result = resultRecordOf(message);
     this.record(call, open.verdict, result);
     if (result.containsInstruction) {
       this.deps.log(
         `tool result for "${call.name}" carried instruction-shaped content; it was quoted, not obeyed`,
       );
+      this.deps.onInstruction?.(call);
     }
     this.deps.channel.toClient(
       serializeMessage(this.withNotes(frameResult(message, result))),
@@ -228,7 +234,7 @@ export class FirewallSession {
   private record(
     call: ToolCall,
     verdict: CallVerdict,
-    result: ReturnType<typeof recordResult> | undefined,
+    result: McpResultRecord | undefined,
   ): void {
     const sink = this.deps.record;
     if (sink === undefined) return;
@@ -261,20 +267,24 @@ export class FirewallSession {
   private filterListing(message: JsonRpcMessage): JsonRpcMessage {
     const tools = message.result === undefined ? undefined : message.result['tools'];
     if (!Array.isArray(tools)) return message;
-    const visible = (tools as Array<Record<string, unknown>>).filter((tool) =>
-      this.deps.filter.isAllowed(String(tool['name'] ?? '')),
+    const visible = tools.filter((tool: unknown) =>
+      this.deps.filter.isAllowed(toolNameOf(tool)),
     );
     return { ...message, result: { ...message.result, tools: visible } };
   }
 
-  /** A dropped write must not look like success — the dead server will never reply. */
+  /**
+   * A dropped write must not look like success, because the dead server will never reply.
+   */
   private forward(message: JsonRpcMessage): void {
     if (this.deps.channel.toServer(serializeMessage(message))) return;
 
-    this.deps.log(`wrapped server is not accepting input; dropped ${describe(message)}`);
-    if (identify(message) === null) return; // A notification expects no reply.
-    /* The upstream died: transient, and the one refusal here that a retry can fix.
-       Telling the model "policy decision, do not retry" would be wrong the other way. */
+    this.deps.log(
+      `wrapped server is not accepting input; dropped ${describeMessage(message)}`,
+    );
+    // A notification expects no reply.
+    if (identify(message) === null) return;
+    // The upstream died: transient, and the one refusal here that a retry can fix.
     this.deps.channel.toClient(
       serializeMessage(
         denial(message.id, SERVER_GONE_REASON, undefined, {
@@ -292,29 +302,28 @@ export class FirewallSession {
   }
 }
 
+function toolNameOf(tool: unknown): string {
+  if (typeof tool !== 'object' || tool === null) return '';
+  const name: unknown = Reflect.get(tool, 'name');
+  return String(name ?? '');
+}
+
 function identify(message: JsonRpcMessage): MessageId | null {
   return message.id === undefined || message.id === null ? null : message.id;
 }
 
 /**
- * An isError result, not a protocol error, so the model reads the denial reason — and
- * the alternative rides in the message, which is how the agent learns what to do
- * instead rather than abandoning the task.
- *
- * The shape says whether retrying could ever work. Without it a refusal reads as a
- * transient failure, and the agent retries a rule forty times — which is the loop the
- * circuit breaker exists to stop, arriving from the one place that could have said so.
+ * An isError result rather than a protocol error, so the model reads the reason and the
+ * alternative, and whether retrying could ever work, or it retries a rule forty times.
  */
 function denial(
   id: JsonRpcMessage['id'],
   reason: string,
-  alternative?: { action: string; resource?: string; note: string },
+  alternative?: Alternative,
   shape: RefusalShape = refusalShapeFor(DECISION_EFFECT.DENY, reason),
 ): JsonRpcMessage {
   const instead =
-    alternative === undefined
-      ? ''
-      : `\nInstead: ${alternative.action}${alternative.resource === undefined ? '' : ` ${alternative.resource}`} — ${alternative.note}`;
+    alternative === undefined ? '' : `\n${describeAlternative(alternative)}`;
   return {
     jsonrpc: '2.0',
     id,

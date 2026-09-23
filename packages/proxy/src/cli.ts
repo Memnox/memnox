@@ -1,39 +1,64 @@
 import { homedir } from 'node:os';
-import { parseFirewallArgs } from './firewall-args';
-import { McpFirewall } from './firewall';
-import { CloudActions, CloudNotes, holdFor, SESSION_VAR } from '@memnox/core';
+
 import {
+  CloudActions,
+  CloudNotes,
   ENV_AGENT_NAME,
   ENV_POLICIES,
-  ENV_TOOLS_ALLOW,
-  ENV_TOOLS_DENY,
-} from './firewall.constants';
-import { openLedger } from './ledger';
-import { sessionLimitsFor } from './session-limits';
+  EXIT,
+  holdFor,
+  openLedger,
+  openNotice,
+  PROBATION_KIND,
+  ProbationRegister,
+  probationOf,
+  protectionStopped,
+  SESSION_VAR,
+  trustCommandFor,
+  UNNAMED_AGENT,
+  type ContainedProbation,
+  type HoldService,
+  type LocalGate,
+  type UnusualNotice,
+} from '@memnox/core';
+
+import { parseFirewallArgs } from './firewall-args';
+import { McpFirewall, type FirewallOptions } from './firewall';
+import { ENV_TOOLS_ALLOW, ENV_TOOLS_DENY } from './firewall.constants';
 import { loadLocalGate, localGateEnvironment } from './local-gate-loader';
+import { sessionLimitsFor } from './session-limits';
+
+/**
+ * The proxy as a process, which is what an agent's config actually launches. Everything
+ * that reads a disk is built here, so the proxy itself runs in a test with none.
+ */
 
 const USAGE = `Usage: memnox-mcp-proxy --name <server-name> -- <server command...>
 
 Wraps a stdio MCP server. Every tools/call is ruled on in this process before it
 reaches the server, so a call's arguments never leave the machine.
 
-Normally you do not run this by hand — "memnox mcp wrap" points your agent's config
+Normally you do not run this by hand: "memnox mcp wrap" points your agent's config
 at it, and "memnox mcp unwrap" puts the config back.
 
 Environment:
   ${ENV_POLICIES}     policy files, comma-separated. Unset, the rule files this
                       machine has registered are used, so wrapping alone governs.
-  ${ENV_TOOLS_ALLOW}  regex — only matching tools are exposed
-  ${ENV_TOOLS_DENY}   regex — matching tools are hidden and denied
+  ${ENV_TOOLS_ALLOW}  regex, and only matching tools are exposed
+  ${ENV_TOOLS_DENY}   regex, and matching tools are hidden and denied
 
 Example:
   memnox-mcp-proxy --name github -- npx -y @modelcontextprotocol/server-github`;
+
+function warn(message: string): void {
+  process.stderr.write(`memnox: ${message}\n`);
+}
 
 async function main(): Promise<void> {
   const args = parseFirewallArgs(process.argv.slice(2));
   if (!args) {
     process.stderr.write(`${USAGE}\n`);
-    process.exit(1);
+    process.exit(EXIT.FAILED);
   }
 
   const home = homedir();
@@ -41,48 +66,76 @@ async function main(): Promise<void> {
     localGateEnvironment(process.env),
     args.serverName,
     home,
-    (message) => process.stderr.write(`memnox: ${message}\n`),
+    warn,
   );
-  // Opened here rather than inside the proxy: this is the only place that may read a disk.
   const ledger = openLedger(home);
   const session = process.env[SESSION_VAR];
-  /* The environment first, which is what `memnox run` sets, and then the agent
-     the wrapped line was written for, which is every server an agent starts on
-     its own. */
+  // The environment `memnox run` sets, then the agent the wrapped line was written for.
   const agent = process.env[ENV_AGENT_NAME] ?? args.agent;
 
-  new McpFirewall({
+  const options: FirewallOptions = {
     command: args.command,
     serverName: args.serverName,
     ...(gate === null ? {} : { gate }),
     ...(ledger === null ? {} : { ledger }),
     ...(session === undefined ? {} : { sessionId: session }),
     ...(agent === undefined ? {} : { agent }),
-    /* Built here for the same reason the ledger is opened here: this is the only
-       place allowed to read a disk, and a proxy that reached for `~/.memnox` on
-       its own could not be run in a test without one. */
     limits: sessionLimitsFor({ home }),
-    /* Somebody to ask. Without it every `ask` rule an MCP call hits is a refusal
-       nobody was offered the chance to answer — and stdin here is the protocol, so
-       the question has to be written down and answered from elsewhere. */
-    hold: holdFor({
-      home,
-      /* stdin here is the JSON-RPC stream, so the question can never be asked on it.
-         It is written down instead and answered from a terminal or the workspace. */
-      interactive: false,
-      announce: (message) => process.stderr.write(`memnox: ${message}\n`),
-    }),
-    /* The workspace's register of what other agents are about to do, so two
-       machines do not each send the same message. It makes no call at all
-       without an account file, and an unreachable control plane never stops a
-       call. */
+    stopped: () => protectionStopped(home),
+    hold: buildHold(home),
+    // The workspace's register and inbox; neither makes a call without an account file.
     actions: new CloudActions(home),
-    /* What has been said to this agent, handed over with its next result. The
-       same account, and nothing at all is asked without one. */
     notes: new CloudNotes(home),
+    probation: () => serverProbation(home, args.serverName),
+    notice: await noticeFor({ home, gate, agent, session }),
     allowPattern: process.env[ENV_TOOLS_ALLOW],
     denyPattern: process.env[ENV_TOOLS_DENY],
-  }).start();
+  };
+  new McpFirewall(options).start();
+}
+
+interface NoticeWiring {
+  home: string;
+  gate: LocalGate | null;
+  agent: string | undefined;
+  session: string | undefined;
+}
+
+/**
+ * On the rules here, and handed to the firewall, so a flagged result
+ * taints the session that every other seam of this agent reads.
+ */
+async function noticeFor(wiring: NoticeWiring): Promise<UnusualNotice> {
+  const { home, gate, agent, session } = wiring;
+  const notice = await openNotice(home, {
+    agent: agent ?? UNNAMED_AGENT,
+    ...(session === undefined ? {} : { sessionId: session }),
+  });
+  gate?.attachNotice(notice);
+  return notice;
+}
+
+/** This server's probation, read at each call so `memnox mcp trust` applies at once. */
+async function serverProbation(
+  home: string,
+  server: string,
+): Promise<ContainedProbation | null> {
+  const entries = await new ProbationRegister(home).all();
+  const entry = probationOf(entries, PROBATION_KIND.MCP_SERVER, server, new Date());
+  if (entry === null) return null;
+  return {
+    name: entry.label ?? entry.name,
+    until: entry.until,
+    trustCommand: trustCommandFor(entry.kind, entry.name),
+  };
+}
+
+/**
+ * stdin here is the JSON-RPC stream, so a question
+ * is written down and answered from elsewhere.
+ */
+function buildHold(home: string): HoldService {
+  return holdFor({ home, interactive: false, announce: warn });
 }
 
 void main();

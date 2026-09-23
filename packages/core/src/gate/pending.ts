@@ -1,14 +1,12 @@
-import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
-import { HOLD_ANSWER, type HoldAnswer, type HoldRequest } from './hold';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { describeHeldCall, type HoldAnswer, type HoldRequest } from './hold';
+import { msToSeconds } from '../domain/time';
+import { JsonRecordDir } from '../store/json-records';
 
 /**
- * A held call, written down so something other than the terminal it started in can
- * answer it. That is the whole substrate for routed approvals: locally it is a second
- * terminal, and in the cloud it is a platform lead in Slack — the waiting side does not
- * know or care which.
+ * A held call, written down so something other than its own terminal can answer it:
+ * a second terminal locally, or the control plane. The waiting side does not know which.
  */
 
 export const PENDING_DIR = 'pending';
@@ -21,16 +19,15 @@ export interface PendingApproval {
   expiresAt: string;
   answer?: HoldAnswer;
   answeredAt?: string;
-  /** Who answered. Recorded because "who approved this" is the first postmortem question. */
+  /** Who answered, because "who approved this" is the first postmortem question. */
   answeredBy?: string;
 }
 
+export type AnswerOutcome =
+  { answered: PendingApproval } | { alreadyAnswered: PendingApproval } | null;
+
 export function pendingDirFor(home: string): string {
   return join(home, MEMNOX_HOME, PENDING_DIR);
-}
-
-function pathFor(home: string, id: string): string {
-  return join(pendingDirFor(home), `${id}.json`);
 }
 
 export function pendingIdFor(request: HoldRequest, at: string): string {
@@ -38,7 +35,11 @@ export function pendingIdFor(request: HoldRequest, at: string): string {
 }
 
 export class PendingApprovals {
-  constructor(private readonly home: string) {}
+  private readonly records: JsonRecordDir<PendingApproval>;
+
+  constructor(home: string) {
+    this.records = new JsonRecordDir(pendingDirFor(home));
+  }
 
   async raise(
     request: HoldRequest,
@@ -51,56 +52,32 @@ export class PendingApprovals {
       askedAt,
       expiresAt: new Date(Date.parse(askedAt) + timeoutMs).toISOString(),
     };
-    await mkdir(pendingDirFor(this.home), { recursive: true, mode: 0o700 });
-    await writeJsonAtomic(pathFor(this.home, pending.id), pending);
+    await this.records.write(pending.id, pending);
     return pending;
   }
 
-  async read(id: string): Promise<PendingApproval | null> {
-    try {
-      return JSON.parse(
-        await readFile(pathFor(this.home, id), 'utf8'),
-      ) as PendingApproval;
-    } catch {
-      // Answered and cleared, or never raised. Both are "nothing to answer".
-      return null;
-    }
+  /** Null when it was answered and cleared, or never raised. */
+  read(id: string): Promise<PendingApproval | null> {
+    return this.records.read(id);
   }
 
   async list(moment: string): Promise<PendingApproval[]> {
-    let names: string[];
-    try {
-      names = await readdir(pendingDirFor(this.home));
-    } catch {
-      // Nothing has ever been held here.
-      return [];
-    }
-
-    const found: PendingApproval[] = [];
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue;
-      const pending = await this.read(name.slice(0, -5));
-      if (pending === null) continue;
-      // An expired hold is not answerable; showing it would invite answering it.
-      if (pending.expiresAt <= moment) continue;
-      found.push(pending);
-    }
-    return found.sort((a, b) => a.askedAt.localeCompare(b.askedAt));
+    const found = await this.records.all();
+    return (
+      found
+        // An expired hold is not answerable, and showing it would invite answering it.
+        .filter((pending) => pending.expiresAt > moment)
+        .sort((a, b) => a.askedAt.localeCompare(b.askedAt))
+    );
   }
 
-  /**
-   * First answer wins. A second one is not an error: two people reaching for the same
-   * approval is ordinary, and the loser needs to be told what already happened rather
-   * than shown a failure.
-   */
+  /** First answer wins, and a second is told what already happened rather than failed. */
   async answer(
     id: string,
     answer: HoldAnswer,
     by: string,
     at: string,
-  ): Promise<
-    { answered: PendingApproval } | { alreadyAnswered: PendingApproval } | null
-  > {
+  ): Promise<AnswerOutcome> {
     const pending = await this.read(id);
     if (pending === null) return null;
     if (pending.answer !== undefined) return { alreadyAnswered: pending };
@@ -111,46 +88,52 @@ export class PendingApprovals {
       answeredAt: at,
       answeredBy: by,
     };
-    await writeJsonAtomic(pathFor(this.home, id), answered);
+    await this.records.write(id, answered);
     return { answered };
   }
 
-  async clear(id: string): Promise<void> {
-    await rm(pathFor(this.home, id), { force: true });
+  clear(id: string): Promise<void> {
+    return this.records.remove(id);
   }
 }
 
+/** Often enough that an answer lands while somebody is still watching for it. */
+const ANSWER_POLL_MS = 400;
+
+export interface WaitForAnswerInput {
+  approvals: PendingApprovals;
+  id: string;
+  /** Epoch milliseconds, on the same clock as `now`. */
+  deadline: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  intervalMs?: number;
+}
+
+function sleepFor(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Waits for somebody, somewhere, to answer. Polls rather than watches because the
- * answer may be written by another process, another terminal or — later — a sync
- * client, and a file is the one thing all three can agree on.
+ * Polls rather than watches, because the answer may come from another process, another
+ * terminal or a sync client, and a file is the one thing all three agree on.
  */
 export async function waitForAnswer(
-  approvals: PendingApprovals,
-  id: string,
-  deadline: number,
-  now: () => number = Date.now,
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
-  intervalMs = 400,
+  input: WaitForAnswerInput,
 ): Promise<HoldAnswer | null> {
-  while (now() < deadline) {
-    const pending = await approvals.read(id);
+  const now = input.now ?? Date.now;
+  const sleep = input.sleep ?? sleepFor;
+  while (now() < input.deadline) {
+    const pending = await input.approvals.read(input.id);
     if (pending === null) return null;
     if (pending.answer !== undefined) return pending.answer;
-    await sleep(intervalMs);
+    await sleep(input.intervalMs ?? ANSWER_POLL_MS);
   }
-  // Nobody answered in time. Denied, and said differently so it reads differently.
   return null;
 }
 
 export function describePending(pending: PendingApproval, moment: string): string {
-  const waited = Math.round((Date.parse(moment) - Date.parse(pending.askedAt)) / 1000);
-  const what =
-    pending.request.target === undefined
-      ? pending.request.operation
-      : `${pending.request.operation} ${pending.request.target}`;
+  const waited = msToSeconds(Date.parse(moment) - Date.parse(pending.askedAt));
+  const what = describeHeldCall(pending.request);
   return `${pending.id}  ${pending.request.agent} wants to ${what}  (${waited}s ago)`;
 }
-
-export { HOLD_ANSWER };

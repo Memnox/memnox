@@ -1,6 +1,13 @@
+/**
+ * One `tools/call` as the gate needs it: the tool, and the
+ * arguments flattened to strings, since a rule matches on values
+ * a person wrote and nobody writes a matcher against JSON.
+ */
 export interface ToolCall {
   name: string;
-  /** Flattened to strings, which is what a policy matches; structured values as JSON text. */
+  /**
+   * Flattened to strings, which is what a policy matches; structured values as JSON text.
+   */
   arguments: Record<string, string>;
 }
 
@@ -20,6 +27,7 @@ export function flattenArguments(input: unknown): Record<string, string> {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return {};
 
   const flattened: Record<string, string> = {};
+  // A non-array object, so every own key is an argument name.
   for (const [name, value] of Object.entries(input as Record<string, unknown>)) {
     flattened[name] = asText(value);
   }

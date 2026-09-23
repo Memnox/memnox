@@ -1,6 +1,11 @@
-import { createHash } from 'node:crypto';
-import type { DecisionEffect } from '@memnox/core';
+import { digest, type DecisionEffect } from '@memnox/core';
+
 import type { JsonRpcMessage } from './json-rpc';
+
+/**
+ * What a proxied tool call and its result leave
+ * behind: a digest, a verdict, and a quotation frame.
+ */
 
 /**
  * Phrases that try to address the model rather than answer the tool call. Cheap and
@@ -24,9 +29,8 @@ export interface McpCallRecord {
   /** Hashed, not stored raw: a session replays without keeping what was in it. */
   argsDigest: string;
   /**
-   * The verdict, carried on the record rather than left to the writer to guess. Without
-   * it a row could say a call happened and not whether it was allowed to, which is the
-   * one thing the ledger exists to answer.
+   * The verdict, carried on the record, since whether
+   * it was allowed is what the ledger answers.
    */
   effect: DecisionEffect;
   reason: string;
@@ -50,11 +54,11 @@ export function digestArguments(
   args: Readonly<Record<string, unknown>> | undefined,
 ): string {
   const payload = args === undefined ? '' : JSON.stringify(args);
-  return createHash('sha256').update(payload).digest('hex').slice(0, 16);
+  return digest(payload);
 }
 
 /** Concatenated text of a tools/call result, which is what an agent would read. */
-export function resultText(message: JsonRpcMessage): string {
+export function textOfResult(message: JsonRpcMessage): string {
   const result = message.result;
   if (result === undefined) return '';
   const content = result['content'];
@@ -62,21 +66,22 @@ export function resultText(message: JsonRpcMessage): string {
   const parts: string[] = [];
   for (const entry of content) {
     if (typeof entry !== 'object' || entry === null) continue;
+    // A content block from the wire, whose `text` is checked before it is used.
     const text = (entry as Record<string, unknown>)['text'];
     if (typeof text === 'string') parts.push(text);
   }
   return parts.join('\n');
 }
 
-export function containsInstruction(text: string): boolean {
+export function hasInstructionShape(text: string): boolean {
   return INSTRUCTION_SHAPES.some((shape) => shape.test(text));
 }
 
-export function recordResult(message: JsonRpcMessage): McpResultRecord {
-  const text = resultText(message);
+export function resultRecordOf(message: JsonRpcMessage): McpResultRecord {
+  const text = textOfResult(message);
   return {
     bytes: Buffer.byteLength(text, 'utf8'),
-    containsInstruction: containsInstruction(text),
+    containsInstruction: hasInstructionShape(text),
     promotedToIntent: false,
   };
 }
