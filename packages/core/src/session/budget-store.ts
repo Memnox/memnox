@@ -1,9 +1,12 @@
-import { mkdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import { BUDGET_UNIT, BUDGET_WINDOW, type Budget } from './budget';
-import { writeJsonAtomic } from '../store/atomic-file';
+import { readJsonArray, writeJsonFile } from '../store/json-records';
 
+/**
+ * Where budgets are kept, and the generous set a machine starts with, because a budget
+ * that bites in week one gets deleted and a deleted budget catches nothing.
+ */
 const BUDGET_FILE = 'budgets.json';
 
 export function budgetPathFor(home: string): string {
@@ -12,28 +15,17 @@ export function budgetPathFor(home: string): string {
 
 /** Empty is the default, and an empty book never refuses anything. */
 export async function readBudgets(home: string): Promise<Budget[]> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(budgetPathFor(home), 'utf8'));
-    return Array.isArray(parsed) ? (parsed as Budget[]) : [];
-  } catch {
-    // Nobody has set a budget here, which is the ordinary case.
-    return [];
-  }
+  return readJsonArray<Budget>(budgetPathFor(home));
 }
 
-export async function writeBudgets(home: string, budgets: Budget[]): Promise<void> {
-  const path = budgetPathFor(home);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeJsonAtomic(path, budgets);
+export async function writeBudgets(
+  home: string,
+  budgets: readonly Budget[],
+): Promise<void> {
+  await writeJsonFile(budgetPathFor(home), budgets);
 }
 
-/**
- * A starting set, from what a scan already found.
- *
- * Deliberately generous. A budget is a signal that something has gone wrong, not a
- * quota somebody has to plan around, so the first numbers are far above a normal day
- * and only a runaway reaches them. A budget that bites in week one gets deleted.
- */
+/** A starting set only a runaway reaches, since a budget is a signal rather than a quota. */
 export function suggestedBudgets(): Budget[] {
   return [
     {

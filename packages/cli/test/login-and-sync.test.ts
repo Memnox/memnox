@@ -16,7 +16,7 @@ import {
   ORG_CONDITION_GRACE_MS,
   overlaysInForce,
   readOverlays,
-  stateFactsInForce,
+  stateLabelsOf,
   WORKSPACE_WIDE,
   writeOverlays,
 } from '@memnox/core';
@@ -266,10 +266,7 @@ describe('applying a bundle', () => {
       }),
     );
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).toContain('freeze:deploys');
   });
@@ -291,10 +288,7 @@ describe('applying a bundle', () => {
       local.map((each) => ({ ...each, liftedAt: new Date().toISOString() })),
     );
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).toContain('freeze:deploys');
   });

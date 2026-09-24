@@ -59,7 +59,7 @@ describe('what a dollar budget counts', () => {
       event({ id: 'c' }),
     ];
 
-    expect(spentOn(budget, events, now)).toBe(4.5);
+    expect(spentOn(budget, { events, now })).toBe(4.5);
   });
 
   it('never charges for an action that was refused', () => {
@@ -69,13 +69,13 @@ describe('what a dollar budget counts', () => {
     ];
 
     // A strict policy must not exhaust the budget it was protecting.
-    expect(spentOn(budget, events, now)).toBe(2);
+    expect(spentOn(budget, { events, now })).toBe(2);
   });
 
   it('ignores a cost on an action the budget does not cover', () => {
     const events = [event({ id: 'a', costUsd: 9, operation: 'git.push' })];
 
-    expect(spentOn(budget, events, now)).toBe(0);
+    expect(spentOn(budget, { events, now })).toBe(0);
   });
 });
 

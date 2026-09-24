@@ -1,4 +1,5 @@
 import { hostname } from 'node:os';
+
 import {
   ENFORCEMENT_MODE,
   loadOrCreateConfig,
@@ -7,6 +8,7 @@ import {
   accountPathFor,
   type Account,
 } from '@memnox/core';
+
 import type { CliContext } from '../cli-context';
 import { askOnTerminal, type NameAsker } from '../agents/name-prompt';
 import { Flow } from '../flow';
@@ -22,16 +24,14 @@ import {
   pageCarriesCode,
   requestCode,
   waitForApproval,
+  type Collected,
+  type DeviceOffer,
   type WaitSeams,
 } from './enrol';
 
 /**
- * Binding this machine to a workspace, once, for whoever needs it done.
- *
- * Extracted because two commands enrol now: `login`, which does only this, and
- * the guided first run, which does it as its first step. Two copies of a device
- * flow is one of them missing the check that refuses `http://`, and it would be
- * the copy somebody added in a hurry.
+ * Binding this machine to a workspace, once, shared by `login` and the guided first run
+ * so there is one device flow and one check that refuses `http://`.
  */
 
 /** Where a workspace lives unless somebody says otherwise. */
@@ -42,13 +42,7 @@ interface ConnectOptions {
   enforce?: boolean;
   /** False prints the URL and the code rather than opening a browser. */
   open?: boolean;
-  /**
-   * What the workspace calls this machine, given rather than asked for.
-   *
-   * For anything that is not a person at a terminal. A script enrolling a
-   * fleet names each box on the command line, and a run with nothing on stdin
-   * sends no name rather than hanging on a question.
-   */
+  /** Given rather than asked for, so a script names each box and never hangs on a question. */
   name?: string;
 }
 
@@ -60,6 +54,26 @@ export type ConnectSeams = WaitSeams & {
   /** Whether anybody can be asked. False asks nothing and enrols unnamed. */
   interactive?: () => boolean;
 };
+
+interface EnrolmentRequest {
+  baseUrl: string;
+  mode?: string;
+  label?: string;
+}
+
+interface ApprovalStepInput {
+  flow: Flow;
+  options: ConnectOptions;
+  offer: DeviceOffer;
+  seams: ConnectSeams;
+}
+
+interface EnrolledInput {
+  flow: Flow;
+  home: string;
+  named: string | undefined;
+  collected: Collected;
+}
 
 interface Connected {
   account: Account;
@@ -74,91 +88,28 @@ export async function connectMachine(
   options: ConnectOptions,
   seams: ConnectSeams = {},
 ): Promise<Connected> {
-  /* The run's own rail, not one passed in. Enrolment is a step inside a larger
-     command, since `login` does only this and `setup` does it first, and taking
-     the rail from the context is what puts both of them on the same gutter
-     without either having to hand one over. */
+  // The run's own rail, so `login` and `setup` share one gutter without handing one over.
   const { flow } = context;
-  const enrolment: { baseUrl: string; mode?: string; label?: string } = {
-    baseUrl: options.url,
-    ...(options.enforce === true ? { mode: 'enforce' } : {}),
-  };
-
-  /* Checked before a key is generated or anything is printed: refusing at the
-     first call would read as a network fault, and somebody would go and debug
-     DNS for a URL we were never going to accept. */
-  const insecure = insecureBaseUrl(options.url);
-  if (insecure !== null) {
-    throw new Error(
-      `${insecure}. Use https, or a control plane on localhost while you develop against one.`,
-    );
-  }
-
+  refuseInsecure(options.url);
   flow.step('Control plane', options.url);
 
   const named = await nameFor(options, flow, seams);
-
   const keys = machineKeypair();
   flow.step('Machine key generated', 'ed25519, never leaves this machine');
 
-  if (named !== undefined) enrolment.label = named;
-
+  const enrolment: EnrolmentRequest = {
+    baseUrl: options.url,
+    ...(options.enforce === true ? { mode: ENFORCEMENT_MODE.ENFORCE } : {}),
+    ...(named === undefined ? {} : { label: named }),
+  };
   const offer = await request(enrolment, keys.publicKey);
-  const url = approvalUrl(options.url, offer.userCode, offer);
-
-  /* Straight to the page, because the link the control plane sends carries the
-     code in it: there is nothing for a person to read off one screen and type
-     into another, so asking them to press a key first is a step that exists
-     only to delay the step after it. */
-  const opened = options.open === false ? false : await (seams.open ?? openBrowser)(url);
-
-  if (opened) {
-    flow.step('Approving in your browser', url);
-  } else {
-    flow.step('Approve at', url);
-  }
-
-  /* Only where a browser could not be opened, or where the address carries no
-     code for the page to read. Printing it beside a page that already has it is
-     how somebody ends up typing eight characters nobody asked them for. */
-  if (!opened || !pageCarriesCode(offer)) {
-    flow.value('Your code', offer.userCode);
-  }
-
-  /* The deadline, because the alternative is a terminal that has opened a
-     browser and then gone silent. A wait with no end named on it reads as a
-     hang, and the person who reads it as one presses Ctrl+C. */
-  flow.step(
-    'Waiting for approval…',
-    `the code is good for ${goodFor(offer)}. Ctrl+C stops, and nothing will change.`,
-  );
+  await renderApprovalStep({ flow, options, offer, seams });
   const collected = await waitForApproval(options.url, offer, seams);
 
   const account = accountFrom(enrolment, keys, collected, new Date().toISOString());
   await writeAccount(home, account);
-
-  /* Only where `--enforce` was passed, which is somebody saying it out loud.
-     Enrolling without the flag records what the workspace has this machine set
-     to and leaves `config.toml` alone: a login that silently moved a machine out
-     of the mode its owner chose would be the worst possible first impression of
-     a control plane, and the graduation path exists for exactly this and asks. */
-  if (options.enforce === true) {
-    const current = await loadOrCreateConfig(home);
-    if (current.mode !== ENFORCEMENT_MODE.ENFORCE) {
-      await saveConfig(home, { ...current, mode: ENFORCEMENT_MODE.ENFORCE });
-    }
-  }
-
-  /* Shown because nobody asked for it: this is the moment the machine stops
-     being local-only, so what it is now bound to has to be visible without
-     running a second command to find out. */
-  flow.rows('Enrolled', [
-    ...(named === undefined ? [] : [{ label: 'name', value: named }]),
-    { label: 'machine', value: collected.machineId },
-    { label: 'workspace', value: collected.workspaceId },
-    { label: 'mode', value: collected.mode },
-    { label: 'credential', value: accountPathFor(home) },
-  ]);
+  if (options.enforce === true) await enforceHere(home);
+  renderEnrolled({ flow, home, named, collected });
 
   return {
     account,
@@ -168,19 +119,61 @@ export async function connectMachine(
   };
 }
 
+/** Before a key is generated, so a refused URL never reads as a network fault. */
+function refuseInsecure(url: string): void {
+  const insecure = insecureBaseUrl(url);
+  if (insecure === null) return;
+  throw new Error(
+    `${insecure}. Use https, or a control plane on localhost while you develop against one.`,
+  );
+}
+
 /**
- * What this workspace will call this machine, decided before anything is minted.
- *
- * **The control plane hashes the hostname and never stores it**, which is
- * deliberate: a fleet listing that held one would be a directory of where
- * people work. The cost of that is a console showing a column of hex ids, and
- * the answer is not to send the hostname anyway but to ask, with the hostname
- * offered, so what lands in somebody else's database is a name a person read
- * and agreed to rather than a fact about their laptop we took.
- *
- * `--name` for a script, the question for a person, and nothing at all where
- * there is nobody to ask: a command that blocks on a prompt in CI is one
- * somebody works around by never running it.
+ * Straight to the page, since its link carries the code, and the code printed only where
+ * no browser opened or the page lacks it. The deadline is named, so the wait is not a hang.
+ */
+async function renderApprovalStep(input: ApprovalStepInput): Promise<void> {
+  const { flow, options, offer, seams } = input;
+  const url = approvalUrl(options.url, offer.userCode, offer);
+  const opened = options.open === false ? false : await (seams.open ?? openBrowser)(url);
+
+  if (opened) {
+    flow.step('Approving in your browser', url);
+  } else {
+    flow.step('Approve at', url);
+  }
+  if (!opened || !pageCarriesCode(offer)) {
+    flow.value('Your code', offer.userCode);
+  }
+  flow.step(
+    'Waiting for approval…',
+    `the code is good for ${goodFor(offer)}. Ctrl+C stops, and nothing will change.`,
+  );
+}
+
+/** Only on `--enforce`, because a login must never move a machine out of its owner's mode silently. */
+async function enforceHere(home: string): Promise<void> {
+  const current = await loadOrCreateConfig(home);
+  if (current.mode !== ENFORCEMENT_MODE.ENFORCE) {
+    await saveConfig(home, { ...current, mode: ENFORCEMENT_MODE.ENFORCE });
+  }
+}
+
+/** Shown unasked, because this is the moment the machine stops being local only. */
+function renderEnrolled(input: EnrolledInput): void {
+  const { flow, home, named, collected } = input;
+  flow.rows('Enrolled', [
+    ...(named === undefined ? [] : [{ label: 'name', value: named }]),
+    { label: 'machine', value: collected.machineId },
+    { label: 'workspace', value: collected.workspaceId },
+    { label: 'mode', value: collected.mode },
+    { label: 'credential', value: accountPathFor(home) },
+  ]);
+}
+
+/**
+ * What this workspace will call this machine, decided before anything is minted: the
+ * hostname only suggested, since the plane never stores it. `--name`, a question, or nothing.
  */
 async function nameFor(
   options: ConnectOptions,
@@ -205,9 +198,9 @@ async function nameFor(
 }
 
 async function request(
-  enrolment: { baseUrl: string; mode?: string; label?: string },
+  enrolment: EnrolmentRequest,
   publicKey: string,
-): ReturnType<typeof requestCode> {
+): Promise<DeviceOffer> {
   try {
     return await requestCode(enrolment, publicKey);
   } catch (err) {

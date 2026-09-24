@@ -12,17 +12,18 @@ import {
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
   isEnforcementMode,
+  loadPoliciesFromFile,
   overlaysInForce,
-  stateFactsInForce,
+  stateLabelsOf,
   type EnvironmentSnapshot,
   type MemnoxEvent,
 } from '@memnox/core';
-const BUNDLE_HASH = '866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389';
+const BUNDLE_HASH = '9875db57c4f398bc4b4c99001d7e4f6ecde922c9aceaaa51c8e30751ae319033';
 
-import { applyBundle, pullBundle, type Bundle } from '../src/sync/bundle';
+import { applyBundle, orgPolicyPath, pullBundle, type Bundle } from '../src/sync/bundle';
 import type { Account } from '@memnox/core';
 import { censusFrom, type CensusDecisions } from '../src/sync/census';
-import { fitting } from '../src/sync/push';
+import { fitting } from '../src/sync/action-rows';
 
 /**
  * This machine's half of `docs/sync-contract.json`.
@@ -76,6 +77,47 @@ describe('the bundle this machine is sent', () => {
     expect(result.conditions).toBe(bundle.conditions.length);
   });
 
+  /* A narrowed rule travels under a spelling an older runtime skips, and this one reads
+     its real actions and every condition back onto the match the gate holds it to. */
+  it('holds a narrowed rule to its targets and a conditioned one to its conditions', async () => {
+    const { bundle } = await contract();
+    await applyBundle(home, bundle);
+
+    const byName = new Map(
+      (await loadPoliciesFromFile(orgPolicyPath(home))).map((rule) => [rule.name, rule]),
+    );
+
+    expect(byName.get('no-reading-credentials')?.match).toMatchObject({
+      actions: ['filesystem.read'],
+      targets: ['**/.ssh', '**/.ssh/**', '**/.env', '**/.env.*'],
+    });
+    expect(byName.get('no-weekend-production-deploys')?.match).toMatchObject({
+      actions: ['deploy.run', 'deploy.rollback'],
+      environments: ['production'],
+    });
+  });
+
+  /* A rule's decision rides beside its effect. The observed one decides nothing here, and
+     the ask held to a named approver is refused, because a hold here asks whoever answers. */
+  it('keeps an observed rule observed and never lets anybody answer a named approver', async () => {
+    const { bundle } = await contract();
+    await applyBundle(home, bundle);
+
+    const byName = new Map(
+      (await loadPoliciesFromFile(orgPolicyPath(home))).map((rule) => [rule.name, rule]),
+    );
+
+    expect(byName.get('watch-database-drops')?.decision).toMatchObject({
+      effect: DECISION_EFFECT.DENY,
+      mode: 'observe',
+    });
+    expect(byName.get('watch-database-drops')?.match.actions).toEqual(['db.drop']);
+    expect(byName.get('migrations-need-the-dba')?.decision).toMatchObject({
+      effect: DECISION_EFFECT.DENY,
+      approvers: ['dba'],
+    });
+  });
+
   /* The condition in the contract ended an hour after it began, in 2025. Read
      through the field names this side once used it had no window, was given a
      day from now, and would have been in force for a day every time it was
@@ -84,10 +126,7 @@ describe('the bundle this machine is sent', () => {
     const { bundle } = await contract();
     await applyBundle(home, bundle);
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).not.toContain('freeze:deploys');
   });
@@ -96,10 +135,7 @@ describe('the bundle this machine is sent', () => {
     const { bundle } = await contract();
     await applyBundle(home, bundle);
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).toContain('incident:*');
   });
@@ -334,10 +370,7 @@ describe('a machine pulling from a control plane', () => {
     const pulled = await pullBundle(home, account());
     expect(pulled.outcome).toBe('applied');
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).toContain('freeze:deploys');
   });
@@ -357,13 +390,13 @@ describe('a machine pulling from a control plane', () => {
       JSON.stringify({ ...held, syncedAt: Date.now() - 2 * 24 * 60 * 60 * 1000 }),
     );
     expect(
-      stateFactsInForce(await overlaysInForce(home), new Date().toISOString()),
+      stateLabelsOf(await overlaysInForce(home), new Date().toISOString()),
     ).not.toContain('incident:*');
 
     await pullBundle(home, account(), first.hash);
 
     expect(
-      stateFactsInForce(await overlaysInForce(home), new Date().toISOString()),
+      stateLabelsOf(await overlaysInForce(home), new Date().toISOString()),
     ).toContain('incident:*');
   });
 
@@ -372,10 +405,7 @@ describe('a machine pulling from a control plane', () => {
     const again = await pullBundle(home, account(), first.hash);
     expect(again.outcome).toBe('unchanged');
 
-    const facts = stateFactsInForce(
-      await overlaysInForce(home),
-      new Date().toISOString(),
-    );
+    const facts = stateLabelsOf(await overlaysInForce(home), new Date().toISOString());
 
     expect(facts).toContain('freeze:deploys');
   });

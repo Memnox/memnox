@@ -1,20 +1,12 @@
-import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+/**
+ * The account file, and the only thing that turns sync on: with no account file nothing
+ * makes a network call. In core because the seams are separate processes that need it.
+ */
+import { chmod, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { EnforcementMode } from '../constants/enforcement.constants';
 import { MEMNOX_HOME } from '../config/config';
-import { writeJsonAtomic } from '../store/atomic-file';
-
-/**
- * The account file, and the only thing that turns any of this on.
- *
- * It lives here rather than beside the CLI's sync code because the seams are separate
- * processes and need it too: a lease taken on one machine has to be checked against
- * the workspace, and an interceptor cannot import a command.
- *
- * With no account file nothing here makes a network call at all — not a
- * heartbeat, not a lookup, nothing. That is the whole of the promise on the
- * front page, so it is one file and one check rather than a flag somewhere.
- */
+import { writeJsonFile } from '../store/json-records';
 
 const ACCOUNT_FILE = 'account.json';
 
@@ -37,16 +29,8 @@ export interface Account {
   privateKey: string;
   enrolledAt: string;
   /**
-   * The last mode the control plane told this machine, whether or not it was
-   * applied.
-   *
-   * Here so that a *change* can be told from a repetition. The heartbeat reply
-   * carries the workspace's mode on every pass, and a machine that wrote it to
-   * `config.toml` each time would silently revert an edit somebody made on
-   * purpose, within a minute, for ever. Recording what was last heard means the
-   * control plane graduates a machine rather than continuously asserting one —
-   * the same shape as the bundle, which is applied when its hash changes and
-   * costs a 304 otherwise.
+   * The last mode the control plane told this machine, so a change can be told from a
+   * repetition rather than every heartbeat reverting a deliberate local edit.
    */
   cloudMode?: EnforcementMode;
 }
@@ -74,6 +58,7 @@ export async function readAccount(home: string): Promise<Account | null> {
     ) {
       return null;
     }
+    // Every required field was checked above; the rest are optional.
     return { ...parsed, version: ACCOUNT_VERSION } as Account;
   } catch {
     // A half-written file is not an account. Logging in again replaces it.
@@ -83,19 +68,14 @@ export async function readAccount(home: string): Promise<Account | null> {
 
 export async function writeAccount(home: string, account: Account): Promise<void> {
   const path = accountPathFor(home);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeJsonAtomic(path, account);
+  await writeJsonFile(path, account);
   // Set explicitly: an existing file keeps its old mode through a write.
   await chmod(path, OWNER_ONLY);
 }
 
 /**
- * Deletes the credential and nothing else.
- *
- * Rules already pulled stay in force, which is deliberate — logging out of a
- * laptop must not quietly stop governing it. Revoking the machine in the console
- * is what ends the enrolment, and `memnox doctor` says when the rules on disk
- * are no longer being refreshed.
+ * Deletes the credential and nothing else: rules already pulled stay in force, because
+ * logging out must not quietly stop governing a laptop.
  */
 export async function forgetAccount(home: string): Promise<boolean> {
   try {

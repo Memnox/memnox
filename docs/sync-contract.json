@@ -1,8 +1,8 @@
 {
  "version": 1,
- "note": "The wire between memnox-runtime and memnox-cloud, by example: the bundle a machine is sent, the heartbeat it reports and what comes back, the batch it posts for what it did, and the census it posts for what it can do, which carries what somebody on the machine decided about each agent: the name they chose and whether they said no to it. This file is the original; memnox-cloud/docs/sync-contract.json is a verbatim copy. Change one and copy it across whole, so a diff between the two stays empty. A test in each repository asserts its own side against this, because the two were written against each other's documentation rather than against each other, and every field name that drifted did so silently. `heartbeat.mode` is what the machine is running and `heartbeatReply.mode` is what the workspace has set: they differ here on purpose, because that is the state a graduation passes through and the one both halves have to render honestly.",
+ "note": "The wire between memnox-runtime and memnox-cloud, by example: the bundle a machine is sent, the heartbeat it reports and what comes back, the batch it posts for what it did, and the census it posts for what it can do, which carries what somebody on the machine decided about each agent: the name they chose and whether they said no to it. This file is the original; memnox-cloud/docs/sync-contract.json is a verbatim copy. Change one and copy it across whole, so a diff between the two stays empty. A test in each repository asserts its own side against this, because the two were written against each other's documentation rather than against each other, and every field name that drifted did so silently. `heartbeat.mode` is what the machine is running and `heartbeatReply.mode` is what the workspace has set: they differ here on purpose, because that is the state a graduation passes through and the one both halves have to render honestly. A rule narrowed by targets, agents or directories is sent under `memnox.requires-scoped-rules` with its real action in `scopedMatch`, and one carrying any other condition under `memnox.requires-conditioned-rules` with every action in `actions` and the rest of its match in `conditions`, so a runtime too old to honour them matches less than the rule, never more. A rule whose decision says more than its effect carries it whole in `decision`, which a runtime reads its effect from; the top level `effect` is what a runtime that ignores `decision` may apply, so an ask held to named approvers is a deny there, and an observed rule is sent under `memnox.requires-rule-decisions` so such a runtime skips it rather than enforcing it.",
  "bundle": {
-  "hash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+  "hash": "9875db57c4f398bc4b4c99001d7e4f6ecde922c9aceaaa51c8e30751ae319033",
   "policies": [
    {
     "hash": "p1",
@@ -21,6 +21,75 @@
     "match": "git.push*",
     "reason": "main is shared.",
     "alternative": "push a branch and open a pull request"
+   },
+   {
+    "id": "no-reading-credentials",
+    "policyHash": "p1",
+    "line": 4,
+    "domain": "filesystem",
+    "effect": "deny",
+    "specificity": 15,
+    "match": "memnox.requires-scoped-rules",
+    "scopedMatch": "filesystem.read",
+    "reason": "almost no task needs the key itself.",
+    "targets": [
+     "**/.ssh",
+     "**/.ssh/**",
+     "**/.env",
+     "**/.env.*"
+    ]
+   },
+   {
+    "id": "no-weekend-production-deploys",
+    "policyHash": "p1",
+    "line": 5,
+    "domain": "deploy",
+    "effect": "deny",
+    "specificity": 10,
+    "match": "memnox.requires-conditioned-rules",
+    "actions": [
+     "deploy.run",
+     "deploy.rollback"
+    ],
+    "conditions": {
+     "environments": [
+      "production"
+     ]
+    },
+    "reason": "nobody is on call to watch it."
+   },
+   {
+    "id": "watch-database-drops",
+    "policyHash": "p1",
+    "line": 6,
+    "domain": "db",
+    "effect": "deny",
+    "specificity": 7,
+    "match": "memnox.requires-rule-decisions",
+    "actions": [
+     "db.drop"
+    ],
+    "reason": "we are learning how often this happens.",
+    "decision": {
+     "effect": "deny",
+     "mode": "observe"
+    }
+   },
+   {
+    "id": "migrations-need-the-dba",
+    "policyHash": "p1",
+    "line": 7,
+    "domain": "db",
+    "effect": "deny",
+    "specificity": 10,
+    "match": "db.migrate",
+    "reason": "a migration locks the table.",
+    "decision": {
+     "effect": "ask",
+     "approvers": [
+      "dba"
+     ]
+    }
    }
   ],
   "conditions": [
@@ -47,7 +116,7 @@
  },
  "heartbeat": {
   "runtimeVersion": "0.1.0",
-  "bundleHashApplied": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+  "bundleHashApplied": "9875db57c4f398bc4b4c99001d7e4f6ecde922c9aceaaa51c8e30751ae319033",
   "mode": "observe"
  },
  "heartbeatReply": {
@@ -104,7 +173,7 @@
      "argsDigest": "sha256:9f2b",
      "ruleId": "no-force-push-to-main",
      "policyHash": "p1",
-     "bundleHash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+     "bundleHash": "9875db57c4f398bc4b4c99001d7e4f6ecde922c9aceaaa51c8e30751ae319033",
      "conditionIds": [
       "cnd_deploy_freeze"
      ],
@@ -131,7 +200,7 @@
      "resourceRef": "acme/web#412",
      "ruleId": "ask-before-merge",
      "policyHash": "p1",
-     "bundleHash": "866d2d658ff6e7de76941adf5b6aa1b719cec0a06f791631677207140f6d8389",
+     "bundleHash": "9875db57c4f398bc4b4c99001d7e4f6ecde922c9aceaaa51c8e30751ae319033",
      "exitCode": 0,
      "errored": false,
      "startedAt": 1757000454800
@@ -171,7 +240,24 @@
     "id": "claude-code",
     "kind": "claude-code",
     "version": "2.1",
-    "surfaces": []
+    "surfaces": [
+     {
+      "kind": "shell",
+      "detectedFrom": "~/.claude/settings.json"
+     },
+     {
+      "kind": "filesystem",
+      "detectedFrom": "~/.claude/settings.json"
+     },
+     {
+      "kind": "git",
+      "detectedFrom": "~/.claude/settings.json"
+     },
+     {
+      "kind": "network",
+      "detectedFrom": "~/.claude/settings.json"
+     }
+    ]
    },
    {
     "id": "claude-desktop",
@@ -191,7 +277,9 @@
       "name": "merge_pull_request",
       "effect": "write"
      }
-    ]
+    ],
+    "wrapped": false,
+    "transport": "stdio"
    }
   ],
   "resources": [
@@ -226,7 +314,13 @@
      "agentId": "claude-code",
      "kind": "claude-code",
      "version": "2.1",
-     "label": "Claude Code"
+     "label": "Claude Code",
+     "surfaces": [
+      "filesystem",
+      "git",
+      "network",
+      "shell"
+     ]
     }
    },
    {
@@ -239,6 +333,7 @@
      "agentId": "claude-desktop",
      "kind": "claude-desktop",
      "label": "Desk Claude",
+     "surfaces": [],
      "declinedAt": 1757000400000
     }
    },
@@ -278,6 +373,23 @@
       "claude-code",
       "res_ssh"
      ]
+    }
+   },
+   {
+    "kind": "mcp.server.reported",
+    "dedupKey": "mcp-server:github@2025-09-04T15:33:20.000Z",
+    "subjectId": "github",
+    "actorType": "automation",
+    "occurredAt": 1757000000000,
+    "payload": {
+     "server": "github",
+     "agentIds": [
+      "claude-code"
+     ],
+     "governed": false,
+     "transport": "stdio",
+     "toolCount": 1,
+     "writeToolCount": 1
     }
    }
   ]

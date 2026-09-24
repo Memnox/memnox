@@ -1,21 +1,19 @@
 import { spawn } from 'node:child_process';
 
+import { secondsToMs } from '@memnox/core';
+
 /**
- * Opening the approval page, and saying whether it opened.
- *
- * The answer is the point. The caller shows the eight-character code only when
- * this returns false, so somebody with a browser approves what the link already
- * carries rather than reading a code off one screen and typing it into another.
- * A server over SSH has no opener, gets false, and gets the code, which is the
- * case the device flow exists for.
+ * Opening the approval page, and saying whether it opened, because the caller shows the
+ * code only on false: a laptop approves the link and a server over SSH gets the code.
  */
+
+const OPENER_PATIENCE_MS = secondsToMs(4);
+
 export async function openBrowser(url: string): Promise<boolean> {
-  /* Nobody is at the keyboard when this runs from a script, a CI job or a test,
-     and a window opened there lands on nobody's screen while the run reports it
-     as done. Those get the code, which is what the device flow is for. */
+  // Nobody is at the keyboard for a script, a CI job or a test, so those get the code.
   if (process.stdin.isTTY !== true) return false;
 
-  const [opener, args] = command(url);
+  const [opener, args] = openerFor(url);
   return await new Promise<boolean>((resolve) => {
     let settled = false;
     const done = (opened: boolean): void => {
@@ -27,8 +25,7 @@ export async function openBrowser(url: string): Promise<boolean> {
       const child = spawn(opener, args, { stdio: 'ignore', detached: true });
       child.on('error', () => done(false));
       child.on('exit', (code) => done(code === 0));
-      /* A handler that stays in the foreground would otherwise hold the login
-         here forever. It launched, so treat it as launched and stop waiting. */
+      // A handler that stays in the foreground launched, so stop waiting on it.
       const giveUp = setTimeout(() => {
         child.unref();
         done(true);
@@ -40,9 +37,7 @@ export async function openBrowser(url: string): Promise<boolean> {
   });
 }
 
-const OPENER_PATIENCE_MS = 4000;
-
-function command(url: string): [string, string[]] {
+function openerFor(url: string): [string, string[]] {
   if (process.platform === 'darwin') return ['open', [url]];
   // The empty string is the window title `start` would otherwise take the URL for.
   if (process.platform === 'win32') return ['cmd', ['/c', 'start', '', url]];

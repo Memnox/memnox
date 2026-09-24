@@ -1,19 +1,14 @@
+import { HTTP, secondsToMs } from '@memnox/core';
+
 /**
- * The only module in this repository that reaches a network.
- *
- * `test/no-network-outside-sync.test.ts` asserts that, and it is the reason the
- * claim on the front page can be checked rather than believed: nothing calls out
- * until somebody runs `memnox login`, and this is the one file that could.
- *
- * Everything here is a plain conditional request. There is no retry loop and no
- * background queue — the caller decides what a failure means, because the answer
- * is different for a bundle (keep the last one) and for a heartbeat (say nothing).
+ * The only module here that reaches a network, as `no-network-outside-sync.test.ts` asserts.
+ * Plain requests with no retry and no queue, because each caller decides what a failure means.
  */
 
 /** Short: a machine waiting on a control plane must not hold up an agent. */
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = secondsToMs(10);
 
-interface CloudResponse<T> {
+export interface CloudResponse<T> {
   status: number;
   /** Absent on 304 and on any status with no body worth reading. */
   body?: T;
@@ -23,20 +18,12 @@ interface CloudResponse<T> {
 interface CloudRequest {
   baseUrl: string;
   path: string;
-  /* `DELETE` is here for one route: revoking the credential an agent was
-     onboarded under. Offboarding that left a live credential behind would
-     restore the config and leave the reach. */
+  // `DELETE` revokes an offboarded agent's credential, or the reach would outlive the config.
   method?: 'GET' | 'POST' | 'DELETE';
   /** The machine credential, where the route wants one. */
   token?: string;
   body?: unknown;
-  /**
-   * Sent verbatim, for a request whose bytes are signed.
-   *
-   * The control plane verifies the raw body it received, so serialising twice
-   * would sign one string and send another and the signature would never
-   * verify. When this is set, `body` is ignored.
-   */
+  /** Sent verbatim, and `body` ignored, for a request whose exact bytes are signed. */
   rawBody?: string;
   /** Ed25519 over `rawBody`, base64. Sent with `machineId` or not at all. */
   signature?: string;
@@ -46,7 +33,7 @@ interface CloudRequest {
   timeoutMs?: number;
 }
 
-/** Unreachable, refused, or timed out — the caller cannot tell and does not need to. */
+/** Unreachable, refused, or timed out, which the caller cannot tell apart and need not. */
 export class CloudUnreachable extends Error {
   constructor(readonly because: string) {
     super(`the control plane could not be reached: ${because}`);
@@ -57,18 +44,8 @@ export class CloudUnreachable extends Error {
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /**
- * Whether these two addresses are the same control plane.
- *
- * One answer in one place, because three things ask: a guided run deciding
- * whether the machine is already where it was pointed, an onboarding record
- * deciding whether it belongs to the plane in hand, and a test. A trailing
- * slash and a path under the same origin are not a different deployment, and
- * two of them disagreeing would mean a machine either re-enrolling every run
- * or never moving at all.
- *
- * Unparseable falls back to the strings, which is how a hand-edited
- * `account.json` is compared: wrong in the direction of asking rather than in
- * the direction of acting.
+ * Whether two addresses are the same control plane, compared by origin in one place so
+ * callers cannot disagree. Unparseable compares the strings, which errs toward asking.
  */
 export function sameControlPlane(one: string, two: string): boolean {
   try {
@@ -79,14 +56,8 @@ export function sameControlPlane(one: string, two: string): boolean {
 }
 
 /**
- * Refused rather than downgraded.
- *
- * Every call here carries the machine's bearer token, and the bundle it pulls
- * back has no signature of its own — TLS is the only thing authenticating either
- * direction. Over plain http the token is readable by anything on the path, and
- * the rules this machine then enforces are whatever that thing chose to return.
- * The check lives here rather than in `login` because it is the choke point: a
- * hand-edited `account.json` reaches this function too.
+ * Refused rather than downgraded, because every call carries a bearer token and TLS is
+ * what authenticates the bundle. Checked here, the choke point a hand-edited account reaches.
  */
 export function insecureBaseUrl(baseUrl: string): string | null {
   let parsed: URL;
@@ -106,7 +77,26 @@ export async function callCloud<T>(request: CloudRequest): Promise<CloudResponse
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs ?? TIMEOUT_MS);
+  const payload =
+    request.rawBody ??
+    (request.body === undefined ? undefined : JSON.stringify(request.body));
 
+  try {
+    const response = await fetch(new URL(request.path, request.baseUrl), {
+      method: request.method ?? 'GET',
+      headers: headersFor(request, payload !== undefined),
+      signal: controller.signal,
+      ...(payload === undefined ? {} : { body: payload }),
+    });
+    return await responseOf<T>(response);
+  } catch (err) {
+    throw new CloudUnreachable(err instanceof Error ? err.message : String(err));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function headersFor(request: CloudRequest, hasBody: boolean): Record<string, string> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (request.token !== undefined) {
     headers['authorization'] = `Bearer ${request.token}`;
@@ -114,37 +104,25 @@ export async function callCloud<T>(request: CloudRequest): Promise<CloudResponse
   if (request.ifNoneMatch !== undefined) {
     headers['if-none-match'] = `"${request.ifNoneMatch}"`;
   }
-  const payload =
-    request.rawBody ??
-    (request.body === undefined ? undefined : JSON.stringify(request.body));
-  if (payload !== undefined) headers['content-type'] = 'application/json';
+  if (hasBody) headers['content-type'] = 'application/json';
 
-  /* Both or neither: the control plane refuses a lone one rather than falling
-     back to the credential the request also carries. */
+  // Both or neither, because the control plane refuses a lone one.
   if (request.machineId !== undefined && request.signature !== undefined) {
     headers['x-memnox-machine'] = request.machineId;
     headers['x-memnox-signature'] = request.signature;
   }
+  return headers;
+}
 
-  try {
-    const response = await fetch(new URL(request.path, request.baseUrl), {
-      method: request.method ?? 'GET',
-      headers,
-      signal: controller.signal,
-      ...(payload === undefined ? {} : { body: payload }),
-    });
-
-    const etag = response.headers.get('etag');
-    return {
-      status: response.status,
-      ...(etag === null ? {} : { etag: etag.replace(/^W\/|"/g, '') }),
-      ...(response.status === 304 ? {} : { body: await readJson<T>(response) }),
-    };
-  } catch (err) {
-    throw new CloudUnreachable(err instanceof Error ? err.message : String(err));
-  } finally {
-    clearTimeout(timer);
-  }
+async function responseOf<T>(response: Response): Promise<CloudResponse<T>> {
+  const etag = response.headers.get('etag');
+  return {
+    status: response.status,
+    ...(etag === null ? {} : { etag: etag.replace(/^W\/|"/g, '') }),
+    ...(response.status === HTTP.NOT_MODIFIED
+      ? {}
+      : { body: await readJson<T>(response) }),
+  };
 }
 
 /** A body that is not JSON is not an answer; the status still is. */

@@ -10,9 +10,12 @@ import {
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
   TOOL_CLASS,
+  UNNAMED_AGENT,
   type MemnoxEvent,
 } from '@memnox/core';
-import { draftFrom, readCursor, signBody } from '../src/sync/push';
+import { draftFrom, fitting } from '../src/sync/action-rows';
+import { signBody } from '../src/sync/push';
+import { readCursor } from '../src/sync/push-cursor';
 import { syncLoop, type Pass } from '../src/sync/heartbeat';
 
 const event = (over: Partial<MemnoxEvent> = {}): MemnoxEvent => ({
@@ -60,6 +63,25 @@ describe('the batch a machine sends', () => {
     expect(payload['resourceRef']).toBe('main');
     expect(payload['classes']).toEqual(['write']);
     expect(payload['effect']).toBe('deny');
+  });
+
+  it('names the agent it ran as, on the action and on its session', () => {
+    const [session, action] = fitting([event()]).drafts;
+
+    expect(session?.payload).toMatchObject({ agentId: 'claude-code' });
+    expect(action?.payload).toMatchObject({ agentId: 'claude-code' });
+  });
+
+  /* The control plane makes an agent of every name it is sent, so a seam that
+     could not tell which agent called it sends none rather than "an agent". */
+  it('leaves the agent off where no seam could say which one it was', () => {
+    const drafts = fitting([event({ agent: UNNAMED_AGENT })]).drafts;
+
+    for (const draft of drafts) {
+      expect(draft.payload).not.toHaveProperty('agentId');
+      expect(draft.payload).not.toHaveProperty('agentKind');
+    }
+    expect(drafts).toHaveLength(2);
   });
 
   // A refused action never ran; a result row for it would say it completed.

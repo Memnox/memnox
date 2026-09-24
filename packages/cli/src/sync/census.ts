@@ -1,37 +1,21 @@
 import { createHash } from 'node:crypto';
-import type { EnvironmentSnapshot } from '@memnox/core';
+
+import { TOOL_EFFECT, type EnvironmentSnapshot } from '@memnox/core';
+
 import { displayName, type AgentNames } from '../agents/names';
 import type { Declined } from '../agents/declined';
+import { MANAGED_SERVER } from '../agents/managed-shape';
+import { CLOUD_EVENT, eventOf, type CloudEvent } from './cloud-event';
 
 /**
- * What this machine can do, sent so the console can answer it.
- *
- * The ledger answers what an agent *did*. Nothing has ever carried what it *can*
- * do, and the control plane is built to receive exactly that — `agent.reported`
- * names an agent that exists here, `agent.reach.reported` names something it can
- * touch and has not. Both projections were in place and both were empty for every
- * workspace, because a scan stayed on the laptop that ran it.
- *
- * Derived from a kept scan rather than by taking one: a scan spawns every MCP
- * server it finds and takes seconds, and doing that on a sync loop would make the
- * quietest thing this product does the most expensive.
+ * What this machine can do, sent so the console can answer it: which agents exist here
+ * and what each can touch. Derived from a kept scan, because taking one spawns every
+ * MCP server it finds and takes seconds.
  */
-const AGENT_REPORTED = 'agent.reported';
-const REACH_REPORTED = 'agent.reach.reported';
 
 /**
- * What somebody on this machine decided about the agents on it.
- *
- * A scan says what is here and this says what was done about it, and the two
- * are sent together because a row carrying only the first is a question the
- * console asks again after somebody has already answered it. Claude Desktop
- * declined in a guided run reached the workspace looking exactly like an agent
- * nobody had ever been offered, under the id rather than the name it was
- * offered by.
- *
- * Neither field is authority. A label is what the row is printed as and the id
- * stays what it is keyed on; a decline says a person here said no, which is a
- * fact about this machine rather than a claim about the agent.
+ * What somebody on this machine decided about its agents, sent with the scan so the
+ * console does not ask again about an agent somebody already declined. Neither is authority.
  */
 export interface CensusDecisions {
   /** What a person on this machine calls each agent. */
@@ -40,89 +24,71 @@ export interface CensusDecisions {
   declined: Declined;
 }
 
-/** Names and structure only, exactly as the snapshot itself is bound to. */
-export function censusFrom(
-  snapshot: EnvironmentSnapshot,
-  /* Required rather than defaulted: a caller that forgot it would send a
-     census with every agent unnamed and every answer lost, and would look
-     exactly like one that had nothing to say. */
-  decided: CensusDecisions,
-): Record<string, unknown>[] {
-  const at = Date.parse(snapshot.takenAt);
-  const rows: Record<string, unknown>[] = [];
-
-  for (const agent of snapshot.agents) {
-    const label = displayName(decided.names, agent);
-    const declinedAt = decided.declined[agent.id];
-    rows.push({
-      kind: AGENT_REPORTED,
-      /* One row per agent per scan: the same agent seen again has to move its
-         last-seen, and a key that did not change would be read as a redelivery
-         and dropped. The decision is in the key for the same reason, one step
-         further on: renaming an agent or saying no to it changes nothing about
-         the scan, so a key built from the scan alone would carry the new
-         answer under the old key and have it dropped as a resend. */
-      dedupKey: `agent:${agent.id}@${snapshot.takenAt}:${decisionOf(label, declinedAt)}`,
-      subjectId: agent.id,
-      actorType: 'automation',
-      occurredAt: at,
-      payload: {
-        agentId: agent.id,
-        kind: agent.kind,
-        ...(agent.version === undefined ? {} : { version: agent.version }),
-        label,
-        /* Sent as an instant rather than a flag, because "left alone in March"
-           and "left alone this morning" are different answers to whether the
-           question is worth putting back in front of somebody. Absent where
-           nobody has been asked, which is not the same as a no. */
-        ...(declinedAt === undefined ? {} : { declinedAt: Date.parse(declinedAt) }),
-      },
-    });
-  }
-
-  /* A tool an agent can call, and a path it can read: both are reach, and the
-     control plane keys them the same way. The chain is carried so the console can
-     say how it is reached rather than only that it is. */
-  for (const server of snapshot.servers) {
-    for (const agentId of server.agentIds) {
-      for (const tool of server.tools) {
-        rows.push(
-          reach(
-            snapshot,
-            at,
-            agentId,
-            `mcp:${server.name}/${tool.name}`,
-            [tool.effect],
-            [agentId, server.name, tool.name],
-          ),
-        );
-      }
-    }
-  }
-
-  for (const resource of snapshot.resources) {
-    for (const agentId of resource.reachableBy) {
-      rows.push(
-        reach(
-          snapshot,
-          at,
-          agentId,
-          resource.path ?? resource.id,
-          [resource.kind, resource.sensitivity],
-          [agentId, resource.id],
-        ),
-      );
-    }
-  }
-
-  return rows;
+/** Something an agent can touch and has not, as one reach row. */
+interface ReachInput {
+  snapshot: EnvironmentSnapshot;
+  agentId: string;
+  resourceRef: string;
+  classes: readonly string[];
+  /** The chain it is reached through, so the console can say how. */
+  path: readonly string[];
 }
 
 /**
- * Everything about this machine's own answers, in one digest.
- *
- * `pushCensus` holds it beside the scan it last sent, so a name typed or a no
- * given after that scan is still sent without taking a second scan to carry it.
+ * How much of the hash a dedup key carries. Longer than `shortDigest`, because a
+ * collision on the wire would silently drop one machine's answer for another's.
+ */
+const KEY_DIGEST_LENGTH = 12;
+
+/** Names and structure only, exactly as the snapshot itself is bound to. */
+export function censusFrom(
+  snapshot: EnvironmentSnapshot,
+  // Required, because a caller that forgot it would send every agent unnamed.
+  decided: CensusDecisions,
+): CloudEvent[] {
+  return [
+    ...snapshot.agents.map((agent) => agentRowOf(snapshot, agent, decided)),
+    ...toolReachOf(snapshot),
+    ...resourceReachOf(snapshot),
+    ...serverRowsOf(snapshot),
+  ];
+}
+
+/** A tool that changes something, which is the count a reviewer weighs a server by. */
+const WRITING_EFFECTS: readonly string[] = [TOOL_EFFECT.WRITE, TOOL_EFFECT.DESTRUCTIVE];
+
+/**
+ * One row per server, so the console can list every server the team runs and say which
+ * are governed. Names, counts and a transport only: never a launch line, an argument, a
+ * URL or an environment value, any of which can carry a credential.
+ */
+function serverRowsOf(snapshot: EnvironmentSnapshot): CloudEvent[] {
+  return snapshot.servers.map((server) => {
+    // The entry onboarding writes is Memnox itself, so it is governed by construction.
+    const governed = server.wrapped === true || server.name === MANAGED_SERVER;
+    return eventOf({
+      kind: CLOUD_EVENT.MCP_SERVER_REPORTED,
+      dedupKey: `mcp-server:${server.name}@${snapshot.takenAt}`,
+      subjectId: server.name,
+      occurredAt: Date.parse(snapshot.takenAt),
+      payload: {
+        server: server.name,
+        agentIds: [...server.agentIds],
+        governed,
+        // Unknown rather than a guess, on a snapshot kept before this was recorded.
+        ...(server.transport === undefined ? {} : { transport: server.transport }),
+        toolCount: server.tools.length,
+        writeToolCount: server.tools.filter((tool) =>
+          WRITING_EFFECTS.includes(tool.effect),
+        ).length,
+      },
+    });
+  });
+}
+
+/**
+ * Everything about this machine's own answers, in one digest, held beside the last scan
+ * so a name or a decline given afterwards is sent without taking a second scan.
  */
 export function decisionDigest(decided: CensusDecisions): string {
   return short(
@@ -133,29 +99,78 @@ export function decisionDigest(decided: CensusDecisions): string {
   );
 }
 
+function agentRowOf(
+  snapshot: EnvironmentSnapshot,
+  agent: EnvironmentSnapshot['agents'][number],
+  decided: CensusDecisions,
+): CloudEvent {
+  const label = displayName(decided.names, agent);
+  const declinedAt = decided.declined[agent.id];
+  return eventOf({
+    kind: CLOUD_EVENT.AGENT_REPORTED,
+    // The decision is in the key, so a rename is not dropped as a resend of the scan.
+    dedupKey: `agent:${agent.id}@${snapshot.takenAt}:${decisionOf(label, declinedAt)}`,
+    subjectId: agent.id,
+    occurredAt: Date.parse(snapshot.takenAt),
+    payload: {
+      agentId: agent.id,
+      kind: agent.kind,
+      ...(agent.version === undefined ? {} : { version: agent.version }),
+      label,
+      // Kinds only, never the file that proved one, so the console can say what it can do.
+      surfaces: [...new Set(agent.surfaces.map((surface) => surface.kind))].sort(),
+      // An instant rather than a flag, because how long ago decides whether to ask again.
+      ...(declinedAt === undefined ? {} : { declinedAt: Date.parse(declinedAt) }),
+    },
+  });
+}
+
+function toolReachOf(snapshot: EnvironmentSnapshot): CloudEvent[] {
+  return snapshot.servers.flatMap((server) =>
+    server.agentIds.flatMap((agentId) =>
+      server.tools.map((tool) =>
+        reach({
+          snapshot,
+          agentId,
+          resourceRef: `mcp:${server.name}/${tool.name}`,
+          classes: [tool.effect],
+          path: [agentId, server.name, tool.name],
+        }),
+      ),
+    ),
+  );
+}
+
+function resourceReachOf(snapshot: EnvironmentSnapshot): CloudEvent[] {
+  return snapshot.resources.flatMap((resource) =>
+    resource.reachableBy.map((agentId) =>
+      reach({
+        snapshot,
+        agentId,
+        resourceRef: resource.path ?? resource.id,
+        classes: [resource.kind, resource.sensitivity],
+        path: [agentId, resource.id],
+      }),
+    ),
+  );
+}
+
+function short(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, KEY_DIGEST_LENGTH);
+}
+
 /** Short enough to sit in a key, long enough that two answers do not collide. */
 function decisionOf(label: string, declinedAt: string | undefined): string {
   return short(`${label}\n${declinedAt ?? ''}`);
 }
 
-function short(text: string): string {
-  return createHash('sha256').update(text).digest('hex').slice(0, 12);
-}
-
-function reach(
-  snapshot: EnvironmentSnapshot,
-  at: number,
-  agentId: string,
-  resourceRef: string,
-  classes: readonly string[],
-  path: readonly string[],
-): Record<string, unknown> {
-  return {
-    kind: REACH_REPORTED,
+function reach(input: ReachInput): CloudEvent {
+  const { snapshot, agentId, resourceRef } = input;
+  return eventOf({
+    kind: CLOUD_EVENT.REACH_REPORTED,
     dedupKey: `reach:${agentId}:${resourceRef}@${snapshot.takenAt}`,
     subjectId: agentId,
-    actorType: 'automation',
-    occurredAt: at,
-    payload: { agentId, resourceRef, classes: [...classes], path: [...path] },
-  };
+    occurredAt: Date.parse(snapshot.takenAt),
+    payload: { agentId, resourceRef, classes: [...input.classes], path: [...input.path] },
+  });
 }

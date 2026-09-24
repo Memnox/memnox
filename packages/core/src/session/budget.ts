@@ -1,18 +1,11 @@
 import { matchesAny } from '../policy/pattern-matcher';
+import { DAY_MS, HOUR_MS, HOURS_IN_A_DAY } from '../domain/time';
 import type { MemnoxEvent } from '../event/event';
+import { DECISION_EFFECT } from '../constants/decision.constants';
 
 /**
- * What an agent may spend in a day, as against what it may do.
- *
- * A permission answers "may this happen"; a budget answers "may this happen again".
- * They are different questions and the second one is the one that catches a loop that
- * every individual call was entitled to make — twenty pull requests are each fine and
- * the twentieth is a sign.
- *
- * Two rules. A budget counts what actually happened, from the ledger, so it survives a
- * restart and cannot be reset by killing a process. And running out is not a denial of
- * the action, it is the end of the day's allowance: the message says so, because those
- * lead to different fixes.
+ * Whether an action may happen again, which catches a loop every single call was
+ * entitled to make. Counted from the ledger, so killing a process cannot reset it.
  */
 
 export const BUDGET_WINDOW = {
@@ -40,23 +33,13 @@ export interface Budget {
   limit: number;
   window: BudgetWindow;
   unit: BudgetUnit;
-  /**
-   * Counted across the workspace rather than on this machine alone.
-   *
-   * A budget counted per machine is a budget multiplied by however many machines
-   * there are: three VPSs each allowed twenty pull requests a day is sixty, which is
-   * not what anybody set. False by default, because a fleet count needs an account
-   * and most machines have none.
-   */
+  /** Counted across the workspace, so three machines allowed twenty each is not sixty. */
   fleet?: boolean;
 }
 
 /**
- * What the workspace says has been spent, as of the last heartbeat.
- *
- * A number, not a decision. It is added to what this machine has counted itself, so
- * an unreachable control plane degrades a fleet budget to a machine budget rather
- * than to no budget at all.
+ * What the workspace says has been spent, added to this machine's own count so an
+ * unreachable control plane degrades a fleet budget to a machine one rather than none.
  */
 export interface FleetSpend {
   name: string;
@@ -78,8 +61,8 @@ export interface BudgetBreach {
 }
 
 const WINDOW_MS: Record<BudgetWindow, number> = {
-  [BUDGET_WINDOW.HOUR]: 60 * 60_000,
-  [BUDGET_WINDOW.DAY]: 24 * 60 * 60_000,
+  [BUDGET_WINDOW.HOUR]: HOUR_MS,
+  [BUDGET_WINDOW.DAY]: DAY_MS,
   // A session has no clock window; it is bounded by the session id instead.
   [BUDGET_WINDOW.SESSION]: 0,
 };
@@ -104,88 +87,64 @@ export function windowOf(
   return events.filter((event) => Date.parse(event.at) >= cutoff);
 }
 
-/**
- * What one event cost. Injected, and zero by default.
- *
- * The ledger records what happened, not what it cost: this machine sees a command run
- * and has no idea what the model behind it charged. So a dollar budget counts only
- * what something able to price it reports — the cloud, or a wrapper that knows the
- * token count. A local guess at a price would be a number somebody would act on.
- */
+/** What one event cost, injected because this machine cannot price a model call. */
 export type EventCost = (event: MemnoxEvent) => number;
 
-/**
- * What the row says it cost, which is the only figure on this machine that is not a
- * guess. Absent is zero here because a budget counts what was reported; whether
- * anything reported at all is a separate question the screen answers separately.
- */
+/** What the row says it cost, the only figure here that is not a guess; absent is zero. */
 export const REPORTED_COST: EventCost = (event) => event.costUsd ?? 0;
 
-/**
- * What has been spent, counted from the record.
- *
- * Only what proceeded counts. An action that was denied cost nothing and charging for
- * it would mean a strict policy exhausting the budget it was protecting.
- */
-export function spentOn(
-  budget: Budget,
-  events: readonly MemnoxEvent[],
-  now: string,
-  sessionId?: string,
-  costOf: EventCost = REPORTED_COST,
-): number {
-  const inWindow = windowOf(budget, events, now, sessionId).filter(
+/** The record a budget is counted against, as of a moment the caller passes in. */
+export interface BudgetLedger {
+  events: readonly MemnoxEvent[];
+  now: string;
+  /** Required for a session budget, which counts nothing without one. */
+  sessionId?: string;
+  costOf?: EventCost;
+}
+
+export interface ExhaustionInput extends BudgetLedger {
+  action: string;
+  /** What this one call would spend against a dollar budget. A call budget counts one. */
+  wouldSpendUsd?: number;
+  fleet?: readonly FleetSpend[];
+}
+
+/** Only what proceeded counts, or a strict policy would exhaust the budget it protects. */
+export function spentOn(budget: Budget, ledger: BudgetLedger): number {
+  const inWindow = windowOf(budget, ledger.events, ledger.now, ledger.sessionId).filter(
     (event) => coversAction(budget, event.operation) && didHappen(event),
   );
   if (budget.unit === BUDGET_UNIT.CALLS) return inWindow.length;
+  const costOf = ledger.costOf ?? REPORTED_COST;
   return inWindow.reduce((total, event) => total + costOf(event), 0);
 }
 
 function didHappen(event: MemnoxEvent): boolean {
   // Denied and held calls never ran, so they never spent anything.
-  return event.effect === 'allow';
+  return event.effect === DECISION_EFFECT.ALLOW;
 }
 
 export function spendReport(
   budgets: readonly Budget[],
-  events: readonly MemnoxEvent[],
-  now: string,
-  sessionId?: string,
-  costOf?: EventCost,
+  ledger: BudgetLedger,
 ): BudgetSpend[] {
   return budgets.map((budget) => {
-    const spent = spentOn(budget, events, now, sessionId, costOf);
+    const spent = spentOn(budget, ledger);
     return { budget, spent, remaining: Math.max(0, budget.limit - spent) };
   });
 }
 
-/**
- * The first budget this action would take past its limit, or null.
- *
- * Checked before the action rather than after: a budget that reports being over
- * afterwards has already let the thing happen, which is a receipt and not a control.
- */
+/** The first budget this action would exceed, checked before it runs rather than after. */
 export function exhaustedBy(
   budgets: readonly Budget[],
-  action: string,
-  events: readonly MemnoxEvent[],
-  now: string,
-  sessionId?: string,
-  cost = 1,
-  costOf?: EventCost,
-  fleet: readonly FleetSpend[] = [],
+  input: ExhaustionInput,
 ): BudgetBreach | null {
   for (const budget of budgets) {
-    if (!coversAction(budget, action)) continue;
-    const spent =
-      spentOn(budget, events, now, sessionId, costOf) + elsewhere(budget, fleet);
-    const wants = budget.unit === BUDGET_UNIT.USD ? cost : 1;
+    if (!coversAction(budget, input.action)) continue;
+    const spent = spentOn(budget, input) + elsewhere(budget, input.fleet ?? []);
+    const wants = budget.unit === BUDGET_UNIT.USD ? (input.wouldSpendUsd ?? 1) : 1;
     if (spent + wants <= budget.limit) continue;
-    return {
-      budget,
-      spent,
-      reason: describeBreach(budget, spent),
-    };
+    return { budget, spent, reason: describeBreach(budget, spent) };
   }
   return null;
 }
@@ -197,8 +156,7 @@ function describeBreach(budget: Budget, spent: number): string {
       : `${spent} of ${budget.limit}`;
   const per =
     budget.window === BUDGET_WINDOW.SESSION ? 'this session' : `per ${budget.window}`;
-  /* Named as an allowance rather than a refusal: "not allowed" and "no allowance left"
-     lead to different fixes, and confusing them sends somebody editing rules. */
+  // An allowance rather than a refusal, because "not allowed" sends somebody editing rules.
   return `${budget.name} has used ${amount} ${per}; there is none left until the window resets`;
 }
 
@@ -226,11 +184,8 @@ export function validateBudget(budget: Partial<Budget>): string[] {
 }
 
 /**
- * What the rest of the fleet has spent against this budget.
- *
- * Zero for a machine budget and for a fleet budget nobody could count, which are
- * different situations with the same arithmetic: in both, this machine falls back to
- * what it can see itself rather than to no limit at all.
+ * What the rest of the fleet has spent against this budget. Zero when nobody could
+ * count, so an uncounted fleet falls back to this machine's view rather than no limit.
  */
 export function elsewhere(budget: Budget, fleet: readonly FleetSpend[]): number {
   if (budget.fleet !== true) return 0;
@@ -246,8 +201,7 @@ export function fleetBudgets(budgets: readonly Budget[]): Budget[] {
 /** Hours the workspace should count back over, from a budget's own window. */
 export function windowHoursOf(budget: Budget): number {
   if (budget.window === BUDGET_WINDOW.HOUR) return 1;
-  if (budget.window === BUDGET_WINDOW.DAY) return 24;
-  /* A session has no clock window, so a fleet count over one is meaningless: it
-     falls back to this machine's own session, which is what `elsewhere` returns. */
+  if (budget.window === BUDGET_WINDOW.DAY) return HOURS_IN_A_DAY;
+  // A session has no clock window, so a fleet count over one falls back to this machine.
   return 0;
 }

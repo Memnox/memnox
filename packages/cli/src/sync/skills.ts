@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+
 import {
   DEFINITION_KIND,
   describeGrant,
@@ -7,46 +8,19 @@ import {
   type SkillFinding,
 } from '@memnox/core';
 
-/**
- * What an agent runs on beyond its config, sent so a person reviews it: a skill it
- * wrote for itself, or a definition somebody installed into it.
- *
- * `VISION.md` `I.4`: an agent that improves itself changes what it will do
- * tomorrow, and *"Memnox should treat every newly generated skill like a
- * software deployment"*. The local half of that has always worked — `memnox
- * skills` finds them, holds them, and prints them to whoever is sitting at the
- * machine. Nobody is sitting at the machine. The person who decides how much
- * autonomy an agent gets is looking at a console, and until this existed a
- * self-taught capability never reached them.
- *
- * Sent as a finding rather than under a kind of its own, and that is not
- * shorthand. It is what the control plane's ingest door already understands as
- * "a local scanner caught something a person must look at", which brings three
- * things this needs and none of which are worth rebuilding: a row in
- * `findings`, a place in somebody's inbox, and `finding.resolved` as the way it
- * is cleared.
- *
- * That third one is the point. `finding.resolved` is refused at the ingest door
- * — it is on the control plane's `INTERNAL_KINDS` because a machine posting one
- * would make a risk disappear. So a self-improving agent can report the skill
- * it just wrote and *cannot* mark it reviewed. The agent proposes; a person
- * accepts. That is the same rule the rest of this product runs on, and here it
- * costs nothing because it was already enforced.
- */
+import { CLOUD_EVENT, eventOf, type CloudEvent } from './cloud-event';
 
-const FINDING_RAISED = 'finding.raised';
+/**
+ * What an agent runs on beyond its config, sent as a finding so a person at a console
+ * reviews it. The ingest door refuses `finding.resolved`, so an agent cannot clear its own.
+ */
 
 /** What the control plane files these under, so a console can group them. */
 export const SKILL_FINDING_KIND = 'skill.changed';
 
 /**
- * Standings worth another person's attention.
- *
- * `KNOWN` is a skill somebody already accepted, unchanged since — reporting it
- * would fill an inbox with things that have already been reviewed, which is how
- * a queue stops being read. `CHANGED` is here even though it reaches no
- * further: the text an agent runs on changed, and "it does the same things
- * differently now" is exactly the deployment this section asks to be shown.
+ * Standings worth another person's attention: not `KNOWN`, which is already reviewed,
+ * and `CHANGED` even though it reaches no further, because the text it runs on changed.
  */
 const WORTH_REPORTING: readonly string[] = [
   SKILL_STANDING.NEW,
@@ -55,32 +29,19 @@ const WORTH_REPORTING: readonly string[] = [
 ];
 
 /**
- * How severe one of these is, in the words the findings table already uses.
- *
- * A skill that reaches further than the accepted version is the one this whole
- * screen exists for — yesterday it edited files, today it also names `kubectl`
- * — so it is the one that outranks the rest.
+ * How severe one of these is, in the words the findings table uses. A widened skill
+ * outranks the rest, because that is what this screen exists for.
  */
 function severityOf(finding: SkillFinding): string {
   if (finding.standing === SKILL_STANDING.WIDENED) return 'high';
-  /* A definition somebody installed that declares no tools runs with the session's
-     whole tool set. It is new rather than widened, so the standing does not rank it —
-     and the grant is the widest one on the machine, so it has to. */
+  // A definition declaring no tools runs with the session's whole tool set, the widest grant.
   if (finding.grant.kind === GRANT.INHERITS) return 'high';
   return 'medium';
 }
 
 /**
- * The identity a re-scan deduplicates on.
- *
- * The skill *and its content*, so an unfixed machine reports the same row every
- * sync and the control plane appends nothing, while an agent that edits the
- * skill again is a genuinely new thing to look at. Digest included for exactly
- * that reason: without it, a skill widened twice would be reviewed once.
- *
- * Hashed rather than joined because a skill id is a path and paths carry the
- * separator, so `a/b` + `c` and `a` + `b/c` would otherwise be one finding —
- * the same trap `findingRef` documents beside it.
+ * The identity a re-scan deduplicates on: the skill and its content, so an edited skill
+ * is new. Hashed because a skill id is a path and carries the separator.
  */
 export function skillRef(finding: SkillFinding): string {
   const parts = [finding.agent, finding.id, finding.digest];
@@ -105,11 +66,8 @@ function titleFor(finding: SkillFinding): string {
 }
 
 /**
- * A persona somebody installed, said as what it was rather than as what it wrote.
- *
- * The verb is "installed into", never "wrote itself": these arrive from a public
- * roster by the hundred and attributing them to the agent would put the blame on the
- * wrong thing and hide how they got there.
+ * A persona somebody installed, said as installed rather than as written by the agent,
+ * because these arrive from a public roster by the hundred.
  */
 function definitionTitle(finding: SkillFinding): string {
   const grant = describeGrant(finding.grant);
@@ -123,46 +81,33 @@ function definitionTitle(finding: SkillFinding): string {
 }
 
 /**
- * One event per skill worth reviewing, in the shape the control plane reads.
- *
- * **The skill's text never leaves the machine.** What travels is its name, the
- * agent whose directory it was found in, the tools it *names*, and a digest.
- * A skill is something somebody wrote, often against their own codebase, and a
- * control plane holding its customers' agent instructions would be keeping the
- * thing it is meant to be governing.
- *
- * The tool list is evidence and not proof — the discovery is a name match
- * against verb tables — so every sentence here says "reaches" and "names",
- * never "runs". A console repeating that as certainty would be claiming a
- * measurement nobody took.
+ * One event per skill worth reviewing. The skill's text never leaves the machine, and
+ * its tools are a name match, so every sentence says reaches rather than runs.
  */
 export function skillChangesFrom(
   findings: readonly SkillFinding[],
   takenAt: string,
-): Record<string, unknown>[] {
+): CloudEvent[] {
   const at = Date.parse(takenAt);
   return findings
     .filter((finding) => WORTH_REPORTING.includes(finding.standing))
     .map((finding) => {
       const ref = skillRef(finding);
-      return {
-        kind: FINDING_RAISED,
+      return eventOf({
+        kind: CLOUD_EVENT.FINDING_RAISED,
         dedupKey: ref,
-        /* Read off `subjectId` and nowhere else by the `findings` projection. */
+        // The `findings` projection reads the subject off this and nowhere else.
         subjectId: ref,
-        actorType: 'automation',
         occurredAt: at,
         payload: {
           kind: SKILL_FINDING_KIND,
           severity: severityOf(finding),
-          /* Where it lives, never what it says. */
+          // Where it lives, never what it says.
           subjectRef: finding.path,
           title: titleFor(finding),
-          /* The one agent whose directory holds it. A list because the
-             projection's column is one, and because a skill shared between two
-             agents is a shape this discovery does not yet report. */
+          // A list because the projection's column is one.
           agentIds: [finding.agent],
         },
-      };
+      });
     });
 }

@@ -1,16 +1,8 @@
+import { roundToCents } from './money';
 /**
- * Stopping an agent that is not getting anywhere.
- *
- * `SessionLimits` already holds the flat ceilings — how long, how many calls, the same
- * action over and over. Those are answerable from the request alone. Everything here
- * needs the *outcome*, and that is the difference between "this session has run four
- * hundred commands" and "this session has run the same failing command eleven times
- * and nothing has moved".
- *
- * Two rules hold throughout. Every signal is counted from what actually happened, never
- * estimated: a breaker that pauses on a guess gets switched off the first week. And a
- * pause is not a denial — the work is held for a person, with the count that produced
- * it, because the honest answer to "why did you stop my agent" is a number.
+ * Stopping an agent that is not getting anywhere, from outcomes rather than requests:
+ * the same failing command eleven times, not four hundred commands. Every signal is
+ * counted from what happened, never estimated.
  */
 
 export const BREAKER_SIGNAL = {
@@ -84,6 +76,23 @@ interface SessionState {
   expectedActions?: number;
 }
 
+/** Counts one outcome in, and returns how many times it has now failed that exact way. */
+function recordOutcome(state: SessionState, outcome: ActionOutcome): number {
+  state.actions += 1;
+  state.spentUsd += outcome.costUsd ?? 0;
+  if (outcome.outOfScope === true) state.outOfScope += 1;
+  if (!outcome.failed) {
+    // Anything that worked is progress, and progress resets the run of failures.
+    state.consecutiveFailures = 0;
+    return 0;
+  }
+  state.consecutiveFailures += 1;
+  const key = `${outcome.fingerprint}:${outcome.failureKind ?? ''}`;
+  const same = (state.failures.get(key) ?? 0) + 1;
+  state.failures.set(key, same);
+  return same;
+}
+
 function emptyState(expectedActions?: number): SessionState {
   return {
     actions: 0,
@@ -95,10 +104,7 @@ function emptyState(expectedActions?: number): SessionState {
   };
 }
 
-/**
- * Counting only. What to do about a breach is the caller's: pausing an agent mid-task
- * is a decision somebody has to have configured, not one a counter takes on its own.
- */
+/** Counting only: pausing an agent mid-task is a decision somebody configured, not a counter's. */
 export class CircuitBreaker {
   private readonly sessions = new Map<string, SessionState>();
 
@@ -119,78 +125,70 @@ export class CircuitBreaker {
   observe(outcome: ActionOutcome): BreakerBreach | null {
     const state = this.sessions.get(outcome.sessionId) ?? emptyState();
     this.sessions.set(outcome.sessionId, state);
+    const sameFailures = recordOutcome(state, outcome);
+    return (
+      this.errorLoop(outcome, sameFailures) ??
+      this.noProgress(state) ??
+      this.actionExplosion(state) ??
+      this.scopeDrift(state) ??
+      this.spend(state)
+    );
+  }
 
-    state.actions += 1;
-    state.spentUsd += outcome.costUsd ?? 0;
-    if (outcome.outOfScope === true) state.outOfScope += 1;
+  private errorLoop(outcome: ActionOutcome, same: number): BreakerBreach | null {
+    if (!outcome.failed || same < this.thresholds.errorLoop) return null;
+    return {
+      signal: BREAKER_SIGNAL.ERROR_LOOP,
+      reached: same,
+      ceiling: this.thresholds.errorLoop,
+      reason: `${outcome.action} has failed the same way ${same} times; retrying it again will fail the same way`,
+    };
+  }
 
-    if (outcome.failed) {
-      state.consecutiveFailures += 1;
-      const key = `${outcome.fingerprint}:${outcome.failureKind ?? ''}`;
-      state.failures.set(key, (state.failures.get(key) ?? 0) + 1);
-      const same = state.failures.get(key) ?? 0;
-      if (same >= this.thresholds.errorLoop) {
-        return {
-          signal: BREAKER_SIGNAL.ERROR_LOOP,
-          reached: same,
-          ceiling: this.thresholds.errorLoop,
-          reason: `${outcome.action} has failed the same way ${same} times; retrying it again will fail the same way`,
-        };
-      }
-    } else {
-      // Anything that worked is progress, and progress resets the run of failures.
-      state.consecutiveFailures = 0;
-    }
+  private noProgress(state: SessionState): BreakerBreach | null {
+    if (state.consecutiveFailures < this.thresholds.noProgress) return null;
+    return {
+      signal: BREAKER_SIGNAL.NO_PROGRESS,
+      reached: state.consecutiveFailures,
+      ceiling: this.thresholds.noProgress,
+      reason: `${state.consecutiveFailures} actions in a row have failed and nothing has succeeded in between`,
+    };
+  }
 
-    if (state.consecutiveFailures >= this.thresholds.noProgress) {
-      return {
-        signal: BREAKER_SIGNAL.NO_PROGRESS,
-        reached: state.consecutiveFailures,
-        ceiling: this.thresholds.noProgress,
-        reason: `${state.consecutiveFailures} actions in a row have failed and nothing has succeeded in between`,
-      };
-    }
-
-    /* Only against an estimate somebody typed. Without one there is no such thing as
-       too many actions, and inventing a number would pause honest long sessions. */
+  // Only against an estimate somebody typed, since inventing one would pause honest work.
+  private actionExplosion(state: SessionState): BreakerBreach | null {
     const expected = state.expectedActions;
-    if (expected !== undefined && expected > 0) {
-      const ceiling = expected * this.thresholds.explosionFactor;
-      if (state.actions > ceiling) {
-        return {
-          signal: BREAKER_SIGNAL.ACTION_EXPLOSION,
-          reached: state.actions,
-          ceiling,
-          reason: `this was expected to take about ${expected} actions and has taken ${state.actions}`,
-        };
-      }
-    }
+    if (expected === undefined || expected <= 0) return null;
+    const ceiling = expected * this.thresholds.explosionFactor;
+    if (state.actions <= ceiling) return null;
+    return {
+      signal: BREAKER_SIGNAL.ACTION_EXPLOSION,
+      reached: state.actions,
+      ceiling,
+      reason: `this was expected to take about ${expected} actions and has taken ${state.actions}`,
+    };
+  }
 
-    if (
-      this.thresholds.scopeDrift > 0 &&
-      state.outOfScope >= this.thresholds.scopeDrift
-    ) {
-      return {
-        signal: BREAKER_SIGNAL.SCOPE_DRIFT,
-        reached: state.outOfScope,
-        ceiling: this.thresholds.scopeDrift,
-        reason: `${state.outOfScope} actions have been outside what this session was asked to do`,
-      };
-    }
+  private scopeDrift(state: SessionState): BreakerBreach | null {
+    const ceiling = this.thresholds.scopeDrift;
+    if (ceiling <= 0 || state.outOfScope < ceiling) return null;
+    return {
+      signal: BREAKER_SIGNAL.SCOPE_DRIFT,
+      reached: state.outOfScope,
+      ceiling,
+      reason: `${state.outOfScope} actions have been outside what this session was asked to do`,
+    };
+  }
 
-    if (
-      this.thresholds.spendCeilingUsd > 0 &&
-      state.spentUsd > this.thresholds.spendCeilingUsd
-    ) {
-      return {
-        signal: BREAKER_SIGNAL.SPEND,
-        reached: Math.round(state.spentUsd * 100) / 100,
-        ceiling: this.thresholds.spendCeilingUsd,
-        reason: `this session has spent $${state.spentUsd.toFixed(2)} of its $${this.thresholds.spendCeilingUsd.toFixed(2)}`,
-      };
-    }
-
-    return null;
+  private spend(state: SessionState): BreakerBreach | null {
+    const ceiling = this.thresholds.spendCeilingUsd;
+    if (ceiling <= 0 || state.spentUsd <= ceiling) return null;
+    return {
+      signal: BREAKER_SIGNAL.SPEND,
+      reached: roundToCents(state.spentUsd),
+      ceiling,
+      reason: `this session has spent $${state.spentUsd.toFixed(2)} of its $${ceiling.toFixed(2)}`,
+    };
   }
 
   /** What has been counted so far, for a report that is not waiting for a breach. */
@@ -211,13 +209,7 @@ export class CircuitBreaker {
   }
 }
 
-/**
- * The same verdict, reached from the ledger instead of from memory.
- *
- * Two callers, one rule. The daemon counts as it goes because it is on the hot path;
- * `memnox report` and anything reading history has to reach the same answer, and a
- * second implementation is how a screen comes to describe a breaker that never fires.
- */
+/** The same verdict reached from the ledger, through the same counter the daemon uses. */
 export function breachIn(
   outcomes: readonly ActionOutcome[],
   thresholds: BreakerThresholds = DEFAULT_THRESHOLDS,

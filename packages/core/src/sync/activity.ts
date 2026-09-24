@@ -1,17 +1,10 @@
+/**
+ * A mark that an agent just did something the workspace should see, so the daemon sends at
+ * once. A file rather than a socket message, because it survives until the daemon starts.
+ */
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
-
-/**
- * A mark that an agent on this machine just did something the workspace should see.
- *
- * The ledger is sent on a heartbeat, a minute apart, which made every session a
- * minute behind by the time anybody could look at it. A hook that writes a row
- * touches this, and the daemon's loop, which already wakes every couple of seconds
- * to check for a held question, sends at once when it is newer than the last send.
- * A file rather than a socket message, because the daemon may not be running, and a
- * mark left for it is still there when it starts.
- */
 
 const ACTIVITY_STAMP = 'activity.stamp';
 
