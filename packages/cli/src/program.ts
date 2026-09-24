@@ -1,13 +1,15 @@
 import { homedir } from 'node:os';
-import { Command, Help } from 'commander';
-import { masthead } from './banner';
+import { Command } from 'commander';
+import { renderMasthead } from './banner';
 import type { CliContext } from './cli-context';
 import { CLI_VERSION } from './defaults';
+import { configureShortHelp, HELP_COMMAND } from './help';
 import { registerScanCommand } from './commands/scan.command';
 import { registerWatchCommand } from './commands/watch.command';
 import { registerRewindCommand } from './commands/rewind.command';
 import { registerCheckCommand } from './commands/check.command';
 import { registerTraceCommand } from './commands/trace.command';
+import { registerReplayCommand } from './commands/replay.command';
 import { registerExplainCommand } from './commands/explain.command';
 import { registerConfigCommand } from './commands/config.command';
 import { registerDoctorCommand } from './commands/doctor.command';
@@ -31,44 +33,42 @@ import { registerEnvCommand } from './commands/env.command';
 import { registerDaemonCommand } from './commands/daemon.command';
 import { registerUninstallCommand } from './commands/uninstall.command';
 import { registerRunCommand } from './commands/run.command';
-import { registerMcpCommand, unwrapEveryServer } from './commands/mcp.command';
+import { registerMcpCommand } from './commands/mcp.command';
+import { unwrapEveryServer } from './mcp/wrap-servers';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
 import { registerSyncCommand } from './commands/sync.command';
 import { registerAgentsCommand } from './commands/agents.command';
 import { registerSetupCommand } from './commands/setup.command';
+import { registerStatusCommand } from './commands/status.command';
+import { registerStartCommand, registerStopCommand } from './commands/stop.command';
+import { registerUpdateCommand } from './commands/update.command';
 
 /**
- * The commands `--help` shows, in the order somebody meets the product.
- *
- * Everything else still runs and still has its own `--help`; it is simply not
- * on the first page. Forty commands in one list is a list nobody reads, and a
- * person who cannot find the four that matter concludes the product is for
- * somebody else. So the front page is the story: see the machine, name the
- * agents, close the gaps, run one, read what happened.
+ * The commands `--help` shows, in the order somebody reaches for them at a terminal. The
+ * rest happens in the agent session and stays wired, listed by `memnox help --all`.
  */
 const SPINE: readonly string[] = [
-  'scan',
   'setup',
-  'agents',
-  'explain',
-  'protect',
-  'run',
-  'watch',
-  'approvals',
-  'approve',
-  'deny',
-  'why',
-  'timeline',
-  'next',
-  'login',
-  'logout',
-  'whoami',
-  'sync',
+  'status',
+  'rewind',
   'doctor',
-  'config',
-  'uninstall',
+  'stop',
+  'start',
+  'update',
+  // The one cloud step, and a person's to take, so it stays on the front page.
+  'login',
 ];
+
+/**
+ * Bare `memnox` is the scan on a machine nobody has set up, and the status view once
+ * somebody has, because the first question is what is here and every later one is
+ * whether it is still held.
+ */
+export function withDefaultCommand(argv: readonly string[], setUp: boolean): string[] {
+  const bare = argv.length <= 2;
+  return bare && setUp ? [...argv, 'status'] : [...argv];
+}
 
 /** Builds the full command tree against a context. Tests build one with fakes. */
 export function buildProgram(context: CliContext): Command {
@@ -77,31 +77,40 @@ export function buildProgram(context: CliContext): Command {
     .description('Memnox, the execution trust layer for AI agents')
     .version(CLI_VERSION);
 
-  /* Once, above every command, from the one place that knows a command is about to
-     run. Drawing it inside each command would mean the next one added forgets, and
-     `--help` and `--version` never reach here, which is right: neither is a run. */
+  // Drawn once here rather than in each command, so the next one added cannot forget it;
+  // `--help` and `--version` never reach this, which is right since neither is a run.
   program.hook('preAction', (_program, command) => {
-    if (command.opts()['json'] === true) return;
-    masthead(context.out, context.style);
+    if (command.opts()['json'] === true || command.name() === HELP_COMMAND) return;
+    renderMasthead(context.out, context.style);
   });
 
-  /* And the rail closed once, below every command, for the same reason. A
-     command that returns early, because nothing was found or nobody is logged
-     in or it named a refusal and stopped, would otherwise leave the gutter open
-     under the last thing it said; a run that never opened one draws nothing. */
+  // Closed once below every command, so one that returns early never leaves the gutter open.
   program.hook('postAction', () => {
     context.flow.end();
   });
 
+  registerCommands(program, context);
+  configureShortHelp(program, SPINE);
+  return program;
+}
+
+/** What a person types at a terminal, first, so `help --all` opens with them too. */
+function registerTerminalCommands(program: Command, context: CliContext): void {
   registerScanCommand(program, context);
   registerSetupCommand(program, context);
+  registerStatusCommand(program, context);
+  registerStopCommand(program, context);
+  registerStartCommand(program, context);
+  registerUpdateCommand(program, context);
+}
+
+function registerCommands(program: Command, context: CliContext): void {
+  registerTerminalCommands(program, context);
   registerAgentsCommand(program, context);
   registerExplainCommand(program, context);
   registerProtectCommand(program, context);
   registerRunCommand(program, context);
-  /* Wired rather than left optional: without it `uninstall` printed an
-     instruction and left the agent configs calling a proxy the next `npm
-     uninstall` removes. Undoing what we did is uninstall's job, not homework. */
+  // Wired, or the agent configs keep calling a proxy the next `npm uninstall` removes.
   registerUninstallCommand(program, context, {
     unwrap: () => unwrapEveryServer(homedir(), process.cwd(), context),
   });
@@ -121,6 +130,7 @@ export function buildProgram(context: CliContext): Command {
   registerWhyCommand(program, context);
   registerTimelineCommand(program, context);
   registerPurgeCommand(program, context);
+  registerReplayCommand(program, context);
   registerPolicyCommand(program, context);
   // Off until somebody runs `login`: with no account file these reach nothing.
   registerLoginCommand(program, context);
@@ -131,40 +141,4 @@ export function buildProgram(context: CliContext): Command {
   registerTraceCommand(program, context);
   registerDoctorCommand(program, context);
   registerConfigCommand(program, context);
-
-  showSpine(program);
-
-  return program;
-}
-
-/**
- * Keeps the front page to the spine, and says where the rest went.
- *
- * Through `configureHelp` rather than by marking each command hidden, so the
- * decision about what a newcomer sees lives in one list here instead of being
- * spread across thirty registration functions where the next one added forgets.
- */
-function showSpine(program: Command): void {
-  const spine = new Set(SPINE);
-  program.configureHelp({
-    visibleCommands(command) {
-      const all = Help.prototype.visibleCommands.call(this, command);
-      // Only the top level: a subcommand list is already short enough to read.
-      if (command !== program) return all;
-      return all.filter((each) => spine.has(each.name()) || each.name() === 'help');
-    },
-  });
-
-  const rest = () =>
-    program.commands
-      .map((each) => each.name())
-      .filter((name) => !spine.has(name) && name !== 'help')
-      .sort();
-
-  program.addHelpText(
-    'after',
-    () =>
-      `\nLess common commands, each with its own help:\n  ${rest().join('  ')}\n` +
-      `\n  memnox help <command>   what one of them does\n`,
-  );
 }

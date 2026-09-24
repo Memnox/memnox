@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { gatherHealth } from '../src/health-probe';
+import { readHealth } from '../src/health-probe';
 
 const home = (): Promise<string> => mkdtemp(join(tmpdir(), 'memnox-probe-'));
 
@@ -11,12 +11,12 @@ describe('what the doctor expects to be wrapped', () => {
      rest made `doctor` report a fault whose own suggested fix could never clear it,
      which sends somebody round the same two commands until they believe neither. */
   it('expects nothing on a machine with none of the binaries', async () => {
-    const facts = await gatherHealth(await home(), await home(), { PATH: '' });
+    const facts = await readHealth(await home(), await home(), { PATH: '' });
     expect(facts.interceptorsExpected).toEqual([]);
   });
 
   it('expects only what is actually on PATH', async () => {
-    const facts = await gatherHealth(await home(), await home(), {
+    const facts = await readHealth(await home(), await home(), {
       PATH: '/usr/bin:/bin',
     });
     // git is on every machine this runs on; terraform is not on most.
@@ -25,7 +25,7 @@ describe('what the doctor expects to be wrapped', () => {
   });
 
   it('reports nothing held on a machine that has never run an agent', async () => {
-    const facts = await gatherHealth(await home(), await home(), { PATH: '' });
+    const facts = await readHealth(await home(), await home(), { PATH: '' });
     expect(facts.pausedSessions).toBe(0);
     expect(facts.waitingApprovals).toBe(0);
     expect(facts.heldLeases).toBe(0);
@@ -48,13 +48,13 @@ describe('whether the interceptor binary can be found', () => {
     const bin = await mkdtemp(join(tmpdir(), 'memnox-bin-'));
     await writeFile(join(bin, 'memnox-intercept'), '#!/bin/sh\n', { mode: 0o755 });
 
-    const facts = await gatherHealth(await home(), await home(), { PATH: bin });
+    const facts = await readHealth(await home(), await home(), { PATH: bin });
     expect(facts.interceptBinaryFound).toBe(true);
   });
 
   it('says so when no PATH entry holds it', async () => {
     const empty = await mkdtemp(join(tmpdir(), 'memnox-bin-'));
-    const facts = await gatherHealth(await home(), await home(), { PATH: empty });
+    const facts = await readHealth(await home(), await home(), { PATH: empty });
     expect(facts.interceptBinaryFound).toBe(false);
   });
 });

@@ -1,634 +1,235 @@
-import { cwd } from 'node:process';
-import { existsSync } from 'node:fs';
+/** `memnox explain`: an agent, a CLI, a server, a tool or a whole sentence, answered on one rail. */
+
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { Command } from 'commander';
 import {
-  actionForVerb,
-  hasTag,
-  VERB_TAG,
-  verbTableFor,
-  classifyActionClass,
-  combinedCapabilities,
-  coverageFor,
-  coverageSummary,
-  SEAM_STATE,
-  describeCombined,
   inventoryOf,
-  LocalGate,
-  type PolicySet,
   parseQuestion,
   toolsMatching,
   traceCapability,
-  type CapabilityInventory,
-  type CapabilityTrace,
-  type AuthenticatedCli,
-  type McpTool,
-  type CombinedCapability,
-  type CoverageFacts,
-  type DiscoveredAgent,
+  verbTableFor,
   type DiscoveryReport,
   type EnvironmentSnapshot,
-  type ParsedQuestion,
-  type VerbTable,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
-import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
+import {
+  policySetInForce,
+  resolvePolicyFile,
+  renderWhatDidNotLoad,
+} from '../policy-path';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
-import { gatherHealth } from '../health-probe';
-import { guardProfilePath } from '../memnox-paths';
-import { loginPathConfigured } from '../protect/shell-profile';
+import { renderTrace } from './explain/capability';
+import { answerQuestion, renderAnswer } from './explain/question';
+import { renderCli, type ExplainedCli } from './explain/cli';
+import { readDormantHere } from '../keeper/keep-dormant';
+import { readCoverageFacts, readLastProbedScan, renderAgent } from './explain/agent';
+import { renderServer, serverNamed } from './explain/server';
 
-/** Every field is read off a scan, so the chain is evidence rather than a guess. */
-function renderTrace(context: CliContext, trace: CapabilityTrace): void {
-  const { flow } = context;
-  flow.rows(trace.tool, [
-    { label: 'server', value: trace.server },
-    { label: 'declared', value: trace.grantedBy },
-    {
-      label: 'class',
-      value: `${trace.effect}, ${classifyActionClass(trace.tool).class}`,
-    },
-    {
-      label: 'reached by',
-      value:
-        trace.reachedBy.length === 0
-          ? 'no agent here launches it'
-          : trace.reachedBy.join(', '),
-    },
-    {
-      label: 'first seen',
-      value: trace.firstSeen ?? 'at least as long as the kept scans go back',
-    },
-  ]);
-  flow.close(`${trace.tool} comes from ${trace.server}.`);
+/** What `explain` reads the machine through, injected so a test never reads the real one. */
+interface ExplainDeps {
+  buildSeams: (dir: string) => ScanSeams;
+  cwd: () => string;
+  home: () => string;
+  env: NodeJS.ProcessEnv;
 }
 
-interface Answer {
-  technically: string;
-  runtime: string;
-  policy: string;
+interface ExplainOptions {
+  json?: boolean;
+  file?: string;
 }
+
+/** What `explain` was asked, and everything a resolver needs to answer it. */
+interface ExplainQuery {
+  context: CliContext;
+  seams: ScanSeams;
+  report: DiscoveryReport;
+  snapshot: EnvironmentSnapshot;
+  subject: string;
+  asJson: boolean;
+  dir: string;
+  home: string;
+  env: NodeJS.ProcessEnv;
+  file?: string;
+}
+
+/** Answered it, or did not recognise the subject and left it to the next resolver. */
+type Resolver = (query: ExplainQuery) => Promise<boolean>;
 
 /**
- * Three rows, each answered from something on this disk. The fourth row — what the
- * organization intended — needs somebody else's data and is the cloud's; it is left
- * out rather than filled with a guess.
+ * Tried in order: a product name wins over a tool named after it, a CLI over the tool
+ * index, a sentence is a question, and whatever nobody claims falls to the capability trace.
  */
-async function answerQuestion(
-  question: ParsedQuestion,
-  inventory: CapabilityInventory,
-  rules: PolicySet,
-  here: string,
-): Promise<Answer> {
-  const agent = inventory.agents.find((each) =>
-    each.kind.toLowerCase().includes(question.agent.toLowerCase()),
-  );
-  if (agent === undefined) {
-    const known = inventory.agents.map((each) => each.kind);
-    throw new Error(
-      known.length === 0
-        ? `No agent on this machine, so there is nothing to answer about "${question.agent}".`
-        : `No agent here matches "${question.agent}". Found: ${known.join(', ')}.`,
-    );
-  }
-
-  const reachesShell = inventory.shell.includes(agent.id);
-  const tools = inventory.tools.filter((tool) =>
-    inventory.mcpServers.some(
-      (server) => server.name === tool.server && server.reachedBy.includes(agent.id),
-    ),
-  );
-  const matchingPath = inventory.filesystem.filter(
-    (entry) =>
-      entry.reachableBy.includes(agent.id) && entry.path.includes(question.resource),
-  );
-
-  const technically =
-    matchingPath.length > 0
-      ? `yes — ${matchingPath[0]?.path} is reachable by ${agent.kind}`
-      : reachesShell
-        ? `yes — ${agent.kind} holds a shell, which reaches anything you can`
-        : tools.length > 0
-          ? `unclear — ${tools.length} tool(s) reachable, none named for ${question.resource}`
-          : `no — nothing ${agent.kind} holds here reaches ${question.resource}`;
-
-  const runtime = reachesShell
-    ? 'a shell is present, so the runtime restricts nothing by itself'
-    : `${tools.length} tool(s) across ${inventory.mcpServers.length} server(s)`;
-
-  const action = actionForVerb(question.verb);
-  if (rules.policies.length === 0) {
-    return {
-      technically,
-      runtime,
-      policy: `no rules at ${here} — nothing here would stop it`,
-    };
-  }
-
-  /* Every file in force, not just this directory's: the registry names the other
-     repositories on the disk, and reading one file answered "you are not governed"
-     about a machine that is. */
-  const gate = new LocalGate(rules.policies, { agentName: agent.kind });
-  const verdict = gate.evaluate({ action, target: question.resource });
-  const rule = verdict.matchedPolicies[0];
-  const named = rule === undefined ? 'no rule matched' : `rule ${rule.name}`;
-
-  return {
-    technically,
-    runtime,
-    policy: `${verdict.effect.toUpperCase()} — ${named}: ${verdict.reason}`,
-  };
-}
-
-function renderAnswer(
-  context: CliContext,
-  question: ParsedQuestion,
-  answer: Answer,
-): void {
-  const { flow } = context;
-  flow.rows(`Can ${question.agent} ${question.verb} ${question.resource}?`, [
-    { label: 'technically', value: answer.technically },
-    { label: 'runtime', value: answer.runtime },
-    { label: 'policy', value: answer.policy },
-  ]);
-  flow.close(answer.policy);
-  // The fourth row is the cloud's, and an empty row is better than an invented one.
-  flow.hint(
-    'What the organization intended is not on this disk, so it is not answered here.',
-  );
-}
+const RESOLVERS: readonly Resolver[] = [
+  resolveAgent,
+  resolveCli,
+  resolveQuestion,
+  resolveServer,
+  resolveCapability,
+];
 
 export function registerExplainCommand(
   program: Command,
   context: CliContext,
-  buildSeams: (dir: string) => ScanSeams = defaultScanSeams,
+  overrides: Partial<ExplainDeps> = {},
 ): void {
+  const deps: ExplainDeps = {
+    buildSeams: defaultScanSeams,
+    cwd: () => process.cwd(),
+    home: homedir,
+    env: process.env,
+    ...overrides,
+  };
   program
     .command('explain <subject>')
     .description('Where a capability came from, or whether an agent could do a thing')
     .option('--json', 'machine-readable output')
     .option('-f, --file <path>', 'policy file (default: whichever exists)')
-    .action(async (subject: string, options: { json?: boolean; file?: string }) => {
-      /* One rail for every shape of the answer. `explain` takes an agent, a CLI,
-         a server, a tool or a whole sentence, and every one of those is this
-         command answering the same question about a different noun. */
-      if (options.json !== true) context.flow.open('memnox explain');
-      const seams = buildSeams(cwd());
-      const { report, snapshot } = await scanMachine(seams, { probe: false });
-
-      /* An agent kind is checked first: "cursor" is the product, not a tool that
-         happens to be named after it. Every kind answers here, harness or not —
-         one of them answering and the rest erroring is the asymmetry a reader hits
-         the moment they try the second name they can see in a scan. */
-      const agent = report.agents.find((each) => each.kind === subject);
-      if (agent !== undefined) {
-        /* Explain never starts anybody's MCP servers, so the tools come from the last
-           scan that did. An unprobed snapshot holds no tools and would read as an
-           agent with no chain, which is a different claim from "not asked yet". */
-        const probed = await lastProbedScan(seams);
-        renderAgent(
-          context,
-          agent,
-          report,
-          probed,
-          await coverageFacts(cwd()),
-          options.json === true,
-        );
-        return;
-      }
-
-      // An authenticated CLI is the thing people ask about first, so it is checked
-      // before the tool index: "vercel" means the CLI, not a tool named vercel.
-      const cli = report.authenticated.find((each) => each.name === subject);
-      /* And one that is merely installed, which the scan also names. Answering only
-         for the authenticated ones meant `scan` listed eight tools and `explain`
-         denied every one of them existed — the same asymmetry the agent branch above
-         is careful to avoid, one field over. The verb table is the half worth reading
-         and it does not need a credential. */
-      const installed = report.tools.find((each) => each.name === subject);
-      const subjectCli: ExplainedCli | null =
-        cli ??
-        (installed !== undefined && verbTableFor(subject) !== null
-          ? { name: subject, detectedFrom: installed.detectedFrom }
-          : null);
-
-      if (subjectCli !== null && !subject.includes(' ')) {
-        renderCli(context, subjectCli, report, options.json === true);
-        return;
-      }
-
-      // A sentence is a question; a bare word is a capability. Nothing is inferred.
-      if (subject.trim().includes(' ')) {
-        const { question, error } = parseQuestion(subject, homedir());
-        if (question === undefined) throw new Error(error);
-
-        const rules = await policySetInForce(homedir(), options.file);
-        const answer = await answerQuestion(
-          question,
-          inventoryOf(report, snapshot.takenAt),
-          rules,
-          resolvePolicyFile(options.file),
-        );
-        // A file that would not load is not an absent rule, and is never silent here.
-        sayWhatDidNotLoad(context, rules);
-        if (options.json === true) {
-          context.out.json({ question, ...answer });
-          return;
-        }
-        renderAnswer(context, question, answer);
-        return;
-      }
-
-      /* An MCP server the scan named. Same reason as the CLI branch above: a reader
-         types the second name they can see on the scan, and a server that answers
-         "nothing here provides that" about a server the scan just listed is the one
-         wrong answer that makes somebody stop trusting both screens. */
-      const server = serverNamed(report, subject);
-      if (server !== null && !subject.includes(' ')) {
-        renderServer(context, server, options.json === true);
-        return;
-      }
-
-      const history = await seams.snapshots.history();
-      const trace = traceCapability(subject, [...history, snapshot]);
-      if (trace === null) {
-        // Naming near misses beats a bare "not found" for a half-remembered tool.
-        const near = toolsMatching(snapshot, subject);
-        if (near.length === 0) {
-          throw new Error(`Nothing here provides "${subject}". Run "memnox scan".`);
-        }
-        context.flow.list(
-          `Nothing is named exactly "${subject}". Close matches`,
-          near.map((each) => ({ tone: TONE.DIM, text: `${each.server}.${each.tool}` })),
-        );
-        context.flow.close(`${near.length} close match(es).`);
-        return;
-      }
-
-      if (options.json === true) {
-        context.out.json(trace);
-        return;
-      }
-      renderTrace(context, trace);
-    });
+    .action(async (subject: string, options: ExplainOptions) =>
+      runExplain(context, deps, subject, options),
+    );
 }
 
-/**
- * The verb table shown here is the one enforcement reads, so what this promises is
- * exactly what `protect` will gate. A screen that listed capabilities the gate did not
- * actually recognise would be worse than no screen.
- */
-type ExplainedCli =
-  | AuthenticatedCli
-  | {
-      name: string;
-      /** The path that proved it is here. An installed CLI has this and no credential. */
-      detectedFrom: string;
-      via?: undefined;
-      detail?: undefined;
-      productionLooking?: undefined;
-    };
-
-function renderCli(
+/** Scans once, then hands the subject down the resolver chain until one answers. */
+async function runExplain(
   context: CliContext,
-  cli: ExplainedCli,
-  report: DiscoveryReport,
-  asJson: boolean,
-): void {
-  const table = verbTableFor(cli.name) as VerbTable;
-  if (asJson) {
-    context.out.json({ cli, verbs: table.verbs });
-    return;
+  deps: ExplainDeps,
+  subject: string,
+  options: ExplainOptions,
+): Promise<void> {
+  const asJson = options.json === true;
+  if (!asJson) context.flow.open('memnox explain');
+
+  const dir = deps.cwd();
+  const seams = deps.buildSeams(dir);
+  const { report, snapshot } = await scanMachine(seams, { probe: false });
+  const query: ExplainQuery = {
+    context,
+    seams,
+    report,
+    snapshot,
+    subject,
+    asJson,
+    dir,
+    home: deps.home(),
+    env: deps.env,
+    file: options.file,
+  };
+
+  for (const resolve of RESOLVERS) {
+    if (await resolve(query)) return;
   }
+}
 
-  const { flow, style } = context;
-  const agents = report.agents.map((agent) => agent.kind);
-  flow.rows(
-    `${cli.name}, ${cli.via === undefined ? 'an installed CLI' : 'an authenticated CLI'}`,
-    [
-      {
-        label: 'reachable by',
-        value: agents.length === 0 ? 'no agent here' : agents.join(', '),
-      },
-      /* "Nothing here is logged in" is a different claim from "this cannot reach
-       anything", and the verbs below are true either way, because a
-       credential can arrive tomorrow without the table changing. */
-      {
-        label: 'credential',
-        value:
-          cli.via ?? 'none found here, so the table below is what it could do with one',
-      },
-      ...(cli.detail === undefined ? [] : [{ label: '', value: cli.detail }]),
-      // A guess from a name stays a guess all the way into the screen.
-      ...(cli.productionLooking === undefined
-        ? []
-        : [
-            {
-              label: '',
-              value: style.warn(`"${cli.productionLooking}" is named like production`),
-            },
-          ]),
-    ],
-  );
+/** The product itself, first, because "cursor" is the agent rather than a tool named after it. */
+async function resolveAgent(query: ExplainQuery): Promise<boolean> {
+  const agent = query.report.agents.find((each) => each.kind === query.subject);
+  if (agent === undefined) return false;
 
-  flow.table(
-    'What it can do',
-    ['Verb', 'Class'],
-    table.verbs.flatMap((verb) => {
-      const tags = [
-        verb.class,
-        ...(hasTag(verb, VERB_TAG.PRODUCTION) ? ['production'] : []),
-        ...(hasTag(verb, VERB_TAG.SECRETS) ? ['secrets'] : []),
-      ].join(' · ');
-      const marked = verb.class === 'destructive' ? style.warn(tags) : style.dim(tags);
-      return [
-        [verb.match, marked],
-        ...(verb.note === undefined ? [] : [['', style.dim(verb.note)]]),
-      ];
+  // Explain never starts an MCP server, so the tools come from the last scan that did.
+  renderAgent(query.context, {
+    agent,
+    report: query.report,
+    last: await readLastProbedScan(query.seams),
+    facts: await readCoverageFacts({
+      dir: query.dir,
+      home: query.home,
+      env: query.env,
+      agent: agent.kind,
     }),
-  );
-  flow.close(`${table.verbs.length} verb(s) the gate recognises for ${cli.name}.`);
-  flow.hint(
-    `memnox protect --for ${cli.name}   put the dangerous ones behind ask or deny`,
-  );
-}
-
-/**
- * What a harness runs, rather than what it is. Every line is read off the disk it
- * scaffolded, because the interesting number about an orchestrator is how many
- * principals it puts behind one row on the roster.
- */
-function renderAgent(
-  context: CliContext,
-  agent: DiscoveredAgent,
-  report: DiscoveryReport,
-  last: EnvironmentSnapshot | null,
-  facts: CoverageFacts,
-  asJson: boolean,
-): void {
-  const harness = report.harnesses.find((each) => each.agentId === agent.id) ?? null;
-  const combined = chainsFor(agent.id, last);
-  if (asJson) {
-    context.out.json({
-      agent,
-      harness,
-      combined,
-      coverage: coverageFor(agent.kind, agent.id, report.surfaces, facts),
-    });
-    return;
-  }
-
-  const { flow, style } = context;
-  const what = harness === null ? 'agent' : 'harness, runs other agents';
-  const coverage = coverageFor(agent.kind, agent.id, report.surfaces, facts);
-  const own = report.surfaces.filter((surface) => surface.agentId === agent.id);
-  const servers = [
-    ...new Set(own.flatMap((surface) => (surface.servers ?? []).map((s) => s.name))),
-  ];
-  // The shell is why a tool list understates a coding agent, so it is said out loud.
-  const viaShell = report.reachability.find(
-    (each) => each.agentId === agent.id,
-  )?.viaShell;
-
-  flow.rows(`${agent.kind}, ${what}`, [
-    // Only a harness has these three, and printing them empty for Cursor would
-    // imply Cursor might have had them.
-    ...(harness === null
-      ? []
-      : [
-          {
-            label: 'runs',
-            value:
-              harness.runtimes.length === 0
-                ? 'nothing this scan could name'
-                : harness.runtimes.join(', '),
-          },
-          {
-            label: 'roles',
-            value:
-              harness.roles.length === 0
-                ? 'none defined on this disk'
-                : `${harness.roles.length}: ${harness.roles.join(', ')}`,
-          },
-          {
-            label: 'hooks',
-            value:
-              harness.hooks.length === 0
-                ? 'none installed into another product'
-                : harness.hooks.join(', '),
-          },
-          ...(harness.federated
-            ? [
-                {
-                  label: 'federated',
-                  value: style.warn('works with agents on machines this scan cannot see'),
-                },
-              ]
-            : []),
-        ]),
-    { label: 'declared in', value: agent.configPaths.join(', ') },
-    { label: 'surfaces', value: [...new Set(own.map((each) => each.kind))].join(', ') },
-    {
-      label: 'mcp servers',
-      value: servers.length === 0 ? 'none declared in its config' : servers.join(', '),
-    },
-    ...(viaShell === true
-      ? [{ label: 'shell', value: 'holds one, which reaches everything you can' }]
-      : []),
-  ]);
-
-  if (combined.length > 0) {
-    flow.list(
-      'Combined capability',
-      combined.map((capability) => ({
-        tone: TONE.WARN,
-        text: capability.consequence,
-        detail: [describeCombined(capability)],
-      })),
-    );
-  } else if (last === null) {
-    flow.step(
-      'Combined capability',
-      'no scan here has asked the servers, so no chain is shown. Run "memnox scan --save"',
-    );
-  }
-
-  /* The question somebody actually has: what is in front of this one right now, and
-     what would close the rest. Per agent, because a wrapped Claude Code and an
-     unwrapped Cursor average out to a number nobody can act on. */
-  const { held, total } = coverageSummary(coverage);
-  flow.list(
-    `Governed by ${held} of ${total} seam(s)`,
-    coverage
-      .filter((seam) => seam.state !== SEAM_STATE.NOT_HELD)
-      .map((seam) => ({
-        tone: seam.state === SEAM_STATE.HELD ? TONE.OK : TONE.WARN,
-        text: `${seam.surface}  ${seam.detail}`,
-        detail: [seam.next === undefined ? undefined : `→ ${seam.next}`],
-      })),
-  );
-
-  flow.close(
-    held === total
-      ? style.ok(`${agent.kind} is held by all ${total} seam(s).`)
-      : style.warn(`${agent.kind} is held by ${held} of ${total} seam(s).`),
-  );
-  /* A harness already filters its own tools and is right to. What it cannot see is
-     the other harness on the same disk, the credentials underneath, and the shell
-     they share. Said only for a harness: it is not true of Cursor. */
-  if (harness !== null) {
-    flow.hint(
-      `${agent.kind} enforces its own tool policy. Memnox governs what it reaches underneath.`,
-    );
-  }
-}
-
-/** The tools this agent reached in the last probed scan, and what they add up to. */
-function chainsFor(
-  agentId: string,
-  last: EnvironmentSnapshot | null,
-): CombinedCapability[] {
-  if (last === null) return [];
-  return combinedCapabilities(
-    last.servers
-      .filter((server) => server.agentIds.includes(agentId))
-      .flatMap((server) =>
-        server.tools.map((tool) => ({
-          server: server.name,
-          name: tool.name,
-          effect: tool.effect,
-          inferredFrom: 'name' as const,
-        })),
-      ),
-  );
-}
-
-/**
- * The most recent snapshot that actually enumerated tools. Every command that reads the
- * machine also records what it saw, so the newest snapshot is usually this run's own
- * unprobed one — and reading that would report every harness as holding no tools.
- */
-async function lastProbedScan(seams: ScanSeams): Promise<EnvironmentSnapshot | null> {
-  const history = await seams.snapshots.history();
-  for (let at = history.length - 1; at >= 0; at -= 1) {
-    const snapshot = history[at] as EnvironmentSnapshot;
-    if (snapshot.servers.some((server) => server.tools.length > 0)) return snapshot;
-  }
-  return null;
-}
-
-/**
- * The facts coverage is decided from, read once. Every one of them is about this
- * machine as it stands right now, so the answer changes when somebody wires
- * something up — which is the point of asking.
- */
-async function coverageFacts(dir: string): Promise<CoverageFacts> {
-  const health = await gatherHealth(homedir(), dir);
-  return {
-    interceptorsInstalled: health.interceptorsInstalled.length > 0,
-    interceptorsFirstOnPath: health.interceptorDirFirstOnPath,
-    gitHooksInstalled: existsSync(join(dir, '.git', 'hooks', 'pre-push')),
-    osGuardWritten: existsSync(guardProfilePath(homedir())),
-    egressProxySet: PROXY_VARS.some((name) => (process.env[name] ?? '') !== ''),
-    loginPathConfigured: await loginPathConfigured(
-      process.env['SHELL'] ?? 'zsh',
-      homedir(),
+    dormant: (await readDormantHere(query.home, query.seams.snapshots, new Date())).find(
+      (each) => each.agentId === agent.id,
     ),
-    rulesRegistered: health.registeredFiles.length > 0,
-  };
+    asJson: query.asJson,
+  });
+  return true;
 }
 
-const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy'];
+/**
+ * An authenticated CLI, or an installed one the verb tables know, checked before the
+ * tool index because "vercel" means the CLI.
+ */
+async function resolveCli(query: ExplainQuery): Promise<boolean> {
+  const { report, subject } = query;
+  if (subject.includes(' ')) return false;
 
-interface ExplainedServer {
-  name: string;
-  /** Agents whose config declares it. */
-  agents: string[];
-  /** The config files that proved it. */
-  detectedFrom: string[];
-  /** Credential names the config hands it. Names only, never a value. */
-  env: string[];
-  /** Tools from the last scan that actually asked. Absent is "not asked", not "none". */
-  tools: McpTool[];
-  probed: boolean;
+  const cli =
+    report.authenticated.find((each) => each.name === subject) ?? installedCli(query);
+  if (cli === null) return false;
+  renderCli(query.context, cli, report, query.asJson);
+  return true;
 }
 
-/** What the scan knows about one server, gathered from every agent that declares it. */
-function serverNamed(report: DiscoveryReport, name: string): ExplainedServer | null {
-  const agents = new Set<string>();
-  const detectedFrom = new Set<string>();
-  const env = new Set<string>();
-  const tools: McpTool[] = [];
-  let declared = false;
-
-  for (const surface of report.surfaces) {
-    for (const launch of surface.servers ?? []) {
-      if (launch.name !== name) continue;
-      declared = true;
-      detectedFrom.add(surface.detectedFrom);
-      for (const variable of launch.env ?? []) env.add(variable);
-      const agent = report.agents.find((each) => each.id === surface.agentId);
-      if (agent !== undefined) agents.add(agent.kind);
-    }
-    for (const tool of surface.tools ?? []) {
-      if (tool.server === name) tools.push(tool);
-    }
-  }
-
-  if (!declared) return null;
-  return {
-    name,
-    agents: [...agents].sort(),
-    detectedFrom: [...detectedFrom].sort(),
-    env: [...env].sort(),
-    tools,
-    probed: tools.length > 0,
-  };
+/** Installed counts too, because the verb table is worth reading with or without a credential. */
+function installedCli(query: ExplainQuery): ExplainedCli | null {
+  const installed = query.report.tools.find((each) => each.name === query.subject);
+  if (installed === undefined || verbTableFor(query.subject) === null) return null;
+  return { name: query.subject, detectedFrom: installed.detectedFrom };
 }
 
-function renderServer(
-  context: CliContext,
-  server: ExplainedServer,
-  asJson: boolean,
-): void {
+/** A sentence is a question; a bare word is not, and nothing in between is inferred. */
+async function resolveQuestion(query: ExplainQuery): Promise<boolean> {
+  const { context, subject, asJson, home } = query;
+  if (!subject.trim().includes(' ')) return false;
+
+  const { question, error } = parseQuestion(subject, home);
+  if (question === undefined) throw new Error(error);
+
+  const rules = await policySetInForce(home, query.file);
+  const answer = await answerQuestion(
+    question,
+    inventoryOf(query.report, query.snapshot.takenAt),
+    rules,
+    resolvePolicyFile(query.file),
+  );
+  // A file that would not load is not an absent rule, and is never silent here.
+  renderWhatDidNotLoad(context, rules);
   if (asJson) {
-    context.out.json(server);
-    return;
+    context.out.json({ question, ...answer });
+    return true;
   }
+  renderAnswer(context, question, answer);
+  return true;
+}
 
-  const { flow, style } = context;
-  flow.rows(`${server.name}, an MCP server`, [
-    {
-      label: 'declared by',
-      value: server.agents.length === 0 ? 'no agent here' : server.agents.join(', '),
-    },
-    ...server.detectedFrom.map((path) => ({ label: 'from', value: path })),
-    // Names only: what a config hands a server, never the value behind it.
-    ...(server.env.length === 0
-      ? []
-      : [{ label: 'credentials', value: server.env.join(', ') }]),
-  ]);
+/** An MCP server the scan named, because denying one the scan just listed breaks trust in both. */
+async function resolveServer(query: ExplainQuery): Promise<boolean> {
+  if (query.subject.includes(' ')) return false;
+  const server = serverNamed(query.report, query.subject);
+  if (server === null) return false;
 
-  if (!server.probed) {
-    /* "Not asked yet" is a different claim from "holds nothing", and explain never
-       starts anybody's server to find out. */
-    flow.close('No tools recorded, because nothing has asked this server what it holds.');
-    flow.hint('"memnox scan" starts it and asks; this command never does.');
-    return;
+  renderServer(query.context, server, query.asJson);
+  return true;
+}
+
+/** Where a capability came from; always answers, with the trace, near misses, or a throw. */
+async function resolveCapability(query: ExplainQuery): Promise<boolean> {
+  const { context, seams, snapshot, subject, asJson } = query;
+  const history = await seams.snapshots.history();
+  const trace = traceCapability(subject, [...history, snapshot]);
+
+  if (trace === null) {
+    renderNearMisses(query);
+    return true;
   }
+  if (asJson) {
+    context.out.json(trace);
+    return true;
+  }
+  renderTrace(context, trace);
+  return true;
+}
 
-  flow.table(
-    'Holds',
-    ['Tool', 'Effect'],
-    server.tools.map((tool) => [
-      tool.name,
-      tool.effect === 'destructive' ? style.warn(tool.effect) : style.dim(tool.effect),
-    ]),
+/** Naming near misses beats a bare not found for a half-remembered tool. */
+function renderNearMisses(query: ExplainQuery): void {
+  const { context, snapshot, subject } = query;
+  const near = toolsMatching(snapshot, subject);
+  if (near.length === 0) {
+    throw new Error(`Nothing here provides "${subject}". Run "memnox scan".`);
+  }
+  context.flow.list(
+    `Nothing is named exactly "${subject}". Close matches`,
+    near.map((each) => ({ tone: TONE.DIM, text: `${each.server}.${each.tool}` })),
   );
-  flow.close(`${server.tools.length} tool(s) on ${server.name}.`);
-  flow.hint(
-    `memnox protect --for ${server.name}   put the dangerous ones behind ask or deny`,
-  );
+  context.flow.close(`${near.length} close match(es).`);
 }

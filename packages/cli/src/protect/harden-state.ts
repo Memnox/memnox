@@ -11,7 +11,7 @@ import {
   type MachineReader,
   type SnapshotStore,
 } from '@memnox/core';
-import { registerPolicyFile } from '../policy-registry';
+import { forgetPolicyFiles, registerPolicyFile } from '../policy-registry';
 
 /**
  * Where `protect` reads the machine and writes to it. Injected as one object so a test
@@ -26,6 +26,8 @@ export interface HardenSeams {
   statePath: string;
   /** A written rule the runtime never reads is not a rule; this is what makes it one. */
   registerPolicy: (absolutePath: string) => Promise<void>;
+  /** The undo of `registerPolicy`: a listed file that is gone stops every command. */
+  forgetPolicy: (absolutePath: string) => Promise<void>;
   /** The writer roots its paths, and the registry needs the path from anywhere. */
   absolute: (path: string) => string;
 }
@@ -42,6 +44,9 @@ export function defaultSeams(): HardenSeams {
     statePath: 'harden-state.json',
     registerPolicy: async (path) => {
       await registerPolicyFile(home, path);
+    },
+    forgetPolicy: async (path) => {
+      await forgetPolicyFiles(home, [path]);
     },
     absolute: (path) => join(root, path),
   };

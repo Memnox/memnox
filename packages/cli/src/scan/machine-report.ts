@@ -15,50 +15,36 @@ import {
   SENSITIVITY,
   SURFACE_KIND,
   TOOL_EFFECT,
+  agentNameIn,
   type DiscoveryReport,
 } from '@memnox/core';
+
 import type { CliContext } from '../cli-context';
 import { TONE, type FlowRow } from '../flow';
 import type { LocalCounts } from '../local-counts';
+import { describeCount } from '../plural';
+import { renderWhatDidNotLoad } from '../policy-path';
 
-/**
- * What is on this machine, as one card and then the things that are wrong.
- *
- * The card is what a person reads first and it is all counts: which agents,
- * which harnesses, how many servers, how many tools. Everything after it is a
- * list of specific things somebody could act on, because a count nobody can
- * point at is a count nobody does anything about.
- */
+/** What is on this machine, as one card of counts and then the things that are wrong. */
 export function renderMachine(
   context: CliContext,
   report: DiscoveryReport,
   counts: LocalCounts,
 ): void {
-  const { flow, style } = context;
-
   if (report.agents.length === 0) {
     // With no fixtures there is no pretty default, so an empty machine reads as an answer.
-    flow.close('No AI agents found on this machine.');
-    flow.hint('Nothing was transmitted. Install an agent and run this again.');
+    context.flow.close('No AI agents found on this machine.');
+    context.flow.hint('Nothing was transmitted. Install an agent and run this again.');
     return;
   }
 
-  flow.rows('On this machine', [
-    { label: 'agents', value: report.agents.map((agent) => agent.kind).join(', ') },
+  context.flow.rows('On this machine', [
+    { label: 'agents', value: agentKinds(report).join(', ') },
     ...unregisteredRow(context, report, counts),
     ...harnessRows(context, report),
     ...definitionRows(context, report),
     ...serverRows(context, report),
-    // Everything an agent with a shell reaches through one of these, whether or
-    // not Memnox can see the call.
-    ...(report.tools.length === 0
-      ? []
-      : [
-          {
-            label: 'tools',
-            value: report.tools.map((tool) => tool.name).join(', '),
-          },
-        ]),
+    ...toolsRow(report),
   ]);
 
   renderCredentials(context, report);
@@ -66,27 +52,29 @@ export function renderMachine(
   renderBrowsers(context, report);
   renderCombined(context, report);
   renderReachable(context, report);
+  // A broken file is never reported as no rules, and the other repositories stay in force.
+  renderWhatDidNotLoad(context, counts);
+  renderGap(context, report, counts);
+}
 
-  /* An unreadable file is never reported as no rules, and never as the whole rule set
-     either: the other repositories on this disk are still in force. Each broken file is
-     named with a count, and the command that prints what is wrong with it. */
-  if (counts.unreadable.length > 0) {
-    flow.list(
-      'Not in force',
-      counts.unreadable.map((broken) => ({
-        tone: TONE.WARN,
-        text: `${broken.file} would not load, so its rules are not in force`,
-        detail: [
-          `${broken.issues.length} problem${broken.issues.length === 1 ? '' : 's'}`,
-          `see them with "memnox policy check ${broken.file}"`,
-        ],
-      })),
-    );
-  }
+function agentKinds(report: DiscoveryReport): string[] {
+  return report.agents.map((agent) => agent.kind);
+}
 
+/** Everything an agent with a shell reaches, whether or not Memnox can see the call. */
+function toolsRow(report: DiscoveryReport): FlowRow[] {
+  if (report.tools.length === 0) return [];
+  return [{ label: 'tools', value: report.tools.map((tool) => tool.name).join(', ') }];
+}
+
+/** What can reach outside this laptop against how much of it anything checks, as counts. */
+function renderGap(
+  context: CliContext,
+  report: DiscoveryReport,
+  counts: LocalCounts,
+): void {
+  const { flow, style } = context;
   const surfaces = report.surfaces.filter((surface) => surface.kind !== SURFACE_KIND.MCP);
-  /* The gap, and the reason anybody keeps reading: what can reach outside this laptop
-     against how much of it anything is checking. Both are counts, never a score. */
   const gap = measureGap(report, counts.policies);
   flow.close(
     gap.governed === 0
@@ -99,19 +87,14 @@ export function renderMachine(
   if (counts.approvedAgents.length === 0) {
     flow.hint(
       'No agent has been approved or refused here. Decide with ' +
-        `"memnox config set approvedAgents ${report.agents.map((agent) => agent.kind).join(',')}".`,
+        `"memnox config set approvedAgents ${agentKinds(report).join(',')}".`,
     );
   }
   flow.hint('memnox explain <name>   where any of these comes from');
   flow.hint('memnox protect          put the dangerous ones behind ask or deny');
 }
 
-/**
- * Nobody approved it, and until now nothing noticed.
- *
- * Only said when somebody has actually decided: an empty list means undecided,
- * not that everything is approved.
- */
+/** Agents nobody approved, said only once somebody has decided: an empty list is undecided. */
 function unregisteredRow(
   context: CliContext,
   report: DiscoveryReport,
@@ -134,11 +117,8 @@ function unregisteredRow(
 }
 
 /**
- * A harness is one row that launches several principals, so the roster says so.
- *
- * Nothing here replaces what Hermes, OpenClaw or Ruflo already enforce, since
- * each filters its own tools and each is right to. What none of them can see is the
- * other two, the credentials on the disk underneath, and the shell all three share.
+ * A harness is one row that launches several principals, so the roster says so. What none
+ * of them can see is each other, the credentials underneath, and the shell they share.
  */
 function harnessRows(context: CliContext, report: DiscoveryReport): FlowRow[] {
   if (report.harnesses.length === 0) return [];
@@ -150,35 +130,31 @@ function harnessRows(context: CliContext, report: DiscoveryReport): FlowRow[] {
     {
       label: 'harnesses',
       value: `${report.harnesses.map((harness) => harness.kind).join(', ')}  ${context.style.dim(
-        `${principals} principal${principals === 1 ? '' : 's'}`,
+        describeCount(principals, 'principal'),
       )}`,
     },
     ...report.harnesses.map((harness) => ({
       label: '',
       value: context.style.dim(`${harness.kind}: ${describeHarness(harness)}`),
     })),
-    /* The far side of a federated link is another organization's machine, and no
-       local scan can see it. Said plainly rather than left as an absence. */
-    ...(report.harnesses.some((harness) => harness.federated)
-      ? [
-          {
-            label: '',
-            value: context.style.warn(
-              'one of these works with agents on other machines; this scan sees only here',
-            ),
-          },
-        ]
-      : []),
+    // The far side of a federated link is another organization's machine, said plainly.
+    ...noteRow(
+      report.harnesses.some((harness) => harness.federated),
+      context.style.warn(
+        'one of these works with agents on other machines; this scan sees only here',
+      ),
+    ),
   ];
 }
 
+/** An unlabelled row under the one above it, or nothing when it does not apply. */
+function noteRow(shown: boolean, value: string): FlowRow[] {
+  return shown ? [{ label: '', value }] : [];
+}
+
 /**
- * Personas installed into an agent's own directory, counted by what they grant.
- *
- * Not folded into the gap below it, and that is deliberate: the gap counts actions a
- * rule could be written about, and a definition is not an action: it is how wide
- * the session running those actions is. Counting them together would make one number out
- * of two different claims.
+ * Personas installed into an agent's directory, counted by what they grant. Kept out of
+ * the gap, because a definition is how wide a session is rather than an action.
  */
 function definitionRows(context: CliContext, report: DiscoveryReport): FlowRow[] {
   const installed = report.definitions.filter(
@@ -187,32 +163,21 @@ function definitionRows(context: CliContext, report: DiscoveryReport): FlowRow[]
   if (installed.length === 0) return [];
 
   const agents = [...new Set(installed.map((each) => each.agent))].join(', ');
-  /* The line that lands. A definition file reads as documentation, since the
-     largest public roster's own security policy calls these non-executable prompt
-     definitions, and on these harnesses one that names no tools runs with the
-     shell and every server. */
+  // A definition reads as documentation, yet one naming no tools runs with every tool.
   const inheriting = installed.filter((each) => each.grant.kind === GRANT.INHERITS);
   const declared = installed.filter((each) => each.grant.kind === GRANT.DECLARED);
   return [
     { label: 'definitions', value: `${installed.length} installed into ${agents}` },
-    ...(inheriting.length === 0
-      ? []
-      : [
-          {
-            label: '',
-            value: context.style.warn(
-              `${inheriting.length} of them declare no tools, so each inherits every tool in the session`,
-            ),
-          },
-        ]),
-    ...(declared.length === 0
-      ? []
-      : [
-          {
-            label: '',
-            value: context.style.dim(`${declared.length} name the tools they may use`),
-          },
-        ]),
+    ...noteRow(
+      inheriting.length > 0,
+      context.style.warn(
+        `${inheriting.length} of them declare no tools, so each inherits every tool in the session`,
+      ),
+    ),
+    ...noteRow(
+      declared.length > 0,
+      context.style.dim(`${declared.length} name the tools they may use`),
+    ),
   ];
 }
 
@@ -224,75 +189,63 @@ function serverRows(context: CliContext, report: DiscoveryReport): FlowRow[] {
 
   // Distinct: the same server in five editors is one server's worth of tools.
   const tools = distinctTools(servers);
-  const named = [
-    ...new Set(
-      servers.flatMap((surface) => (surface.servers ?? []).map((each) => each.name)),
-    ),
-  ];
-  /* A host that filters its own tools was right to, and the smaller number needs a
-     reason beside it or it reads as a scan that missed something. */
+  const named = serverNames(servers);
+  // A host filtering its own tools needs saying, or the smaller number reads as a miss.
   const filtered = servers.reduce(
     (total, surface) => total + (surface.filteredOut ?? 0),
     0,
   );
-  // The line that lands: a count of destructive tools nothing is checking.
   const destructive = tools.filter((tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE);
+  const clients = servers.map((surface) => agentNameIn(surface.agentId)).join(', ');
 
   return [
     {
       label: 'mcp clients',
-      value:
-        servers.map((surface) => surface.agentId.replace('agt_', '')).join(', ') +
-        (tools.length === 0 ? '' : style.dim(`  ${tools.length} tools`)),
+      value: clients + (tools.length === 0 ? '' : style.dim(`  ${tools.length} tools`)),
     },
     ...(named.length === 0 ? [] : [{ label: 'mcp servers', value: named.join(', ') }]),
-    ...(filtered === 0
-      ? []
-      : [
-          {
-            label: '',
-            value: style.dim(
-              `${filtered} more hidden by the host's own filter, so ${filtered === 1 ? 'it is' : 'they are'} not counted here`,
-            ),
-          },
-        ]),
-    ...(destructive.length === 0
-      ? []
-      : [
-          {
-            label: '',
-            value: style.warn(
-              `${destructive.length} of them destructive, and nothing is checking any of them`,
-            ),
-          },
-        ]),
+    ...noteRow(
+      filtered > 0,
+      style.dim(
+        `${filtered} more hidden by the host's own filter, so ${filtered === 1 ? 'it is' : 'they are'} not counted here`,
+      ),
+    ),
+    // The line that lands: a count of destructive tools nothing is checking.
+    ...noteRow(
+      destructive.length > 0,
+      style.warn(
+        `${destructive.length} of them destructive, and nothing is checking any of them`,
+      ),
+    ),
+  ];
+}
+
+function serverNames(servers: DiscoveryReport['surfaces']): string[] {
+  return [
+    ...new Set(
+      servers.flatMap((surface) => (surface.servers ?? []).map((each) => each.name)),
+    ),
   ];
 }
 
 /**
  * The headline. A credential file is a fact; how many agents can read it is the line
- * people screenshot. Values never appear — only the path, the structure and a count.
+ * people screenshot. Values never appear: only the path, the structure and a count.
  */
 function renderCredentials(context: CliContext, report: DiscoveryReport): void {
-  const { flow } = context;
   if (report.credentials.length === 0 && report.envFiles.length === 0) return;
 
   const refs = report.agents.map(agentRefOf);
-  /* Counted per path off the same table the reachable block reads. Standing in the
-     agent total here meant one screen said `5 agents` and `4 agents` about one file. */
-  const reach = (path: string): string => {
-    const count = agentsReachingPath(path, refs, report.surfaces).length;
-    return `${count} agent${count === 1 ? '' : 's'}`;
-  };
-
-  /* Every path in this block sets the column, or the shortest list wins and the
-     rest run on. A count is only scannable where it starts in one place. */
+  // Counted per path off the table the reachable block reads, so one file gets one count.
+  const reach = (path: string): string =>
+    describeCount(agentsReachingPath(path, refs, report.surfaces).length, 'agent');
+  // Every path sets the column, because a count is only scannable where it starts in one place.
   const width = Math.max(
     ...report.credentials.map((each) => each.path.length),
     ...report.envFiles.map((each) => each.path.length),
   );
 
-  flow.list('Credentials these agents can read', [
+  context.flow.list('Credentials these agents can read', [
     ...report.credentials.map((credential) => ({
       tone: TONE.WARN,
       text: `${credential.path.padEnd(width)}  ${reach(credential.path)}`,
@@ -302,17 +255,15 @@ function renderCredentials(context: CliContext, report: DiscoveryReport): void {
     ...report.envFiles.map((env) => ({
       tone: TONE.WARN,
       text: `${env.path.padEnd(width)}  ${reach(env.path)}`,
-      detail: [
-        `${env.variables} variables${
-          env.keyLike === 0
-            ? ''
-            : env.keyLike === 1
-              ? ', 1 looks like a credential'
-              : `, ${env.keyLike} look like credentials`
-        }`,
-      ],
+      detail: [`${env.variables} variables${describeKeyLike(env.keyLike)}`],
     })),
   ]);
+}
+
+function describeKeyLike(keyLike: number): string {
+  if (keyLike === 0) return '';
+  if (keyLike === 1) return ', 1 looks like a credential';
+  return `, ${keyLike} look like credentials`;
 }
 
 /**
@@ -346,7 +297,7 @@ function renderAuthenticatedClis(context: CliContext, report: DiscoveryReport): 
 
 /**
  * The quietest credential on the machine. No file called `credentials`, no token in an
- * env var — just every site somebody is still signed into, reachable by anything that
+ * env var, just every site somebody is still signed into, reachable by anything that
  * can drive the browser.
  */
 function renderBrowsers(context: CliContext, report: DiscoveryReport): void {
@@ -387,7 +338,7 @@ function renderCombined(context: CliContext, report: DiscoveryReport): void {
         .filter((capability) => capability.individuallyHarmless)
         .map((capability) => ({
           tone: TONE.WARN,
-          text: `${agentId.replace('agt_', '')}: ${capability.consequence}`,
+          text: `${agentNameIn(agentId)}: ${capability.consequence}`,
           detail: [describeCombined(capability)],
         })),
     ),
@@ -413,14 +364,11 @@ function renderReachable(context: CliContext, report: DiscoveryReport): void {
 
   flow.list(
     'Reachable from an agent right now',
-    reachable.map((resource, at) => {
-      const count = resource.reachableBy.length;
-      return {
-        tone: TONE.WARN,
-        text: `${(paths[at] ?? '').padEnd(width)}  ${count} agent${count === 1 ? '' : 's'}`,
-        // A database or the network is not a file, so what named it is said plainly.
-        detail: [resource.declaredIn],
-      };
-    }),
+    reachable.map((resource, at) => ({
+      tone: TONE.WARN,
+      text: `${(paths[at] ?? '').padEnd(width)}  ${describeCount(resource.reachableBy.length, 'agent')}`,
+      // A database or the network is not a file, so what named it is said plainly.
+      detail: [resource.declaredIn],
+    })),
   );
 }

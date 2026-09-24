@@ -11,6 +11,7 @@ export default defineConfig({
     'src/bin/git-credential.ts',
     'src/bin/egress.ts',
     'src/bin/edit-hook.ts',
+    'src/bin/session.ts',
   ],
   format: ['esm'],
   clean: true,

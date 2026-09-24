@@ -1,6 +1,18 @@
+/**
+ * `memnox scan`: what can act on this machine and what it can reach. It runs with no
+ * account and no network, which is why anybody runs it on a laptop holding production keys.
+ */
+
 import { homedir } from 'node:os';
 import type { Command } from 'commander';
-import { failOnValues, inventoryOf, renderShareCard, shareCardFor } from '@memnox/core';
+import {
+  failOnValues,
+  inventoryOf,
+  renderShareCard,
+  shareCardFor,
+  EXIT,
+  type DiscoveryReport,
+} from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { readLocalCounts, type LocalCounts } from '../local-counts';
 import { defaultScanSeams, scanMachine, type ScanSeams } from '../machine-scan';
@@ -9,29 +21,58 @@ import { renderServerReview } from '../scan/server-review';
 import { renderTools } from '../scan/tool-listing';
 import { renderUsage } from '../scan/usage-report';
 import { renderDrift, wantsDrift } from '../scan/drift-report';
-import { unknownCommand } from '../unknown-command';
+import { describeUnknownCommand } from '../unknown-command';
 
-/**
- * Runs with no account, no key and no network. Nothing is transmitted, which is the
- * only reason a security engineer runs this on a laptop holding production credentials.
- */
+/** What `scan` reads the machine through, injected so a test never reads the real one. */
+interface ScanDeps {
+  buildSeams: (cwd: string) => ScanSeams;
+  cwd: () => string;
+  counts: () => Promise<LocalCounts>;
+}
+
+/** Every flag `scan` takes, so the router and the action cannot drift apart. */
+interface ScanOptions {
+  json?: boolean;
+  tools?: boolean;
+  probe: boolean;
+  mcp?: string;
+  save?: boolean;
+  usage?: string;
+  share?: boolean;
+  since?: string;
+  from?: string;
+  to?: string;
+  failOn?: string;
+}
+
+interface ScanInput {
+  unrecognized: readonly string[];
+  options: ScanOptions;
+}
+
+interface ReportInput {
+  report: DiscoveryReport;
+  takenAt: string;
+  options: ScanOptions;
+}
+
 export function registerScanCommand(
   program: Command,
   context: CliContext,
-  buildSeams: (cwd: string) => ScanSeams = defaultScanSeams,
-  cwd: () => string = () => process.cwd(),
-  counts: () => Promise<LocalCounts> = () => readLocalCounts(homedir()),
+  overrides: Partial<ScanDeps> = {},
 ): void {
+  const deps: ScanDeps = {
+    buildSeams: defaultScanSeams,
+    cwd: () => process.cwd(),
+    counts: () => readLocalCounts(homedir()),
+    ...overrides,
+  };
   program
     .command('scan', { isDefault: true })
-    // The word people reach for first. `memnox` alone runs it either way.
     .description(
       'What can act on this machine, and what it can reach. No account, no network.',
     )
-    /* Bare `memnox` runs this, but `memnox audti` must not: with a default command
-       commander hands an unknown word here as an argument. Refusing it as an excess
-       argument blamed `discover` for a word the user never typed, so it is caught
-       here instead and named for what it is. Hidden from the usage line. */
+    // Bare `memnox` runs this, so an unknown word lands here and is named as unknown.
     .usage('[options]')
     .argument('[unrecognized...]')
     .option('--json', 'emit the report as JSON')
@@ -51,72 +92,73 @@ export function registerScanCommand(
       '--no-probe',
       'do not start MCP servers to ask what they hold; tools go uncounted',
     )
-    .action(
-      async (
-        unrecognized: string[],
-        options: {
-          json?: boolean;
-          tools?: boolean;
-          probe: boolean;
-          mcp?: string;
-          save?: boolean;
-          usage?: string;
-          share?: boolean;
-          since?: string;
-          from?: string;
-          to?: string;
-          failOn?: string;
-        },
-      ) => {
-        if (unrecognized.length > 0) {
-          throw new Error(unknownCommand(program, unrecognized[0] as string));
-        }
-        /* One rail for every shape this command takes, opened here rather than
-           in each renderer below: `--tools`, `--mcp`, `--usage` and `--since`
-           are all this same command answering a narrower question, and a rail
-           per branch would read as four commands wearing one name. */
-        if (options.json !== true) context.flow.open('memnox scan');
-        const seams = buildSeams(cwd());
-        /* Before the scan, because a comparison takes its own later side and a
-           second scan here would be the machine read twice for one question. */
-        if (wantsDrift(options)) {
-          await renderDrift(context, seams, options);
-          return;
-        }
-        // Kept only when asked: a scan every command runs would churn the history.
-        const { report, snapshot } = await scanMachine(seams, {
-          probe: options.probe,
-          save: options.save === true,
-        });
-        if (options.share === true) {
-          const card = shareCardFor(inventoryOf(report, snapshot.takenAt));
-          if (options.json === true) {
-            context.out.json(card);
-            return;
-          }
-          /* The card is the answer and it is meant to be pasted somewhere
-             else, so nothing of ours is drawn through the middle of it. */
-          context.out.line(renderShareCard(card));
-          return;
-        }
-        if (options.usage !== undefined) {
-          await renderUsage(context, report, options.usage, options.json === true);
-          return;
-        }
-        if (options.mcp !== undefined) {
-          renderServerReview(context, report, options.mcp, options.json === true);
-          return;
-        }
-        if (options.json === true) {
-          // The inventory, not the raw report: this is the shape that leaves the process.
-          context.out.json(inventoryOf(report, snapshot.takenAt));
-          return;
-        }
-        if (options.tools === true) {
-          renderTools(context, report);
-          return;
-        }
-        renderMachine(context, report, await counts());
-      },
+    .action(async (unrecognized: readonly string[], options: ScanOptions) =>
+      runScan(program, context, deps, { unrecognized, options }),
     );
+}
+
+/** One scan, rendered as whichever narrower question the flags asked, on one rail. */
+async function runScan(
+  program: Command,
+  context: CliContext,
+  deps: ScanDeps,
+  input: ScanInput,
+): Promise<void> {
+  const { unrecognized, options } = input;
+  const first = unrecognized[0];
+  if (first !== undefined) throw new Error(describeUnknownCommand(program, first));
+  if (options.json !== true) context.flow.open('memnox scan');
+  const seams = deps.buildSeams(deps.cwd());
+
+  // Before the scan, because a comparison takes its own later side.
+  if (wantsDrift(options)) {
+    if (await renderDrift(context, seams, options)) process.exitCode = EXIT.FAILED;
+    return;
+  }
+
+  // Kept only when asked: a scan every command runs would churn the history.
+  const { report, snapshot } = await scanMachine(seams, {
+    probe: options.probe,
+    save: options.save === true,
+  });
+  return renderReport(context, deps, { report, takenAt: snapshot.takenAt, options });
+}
+
+/** The report, as the one view the flags picked. */
+async function renderReport(
+  context: CliContext,
+  deps: ScanDeps,
+  input: ReportInput,
+): Promise<void> {
+  const { report, takenAt, options } = input;
+  const asJson = options.json === true;
+  if (options.share === true) return renderShare(context, report, takenAt, asJson);
+  if (options.usage !== undefined) {
+    return renderUsage(context, report, options.usage, asJson);
+  }
+  if (options.mcp !== undefined) {
+    return renderServerReview(context, report, options.mcp, asJson);
+  }
+  if (asJson) {
+    // The inventory rather than the raw report: this is the shape that leaves the process.
+    context.out.json(inventoryOf(report, takenAt));
+    return;
+  }
+  if (options.tools === true) return renderTools(context, report);
+  return renderMachine(context, report, await deps.counts());
+}
+
+/** The share card is meant to be pasted elsewhere, so nothing of ours is drawn through it. */
+function renderShare(
+  context: CliContext,
+  report: DiscoveryReport,
+  takenAt: string,
+  asJson: boolean,
+): void {
+  const card = shareCardFor(inventoryOf(report, takenAt));
+  if (asJson) {
+    context.out.json(card);
+    return;
+  }
+  context.out.line(renderShareCard(card));
 }

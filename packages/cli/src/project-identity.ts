@@ -4,7 +4,7 @@ import { parse as parseToml } from 'smol-toml';
 import { parse } from 'yaml';
 import { POLICY_FILES } from './policy-path';
 
-/** The repository is deliberately not the unit — a frontend and backend can share one. */
+/** The repository is deliberately not the unit, because a frontend and backend can share one. */
 
 /** A repo nested deeply under $HOME still terminates; nothing legitimate is deeper. */
 const MAX_PARENT_WALK = 40;

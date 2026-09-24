@@ -1,17 +1,23 @@
 import { homedir } from 'node:os';
+
 import type { Command } from 'commander';
+
 import { operationsReport, recommendation, type OperationsReport } from '@memnox/core';
+import { LEDGER_WINDOW_LIMIT } from '@memnox/core';
+
 import type { CliContext } from '../cli-context';
-import { TONE } from '../flow';
+import { resolveWindowStart } from '../days-back';
+import { TONE, type FlowRow } from '../flow';
 import { withEvents } from '../event-store';
 
 /**
- * What the agents did today, and what of it was wasted.
- *
- * The waste line is the one people act on. The same command failing forty times costs
- * real money and nobody notices, because each individual failure looks like an
- * ordinary bad afternoon and only the total says otherwise.
+ * `memnox report`: what the agents did in a window, and what of it was wasted, because
+ * each failure looks like an ordinary bad afternoon and only the total says otherwise.
  */
+
+/** What `--since` falls back to when it was given something that is not a number. */
+const DEFAULT_WINDOW_DAYS = 1;
+
 export function registerReportCommand(
   program: Command,
   context: CliContext,
@@ -23,37 +29,66 @@ export function registerReportCommand(
     .description('What your agents did in a window, and what of it was redone')
     .option('--since <window>', 'how far back, e.g. 1d', '1d')
     .option('--json', 'machine-readable output')
-    .action(async (options: { since: string; json?: boolean }) => {
-      const until = now().toISOString();
-      const days = Number.parseInt(options.since, 10);
-      const since = new Date(
-        now().getTime() - (Number.isNaN(days) ? 1 : days) * 24 * 60 * 60_000,
-      ).toISOString();
-
-      const events = await withEvents(home(), (store) =>
-        store.query({ since, limit: 50_000 }),
-      );
-      const report = operationsReport(events, since, until);
-
-      if (options.json === true) {
-        context.out.json(report);
-        return;
-      }
-      context.flow.open('memnox report');
-      render(context, report);
-    });
+    .action(async (options: ReportOptions) => runReport(context, home, now, options));
 }
 
-function render(context: CliContext, report: OperationsReport): void {
-  const { flow, style } = context;
+interface ReportOptions {
+  since: string;
+  json?: boolean;
+}
 
+/** What the agents did in a window, and what of it was redone. */
+async function runReport(
+  context: CliContext,
+  home: () => string,
+  now: () => Date,
+  options: ReportOptions,
+): Promise<void> {
+  const moment = now();
+  const until = moment.toISOString();
+  const since = resolveWindowStart(options.since, moment, DEFAULT_WINDOW_DAYS);
+
+  const events = await withEvents(home(), (store) =>
+    store.query({ since, limit: LEDGER_WINDOW_LIMIT }),
+  );
+  const report = operationsReport(events, since, until);
+
+  if (options.json === true) {
+    context.out.json(report);
+    return;
+  }
+  context.flow.open('memnox report');
+  renderReport(context, report);
+}
+
+function renderReport(context: CliContext, report: OperationsReport): void {
+  const { flow } = context;
   if (report.actions === 0) {
     flow.close('Nothing was recorded in that window.');
     flow.hint('Run an agent under "memnox run" first.');
     return;
   }
 
-  flow.rows('What the agents did', [
+  flow.rows('What the agents did', totalRowsOf(context, report));
+  if (report.waste.length > 0) {
+    flow.list(
+      'Where the work went twice',
+      report.waste.map((each) => ({
+        tone: TONE.WARN,
+        text: each.action,
+        detail: [`${each.failures} failures of ${each.attempts}`],
+      })),
+    );
+  }
+  flow.close(`${report.actions} action(s) across ${report.sessions} session(s).`);
+
+  const advice = recommendation(report);
+  if (advice !== null) flow.hint(advice);
+}
+
+/** The totals card, saying nobody reported a spend rather than printing zero. */
+function totalRowsOf(context: CliContext, report: OperationsReport): FlowRow[] {
+  return [
     { label: 'agents', value: String(report.agents) },
     { label: 'sessions', value: String(report.sessions) },
     { label: 'actions', value: String(report.actions) },
@@ -62,11 +97,7 @@ function render(context: CliContext, report: OperationsReport): void {
     { label: 'blocked', value: String(report.blocked) },
     { label: 'held', value: String(report.held) },
     { label: 'redone', value: String(report.retries) },
-    /* The line people act on. Absent rather than zero when nobody reported a
-       cost: this machine cannot price a model call, and a $0.00 would read as
-       a fact. It names the seam rather than a command, because `memnox spend`
-       was removed for exactly the reason this row exists and pointing at it
-       sent people to a word that answers "nothing here". */
+    // This machine cannot price a model call, so a $0.00 here would read as a fact.
     {
       label: 'spend',
       value:
@@ -78,7 +109,7 @@ function render(context: CliContext, report: OperationsReport): void {
       ? [
           {
             label: 'wasted',
-            value: style.warn(
+            value: context.style.warn(
               `$${report.wastedUsd.toFixed(2)} went on work that was redone`,
             ),
           },
@@ -92,24 +123,5 @@ function render(context: CliContext, report: OperationsReport): void {
             value: `${report.busiest.agent} (${report.busiest.actions})`,
           },
         ]),
-  ]);
-
-  if (report.waste.length > 0) {
-    flow.list(
-      'Where the work went twice',
-      report.waste.map((each) => ({
-        tone: TONE.WARN,
-        text: each.action,
-        detail: [`${each.failures} failures of ${each.attempts}`],
-      })),
-    );
-  }
-
-  /* No footnote about spend: the row above already says either the figure or that
-     nobody reported one. This said "nothing here can price a model call" under a
-     line that had just printed $5.60, which is the screen arguing with itself. */
-  flow.close(`${report.actions} action(s) across ${report.sessions} session(s).`);
-
-  const advice = recommendation(report);
-  if (advice !== null) flow.hint(advice);
+  ];
 }

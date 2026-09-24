@@ -2,16 +2,8 @@ import type { CliOutput } from './cli-output';
 import type { Style } from './style';
 
 /**
- * The wordmark, as blocks.
- *
- * Six letters on a five-row grid, each drawn twice: once as the face and once
- * offset a cell down and right as its shadow. Composited from one grid rather
- * than written as two strings, so the layers cannot drift — a shadow kept in
- * step by hand is one that slips a column the first time a letter is touched.
- *
- * Decoration, so it is printed as commentary and never as output, and a style
- * that draws nothing gets the plain word instead. A wall of block characters in
- * a log file is worse than no wordmark at all.
+ * The wordmark, as blocks: six letters on a five row grid with a ledge under them, drawn
+ * from one grid so the layers cannot drift. A plain style gets the word instead.
  */
 
 /** One string per row, `#` where a block is drawn. Widths need not match. */
@@ -40,6 +32,7 @@ function faceGrid(): boolean[][] {
     for (let row = 0; row < ROWS; row += 1) {
       const art = letter[row] ?? '';
       for (let column = 0; column < width + TRACKING; column += 1) {
+        // Every row index below ROWS was created above.
         (grid[row] as boolean[]).push(art[column] === DRAWN);
       }
     }
@@ -47,32 +40,19 @@ function faceGrid(): boolean[][] {
   return grid;
 }
 
-const at = (grid: readonly boolean[][], row: number, column: number): boolean =>
-  row >= 0 && column >= 0 && (grid[row]?.[column] ?? false);
+function isDrawn(grid: readonly boolean[][], row: number, column: number): boolean {
+  return row >= 0 && column >= 0 && (grid[row]?.[column] ?? false);
+}
 
 /**
- * Whether the shadow shows at this cell.
- *
- * The row under the word only, offset one column right — a ledge the letters
- * stand on rather than a shadow cast through them.
- *
- * A true drop shadow was tried first and does not survive this resolution. At
- * six rows a counter is one or two cells wide, so the shadow of the stroke
- * above lands *inside* the letter: the gap in an `E`, the notch in an `M`, the
- * middle of an `O`. Every rule for keeping it out — no block beside it, past
- * the glyph's right edge — traded the speckle for a different speckle, because
- * the real problem is that there is nowhere for it to fall. Depth that costs
- * legibility is not depth; it is a smudge that used to be a word.
+ * Whether the shadow shows at this cell: the row under the word only, offset one column
+ * right, because a true drop shadow lands inside counters one or two cells wide.
  */
-const shadowed = (grid: readonly boolean[][], row: number, column: number): boolean =>
-  row === ROWS && at(grid, ROWS - 1, column - 1);
+function isShadowed(grid: readonly boolean[][], row: number, column: number): boolean {
+  return row === ROWS && isDrawn(grid, ROWS - 1, column - 1);
+}
 
-/**
- * The wordmark, one string per line.
- *
- * A row taller than the face, because the last row's shadow falls below it and
- * a banner clipped at the bottom reads as a rendering fault.
- */
+/** The wordmark, one string per line, a row taller than the face so the shadow is not clipped. */
 export function wordmark(style: Style, plain: string): string[] {
   if (!style.decorated) return [plain];
 
@@ -83,8 +63,8 @@ export function wordmark(style: Style, plain: string): string[] {
   for (let row = 0; row <= ROWS; row += 1) {
     let line = '';
     for (let column = 0; column < width; column += 1) {
-      if (at(grid, row, column)) line += style.bold(FACE);
-      else if (shadowed(grid, row, column)) line += style.dim(SHADOW);
+      if (isDrawn(grid, row, column)) line += style.bold(FACE);
+      else if (isShadowed(grid, row, column)) line += style.dim(SHADOW);
       else line += ' ';
     }
     lines.push(line);
@@ -92,15 +72,8 @@ export function wordmark(style: Style, plain: string): string[] {
   return lines;
 }
 
-/**
- * The wordmark, above whatever the command is about to say.
- *
- * Commentary on stderr like the rest of the chrome, so `memnox scan --json | jq` and
- * `eval "$(memnox env)"` still receive the payload alone. Drawn only for a decorated
- * stream, and never under `--json`: a caller that asked for a machine answer is not
- * asking for block art on its diagnostics.
- */
-export function masthead(out: CliOutput, style: Style): void {
+/** The wordmark above a run, on stderr so a piped payload arrives alone. */
+export function renderMasthead(out: CliOutput, style: Style): void {
   if (!style.decorated) return;
   out.note('');
   for (const line of wordmark(style, 'memnox')) out.note(line);

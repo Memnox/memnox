@@ -1,8 +1,13 @@
-import { homedir } from 'node:os';
-import { cwd } from 'node:process';
+/**
+ * `memnox uninstall`: every piece of Memnox off this machine, in one command, the service
+ * first because it restarts itself. What is left behind is said plainly.
+ */
+
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { cwd } from 'node:process';
 import type { Command } from 'commander';
 import {
   fleetSpendPathFor,
@@ -21,19 +26,28 @@ import {
 } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import { removeClaudeHook } from '../protect/claude-hook';
+import { forgetKept } from '../keeper/kept';
+import { forgetKeeperState } from '../keeper/keeper-state';
 import {
   removeCodexHook,
   removeCursorHook,
   removeGeminiHook,
   removeWindsurfHook,
 } from '../protect/agent-hooks';
-import { profilesFor, removeFromProfile } from '../protect/shell-profile';
+import {
+  DEFAULT_SHELL,
+  PROFILE_STATE,
+  profilesFor,
+  removeFromProfile,
+} from '../protect/shell-profile';
 import { POLICY_FILES } from '../policy-path';
 import { uninstallService } from '../daemon/service';
+import { removeEverywhere } from '../session-tools/session-entry';
 
 interface UninstallDeps {
   home?: () => string;
   dir?: () => string;
+  env?: NodeJS.ProcessEnv;
   /** Unwrapping is the MCP command's job; injected so this stays testable. */
   unwrap?: () => Promise<number>;
   now?: () => Date;
@@ -42,10 +56,8 @@ interface UninstallDeps {
 }
 
 /**
- * Everything that stops work without being a rule: held calls, paused sessions, the
- * task a session declared, and the fleet totals that were true for a fleet this
- * machine has left. None of it is history, and every one of them would silently
- * govern a fresh install that had not asked for it.
+ * Everything that stops work without being a rule: held calls, paused sessions, declared
+ * tasks, leases and fleet totals. None of it is history, and all of it would govern a fresh install.
  */
 async function clearOperationalState(home: string): Promise<number> {
   const paths = [
@@ -57,9 +69,7 @@ async function clearOperationalState(home: string): Promise<number> {
   ];
   let cleared = 0;
   for (const path of paths) {
-    /* Counted only when something was actually there. `rm --force` succeeds on a
-       path that never existed, so counting the calls would tell every fresh machine
-       it had just cleared five things. */
+    // Counted only when something was there, because `force` succeeds on a missing path.
     if (!existsSync(path)) continue;
     await rm(path, { recursive: true, force: true });
     cleared += 1;
@@ -83,11 +93,7 @@ async function releaseEveryLease(home: string, now: Date): Promise<number> {
   }
 }
 
-/**
- * Everything this product put on a machine, taken off in one command. A tool that can
- * be removed cleanly is a tool people are willing to try; one that cannot is one they
- * never install.
- */
+/** A tool that can be removed cleanly is a tool people are willing to try. */
 export function registerUninstallCommand(
   program: Command,
   context: CliContext,
@@ -97,143 +103,228 @@ export function registerUninstallCommand(
     .command('uninstall')
     .description('Remove the interceptors, the hooks and the wrapping from this machine')
     .option('--purge', 'also delete ~/.memnox, including the history and your rules')
-    .action(async (options: { purge?: boolean }) => {
-      const home = (deps.home ?? homedir)();
-      const dir = (deps.dir ?? cwd)();
-      const { flow, style } = context;
-      flow.open('memnox uninstall');
+    .action(async (options: UninstallOptions) => runUninstall(context, deps, options));
+}
 
-      const taken: string[] = [];
+interface UninstallOptions {
+  purge?: boolean;
+}
 
-      const interceptors = await removeInterceptors(home);
-      flow.step(
-        'Interceptors',
-        interceptors.length === 0
-          ? 'none were installed'
-          : `removed ${interceptors.length} from ${interceptorDirFor(home)}`,
-      );
-      if (interceptors.length > 0) taken.push('the interceptors');
+/**
+ * Takes every piece of Memnox off this machine, each step reporting what it took, so the
+ * closing line is assembled from what happened rather than from what was intended.
+ */
+async function runUninstall(
+  context: CliContext,
+  deps: UninstallDeps,
+  options: UninstallOptions,
+): Promise<void> {
+  const home = (deps.home ?? homedir)();
+  const dir = (deps.dir ?? cwd)();
+  context.flow.open('memnox uninstall');
 
-      const claudeHook = await removeClaudeHook(home);
-      flow.step(
-        'Claude Code hook',
-        claudeHook ? 'taken out of its settings' : 'none was installed',
-      );
-      if (claudeHook) taken.push('the Claude Code hook');
+  // First, so a daemon still running between these steps has nothing left to put back.
+  await forgetKept(home);
+  await forgetKeeperState(home);
+  const taken: string[] = [
+    ...(await removeTheInterceptors(context, home)),
+    ...(await removeTheEditorHooks(context, home)),
+    ...(await removeTheSessionTools(context, home)),
+    ...(await removeTheDaemonService(context, deps, home)),
+  ];
+  await removeThePathLine(context, deps, home);
+  await releaseWhatIsHeld(context, deps, home);
+  taken.push(
+    ...(await removeTheGitHooks(context, dir)),
+    ...(await unwrapTheMcpServers(context, deps)),
+  );
 
-      const codexHook = await removeCodexHook(home);
-      const cursorHook = await removeCursorHook(home);
-      const geminiHook = await removeGeminiHook(home);
-      const windsurfHook = await removeWindsurfHook(home);
-      const editors = [
-        ...(codexHook ? ['Codex'] : []),
-        ...(cursorHook ? ['Cursor'] : []),
-        ...(geminiHook ? ['Gemini CLI'] : []),
-        ...(windsurfHook ? ['Windsurf'] : []),
-      ];
-      flow.step(
-        "Other coding agents' hooks",
-        editors.length === 0
-          ? 'none were installed'
-          : `taken out of ${editors.join(' and ')}`,
-      );
-      for (const editor of editors) taken.push(`the ${editor} hook`);
+  if (options.purge !== true) return reportKept(context, home, taken);
+  return reportPurged(context, home, dir);
+}
 
-      /* Taken out before the wrappers, because it is the one piece that restarts
-         itself: a service left loaded would keep a daemon alive against a machine
-         this command has just stripped, and `setup` installs one now, so an
-         uninstall that skipped it would leave the thing most able to outlive it. */
-      const service = await (deps.unservice ?? uninstallService)(home);
-      flow.step(
-        'Daemon',
-        !service.state.supported || service.state.path === ''
-          ? 'nothing was starting it'
-          : service.warning === undefined
-            ? 'stopped, and this machine no longer starts it'
-            : `file removed, but it would not stop (${service.warning})`,
-      );
-      if (service.state.supported && service.state.path !== '') {
-        taken.push('the daemon service');
-      }
+/** The PATH wrappers, which are the seam in front of every shell command. */
+async function removeTheInterceptors(
+  context: CliContext,
+  home: string,
+): Promise<string[]> {
+  const interceptors = await removeInterceptors(home);
+  context.flow.step(
+    'Interceptors',
+    interceptors.length === 0
+      ? 'none were installed'
+      : `removed ${interceptors.length} from ${interceptorDirFor(home)}`,
+  );
+  return interceptors.length > 0 ? ['the interceptors'] : [];
+}
 
-      /* The one thing we ever write outside ~/.memnox, so it is the one thing that
-         would outlive an uninstall if this did not take it back out. */
-      for (const path of profilesFor(process.env['SHELL'] ?? 'zsh', home)) {
-        const edit = await removeFromProfile(path);
-        if (edit.state === 'removed')
-          flow.step('Shell profile', `our PATH line is out of ${path}`);
-      }
+/** The lease hook each coding agent runs before it writes a file. */
+async function removeTheEditorHooks(
+  context: CliContext,
+  home: string,
+): Promise<string[]> {
+  const claude = await removeClaudeHook(home);
+  context.flow.step(
+    'Claude Code hook',
+    claude ? 'taken out of its settings' : 'none was installed',
+  );
 
-      /* Nothing may still be held by a seam that is no longer installed. The records
-         stay — what was held and when is history — but nothing is left in force. */
-      const released = await releaseEveryLease(home, (deps.now ?? (() => new Date()))());
-      if (released > 0) {
-        flow.step('Leases', `released ${released}; no path is held any more`);
-      }
+  const others = [
+    ['Codex', await removeCodexHook(home)],
+    ['Cursor', await removeCursorHook(home)],
+    ['Gemini CLI', await removeGeminiHook(home)],
+    ['Windsurf', await removeWindsurfHook(home)],
+  ] as const;
+  const editors = others.filter(([, removed]) => removed).map(([name]) => name);
 
-      /* Operational state, not history and not rules: a pause or a held call left
-         behind would silently stop the next install before it had done anything. */
-      const cleared = await clearOperationalState(home);
-      if (cleared > 0) {
-        flow.step('Held work', `cleared ${cleared} held or paused item(s)`);
-      }
+  context.flow.step(
+    "Other coding agents' hooks",
+    editors.length === 0
+      ? 'none were installed'
+      : `taken out of ${editors.join(' and ')}`,
+  );
+  return [
+    ...(claude ? ['the Claude Code hook'] : []),
+    ...editors.map((editor) => `the ${editor} hook`),
+  ];
+}
 
-      const hooks = await removeGitHooks(dir);
-      flow.step(
-        'Git hooks',
-        hooks.length === 0
-          ? 'none of ours in this repository'
-          : `removed the ${hooks.join(' and ')} hook(s)`,
-      );
-      if (hooks.length > 0) taken.push('the git hooks');
+/** The session server entry in each agent's MCP config, and nothing beside it. */
+async function removeTheSessionTools(
+  context: CliContext,
+  home: string,
+): Promise<string[]> {
+  const from = await removeEverywhere(home);
+  context.flow.step(
+    'Session tools',
+    from.length === 0 ? 'none were installed' : `taken out of ${from.join(' and ')}`,
+  );
+  return from.length > 0 ? ['the session tools'] : [];
+}
 
-      if (deps.unwrap !== undefined) {
-        const restored = await deps.unwrap();
-        flow.step(
-          'MCP servers',
-          restored === 0 ? 'none was wrapped' : `restored ${restored}`,
-        );
-        if (restored > 0) taken.push('the MCP wrapping');
-      } else {
-        flow.step('MCP servers', 'not touched from here');
-        flow.aside('Run "memnox mcp unwrap" to put your MCP servers back.');
-      }
+/** The service, taken out before the wrappers because a loaded one would restart the daemon. */
+async function removeTheDaemonService(
+  context: CliContext,
+  deps: UninstallDeps,
+  home: string,
+): Promise<string[]> {
+  const service = await (deps.unservice ?? uninstallService)(home);
+  const installed = service.state.supported && service.state.path !== '';
 
-      if (options.purge !== true) {
-        flow.rows('Still here', [
-          { label: 'rules', value: join(home, MEMNOX_HOME) },
-          { label: 'history', value: 'the same place, and still yours' },
-        ]);
-        flow.close(
-          taken.length === 0
-            ? 'Nothing of ours was installed on this machine.'
-            : `Removed ${taken.join(', ')}.`,
-        );
-        flow.hint('Add --purge to delete your rules and history too.');
-        return;
-      }
+  context.flow.step('Daemon', describeServiceRemoval(installed, service.warning));
+  return installed ? ['the daemon service'] : [];
+}
 
-      await rm(join(home, MEMNOX_HOME), { recursive: true, force: true });
+function describeServiceRemoval(installed: boolean, warning: string | undefined): string {
+  if (!installed) return 'nothing was starting it';
+  if (warning === undefined) return 'stopped, and this machine no longer starts it';
+  return `file removed, but it would not stop (${warning})`;
+}
 
-      /* The rule file lives in the repository and is very likely committed, so it is
-         not ours to delete — but claiming nothing is left while it sits there is the
-         kind of small untruth that makes somebody stop trusting the rest. */
-      const rules = POLICY_FILES.map((name) => join(dir, name)).filter(existsSync);
-      flow.rows('Deleted', [
-        { label: 'home', value: join(home, MEMNOX_HOME) },
-        ...rules.map((path) => ({
-          label: 'kept',
-          value: `${path}, because it is yours and probably committed`,
-        })),
-      ]);
-      flow.close(
-        rules.length === 0
-          ? style.ok('Nothing of Memnox is left on this machine.')
-          : 'Everything of ours is gone; your rule files are where you put them.',
-      );
-      // Ours came out above; a line somebody pasted themselves is theirs to remove.
-      flow.hint(
-        'If you added the interceptor directory to PATH by hand, remove that line.',
-      );
-    });
+/** The line in the login shell profile, the one thing ever written outside `~/.memnox`. */
+async function removeThePathLine(
+  context: CliContext,
+  deps: UninstallDeps,
+  home: string,
+): Promise<void> {
+  const shell = (deps.env ?? process.env)['SHELL'] ?? DEFAULT_SHELL;
+  for (const path of profilesFor(shell, home)) {
+    const edit = await removeFromProfile(path);
+    if (edit.state === PROFILE_STATE.REMOVED) {
+      context.flow.step('Shell profile', `our PATH line is out of ${path}`);
+    }
+  }
+}
+
+/**
+ * Leases and held work, released so nothing is held by a seam that is no longer installed.
+ * The records stay, because what was held and when is history.
+ */
+async function releaseWhatIsHeld(
+  context: CliContext,
+  deps: UninstallDeps,
+  home: string,
+): Promise<void> {
+  const released = await releaseEveryLease(home, (deps.now ?? (() => new Date()))());
+  if (released > 0) {
+    context.flow.step('Leases', `released ${released}; no path is held any more`);
+  }
+  const cleared = await clearOperationalState(home);
+  if (cleared > 0) {
+    context.flow.step('Held work', `cleared ${cleared} held or paused item(s)`);
+  }
+}
+
+/** The pre-push and pre-commit hooks, which live in this repository rather than at home. */
+async function removeTheGitHooks(context: CliContext, dir: string): Promise<string[]> {
+  const hooks = await removeGitHooks(dir);
+  context.flow.step(
+    'Git hooks',
+    hooks.length === 0
+      ? 'none of ours in this repository'
+      : `removed the ${hooks.join(' and ')} hook(s)`,
+  );
+  return hooks.length > 0 ? ['the git hooks'] : [];
+}
+
+/** The MCP configs, put back the way each agent had them. */
+async function unwrapTheMcpServers(
+  context: CliContext,
+  deps: UninstallDeps,
+): Promise<string[]> {
+  if (deps.unwrap === undefined) {
+    context.flow.step('MCP servers', 'not touched from here');
+    context.flow.aside('Run "memnox mcp unwrap" to put your MCP servers back.');
+    return [];
+  }
+  const restored = await deps.unwrap();
+  context.flow.step(
+    'MCP servers',
+    restored === 0 ? 'none was wrapped' : `restored ${restored}`,
+  );
+  return restored > 0 ? ['the MCP wrapping'] : [];
+}
+
+/** What is deliberately left behind when nobody asked for a purge. */
+function reportKept(context: CliContext, home: string, taken: readonly string[]): void {
+  const { flow } = context;
+  flow.rows('Still here', [
+    { label: 'rules', value: join(home, MEMNOX_HOME) },
+    { label: 'history', value: 'the same place, and still yours' },
+  ]);
+  flow.close(
+    taken.length === 0
+      ? 'Nothing of ours was installed on this machine.'
+      : `Removed ${taken.join(', ')}.`,
+  );
+  flow.hint('Add --purge to delete your rules and history too.');
+}
+
+/**
+ * Everything of ours deleted, and the rule files named rather than removed, because a
+ * rule file lives in the repository and is very likely committed.
+ */
+async function reportPurged(
+  context: CliContext,
+  home: string,
+  dir: string,
+): Promise<void> {
+  const { flow, style } = context;
+  await rm(join(home, MEMNOX_HOME), { recursive: true, force: true });
+
+  const rules = POLICY_FILES.map((name) => join(dir, name)).filter(existsSync);
+  flow.rows('Deleted', [
+    { label: 'home', value: join(home, MEMNOX_HOME) },
+    ...rules.map((path) => ({
+      label: 'kept',
+      value: `${path}, because it is yours and probably committed`,
+    })),
+  ]);
+  flow.close(
+    rules.length === 0
+      ? style.ok('Nothing of Memnox is left on this machine.')
+      : 'Everything of ours is gone; your rule files are where you put them.',
+  );
+  // Ours came out above; a line somebody pasted themselves is theirs to remove.
+  flow.hint('If you added the interceptor directory to PATH by hand, remove that line.');
 }

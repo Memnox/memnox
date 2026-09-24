@@ -1,7 +1,5 @@
 /**
- * The proxy ships inside the `memnox` package rather than only in `@memnox/proxy`,
- * because npm exposes the bins of the package you installed and not those of its
- * dependencies. Without this, `memnox mcp wrap` would point every MCP server at a
- * binary the user does not have.
+ * The proxy bin ships here as well as in `@memnox/proxy`, because npm exposes only the
+ * installed package's bins, so `mcp wrap` would otherwise point at a missing binary.
  */
 import '@memnox/proxy/cli';

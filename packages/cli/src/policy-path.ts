@@ -3,16 +3,17 @@ import { resolve } from 'node:path';
 import { loadPolicySet, readPolicyRegistry, type PolicySet } from '@memnox/core';
 import type { CliContext } from './cli-context';
 import { TONE } from './flow';
+import { describeCount } from './plural';
 import { policyRegistryPath } from './policy-registry';
+
+/** Where the rules in force are found: the file here, and every file the registry names. */
 
 /** TOML is what new files are written as; a YAML file somebody already has still counts. */
 export const POLICY_FILES = ['memnox.policies.toml', 'memnox.policies.yaml'] as const;
 
 /**
- * The rule file actually on disk, whichever format it is in. Defaulting to one
- * extension meant `protect` wrote rules that `explain` and `policy test` then reported
- * as absent — the worst kind of wrong answer, because it reads as "you are not
- * governed" about a machine that is.
+ * The rule file actually on disk, whichever format it is in, because defaulting to one
+ * extension reports rules `protect` wrote as absent.
  */
 export function resolvePolicyFile(
   explicit?: string,
@@ -23,12 +24,9 @@ export function resolvePolicyFile(
 }
 
 /**
- * Every rule file actually in force here: the registry names each repository on the
- * disk, and the file in this directory joins it whether or not it was ever registered.
- *
- * Shared rather than repeated, because `check` read the registry and `explain` read one
- * file, so the same machine answered "nothing here would stop it" to one command and
- * named a rule to the other.
+ * Every rule file in force: the registry names each repository on the disk, and the file
+ * in this directory joins it whether or not it was registered. Shared so two commands
+ * never answer differently about one machine.
  */
 export async function policyFilesInForce(
   homeDir: string,
@@ -45,12 +43,8 @@ export async function policyFilesInForce(
 }
 
 /**
- * The rules in force, loaded file by file so one stale file never blanks the rest.
- *
- * `LocalGate.fromFiles` throws on the first bad document, which is right for a single
- * named file and wrong for the whole machine: one repository with an old effect
- * spelling took `explain` and `policy test` down with it and answered a question about
- * this directory by refusing.
+ * The rules in force, loaded file by file so one stale file never blanks the rest, where
+ * `LocalGate.fromFiles` would throw on the first bad document.
  */
 export async function policySetInForce(
   homeDir: string,
@@ -59,14 +53,21 @@ export async function policySetInForce(
   return loadPolicySet(await policyFilesInForce(homeDir, explicit));
 }
 
-/**
- * What did not load, said out loud: a missing rule must never be a silent one.
- *
- * On the caller's own rail rather than loose beside it, because this is a thing
- * that happened during the run it interrupts, and a reader meeting it off the
- * rail reads it as a second command having spoken.
- */
-export function sayWhatDidNotLoad(context: CliContext, set: PolicySet): void {
+/** The files the registry names, or none when it is unreadable, for readers that only report. */
+export async function readRegisteredFiles(homeDir: string): Promise<string[]> {
+  try {
+    return await readPolicyRegistry(policyRegistryPath(homeDir));
+  } catch {
+    // No registry yet is the ordinary first run, and no rules is the true answer.
+    return [];
+  }
+}
+
+/** What did not load, said out loud on the caller's own rail: a missing rule must never be silent. */
+export function renderWhatDidNotLoad(
+  context: CliContext,
+  set: Pick<PolicySet, 'unreadable'>,
+): void {
   if (set.unreadable.length === 0) return;
   context.flow.list(
     'Not in force',
@@ -74,8 +75,8 @@ export function sayWhatDidNotLoad(context: CliContext, set: PolicySet): void {
       tone: TONE.WARN,
       text: `${broken.file} would not load, so its rules are not in force`,
       detail: [
-        `${broken.issues.length} problem${broken.issues.length === 1 ? '' : 's'}`,
-        `fix them with "memnox policy check --fix ${broken.file}"`,
+        describeCount(broken.issues.length, 'problem'),
+        `see them with "memnox policy check ${broken.file}"`,
       ],
     })),
   );

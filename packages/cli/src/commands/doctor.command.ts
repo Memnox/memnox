@@ -1,3 +1,8 @@
+/**
+ * `memnox doctor`: what on this machine is risky, whether Memnox is wired to anything,
+ * and whether the seams actually refuse. `--prove` wins over `--wiring` when both are passed.
+ */
+
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Command } from 'commander';
@@ -17,6 +22,7 @@ import {
   runDoctor,
   PolicyEngine,
   DECISION_EFFECT,
+  EXIT,
   type GovernedBy,
   summarizeHealth,
   withToolsFrom,
@@ -25,32 +31,70 @@ import {
   type HealthCheck,
   type MachineReader,
   type SnapshotStore,
+  type SeamProof,
+  type DoctorReport,
+  type Surface,
+  ACTION,
+  agentNameIn,
 } from '@memnox/core';
-import { policySetInForce } from '../policy-path';
 import type { CliContext } from '../cli-context';
-import { TONE } from '../flow';
-import { gatherHealth } from '../health-probe';
+import { describeCount } from '../plural';
+import { TONE, type Tone } from '../flow';
+import { policySetInForce } from '../policy-path';
+import { readHealth } from '../health-probe';
 import { proveEnforcement, type ProbeContext } from '../verify/enforcement';
 import { renderEnforcement } from '../verify/enforcement-report';
-import type { SeamProof } from '@memnox/core';
 
 const SEVERITY_WIDTH = 10;
+const CHECK_WIDTH = 14;
+// The action a credential finding is about, spelled the way `denyReadStep` writes it.
+const FILESYSTEM_READ = ACTION.FILESYSTEM_READ;
+// Asked for no agent in particular, because the finding is that any of them can read it.
+const ANY_AGENT = 'any-agent';
 
-/**
- * Each finding names the agent, the resource, the evidence and the one change that
- * closes it. No estimated loss, ever, and no rank against anybody else's machine.
- */
+/** The seams `doctor` reads the machine through, each replaceable in a test. */
+interface DoctorSeams {
+  buildReader: () => MachineReader;
+  cwd: () => string;
+  home: () => string;
+  now: () => Date;
+  buildSnapshots: () => SnapshotStore;
+  buildFindings: () => FindingsStore;
+  probe: (ctx: ProbeContext) => Promise<SeamProof[]>;
+}
+
+interface DoctorDeps extends DoctorSeams {
+  context: CliContext;
+}
+
+interface DoctorOptions {
+  json?: boolean;
+  byAgent?: boolean;
+  wiring?: boolean;
+  prove?: boolean;
+}
+
+function defaultSeams(given: Partial<DoctorSeams>): DoctorSeams {
+  const home = given.home ?? homedir;
+  return {
+    buildReader: () => new NodeMachineReader(home()),
+    cwd: () => process.cwd(),
+    home,
+    now: () => new Date(),
+    buildSnapshots: () => new NodeSnapshotStore(join(home(), MEMNOX_HOME)),
+    buildFindings: () => new NodeFindingsStore(join(home(), MEMNOX_HOME)),
+    probe: proveEnforcement,
+    ...given,
+  };
+}
+
+/** What on this machine is risky, whether Memnox is wired to anything, and whether the seams refuse. */
 export function registerDoctorCommand(
   program: Command,
   context: CliContext,
-  buildReader: () => MachineReader = () => new NodeMachineReader(homedir()),
-  cwd: () => string = () => process.cwd(),
-  buildSnapshots: () => SnapshotStore = () =>
-    new NodeSnapshotStore(join(homedir(), MEMNOX_HOME)),
-  buildFindings: () => FindingsStore = () =>
-    new NodeFindingsStore(join(homedir(), MEMNOX_HOME)),
-  probe: (ctx: ProbeContext) => Promise<SeamProof[]> = proveEnforcement,
+  seams: Partial<DoctorSeams> = {},
 ): void {
+  const deps: DoctorDeps = { context, ...defaultSeams(seams) };
   program
     .command('doctor')
     .description(
@@ -69,124 +113,143 @@ export function registerDoctorCommand(
       '--prove',
       'ask every seam to refuse something, and report what actually came back',
     )
-    .action(
-      async (options: {
-        json?: boolean;
-        byAgent?: boolean;
-        wiring?: boolean;
-        prove?: boolean;
-      }) => {
-        const { flow, style } = context;
-        if (options.json !== true) flow.open('memnox doctor');
+    .action(async (options: DoctorOptions) => runDoctorCommand(deps, options));
+}
 
-        /* Before --wiring, because somebody who passed both wants the stronger
-         answer: what was configured matters less than what happened. */
-        if (options.prove === true) {
-          await renderEnforcement(context, await probe({ home: homedir(), dir: cwd() }));
-          return;
-        }
-        if (options.wiring === true) {
-          const checks = checkInstallation(await gatherHealth(homedir(), cwd()));
-          if (options.json === true) {
-            context.out.json({ ...summarizeHealth(checks), checks });
-            return;
-          }
-          renderWiring(context, checks);
-          return;
-        }
-        const reader: MachineReader = buildReader();
-        // The same ground `memnox` covers: a finding it showed and doctor cannot
-        // rank is a credential the reader was told about and never offered a fix for.
-        const discovered = await discover(reader, {
-          now: new Date().toISOString(),
-          projectDirs: [cwd()],
-        });
-        /* Doctor never starts an MCP server, so the tools come from the last scan that
-         did. Without them every tool-shaped finding here is unreachable however true
-         it is, and the reader is told about a credential with no fix beside it. */
-        const surfaces = withToolsFrom(
-          discovered.surfaces,
-          lastProbed(await buildSnapshots().history()),
-        );
-        /* What the rules already close, asked of the engine rather than decided
-           here: a rule may name a directory and cover a key it never mentions,
-           and a second matcher would drift from the one the gate uses. */
-        const report = runDoctor({
-          resources: discovered.resources,
-          reachability: discovered.reachability,
-          surfaces,
-          governedBy: await deniesReadsOf(homedir()),
-          // From the hydrated surfaces, not the unprobed scan, or this is always empty.
-          chains: chainsFor(
-            discovered.agents.map((agent) => agent.id),
-            surfaces,
-          ),
-        });
+/**
+ * Three questions behind one command: does a seam actually refuse, is Memnox wired to
+ * anything, and what on this machine is reachable that should not be.
+ */
+async function runDoctorCommand(deps: DoctorDeps, options: DoctorOptions): Promise<void> {
+  const { context } = deps;
+  if (options.json !== true) context.flow.open('memnox doctor');
+  // Before --wiring, because what actually happened matters more than what was configured.
+  if (options.prove === true) {
+    const proofs = await deps.probe({
+      home: deps.home(),
+      dir: deps.cwd(),
+      env: process.env,
+    });
+    const status = renderEnforcement(context, proofs);
+    if (status !== EXIT.OK) process.exitCode = status;
+    return;
+  }
+  if (options.wiring === true) return runWiring(deps, options.json === true);
+  return runFindings(deps, options);
+}
 
-        /* Kept so the sync pass can send it. Printing was the whole of what this
-         command did with a finding, which left the fleet page empty on every
-         deployment while every laptop knew exactly what was wrong with it.
+/** Whether the seams are installed, which is a different question from whether they bite. */
+async function runWiring(deps: DoctorDeps, asJson: boolean): Promise<void> {
+  const checks = checkInstallation(await readHealth(deps.home(), deps.cwd()));
+  if (asJson) {
+    deps.context.out.json({ ...summarizeHealth(checks), checks });
+    return;
+  }
+  renderWiring(deps.context, checks);
+}
 
-         Best effort: a machine that cannot write this still shows its report.
-         The scan is what the reader asked for; reporting it onward is not. */
-        try {
-          await buildFindings().keep({
-            takenAt: new Date().toISOString(),
-            findings: report.findings,
-          });
-        } catch (err) {
-          flow.aside(style.dim(`findings not kept for sync: ${String(err)}`));
-        }
+/** What is reachable on this machine that should not be, and what closes each. */
+async function runFindings(deps: DoctorDeps, options: DoctorOptions): Promise<void> {
+  const { context } = deps;
+  const { report, surfaces } = await diagnose(deps);
+  await keepForSync(deps, report.findings);
+  const standings = rankAgents(report.findings, surfaces);
+  if (options.json === true) {
+    context.out.json({ ...report, agents: standings });
+    return;
+  }
+  if (options.byAgent === true) {
+    renderByAgent(context, standings);
+    return;
+  }
+  renderFindings(context, report);
+}
 
-        const standings = rankAgents(report.findings, surfaces);
+/** The same ground bare `memnox` covers, so every finding it showed is one doctor can rank. */
+async function diagnose(
+  deps: DoctorDeps,
+): Promise<{ report: DoctorReport; surfaces: Surface[] }> {
+  const discovered = await discover(deps.buildReader(), {
+    now: deps.now().toISOString(),
+    projectDirs: [deps.cwd()],
+  });
+  // Doctor never starts an MCP server, so the tools come from the last scan that did.
+  const surfaces = withToolsFrom(
+    discovered.surfaces,
+    lastProbed(await deps.buildSnapshots().history()),
+  );
+  const report = runDoctor({
+    resources: discovered.resources,
+    reachability: discovered.reachability,
+    surfaces,
+    // Asked of the engine, so a rule naming a directory closes the keys inside it.
+    governedBy: await deniesReadsOf(deps.home()),
+    // From the hydrated surfaces rather than the unprobed scan, or this is always empty.
+    chains: chainsFor(
+      discovered.agents.map((agent) => agent.id),
+      surfaces,
+    ),
+  });
+  return { report, surfaces };
+}
 
-        if (options.json === true) {
-          context.out.json({ ...report, agents: standings });
-          return;
-        }
-
-        if (options.byAgent === true) {
-          renderByAgent(context, standings);
-          return;
-        }
-        if (report.findings.length === 0) {
-          flow.close('Nothing on this machine is reachable that should not be.');
-          return;
-        }
-
-        flow.list(
-          'What is reachable that should not be',
-          report.findings.map((finding) => ({
-            tone: finding.severity === RISK_LEVEL.LOW ? TONE.DIM : TONE.WARN,
-            text: `${severity(style, finding)}${finding.title}`,
-            detail: [
-              /* Skipped when it is the path the title just gave: a resource with
-                 nothing else naming it carries itself as its own evidence, and
-                 printing it twice reads as two facts about one file. */
-              finding.title.includes(finding.evidence) ? undefined : finding.evidence,
-              finding.remediation === undefined
-                ? undefined
-                : `fix: ${finding.remediation.description}`,
-            ],
-          })),
-        );
-
-        // Counts, never a total: a number nobody can argue with is a number nobody acts on.
-        const { counts } = report;
-        flow.close(
-          `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ${counts.low} low.`,
-        );
-        flow.hint('Nothing here compares this machine to another.');
-        if (report.findings.some((finding) => finding.remediation !== undefined)) {
-          flow.hint('Close what has a change behind it with "memnox protect".');
-        }
-      },
+/**
+ * Kept so the sync pass can send it, and best effort: the scan is what the reader asked
+ * for, and a machine that cannot write this still shows its report.
+ */
+async function keepForSync(
+  deps: DoctorDeps,
+  findings: readonly Finding[],
+): Promise<void> {
+  try {
+    await deps.buildFindings().keep({
+      takenAt: deps.now().toISOString(),
+      findings: [...findings],
+    });
+  } catch (err) {
+    deps.context.flow.aside(
+      deps.context.style.dim(`findings not kept for sync: ${String(err)}`),
     );
+  }
+}
+
+/** The findings themselves, with the fix beside each one that has one. */
+function renderFindings(context: CliContext, report: DoctorReport): void {
+  const { flow, style } = context;
+  if (report.findings.length === 0) {
+    flow.close('Nothing on this machine is reachable that should not be.');
+    return;
+  }
+
+  flow.list(
+    'What is reachable that should not be',
+    report.findings.map((finding) => ({
+      tone: finding.severity === RISK_LEVEL.LOW ? TONE.DIM : TONE.WARN,
+      text: `${severity(style, finding)}${finding.title}`,
+      detail: [
+        // Skipped when the title already names it, or one file reads as two facts.
+        finding.title.includes(finding.evidence) ? undefined : finding.evidence,
+        finding.remediation === undefined
+          ? undefined
+          : `fix: ${finding.remediation.description}`,
+      ],
+    })),
+  );
+
+  // Counts, never a total: a number nobody can argue with is a number nobody acts on.
+  const { counts } = report;
+  flow.close(
+    `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ${counts.low} low.`,
+  );
+  flow.hint('Nothing here compares this machine to another.');
+  if (report.findings.some((finding) => finding.remediation !== undefined)) {
+    flow.hint('Close what has a change behind it with "memnox protect".');
+  }
 }
 
 /**
  * Five agents installed on five different days, put side by side. Ranked by what is
- * configured here — never a safety rating of the products, which would be a claim
+ * configured here, and never a safety rating of the products, which would be a claim
  * about software nobody tested.
  */
 function renderByAgent(context: CliContext, standings: readonly AgentStanding[]): void {
@@ -201,7 +264,7 @@ function renderByAgent(context: CliContext, standings: readonly AgentStanding[])
     'On this machine',
     standings.map((standing) => ({
       tone: standing.findings === 0 ? TONE.DIM : TONE.WARN,
-      text: `${standing.agentId.replace('agt_', '')}  ${standing.findings} finding${standing.findings === 1 ? '' : 's'}`,
+      text: `${agentNameIn(standing.agentId)}  ${describeCount(standing.findings, 'finding')}`,
       detail: [
         standing.externalWriteTools > 0
           ? `${standing.externalWriteTools} tool(s) change external state`
@@ -217,16 +280,13 @@ function renderByAgent(context: CliContext, standings: readonly AgentStanding[])
   flow.hint('rating of software nobody in this room has tested.');
 }
 
-/* Padded before it is styled: an escape sequence has a width nobody can see and
-   `padEnd` can, so colouring first left every title flush against its severity. */
+// Padded before it is styled, because `padEnd` counts the invisible escape sequence.
 function severity(style: CliContext['style'], finding: Finding): string {
   return style.risk(
     finding.severity,
     finding.severity.toUpperCase().padEnd(SEVERITY_WIDTH),
   );
 }
-
-const CHECK_WIDTH = 14;
 
 /**
  * Installed and governing nothing is the state this exists to catch. Every line says
@@ -239,12 +299,7 @@ function renderWiring(context: CliContext, checks: readonly HealthCheck[]): void
   flow.list(
     'What is actually gating',
     checks.map((check) => ({
-      tone:
-        check.state === CHECK.OK
-          ? TONE.OK
-          : check.state === CHECK.INERT
-            ? TONE.DIM
-            : TONE.WARN,
+      tone: toneOf(check),
       text: `${check.name.padEnd(CHECK_WIDTH)}${check.detail}`,
       detail: [
         check.fix === undefined || check.state === CHECK.OK
@@ -261,17 +316,15 @@ function renderWiring(context: CliContext, checks: readonly HealthCheck[]): void
   }
 }
 
+function toneOf(check: HealthCheck): Tone {
+  if (check.state === CHECK.OK) return TONE.OK;
+  if (check.state === CHECK.INERT) return TONE.DIM;
+  return TONE.WARN;
+}
+
 /**
- * Whether a rule in force already denies reading a path, and which rule does.
- *
- * The whole reason `memnox doctor` can now say "you have closed this": before it,
- * applying every fix the doctor proposed changed nothing about what the doctor
- * said next, so the reader had no way to tell a closed finding from an open one.
- *
- * A machine with no rules yet answers nothing for every path, which is correct
- * rather than a failure: nothing is governed because nothing has been written.
- * A rule set that will not load answers nothing too, and the finding stays at its
- * full severity, which is the direction to be wrong in.
+ * Which rule in force already denies reading a path, so a closed finding reads as closed.
+ * No rules, or rules that will not load, answer nothing and the finding keeps its severity.
  */
 async function deniesReadsOf(home: string): Promise<GovernedBy> {
   let engine: PolicyEngine;
@@ -291,10 +344,3 @@ async function deniesReadsOf(home: string): Promise<GovernedBy> {
     return verdict.rule?.name ?? verdict.matchedPolicies[0]?.name;
   };
 }
-
-/* The action a credential finding is about, spelled the way `denyReadStep` writes
-   it, so the question asked here is the one the rule answers. */
-const FILESYSTEM_READ = 'filesystem.read';
-/* Asked for no agent in particular: the finding is that *any* of them can read it,
-   and a rule naming one agent does not close it for the rest. */
-const ANY_AGENT = 'any-agent';

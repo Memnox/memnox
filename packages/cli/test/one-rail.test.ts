@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,9 @@ import { describe, expect, it } from 'vitest';
  *
  * Read off the source rather than by running each command, since a command that
  * returns early on this machine would otherwise read as one that draws nothing.
+ *
+ * A command split into `commands/<name>/` is read together with that directory, so
+ * moving a handler out of the registration file cannot move it out of this check.
  */
 
 const COMMANDS = join(import.meta.dirname, '..', 'src', 'commands');
@@ -46,19 +49,28 @@ const PAYLOADS: Readonly<Record<string, number>> = {
 
 const sources = readdirSync(COMMANDS).filter((name) => name.endsWith('.command.ts'));
 
+/** A command's own file plus the directory it delegates to, as one string. */
+function sourceOf(name: string): string {
+  const own = readFileSync(join(COMMANDS, name), 'utf8');
+  const split = join(COMMANDS, name.replace('.command.ts', ''));
+  if (!existsSync(split)) return own;
+  const parts = readdirSync(split)
+    .filter((each) => each.endsWith('.ts'))
+    .map((each) => readFileSync(join(split, each), 'utf8'));
+  return [own, ...parts].join('\n');
+}
+
 describe('one rail, and every command on it', () => {
   it('finds the commands to check', () => {
     expect(sources.length).toBeGreaterThan(25);
   });
 
   it.each(sources)('%s draws on the rail', (name) => {
-    const source = readFileSync(join(COMMANDS, name), 'utf8');
-
-    expect(source).toContain('flow');
+    expect(sourceOf(name)).toContain('flow');
   });
 
   it.each(sources)('%s prints only the payload it declared', (name) => {
-    const source = readFileSync(join(COMMANDS, name), 'utf8');
+    const source = sourceOf(name);
     /* `json()` is the machine answer every command may give and the one case
        that deliberately bypasses the rail, so it is not a payload line. */
     const direct = source

@@ -1,4 +1,11 @@
-import { ENFORCEMENT_MODE, isEnforcementMode, type EnvironmentModes } from '@memnox/core';
+import {
+  ENFORCEMENT_MODE,
+  isEnforcementMode,
+  type EnforcementMode,
+  type EnvironmentModes,
+} from '@memnox/core';
+
+/** `--enforcement dev=observe,prod=enforce`, parsed. */
 
 const PAIR_SEPARATOR = ',';
 const KEY_SEPARATOR = '=';
@@ -21,22 +28,12 @@ export function parseEnforcement(spec: string): EnvironmentModes {
     const pair = rawPair.trim();
     if (pair.length === 0) continue;
 
-    const index = pair.indexOf(KEY_SEPARATOR);
-    if (index === -1) {
-      throw new Error(`--enforcement "${pair}" must be <environment>=<mode> (${MODES})`);
-    }
-    const key = pair.slice(0, index).trim();
-    const mode = pair.slice(index + 1).trim();
-    if (key.length === 0)
-      throw new Error('--enforcement entry is missing an environment');
-    if (!isEnforcementMode(mode)) {
-      throw new Error(`--enforcement mode "${mode}" must be one of: ${MODES}`);
-    }
+    const { key, mode } = parsePair(pair);
     if (key === DEFAULT_KEY) {
       modes.default = mode;
       continue;
     }
-    // A repeated environment is a typo, not an override — say so rather than pick one.
+    // A repeated environment is a typo rather than an override, so say so rather than pick one.
     if (environments[key] !== undefined) {
       throw new Error(`--enforcement names "${key}" twice`);
     }
@@ -44,7 +41,22 @@ export function parseEnforcement(spec: string): EnvironmentModes {
   }
 
   if (Object.keys(environments).length > 0) {
+    // Every value was checked by isEnforcementMode in parsePair.
     modes.environments = environments as EnvironmentModes['environments'];
   }
   return modes;
+}
+
+function parsePair(pair: string): { key: string; mode: EnforcementMode } {
+  const index = pair.indexOf(KEY_SEPARATOR);
+  if (index === -1) {
+    throw new Error(`--enforcement "${pair}" must be <environment>=<mode> (${MODES})`);
+  }
+  const key = pair.slice(0, index).trim();
+  const mode = pair.slice(index + 1).trim();
+  if (key.length === 0) throw new Error('--enforcement entry is missing an environment');
+  if (!isEnforcementMode(mode)) {
+    throw new Error(`--enforcement mode "${mode}" must be one of: ${MODES}`);
+  }
+  return { key, mode };
 }

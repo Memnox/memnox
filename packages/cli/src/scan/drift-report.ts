@@ -6,21 +6,17 @@ import {
   isFailOn,
   summarizeChanges,
   type EnvironmentChange,
+  type EnvironmentSnapshot,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
 import { scanMachine, type ScanSeams } from '../machine-scan';
 
+import { describeCount } from '../plural';
+
 /**
- * Configuration drift as an event rather than a mystery.
- *
- * Part of `scan` rather than a command of its own, because it is the same scan
- * compared against the last one this machine kept: a person who has just seen
- * what can act here asks what changed next, and two commands to answer one
- * question is one of them going unrun.
- *
- * It needs no account, no network and no baseline anybody had to remember to
- * take, because every saved scan records one.
+ * Configuration drift as an event rather than a mystery. Part of `scan`, because it is the
+ * same scan compared against the last one kept, and needs no account or network.
  */
 
 interface DriftOptions {
@@ -30,6 +26,13 @@ interface DriftOptions {
   failOn?: string;
   json?: boolean;
   probe: boolean;
+}
+
+interface DriftView {
+  baselineAt: string;
+  changes: readonly EnvironmentChange[];
+  failing: readonly EnvironmentChange[];
+  failOn: string | undefined;
 }
 
 /** True when any flag asked for a comparison rather than for this moment. */
@@ -42,94 +45,100 @@ export function wantsDrift(options: DriftOptions): boolean {
   );
 }
 
+/** Renders what moved, and says whether any of it matched --fail-on so the caller can exit. */
 export async function renderDrift(
   context: CliContext,
   seams: ScanSeams,
   options: DriftOptions,
-): Promise<void> {
+): Promise<boolean> {
   if (options.failOn !== undefined && !isFailOn(options.failOn)) {
     throw new Error(
       `--fail-on takes one of: ${failOnValues().join(', ')}. Got "${options.failOn}".`,
     );
   }
   const before = await seams.snapshots.latest(options.from ?? options.since);
-  /* An explicit --to compares two kept scans; without it the later side is this
-     machine right now, which is what somebody at a terminal means by "since". */
-  const { snapshot } =
-    options.to === undefined
-      ? await scanMachine(seams, { probe: options.probe })
-      : { snapshot: await seams.snapshots.latest(options.to) };
-
+  const snapshot = await laterSnapshot(seams, options);
   if (snapshot === null) {
     throw new Error(`No scan was kept at or before ${options.to ?? 'now'}.`);
   }
-
   if (before === null) {
-    if (options.json === true) {
-      context.out.json({ changes: [], baseline: null });
-      return;
-    }
-    // A first run has nothing to compare against, and inventing one would be worse.
-    context.flow.close(
-      'No earlier scan to compare against, so this one is the baseline.',
-    );
-    context.flow.hint('Run "memnox scan --since yesterday" after something changes.');
-    return;
+    renderNoBaseline(context, options.json === true);
+    return false;
   }
 
   const changes = compareSnapshots(before, snapshot);
   const failing =
     options.failOn === undefined ? [] : changesFailing(changes, options.failOn);
-
   if (options.json === true) {
     context.out.json({ baseline: before.takenAt, changes, failing });
   } else {
-    render(context, before.takenAt, changes, failing, options.failOn);
+    render(context, {
+      baselineAt: before.takenAt,
+      changes,
+      failing,
+      failOn: options.failOn,
+    });
   }
-
-  if (failing.length > 0) process.exitCode = 1;
+  return failing.length > 0;
 }
 
-function render(
-  context: CliContext,
-  baselineAt: string,
-  changes: readonly EnvironmentChange[],
-  failing: readonly EnvironmentChange[],
-  failOn: string | undefined,
-): void {
-  const { flow, style } = context;
+/** An explicit --to compares two kept scans; without it the later side is this machine now. */
+async function laterSnapshot(
+  seams: ScanSeams,
+  options: DriftOptions,
+): Promise<EnvironmentSnapshot | null> {
+  if (options.to !== undefined) return seams.snapshots.latest(options.to);
+  const { snapshot } = await scanMachine(seams, { probe: options.probe });
+  return snapshot;
+}
 
-  if (changes.length === 0) {
-    flow.close(`Nothing moved since ${baselineAt}.`);
+function renderNoBaseline(context: CliContext, asJson: boolean): void {
+  if (asJson) {
+    context.out.json({ changes: [], baseline: null });
+    return;
+  }
+  // A first run has nothing to compare against, and inventing one would be worse.
+  context.flow.close('No earlier scan to compare against, so this one is the baseline.');
+  context.flow.hint('Run "memnox scan --since yesterday" after something changes.');
+}
+
+function render(context: CliContext, view: DriftView): void {
+  const { flow } = context;
+  if (view.changes.length === 0) {
+    flow.close(`Nothing moved since ${view.baselineAt}.`);
     return;
   }
 
   flow.list(
-    `Changes since ${baselineAt}`,
-    changes.map((change) => ({
+    `Changes since ${view.baselineAt}`,
+    view.changes.map((change) => ({
       tone: change.direction === CHANGE_DIRECTION.WIDENS ? TONE.WARN : TONE.DIM,
       text: `${change.name} «${change.subject}»  ${change.detail}`,
       detail: [change.grantedBy],
     })),
   );
-
-  if (failing.length > 0) {
+  if (view.failing.length > 0) {
     flow.list(
-      `Matched --fail-on ${failOn ?? ''}`,
-      failing.map((change) => ({
+      `Matched --fail-on ${view.failOn ?? ''}`,
+      view.failing.map((change) => ({
         tone: TONE.WARN,
         text: `${change.subject} ${change.name}: ${change.detail}`,
       })),
     );
   }
+  flow.close(describeDirection(context, view.changes));
+}
 
+function describeDirection(
+  context: CliContext,
+  changes: readonly EnvironmentChange[],
+): string {
   const { widens, narrows } = summarizeChanges(changes);
-  flow.close(
-    widens === 0
-      ? `${narrows} ${narrows === 1 ? 'change narrows' : 'changes narrow'} authority, and none widens it.`
-      : style.warn(
-          `${widens} ${widens === 1 ? 'change widens' : 'changes widen'} authority, ` +
-            `${narrows} ${narrows === 1 ? 'narrows' : 'narrow'} it.`,
-        ),
+  if (widens === 0) {
+    return `${describeCount(narrows, 'change narrows', 'changes narrow')} authority, and none widens it.`;
+  }
+  return context.style.warn(
+    `${describeCount(widens, 'change widens', 'changes widen')} authority, ` +
+      `${describeCount(narrows, 'narrows', 'narrow')} it.`,
   );
 }

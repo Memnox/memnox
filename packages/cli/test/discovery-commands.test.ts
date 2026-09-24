@@ -26,7 +26,7 @@ describe('memnox (scan)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(machine)),
+        registerScanCommand(program, context, { buildSeams: () => fakeSeams(machine) }),
       ['scan'],
     );
 
@@ -46,7 +46,7 @@ describe('memnox (scan)', () => {
     await expect(
       runCommand(
         (program, context) =>
-          registerScanCommand(program, context, () => fakeSeams(machine)),
+          registerScanCommand(program, context, { buildSeams: () => fakeSeams(machine) }),
         ['audti'],
       ),
     ).rejects.toThrow(/unknown command "audti"/);
@@ -62,7 +62,7 @@ describe('memnox (scan)', () => {
             .command('audit')
             .description('the real one')
             .action(() => undefined);
-          registerScanCommand(program, context, () => fakeSeams(machine));
+          registerScanCommand(program, context, { buildSeams: () => fakeSeams(machine) });
         },
         ['audti'],
       ),
@@ -84,7 +84,9 @@ describe('memnox (scan)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(machine, { lister })),
+        registerScanCommand(program, context, {
+          buildSeams: () => fakeSeams(machine, { lister }),
+        }),
       ['scan'],
     );
 
@@ -103,7 +105,9 @@ describe('memnox (scan)', () => {
 
     await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(machine, { lister })),
+        registerScanCommand(program, context, {
+          buildSeams: () => fakeSeams(machine, { lister }),
+        }),
       ['scan', '--no-probe'],
     );
 
@@ -123,17 +127,18 @@ describe('memnox (scan)', () => {
 
     const seen = await runCommand(
       (program, context) =>
-        registerScanCommand(
-          program,
-          context,
-          () => fakeSeams(withProject, { projectDirs: [PROJECT] }),
-          here,
-        ),
+        registerScanCommand(program, context, {
+          buildSeams: () => fakeSeams(withProject, { projectDirs: [PROJECT] }),
+          cwd: here,
+        }),
       ['scan', '--json'],
     );
     const ranked = await runCommand(
       (program, context) =>
-        registerDoctorCommand(program, context, () => withProject, here),
+        registerDoctorCommand(program, context, {
+          buildReader: () => withProject,
+          cwd: here,
+        }),
       ['doctor', '--json'],
     );
 
@@ -147,7 +152,7 @@ describe('memnox (scan)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(machine)),
+        registerScanCommand(program, context, { buildSeams: () => fakeSeams(machine) }),
       ['scan', '--json'],
     );
 
@@ -159,7 +164,7 @@ describe('memnox (scan)', () => {
 
     const { out } = await runCommand(
       (program, context) =>
-        registerScanCommand(program, context, () => fakeSeams(machine)),
+        registerScanCommand(program, context, { buildSeams: () => fakeSeams(machine) }),
       ['scan'],
     );
 
@@ -173,7 +178,8 @@ describe('memnox doctor', () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
-      (program, context) => registerDoctorCommand(program, context, () => machine),
+      (program, context) =>
+        registerDoctorCommand(program, context, { buildReader: () => machine }),
       ['doctor'],
     );
 
@@ -186,7 +192,8 @@ describe('memnox doctor', () => {
     const machine = FakeMachine.from({});
 
     const { out } = await runCommand(
-      (program, context) => registerDoctorCommand(program, context, () => machine),
+      (program, context) =>
+        registerDoctorCommand(program, context, { buildReader: () => machine }),
       ['doctor'],
     );
 
@@ -198,6 +205,7 @@ describe('memnox doctor', () => {
 
 describe('memnox protect', () => {
   const registered: string[] = [];
+  const forgotten: string[] = [];
   const seams =
     (machine: FakeMachine, snapshots = new MemorySnapshots()) =>
     () => ({
@@ -208,6 +216,9 @@ describe('memnox protect', () => {
       registerPolicy: async (path: string) => {
         registered.push(path);
       },
+      forgetPolicy: async (path: string) => {
+        forgotten.push(path);
+      },
       absolute: (path: string) => `/home/dev/.memnox/${path}`,
     });
 
@@ -215,7 +226,8 @@ describe('memnox protect', () => {
     const machine = FakeMachine.from(MACHINE);
 
     const { out } = await runCommand(
-      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      (program, context) =>
+        registerProtectCommand(program, context, { buildSeams: seams(machine) }),
       ['protect'],
     );
 
@@ -229,7 +241,8 @@ describe('memnox protect', () => {
     const machine = FakeMachine.from(MACHINE);
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerProtectCommand(program, context, seams(machine)),
+        (program, context) =>
+          registerProtectCommand(program, context, { buildSeams: seams(machine) }),
         args,
       );
 
@@ -241,6 +254,9 @@ describe('memnox protect', () => {
     const reverted = await run(['protect', '--revert']);
     expect(reverted.out.text).toContain('reverted');
     expect(machine.paths.filter((path) => path.startsWith('policies/'))).toEqual([]);
+    // A registered file that no longer exists stops every command the runtime rules on.
+    const removed = written.map((path) => `/home/dev/.memnox/${path}`);
+    expect(forgotten).toEqual(expect.arrayContaining(removed));
   });
 
   /**
@@ -255,7 +271,8 @@ describe('memnox protect', () => {
     });
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerProtectCommand(program, context, seams(machine)),
+        (program, context) =>
+          registerProtectCommand(program, context, { buildSeams: seams(machine) }),
         args,
       );
 
@@ -281,7 +298,8 @@ describe('memnox protect', () => {
     });
     const run = (args: string[]) =>
       runCommand(
-        (program, context) => registerProtectCommand(program, context, seams(machine)),
+        (program, context) =>
+          registerProtectCommand(program, context, { buildSeams: seams(machine) }),
         args,
       );
 
@@ -305,7 +323,8 @@ describe('memnox protect', () => {
     registered.length = 0;
 
     await runCommand(
-      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      (program, context) =>
+        registerProtectCommand(program, context, { buildSeams: seams(machine) }),
       ['protect', '--apply'],
     );
 
@@ -323,7 +342,8 @@ describe('memnox protect', () => {
     registered.length = 0;
 
     await runCommand(
-      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      (program, context) =>
+        registerProtectCommand(program, context, { buildSeams: seams(machine) }),
       ['protect'],
     );
 
@@ -334,7 +354,8 @@ describe('memnox protect', () => {
     const machine = FakeMachine.from({});
 
     const { out } = await runCommand(
-      (program, context) => registerProtectCommand(program, context, seams(machine)),
+      (program, context) =>
+        registerProtectCommand(program, context, { buildSeams: seams(machine) }),
       ['protect', '--revert'],
     );
 

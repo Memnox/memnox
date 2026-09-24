@@ -1,17 +1,17 @@
 import { homedir } from 'node:os';
+
 import type { Command } from 'commander';
-import type { CliContext } from '../cli-context';
+
 import { readAccount } from '@memnox/core';
+
+import type { CliContext } from '../cli-context';
 import { PULL_OUTCOME, type PullResult } from '../sync/bundle';
 import { onePass, type Pass } from '../sync/heartbeat';
 import { PUSH_OUTCOME, type PushResult } from '../sync/push';
 
 /**
- * One pass, now: pull the rules, send what happened, say this machine is alive.
- *
- * The daemon runs the same pass on its heartbeat. This command is what a person
- * reaches for when they want it immediately, or want to know why the rules look
- * older than the ones somebody just published.
+ * `memnox sync`: the daemon's heartbeat pass, now, for somebody who wants it immediately
+ * or wants to know why the rules look old.
  */
 export function registerSyncCommand(
   program: Command,
@@ -26,42 +26,52 @@ export function registerSyncCommand(
     .command('now', { isDefault: true })
     .description('Do a pass now rather than waiting for the next heartbeat')
     .option('--json', 'machine-readable output')
-    .action(async (options: { json?: boolean }) => {
-      const { flow } = context;
-      if (options.json !== true) flow.open('memnox sync');
-
-      if ((await readAccount(home())) === null) {
-        flow.close('Not logged in, so there is nothing to sync.');
-        flow.hint('Connect this machine with "memnox login".');
-        return;
-      }
-
-      const pass = await onePass(home());
-      if (options.json === true) {
-        context.out.json(pass);
-        return;
-      }
-      report(context, pass);
-    });
+    .action(async (options: SyncOptions) => runSync(context, home, options));
 }
 
-function report(context: CliContext, pass: Pass): void {
+interface SyncOptions {
+  json?: boolean;
+}
+
+/** One pass now: pull the rules, send what happened, say this machine is alive. */
+async function runSync(
+  context: CliContext,
+  home: () => string,
+  options: SyncOptions,
+): Promise<void> {
+  const { flow } = context;
+  if (options.json !== true) flow.open('memnox sync');
+
+  if ((await readAccount(home())) === null) {
+    flow.close('Not logged in, so there is nothing to sync.');
+    flow.hint('Connect this machine with "memnox login".');
+    return;
+  }
+
+  const pass = await onePass(home());
+  if (options.json === true) {
+    context.out.json(pass);
+    return;
+  }
+  renderPass(context, pass);
+}
+
+function renderPass(context: CliContext, pass: Pass): void {
   const { flow, style } = context;
   if (pass.unreachable === true) {
-    /* Not an error to report as one: a machine that cannot reach its control
-       plane carries on enforcing what it last agreed to. */
+    // Not an error: a machine that cannot reach its plane enforces what it last agreed to.
     flow.close(style.warn('Could not reach the control plane.'));
     flow.hint('The rules on disk still apply, and the next pass tries again.');
     return;
   }
-  if (pass.pull !== undefined) reportPull(context, pass.pull);
-  if (pass.push !== undefined) reportPush(context, pass.push);
-  if (pass.census !== undefined) reportCensus(context, pass.census);
+  if (pass.pull !== undefined) renderPull(context, pass.pull);
+  if (pass.push !== undefined) renderPush(context, pass.push);
+  if (pass.census !== undefined) renderCensus(context, pass.census);
   flow.close('One pass done.');
 }
 
 /** Said only when there was something to say: most passes have no new scan. */
-function reportCensus(context: CliContext, result: PushResult): void {
+function renderCensus(context: CliContext, result: PushResult): void {
   const { flow, style } = context;
   if (result.outcome === PUSH_OUTCOME.SENT) {
     flow.step('Census', `sent what ${result.sent} of this machine's capabilities are`);
@@ -75,7 +85,7 @@ function reportCensus(context: CliContext, result: PushResult): void {
   }
 }
 
-function reportPull(context: CliContext, result: PullResult): void {
+function renderPull(context: CliContext, result: PullResult): void {
   const { flow, style } = context;
   switch (result.outcome) {
     case PULL_OUTCOME.UNCHANGED:
@@ -85,8 +95,7 @@ function reportPull(context: CliContext, result: PullResult): void {
       flow.rows('Rules pulled', [
         { label: 'rules', value: String(result.rules) },
         { label: 'conditions', value: String(result.conditions) },
-        /* Omitted rather than rendered empty: a bundle row saying nothing
-           reads as a bundle with no hash, which is not a state this has. */
+        // Omitted rather than empty, because an empty row reads as a bundle with no hash.
         ...(result.hash === undefined ? [] : [{ label: 'bundle', value: result.hash }]),
       ]);
       return;
@@ -112,7 +121,7 @@ function reportPull(context: CliContext, result: PullResult): void {
   }
 }
 
-function reportPush(context: CliContext, result: PushResult): void {
+function renderPush(context: CliContext, result: PushResult): void {
   const { flow, style } = context;
   switch (result.outcome) {
     case PUSH_OUTCOME.NOTHING:

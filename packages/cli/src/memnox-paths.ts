@@ -2,16 +2,17 @@ import { join } from 'node:path';
 import { MEMNOX_HOME } from '@memnox/core';
 
 /**
- * Everything the CLI writes under `~/.memnox`, named in one place. The kernel profile
- * is why: `protect --os-guard` wrote it and `memnox run` looked for it, each spelling
- * the path itself, so renaming the file in one of them would have started every agent
- * outside the sandbox with nothing to say it had.
+ * Everything the CLI writes under `~/.memnox`, named in one place, because a path spelled
+ * at two call sites is one that will disagree with itself.
  */
 
 const GUARD_DIR = 'guard';
 const GUARD_PROFILE = 'memnox.sb';
 const TRANSCRIPT_DIR = 'transcripts';
 const BACKUP_DIR = 'backup';
+const LANDLOCK_RULESET = 'landlock.json';
+const SESSION_GUARD_DIR = 'sessions';
+const EGRESS_STATE = 'egress.json';
 
 export function guardProfilePath(home: string): string {
   return join(home, MEMNOX_HOME, GUARD_DIR, GUARD_PROFILE);
@@ -19,7 +20,27 @@ export function guardProfilePath(home: string): string {
 
 /** The Linux half of the same guard: a ruleset rather than a seatbelt profile. */
 export function landlockRulesetPath(home: string): string {
-  return join(home, MEMNOX_HOME, GUARD_DIR, 'landlock.json');
+  return join(home, MEMNOX_HOME, GUARD_DIR, LANDLOCK_RULESET);
+}
+
+/** One untrusted session's own profile or plan, removed when the session ends. */
+export function sessionGuardPath(
+  home: string,
+  sessionId: string,
+  extension: string,
+): string {
+  return join(
+    home,
+    MEMNOX_HOME,
+    GUARD_DIR,
+    SESSION_GUARD_DIR,
+    `${sessionId}.${extension}`,
+  );
+}
+
+/** Where the daemon says which port its egress proxy took, so `memnox run` can point at it. */
+export function egressStatePath(home: string): string {
+  return join(home, MEMNOX_HOME, EGRESS_STATE);
 }
 
 export function transcriptPathFor(home: string, sessionId: string): string {
@@ -32,13 +53,8 @@ export function backupPathFor(home: string, path: string): string {
 }
 
 /**
- * A path as a person would say it, with their home directory written `~`.
- *
- * For screens rather than for anything that opens a file: a column holding
- * `/Users/somebody/.claude.json` is a column where every real path wraps, and
- * the first twenty characters of every one of them are the same. Left alone
- * when the path is not under this home, because a `~` that is not the reader's
- * home is worse than the long form.
+ * A path as a person would say it, with their home written `~`, for screens rather than
+ * opening a file. Left alone outside this home, since a `~` that is not the reader's misleads.
  */
 export function underHome(path: string, home: string): string {
   if (home === '' || !path.startsWith(home)) return path;

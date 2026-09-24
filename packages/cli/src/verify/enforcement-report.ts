@@ -1,6 +1,7 @@
 import {
   describeProof,
   enforcementFailed,
+  EXIT,
   PROOF,
   summarizeProof,
   type SeamProof,
@@ -8,15 +9,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
 
-/**
- * Does anything actually refuse?
- *
- * Part of `doctor` rather than a command of its own, because it is the second
- * half of one question. `--wiring` reads the configuration and says whether the
- * seams are installed; this asks each of them to refuse something and reports
- * what came back. Somebody who has just been told they are installed is asking
- * exactly this next.
- */
+/** What `doctor --prove` found when it asked each seam to refuse something. */
 
 /** The seam column, so the state beside it lines up down the page. */
 const SEAM_WIDTH = 12;
@@ -29,19 +22,14 @@ function toneOf(state: SeamProof['state']): (typeof TONE)[keyof typeof TONE] {
 }
 
 /**
- * What each seam did when it was asked to refuse.
- *
- * `absent` never fails the command: a machine that has not installed the egress proxy
- * has declined the test rather than failed it, and going red for that teaches people
- * to stop running this. Only a seam that was in place and let the action through is
- * a failure, and it is the loudest line on the screen.
+ * What each seam did when asked to refuse, and the exit code for the caller to set:
+ * only a seam in place that let the action through fails, never an absent one.
  */
-export async function renderEnforcement(
+export function renderEnforcement(
   context: CliContext,
   proofs: readonly SeamProof[],
-): Promise<void> {
-  const { flow, style } = context;
-
+): number {
+  const { flow } = context;
   flow.list(
     'Does anything actually refuse',
     proofs.map((proof) => ({
@@ -50,22 +38,21 @@ export async function renderEnforcement(
       detail: [proof.next === undefined ? undefined : `→ ${proof.next}`],
     })),
   );
-
-  const { enforced, asked, failed } = summarizeProof(proofs);
-  if (asked === 0) {
-    flow.close('Nothing was in place to ask, so nothing was proved.');
-  } else {
-    flow.close(
-      failed === 0
-        ? style.ok(`${enforced} of ${asked} seam(s) asked to refuse did.`)
-        : style.warn(
-            `${failed} of ${asked} seam(s) were in place and let the action through.`,
-          ),
-    );
-  }
-  // Read config; this ran one. Both, because they answer different questions.
+  flow.close(describeVerdict(context, proofs));
+  // Both, because reading the configuration and attempting the action answer different questions.
   flow.hint(
     '"memnox doctor --wiring" reads the configuration; this attempted the action.',
   );
-  if (enforcementFailed(proofs)) process.exitCode = 1;
+  return enforcementFailed(proofs) ? EXIT.FAILED : EXIT.OK;
+}
+
+function describeVerdict(context: CliContext, proofs: readonly SeamProof[]): string {
+  const { style } = context;
+  const { enforced, asked, failed } = summarizeProof(proofs);
+  if (asked === 0) return 'Nothing was in place to ask, so nothing was proved.';
+  if (failed === 0)
+    return style.ok(`${enforced} of ${asked} seam(s) asked to refuse did.`);
+  return style.warn(
+    `${failed} of ${asked} seam(s) were in place and let the action through.`,
+  );
 }

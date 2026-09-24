@@ -1,11 +1,16 @@
 import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
+
 import {
   CONFIG_FORMAT,
   configPathFor,
   formatOf,
+  JSON_SERVER_KEYS,
+  LEDGER_SCAN_LIMIT,
   MCP_CONFIG_LOCATIONS,
+  MEMNOX_HOME,
+  POLICY_REGISTRY_FILE,
   PROXY_BINARY,
   readPolicyRegistry,
   readTextServers,
@@ -13,6 +18,7 @@ import {
   interceptedBinaries,
   loadOrCreateConfig,
   loadPoliciesFromFile,
+  loadPolicySet,
   type Policy,
   socketPathFor,
   LeaseRegistry,
@@ -20,7 +26,6 @@ import {
   readBudgets,
   SessionPauses,
   spendReport,
-  SqliteEventStore,
   type MemnoxEvent,
   readAccount,
   type HealthFacts,
@@ -32,14 +37,45 @@ import {
   realPath,
   resolveReal,
 } from '@memnox/interceptors';
+
+import { describeError } from './cli-errors';
 import { serviceState } from './daemon/service';
+import { withEvents } from './event-store';
 import { POLICY_FILES } from './policy-path';
 import { policyRegistryPath } from './policy-registry';
 
-/** The rule files somebody might have, newest format first. */
-const RULE_FILES = POLICY_FILES;
-/** The Memnox home, as every other path here spells it. */
-const MEMNOX_HOME = '.memnox';
+/** Reads the machine once for `doctor`, so every health check downstream stays a pure function. */
+
+/** A liveness ping, so `doctor` never waits on a daemon that is not answering. */
+const DAEMON_PING_MS = 300;
+
+/** What a rule file is written as; anything else in the policies directory is not one. */
+const RULE_SUFFIXES = ['.yaml', '.yml', '.toml', '.json'];
+const POLICIES_DIR = 'policies';
+
+type RuleFacts = Pick<
+  HealthFacts,
+  'rulesPath' | 'rulesError' | 'ruleCount' | 'policyVersion'
+>;
+type LedgerFacts = Pick<HealthFacts, 'ledgerEvents' | 'wouldHaveStopped' | 'ledgerError'>;
+type HoldFacts = Pick<
+  HealthFacts,
+  'pausedSessions' | 'waitingApprovals' | 'heldLeases' | 'spentBudgets'
+>;
+type InterceptorFacts = Pick<
+  HealthFacts,
+  | 'interceptorsInstalled'
+  | 'interceptorsExpected'
+  | 'interceptorDirFirstOnPath'
+  | 'interceptBinaryFound'
+>;
+
+interface ProjectRules {
+  name: string;
+  path: string;
+  policies: Policy[];
+  rulesError?: string;
+}
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -51,30 +87,94 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/**
- * Both places a rule can live, because a machine governed only by the registry
- * was reported as governed by nothing.
- *
- * This walked the project's own rule files and stopped there, so every rule
- * `memnox protect --apply` writes — into `~/.memnox/policies/`, registered in
- * `policies.json`, and loaded by every seam — was invisible here. A laptop with
- * four denies actually in force was told "no rules, so every action is allowed",
- * which is the one sentence this check exists to avoid printing wrongly: it is a
- * false all-clear about the thing the product is for.
- *
- * The project file is still named where there is one, because that is the layer a
- * person edits and diffs. The registry is added to the count rather than replacing
- * it, and a file that is both is counted once.
- */
-async function rules(
-  dir: string,
+/** Reads the machine once, so every check downstream stays a pure function. */
+export async function readHealth(
   home: string,
-): Promise<
-  Pick<HealthFacts, 'rulesPath' | 'rulesError' | 'ruleCount' | 'policyVersion'>
-> {
-  const project = await projectRules(dir);
+  dir: string,
+  env: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
+): Promise<HealthFacts> {
+  const config = await loadOrCreateConfig(home);
+  // What the seams load, which is a different list from what `policy test` reads.
+  const registeredFiles = await readPolicyRegistry(policyRegistryPath(home));
+  const socket = await exists(socketPathFor(home));
+  return {
+    ...(await readHolds(home, now.toISOString())),
+    configFound: await exists(configPathFor(home)),
+    mode: config.mode,
+    ...(await readRules(dir, registeredFiles)),
+    registeredFiles,
+    unregisteredRuleFiles: await unregisteredRuleFiles(home, registeredFiles),
+    ...(await readInterceptors(home, env)),
+    ...(await proxyWiring(home, dir)),
+    daemonSocket: socket,
+    daemonAnswered: socket && (await isDaemonAnswering(home)),
+    enrolled: (await readAccount(home)) !== null,
+    daemonStartsItself: serviceState(home).installed,
+    ...(await readLedgerCounts(home)),
+  };
+}
+
+async function isDaemonAnswering(home: string): Promise<boolean> {
+  const reply = await askDaemon(home, {
+    action: 'health.ping',
+    timeoutMs: DAEMON_PING_MS,
+  });
+  return reply !== null;
+}
+
+/** The four things that stop work without a rule saying so. */
+async function readHolds(home: string, moment: string): Promise<HoldFacts> {
+  const budgets = await readBudgets(home);
+  const ledgerRows = budgets.length === 0 ? [] : await readLedger(home);
+  const pauses = await new SessionPauses(home).all();
+  return {
+    pausedSessions: pauses.filter((pause) => pause.resumedAt === undefined).length,
+    waitingApprovals: (await new PendingApprovals(home).list(moment)).length,
+    heldLeases: (await new LeaseRegistry(home).held(moment)).length,
+    spentBudgets: spendReport(budgets, { events: ledgerRows, now: moment })
+      .filter((spend) => spend.remaining === 0)
+      .map((spend) => spend.budget.name),
+  };
+}
+
+async function readLedgerCounts(home: string): Promise<LedgerFacts> {
+  try {
+    return await withEvents(home, async (store) => ({
+      ledgerEvents: await store.count(),
+      wouldHaveStopped: await store.countWithheld(),
+    }));
+  } catch (err) {
+    return {
+      ledgerEvents: null,
+      wouldHaveStopped: 0,
+      ledgerError: describeError(err),
+    };
+  }
+}
+
+/** Only opened when a budget could be spent; a doctor run must not cost a full scan. */
+async function readLedger(home: string): Promise<MemnoxEvent[]> {
+  try {
+    return await withEvents(home, (store) => store.query({ limit: LEDGER_SCAN_LIMIT }));
+  } catch {
+    // A ledger that will not open is already reported by its own check.
+    return [];
+  }
+}
+
+/**
+ * Both places a rule can live, or a machine governed only by the registry is reported as
+ * governed by nothing. The project file is named where there is one, since that is the
+ * layer a person edits, and a file that is both is counted once.
+ */
+async function readRules(
+  dir: string,
+  registeredFiles: readonly string[],
+): Promise<RuleFacts> {
+  const project = await readProjectRules(dir);
   // An unreadable project file is its own sentence and is not softened by a count.
-  if (project !== null && project.rulesError !== undefined) {
+  if (project?.rulesError !== undefined) {
     return {
       rulesPath: project.name,
       ruleCount: 0,
@@ -83,79 +183,49 @@ async function rules(
     };
   }
 
-  const registered = await registeredRules(home, project?.path);
+  const registered = await loadRegisteredRules(registeredFiles, project?.path);
   const all = [...(project?.policies ?? []), ...registered];
   if (all.length === 0) {
-    return project === null
-      ? { rulesPath: null, ruleCount: 0, policyVersion: 'none' }
-      : { rulesPath: project.name, ruleCount: 0, policyVersion: 'none' };
+    return { rulesPath: project?.name ?? null, ruleCount: 0, policyVersion: 'none' };
   }
   return {
-    rulesPath: project === null ? POLICY_REGISTRY_NAME : project.name,
+    rulesPath: project?.name ?? POLICY_REGISTRY_FILE,
     ruleCount: all.length,
     policyVersion: versionPolicySet(all).version,
   };
 }
 
 /** What a person edits and diffs, in the directory they are standing in. */
-async function projectRules(dir: string): Promise<{
-  name: string;
-  path: string;
-  policies: Policy[];
-  rulesError?: string;
-} | null> {
-  for (const name of RULE_FILES) {
+async function readProjectRules(dir: string): Promise<ProjectRules | null> {
+  for (const name of POLICY_FILES) {
     const path = join(dir, name);
     if (!(await exists(path))) continue;
     try {
       return { name, path, policies: await loadPoliciesFromFile(path) };
     } catch (err) {
       // Never reported as "no rules": that is a different sentence entirely.
-      return {
-        name,
-        path,
-        policies: [],
-        rulesError: err instanceof Error ? err.message.split('\n')[0] : String(err),
-      };
+      const rulesError = err instanceof Error ? err.message.split('\n')[0] : String(err);
+      return { name, path, policies: [], rulesError };
     }
   }
   return null;
 }
 
-/**
- * What the seams actually load, file by file.
- *
- * One unreadable entry never blanks the rest, the same rule `policySetInForce`
- * follows: a stale file in the registry is a reason to report fewer rules, not a
- * reason to report none on a machine that has them.
- */
-async function registeredRules(home: string, projectPath?: string): Promise<Policy[]> {
-  let files: string[];
-  try {
-    files = await readPolicyRegistry(policyRegistryPath(home));
-  } catch {
-    return [];
-  }
-  const found: Policy[] = [];
-  for (const file of files) {
-    // Counted once where the project file is also the registered one.
-    if (projectPath !== undefined && resolve(file) === resolve(projectPath)) continue;
-    try {
-      found.push(...(await loadPoliciesFromFile(file)));
-    } catch {
-      // Reported by `memnox policy check`; here it is simply not in force.
-    }
-  }
-  return found;
+/** What the seams load, file by file, so one unreadable entry reports fewer rules rather than none. */
+async function loadRegisteredRules(
+  files: readonly string[],
+  projectPath?: string,
+): Promise<Policy[]> {
+  // Counted once where the project file is also the registered one.
+  const others = files.filter(
+    (file) => projectPath === undefined || resolve(file) !== resolve(projectPath),
+  );
+  return (await loadPolicySet(others)).policies;
 }
 
-/** What the registry is called, for the line that says where rules came from. */
-const POLICY_REGISTRY_NAME = 'policies.json';
-
 /**
- * Counts MCP servers, and how many are already pointed at the proxy — across every
- * place one can be declared, TOML and YAML included. Reading a shorter list here is
- * how this check came to report "none routed" on a machine where most of them were.
+ * Counts MCP servers, and how many already point at the proxy, across every place one can
+ * be declared, TOML and YAML included.
  */
 async function proxyWiring(
   home: string,
@@ -165,38 +235,55 @@ async function proxyWiring(
   let wrapped = 0;
   for (const location of MCP_CONFIG_LOCATIONS) {
     const path = join(location.scope === 'home' ? home : dir, location.relative);
-    if (!(await exists(path))) continue;
-
-    let raw: string;
-    try {
-      raw = await readFile(path, 'utf8');
-    } catch {
-      continue;
-    }
-
-    const format = formatOf(path);
-    if (format !== CONFIG_FORMAT.JSON) {
-      for (const launch of Object.values(readTextServers(format, raw).servers)) {
-        servers += 1;
-        if (launch.command === PROXY_BINARY) wrapped += 1;
-      }
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const block = (parsed['mcpServers'] ?? parsed['servers']) as
-        Record<string, { command?: string }> | undefined;
-      if (block === undefined) continue;
-      for (const launch of Object.values(block)) {
-        servers += 1;
-        if (launch.command === PROXY_BINARY) wrapped += 1;
-      }
-    } catch {
-      // A config we cannot parse is one we also refuse to rewrite; skip it here too.
-      continue;
-    }
+    const launches = await readServerLaunches(path);
+    servers += launches.length;
+    wrapped += launches.filter((launch) => launch?.command === PROXY_BINARY).length;
   }
   return { mcpServers: servers, mcpWrapped: wrapped };
+}
+
+/** How each server in one config file is launched, or none where it is absent or unreadable. */
+async function readServerLaunches(path: string): Promise<{ command?: string }[]> {
+  if (!(await exists(path))) return [];
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const format = formatOf(path);
+  if (format !== CONFIG_FORMAT.JSON) {
+    return Object.values(readTextServers(format, raw).servers);
+  }
+  try {
+    // Narrowed by the key lookup below; a missing block reads as no servers.
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // Only `command` is read, and a launch without one is simply not ours.
+    const block = (parsed[JSON_SERVER_KEYS[0]] ?? parsed[JSON_SERVER_KEYS[1]]) as
+      Record<string, { command?: string }> | undefined;
+    return block === undefined ? [] : Object.values(block);
+  } catch {
+    // A config we cannot parse is one we also refuse to rewrite; skip it here too.
+    return [];
+  }
+}
+
+async function readInterceptors(
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<InterceptorFacts> {
+  const installed = await installedInterceptors(home);
+  const path = (env['PATH'] ?? '').split(delimiter);
+  return {
+    interceptorsInstalled: installed,
+    // Only what this machine has, since `protect --interceptors` wraps nothing else.
+    interceptorsExpected: presentBinaries(home, env),
+    // First wins on PATH, so anything before us means the real binary is found first.
+    interceptorDirFirstOnPath:
+      installed.length > 0 && path.indexOf(interceptorDirFor(home)) === 0,
+    interceptBinaryFound: isInterceptBinaryOn(realPath(env['PATH'] ?? '', home)),
+  };
 }
 
 async function installedInterceptors(home: string): Promise<string[]> {
@@ -208,96 +295,11 @@ async function installedInterceptors(home: string): Promise<string[]> {
   }
 }
 
-/** Reads the machine once, so every check downstream stays a pure function. */
-export async function gatherHealth(
-  home: string,
-  dir: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<HealthFacts> {
-  const config = await loadOrCreateConfig(home);
-  const installed = await installedInterceptors(home);
-  const ours = interceptorDirFor(home);
-  const path = (env['PATH'] ?? '').split(delimiter);
-
-  const socket = await exists(socketPathFor(home));
-  const answered =
-    socket && (await askDaemon(home, { action: 'health.ping', timeoutMs: 300 })) !== null;
-
-  let ledgerEvents: number | null = null;
-  let wouldHaveStopped = 0;
-  let ledgerError: string | undefined;
-  try {
-    const store = SqliteEventStore.forHome(home);
-    ledgerEvents = await store.count();
-    wouldHaveStopped = await store.countWithheld();
-    store.close();
-  } catch (err) {
-    ledgerError = err instanceof Error ? err.message : String(err);
-  }
-
-  const moment = new Date().toISOString();
-  const budgets = await readBudgets(home);
-  const ledgerRows = budgets.length === 0 ? [] : await readLedger(home);
-
-  return {
-    /* The four things that stop work without a rule saying so. Read here with
-       everything else, so every check downstream stays a pure function. */
-    pausedSessions: (await new SessionPauses(home).all()).filter(
-      (pause) => pause.resumedAt === undefined,
-    ).length,
-    waitingApprovals: (await new PendingApprovals(home).list(moment)).length,
-    heldLeases: (await new LeaseRegistry(home).held(moment)).length,
-    spentBudgets: spendReport(budgets, ledgerRows, moment)
-      .filter((spend) => spend.remaining === 0)
-      .map((spend) => spend.budget.name),
-    configFound: await exists(configPathFor(home)),
-    mode: config.mode,
-    ...(await rules(dir, home)),
-    // What the seams load, which is a different list from what `policy test` reads.
-    registeredFiles: await readPolicyRegistry(policyRegistryPath(home)),
-    unregisteredRuleFiles: await unregisteredRuleFiles(home),
-    interceptorsInstalled: installed,
-    // Only what this machine has; see the field's note on the loop that caused.
-    interceptorsExpected: presentBinaries(home, env),
-    // First wins on PATH, so anything before us means the real binary is found first.
-    interceptorDirFirstOnPath: installed.length > 0 && path.indexOf(ours) === 0,
-    interceptBinaryFound: interceptBinaryOn(realPath(env['PATH'] ?? '', home)),
-    ...(await proxyWiring(home, dir)),
-    daemonSocket: socket,
-    daemonAnswered: answered,
-    enrolled: (await readAccount(home)) !== null,
-    daemonStartsItself: serviceState(home).installed,
-    ledgerEvents,
-    wouldHaveStopped,
-    ...(ledgerError === undefined ? {} : { ledgerError }),
-  };
-}
-
-/** Only opened when a budget could be spent; a doctor run must not cost a full scan. */
-async function readLedger(home: string): Promise<MemnoxEvent[]> {
-  try {
-    const store = SqliteEventStore.forHome(home);
-    try {
-      return await store.query({ limit: 20_000 });
-    } finally {
-      store.close();
-    }
-  } catch {
-    // A ledger that will not open is already reported by its own check.
-    return [];
-  }
-}
-
 /**
- * Whether the binary every wrapper execs can be found on PATH.
- *
- * Walked here rather than through `resolveReal`, which refuses this one name on
- * purpose: it is the guard that stops a wrapper resolving to the interceptor and
- * spawning itself without end. Asking it about `memnox-intercept` gets `null`
- * every time, which reads as "missing" and is the wrong answer about the one
- * binary whose absence breaks all sixteen of them.
+ * Whether the binary every wrapper execs can be found on PATH. Walked here rather than
+ * through `resolveReal`, which refuses this name so a wrapper never resolves to itself.
  */
-function interceptBinaryOn(path: string): boolean {
+function isInterceptBinaryOn(path: string): boolean {
   return path
     .split(delimiter)
     .filter((entry) => entry !== '')
@@ -305,11 +307,8 @@ function interceptBinaryOn(path: string): boolean {
 }
 
 /**
- * The binaries the classifier knows *and* this machine has.
- *
- * Resolved against the real PATH with our own directory taken out, exactly as the
- * installer does it — a shim resolving to itself would report every binary present on
- * a machine that had none of them.
+ * The binaries the classifier knows and this machine has, resolved against the real PATH
+ * with our own directory removed, or a shim resolving to itself reports them all present.
  */
 function presentBinaries(home: string, env: NodeJS.ProcessEnv): string[] {
   const path = realPath(env['PATH'] ?? '', home);
@@ -319,17 +318,13 @@ function presentBinaries(home: string, env: NodeJS.ProcessEnv): string[] {
 }
 
 /**
- * Rule files in the policies directory that the registry does not name.
- *
- * `policies.json` is what the seams read, so a file dropped beside the ones
- * `memnox protect` wrote is loaded by nothing and says nothing about it. The
- * person who hand-wrote a rule has every reason to believe it is in force.
- *
- * Listed, never loaded: picking up whatever appears in a directory would let a
- * file somebody dropped there change what this machine allows, which is a
- * different and much worse thing than a rule that does nothing.
+ * Rule files in the policies directory that the registry does not name, which the seams
+ * never load. Listed and never loaded, so a dropped file cannot change what is allowed.
  */
-async function unregisteredRuleFiles(home: string): Promise<string[]> {
+async function unregisteredRuleFiles(
+  home: string,
+  registeredFiles: readonly string[],
+): Promise<string[]> {
   const dir = join(home, MEMNOX_HOME, POLICIES_DIR);
   let entries: string[];
   try {
@@ -338,20 +333,9 @@ async function unregisteredRuleFiles(home: string): Promise<string[]> {
     // No directory is no unregistered files, which is the ordinary case.
     return [];
   }
-  let registered: Set<string>;
-  try {
-    registered = new Set(
-      (await readPolicyRegistry(policyRegistryPath(home))).map((file) => resolve(file)),
-    );
-  } catch {
-    return [];
-  }
+  const registered = new Set(registeredFiles.map((file) => resolve(file)));
   return entries
     .filter((name) => RULE_SUFFIXES.some((suffix) => name.endsWith(suffix)))
     .map((name) => join(dir, name))
     .filter((path) => !registered.has(resolve(path)));
 }
-
-/** What a rule file is written as; anything else in there is not one. */
-const RULE_SUFFIXES = ['.yaml', '.yml', '.toml', '.json'];
-const POLICIES_DIR = 'policies';

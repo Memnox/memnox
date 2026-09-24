@@ -1,7 +1,7 @@
 import { reviewServers, type DiscoveryReport, type ServerReview } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 
-/** What one server declares, asks for and can reach — read before it is trusted. */
+/** What one server declares, asks for and can reach, read before it is trusted. */
 export function renderServerReview(
   context: CliContext,
   report: DiscoveryReport,

@@ -1,12 +1,10 @@
-/**
- * Every flag that names a stretch of time is read here. Five commands grew five
- * parsers with five regexes and five error sentences, so `--for 2d` was refused
- * while `--since 2d` was not, for no reason a user could see.
- */
+import { HOUR_MS, MINUTE_MS, SECOND_MS, DAY_MS } from '@memnox/core';
 
-export const DAY_MS = 86_400_000;
+/** Every flag that names a stretch of time is read here, so each accepts the same forms. */
 
-const UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: DAY_MS } as const;
+export { DAY_MS } from '@memnox/core';
+
+const UNIT_MS = { s: SECOND_MS, m: MINUTE_MS, h: HOUR_MS, d: DAY_MS } as const;
 
 type DurationUnit = keyof typeof UNIT_MS;
 
@@ -47,7 +45,7 @@ export function minutesFrom(raw: string, flag: string): number {
 
 /**
  * A point in the past. Relative first, because nobody types an ISO timestamp at a
- * terminal — but one pasted from a log still has to work.
+ * terminal, but one pasted from a log still has to work.
  */
 export function since(raw: string, now: Date, flag = '--since'): string {
   if (DURATION.test(raw.trim())) {

@@ -2,38 +2,8 @@ import type { CliOutput } from './cli-output';
 import type { Style } from './style';
 
 /**
- * A command that reports its steps as it takes them.
- *
- * One vertical rail down the left, a marker at each step, and the value under
- * its label rather than beside it — so a long path or a list of names wraps
- * into the gutter instead of pushing the next column off the screen. `setup`
- * is the shape this is for: several things happen in order, each one is worth
- * seeing, and the last one is the answer.
- *
- * **Every command draws on one of these, and only one.** A product where
- * `setup` reports on a rail and `doctor` prints a bare list is one that reads
- * as two tools sharing a binary, so the shapes a report needs are methods
- * here rather than padding hand-rolled in thirty files: a card of labelled
- * facts, a table, a list of things that are wrong. Two commands that align
- * their columns separately are two commands that align them differently.
- *
- * **Where it writes is the command's own decision, and the default is stdout.**
- * A rail that *is* the answer belongs where an answer goes, or `memnox doctor
- * > report.txt` writes an empty file. `commentary()` moves it to stderr, for
- * the handful of runs that print something a caller pipes: `login` answers
- * with a machine id, `env` with shell exports, `timeline --export` with the
- * export. `--json` bypasses it entirely, by never opening it.
- *
- * **The header is drawn on first use rather than on `open`.** A command that
- * opens a rail and then answers `--json`, or prints one bare value and
- * nothing else, must not leave a chip and a stub of gutter above it, and
- * `open` happens before the command knows which of those it is. A rail nobody
- * opened draws nothing at all, which is what makes the `--json` path a matter
- * of not opening one rather than a flag threaded through every call below.
- *
- * In plain mode the rail is dropped rather than drawn in ASCII. A vertical bar
- * on every line of a log file is noise that no reader asked for, and the labels
- * carry the structure on their own.
+ * The rail every command reports on: a marker per step and the value under its label, so
+ * a long path wraps into the gutter. The header draws on first use, so `--json` leaves nothing.
  */
 
 const RAIL = '│';
@@ -50,13 +20,7 @@ const LABEL_WIDTH = 12;
 /** Between one column and the next, so nothing ever touches. */
 const GAP = '  ';
 
-/**
- * What a row in a list is: worth doing, worth looking at, or neither.
- *
- * A marker rather than a colour alone, because a reader scanning for the
- * things that are wrong is scanning the left edge and colour does not survive
- * a paste into an issue.
- */
+/** What a row in a list is, as a marker rather than a colour, since colour does not survive a paste. */
 export const TONE = {
   /** Working as intended, or a thing that was added. */
   OK: 'ok',
@@ -93,11 +57,14 @@ export interface FlowItem {
 /** What is actually on screen: colour is a cost the column widths must not pay. */
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
 
-const seen = (text: string): number => text.replace(ANSI_PATTERN, '').length;
+function visibleWidth(text: string): number {
+  return text.replace(ANSI_PATTERN, '').length;
+}
 
 /** Padded to a visible width, so a styled cell lands in the same column as a plain one. */
-const pad = (text: string, width: number): string =>
-  `${text}${' '.repeat(Math.max(width - seen(text), 0))}`;
+function pad(text: string, width: number): string {
+  return `${text}${' '.repeat(Math.max(width - visibleWidth(text), 0))}`;
+}
 
 export class Flow {
   /** The name, once `open` has been called. Undefined means nothing draws. */
@@ -112,7 +79,7 @@ export class Flow {
     private readonly style: Style,
   ) {}
 
-  private get on(): boolean {
+  private get decorated(): boolean {
     return this.style.decorated;
   }
 
@@ -123,13 +90,7 @@ export class Flow {
     this.closed = false;
   }
 
-  /**
-   * Move this rail to stderr, for a run whose answer is something else.
-   *
-   * Called before anything is drawn, which the lazy header makes possible: a
-   * command decides it has a payload at the top of its action, and the chip
-   * has not been written to the wrong stream by then.
-   */
+  /** Move this rail to stderr, for a run whose answer is something else. Call before anything is drawn. */
   commentary(): void {
     this.toStderr = true;
   }
@@ -142,10 +103,10 @@ export class Flow {
 
   /** The gutter, styled once so every caller below draws the same one. */
   private gutter(mark: string): string {
-    return this.on ? `${this.style.dim(mark)} ` : '';
+    return this.decorated ? `${this.style.dim(mark)} ` : '';
   }
 
-  private say(mark: string, text: string): void {
+  private draw(mark: string, text: string): void {
     const name = this.name;
     if (name === undefined) return;
     if (!this.opened) {
@@ -156,64 +117,48 @@ export class Flow {
     this.write(`${this.gutter(mark)}${text}`);
   }
 
-  /**
-   * One step: what happened, and what it happened to.
-   *
-   * The value is dimmed and indented under the label because it is the part
-   * that is long — a URL, a path, twelve agent names — and the label is the
-   * part somebody scans for.
-   */
+  /** One step: the label is what somebody scans for, and the value under it is the long part. */
   step(label: string, value?: string): void {
-    this.say(STEP, this.style.bold(label));
+    this.draw(STEP, this.style.bold(label));
     if (value !== undefined && value.length > 0) {
-      this.say(RAIL, this.style.dim(value));
+      this.draw(RAIL, this.style.dim(value));
     }
-    this.say(RAIL, '');
+    this.draw(RAIL, '');
   }
 
   /** A step whose value is the point rather than the label: a code, an id. */
   value(label: string, value: string): void {
-    this.say(STEP, this.style.bold(label));
-    this.say(RAIL, this.style.accent(value));
-    this.say(RAIL, '');
+    this.draw(STEP, this.style.bold(label));
+    this.draw(RAIL, this.style.accent(value));
+    this.draw(RAIL, '');
   }
 
-  /**
-   * A grouped block, ruled off.
-   *
-   * For the one part of a run that is a *set* rather than a step — what was
-   * written where, which rules arrived — because a dozen of those as steps
-   * reads as a dozen things happening rather than one thing with a dozen parts.
-   */
+  /** A grouped block, for a set rather than a step, so a dozen parts read as one thing. */
   box(title: string, rows: readonly string[]): void {
-    if (!this.on) {
-      this.say(STEP, title);
-      for (const row of rows) this.say(RAIL, row);
-      this.say(RAIL, '');
+    if (!this.decorated) {
+      this.draw(STEP, title);
+      for (const row of rows) this.draw(RAIL, row);
+      this.draw(RAIL, '');
       return;
     }
 
     const rule = EDGE.repeat(Math.max(BOX_WIDTH - title.length - 2, 0));
-    this.say(STEP, `${this.style.bold(title)} ${this.style.dim(`${CORNER_TOP}${rule}`)}`);
-    for (const row of rows) this.say(RAIL, `  ${row}`);
-    this.say(RAIL, this.style.dim(`${CORNER_BOTTOM}${EDGE.repeat(BOX_WIDTH - 1)}`));
-    this.say(RAIL, '');
+    this.draw(
+      STEP,
+      `${this.style.bold(title)} ${this.style.dim(`${CORNER_TOP}${rule}`)}`,
+    );
+    for (const row of rows) this.draw(RAIL, `  ${row}`);
+    this.draw(RAIL, this.style.dim(`${CORNER_BOTTOM}${EDGE.repeat(BOX_WIDTH - 1)}`));
+    this.draw(RAIL, '');
   }
 
   /**
-   * A card of labelled facts: an id, a path, a time, a verdict.
-   *
-   * The padding is owned here rather than by the caller, because it is the
-   * thing every detail view in this CLI was doing separately and therefore
-   * differently: an enrolment card, a traced action and an agent's status all
-   * printed label-then-value and none of them lined up with the others. A
-   * label wider than the gutter widens the card rather than pushing its own
-   * value out of the column.
+   * A card of labelled facts, padded here rather than by each caller so every detail view
+   * lines up the same way. A label wider than the gutter widens the card.
    */
   rows(title: string, rows: readonly (FlowRow | undefined)[]): void {
     const shown = rows.filter((row): row is FlowRow => row !== undefined);
-    /* Two spaces clear of the longest label, never one: a label that lands
-       exactly on the gutter would otherwise sit flush against its own value. */
+    // Two spaces clear of the longest label, or one landing on the gutter touches its value.
     const width = Math.max(LABEL_WIDTH, ...shown.map((row) => row.label.length + 2));
     this.box(
       title,
@@ -222,14 +167,8 @@ export class Flow {
   }
 
   /**
-   * A table, headed and aligned.
-   *
-   * Columns are measured and padded on what a reader can **see**, not on what
-   * the string holds: an escape sequence has a width nobody can see and
-   * `padEnd` can, so a coloured cell padded by length leaves every column after
-   * it ragged. Doing it here rather than asking each caller to colour last is
-   * what lets a verdict, a status or a severity be styled in the cell it
-   * belongs in, which is the version of that rule every caller got wrong.
+   * A table, aligned on visible width rather than string length, because an escape
+   * sequence has a width `padEnd` counts and a reader cannot see.
    */
   table(
     title: string,
@@ -237,10 +176,12 @@ export class Flow {
     rows: readonly (readonly string[])[],
   ): void {
     const widths = headers.map((header, column) =>
-      Math.max(seen(header), ...rows.map((row) => seen(row[column] ?? ''))),
+      Math.max(
+        visibleWidth(header),
+        ...rows.map((row) => visibleWidth(row[column] ?? '')),
+      ),
     );
-    /* The last column is never padded: trailing spaces on every row are
-       invisible until somebody copies the block into a diff. */
+    // The last column is never padded, since trailing spaces surface in a pasted diff.
     const lay = (cells: readonly string[]): string =>
       cells
         .map((cell, column) =>
@@ -252,14 +193,7 @@ export class Flow {
     this.box(title, [this.style.dim(lay(headers)), ...rows.map(lay)]);
   }
 
-  /**
-   * A list of things, each with the lines under it that say why.
-   *
-   * The marker carries the meaning and the colour only reinforces it, because
-   * this is the shape a reader scans down the left edge of, whether that is
-   * what the doctor found, what a scan says arrived, or what two agents
-   * collided over, and half of them end up pasted somewhere with no colour.
-   */
+  /** A list of things with the lines under each saying why. The marker carries the meaning, not the colour. */
   list(title: string, items: readonly FlowItem[]): void {
     const lines: string[] = [];
     for (const item of items) {
@@ -281,26 +215,17 @@ export class Flow {
     return text;
   }
 
-  /**
-   * A line on the rail that is not a step: an aside, a warning, a refusal.
-   *
-   * For the things that happen *inside* a step and are worth one line. Making
-   * each of them a step of its own reads as a dozen things happening rather
-   * than one thing with a dozen parts, and printing them off the rail reads as
-   * a different command having interrupted this one.
-   */
+  /** A line on the rail that is not a step, for what happens inside one and is worth a line. */
   aside(text: string): void {
-    this.say(RAIL, `  ${text}`);
+    this.draw(RAIL, `  ${text}`);
   }
 
   /**
-   * What a question is drawn with, so a prompt sits on the rail like the rest.
-   *
-   * Readline writes its own line and cannot be handed a renderer, so it is
-   * handed the gutter instead. Empty in plain mode, where there is no rail.
+   * What a question is drawn with, so a prompt sits on the rail: readline writes its own
+   * line and takes a gutter rather than a renderer. Empty in plain mode.
    */
   get prompt(): string {
-    return this.on ? `${this.style.dim(RAIL)}   ` : '';
+    return this.decorated ? `${this.style.dim(RAIL)}   ` : '';
   }
 
   /** Whether a command opened a rail at all, so a caller can fall back to a bare line. */
@@ -309,46 +234,36 @@ export class Flow {
   }
 
   /**
-   * The end of a run that refused, said on stderr wherever the rail is drawn.
-   *
-   * Attached to the rail, because a reason printed loose under an open gutter
-   * reads as a crash rather than as the answer, and a refusal somebody can act
-   * on is the one kind of ending that most needs to read as an answer. On
-   * stderr whatever channel the rail took, because that is the half a script
-   * reads and a redirected run must still show its reason on the terminal.
+   * The end of a run that refused, attached to the rail so it reads as the answer. Always
+   * on stderr, so a redirected run still shows its reason on the terminal.
    */
   fail(text: string): void {
     const name = this.name;
     if (name === undefined) return;
     if (this.opened) {
-      this.say(RAIL, '');
+      this.draw(RAIL, '');
     } else {
-      /* Nothing was drawn before the refusal, so the header goes on stderr with
-         it. A chip on stdout above a reason on stderr leaves a stub in whatever
-         the run was redirected into and the reason nowhere near it. */
+      // Nothing was drawn yet, so the header goes to stderr with the reason rather than
+      // leaving a stub in whatever stdout was redirected into.
       this.opened = true;
       this.out.note(`${this.gutter(START)}${this.style.chip(name)}`);
       this.out.note(`${this.gutter(RAIL)}`);
     }
     this.out.note(`${this.gutter(END)}${text}`);
     this.closed = true;
-    if (this.on) this.out.note('');
+    if (this.decorated) this.out.note('');
   }
 
   /** The answer, and the end of the rail. */
   close(text: string): void {
-    this.say(END, text);
+    this.draw(END, text);
     this.closed = true;
-    if (this.on && this.name !== undefined) this.write('');
+    if (this.decorated && this.name !== undefined) this.write('');
   }
 
   /**
-   * The rail, terminated, whatever the command did.
-   *
-   * Called from one place after every action, so a command that returned early
-   * with no findings, nothing logged in, or a refusal it named, cannot leave an
-   * open gutter hanging under the last thing it said. It draws nothing where nothing was
-   * drawn, and nothing where `close` already said the answer.
+   * The rail, terminated, whatever the command did. Called after every action, so an early
+   * return cannot leave an open gutter.
    */
   end(): void {
     if (!this.opened || this.closed) return;
@@ -358,6 +273,6 @@ export class Flow {
   /** A line under the rail that is not a step: a hint, a next command. */
   hint(text: string): void {
     if (this.name === undefined) return;
-    this.write(this.on ? `  ${this.style.dim(text)}` : text);
+    this.write(this.decorated ? `  ${this.style.dim(text)}` : text);
   }
 }

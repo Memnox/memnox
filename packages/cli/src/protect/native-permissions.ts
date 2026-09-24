@@ -22,30 +22,30 @@ import {
 import type { CliContext } from '../cli-context';
 import { TONE, type FlowItem } from '../flow';
 import { resolvePolicyFile } from '../policy-path';
+import { BACKUP_SUFFIX, jsonText } from './json-config';
 
 /**
- * One target per product that publishes a permission format Memnox can write. A rule
- * compiled into the agent's own config bites even when the agent is not going through
- * us, which is the whole point; a product with no such format is not listed, because
- * inventing one would be writing a file its author never agreed to.
+ * One target per product that publishes a permission format Memnox can write, because a
+ * rule compiled into the agent's own config bites even when the agent bypasses us.
  */
+
+/** A product with no published format is not listed, since inventing one writes a file nobody agreed to. */
 interface NativeTarget {
   product: string;
   path: string;
   /** YAML is edited a line at a time; JSON is written whole. */
   text?: true;
   /** What the write did, in counts, for the line the reader sees. */
-  apply: (
-    raw: string,
-    policies: readonly Policy[],
-  ) => {
-    text: string;
-    summary: string;
-    untranslated: { policy: string; because: string }[];
-    /** Anything true about the merged file the reader would not guess from the counts. */
-    notes?: string[];
-  };
+  apply: (raw: string, policies: readonly Policy[]) => NativeWrite;
   revert: (raw: string) => string;
+}
+
+interface NativeWrite {
+  text: string;
+  summary: string;
+  untranslated: { policy: string; because: string }[];
+  /** Anything true about the merged file the reader would not guess from the counts. */
+  notes?: string[];
 }
 
 const TARGETS: readonly NativeTarget[] = [
@@ -56,12 +56,12 @@ const TARGETS: readonly NativeTarget[] = [
       const translation = toClaudeCodePermissions(policies);
       const { allow, ask, deny } = translation.permissions;
       return {
-        text: json(applyNative(JSON.parse(raw) as NativeSettings, translation)),
+        text: jsonText(applyNative(JSON.parse(raw) as NativeSettings, translation)),
         summary: `${allow.length} allow, ${ask.length} ask and ${deny.length} deny`,
         untranslated: translation.untranslated,
       };
     },
-    revert: (raw) => json(revertNative(JSON.parse(raw) as NativeSettings)),
+    revert: (raw) => jsonText(revertNative(JSON.parse(raw) as NativeSettings)),
   },
   {
     product: 'OpenClaw',
@@ -70,15 +70,13 @@ const TARGETS: readonly NativeTarget[] = [
       const translation = toOpenClawTools(policies);
       const { allow, deny } = translation.tools;
       const settings = JSON.parse(raw) as OpenClawSettings;
-      /* Their allow list is theirs, so a tool we deny is left in it rather than
-         edited out — a revert could not put back something we removed. OpenClaw
-         resolves the pair by denying, and the reader is told so instead of
-         discovering a file that appears to say two things at once. */
+      // Their allow list is theirs, so a denied tool stays in it for a revert to leave
+      // alone; OpenClaw denies when both name a tool, and the reader is told so.
       const contested = deny.filter((tool) =>
         (settings.tools?.allow ?? []).includes(tool),
       );
       return {
-        text: json(applyOpenClaw(settings, translation)),
+        text: jsonText(applyOpenClaw(settings, translation)),
         summary: `${allow.length} allowed and ${deny.length} denied tool(s)`,
         untranslated: translation.untranslated,
         notes:
@@ -89,7 +87,7 @@ const TARGETS: readonly NativeTarget[] = [
               ],
       };
     },
-    revert: (raw) => json(revertOpenClaw(JSON.parse(raw) as OpenClawSettings)),
+    revert: (raw) => jsonText(revertOpenClaw(JSON.parse(raw) as OpenClawSettings)),
   },
   {
     product: 'Hermes',
@@ -111,7 +109,7 @@ const TARGETS: readonly NativeTarget[] = [
               ],
       };
     },
-    /* Only ours: the fence says we wrote the list, and a hand-maintained one has none. */
+    // Only ours: the fence says we wrote the list, and a hand-maintained one has none.
     revert: (raw) =>
       yamlListIsManaged(raw, 'approvals', 'deny')
         ? setYamlList(raw, 'approvals', 'deny', [])
@@ -119,8 +117,9 @@ const TARGETS: readonly NativeTarget[] = [
   },
 ];
 
-function json(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
+interface PresentTarget {
+  target: NativeTarget;
+  path: string;
 }
 
 /**
@@ -132,80 +131,100 @@ export async function runNative(
   reverting: boolean,
   home: () => string = homedir,
 ): Promise<void> {
-  const present = TARGETS.map((target) => ({
-    target,
-    path: join(home(), target.path),
-  })).filter((each) => existsSync(each.path));
-
-  if (present.length === 0) {
-    throw new Error(
-      'No agent here publishes a permission file Memnox can write. Looked for:\n' +
-        TARGETS.map((each) => `  ${join(home(), each.path)}  (${each.product})`).join(
-          '\n',
-        ),
-    );
-  }
-
+  const present = presentTargets(home());
   const policies = reverting ? [] : await rulesToWrite();
-  const { flow } = context;
   const done: FlowItem[] = [];
   let written = 0;
-
-  for (const { target, path } of present) {
-    const raw = await readFile(path, 'utf8');
-    /* A JSON target is written whole, so a file we cannot parse would come back
-       without whatever we failed to understand. A text target replaces one block and
-       copies every other byte, so it has nothing to lose and needs no guard. */
-    if (target.text !== true) {
-      try {
-        JSON.parse(raw);
-      } catch {
-        done.push({
-          tone: TONE.DIM,
-          text: `${target.product} was left alone`,
-          detail: [
-            `${path} is not plain JSON, so ${target.product} is governed at the seams instead`,
-          ],
-        });
-        continue;
-      }
-    }
-    await writeFile(`${path}.memnox-backup`, raw, 'utf8');
-
-    if (reverting) {
-      await writeFile(path, target.revert(raw), 'utf8');
-      done.push({
-        tone: TONE.OK,
-        text: `Took our rules back out of ${target.product}`,
-        detail: [path],
-      });
-      written += 1;
-      continue;
-    }
-
-    const result = target.apply(raw, policies);
-    await writeFile(path, result.text, 'utf8');
-    done.push({
-      tone: TONE.OK,
-      text: `${target.product}: wrote ${result.summary}`,
-      detail: [
-        path,
-        // Anything that could not be written is named, or somebody trusts a
-        // rule that is not there.
-        ...result.untranslated.map(
-          (each) => `not written: ${each.policy}, because ${each.because}`,
-        ),
-        ...(result.notes ?? []),
-      ],
-    });
-    written += 1;
+  for (const each of present) {
+    const item = await writeTarget(each, reverting, policies);
+    done.push(item);
+    if (item.tone === TONE.OK) written += 1;
   }
-
   if (written === 0) {
     throw new Error(
       'Every permission file found was unreadable, so nothing was changed.',
     );
   }
+  renderNative(context, { done, written, reverting });
+}
+
+function presentTargets(home: string): PresentTarget[] {
+  const present = TARGETS.map((target) => ({
+    target,
+    path: join(home, target.path),
+  })).filter((each) => existsSync(each.path));
+  if (present.length === 0) {
+    throw new Error(
+      'No agent here publishes a permission file Memnox can write. Looked for:\n' +
+        TARGETS.map((each) => `  ${join(home, each.path)}  (${each.product})`).join('\n'),
+    );
+  }
+  return present;
+}
+
+/** One target written or reverted, as the line the reader sees; dim when it was left alone. */
+async function writeTarget(
+  { target, path }: PresentTarget,
+  reverting: boolean,
+  policies: readonly Policy[],
+): Promise<FlowItem> {
+  const raw = await readFile(path, 'utf8');
+  // A JSON target is written whole, so one we cannot parse would lose what we did not
+  // understand; a text target replaces one block and copies every other byte.
+  if (target.text !== true && !isJson(raw)) {
+    return {
+      tone: TONE.DIM,
+      text: `${target.product} was left alone`,
+      detail: [
+        `${path} is not plain JSON, so ${target.product} is governed at the seams instead`,
+      ],
+    };
+  }
+  await writeFile(`${path}${BACKUP_SUFFIX}`, raw, 'utf8');
+  if (reverting) {
+    await writeFile(path, target.revert(raw), 'utf8');
+    return {
+      tone: TONE.OK,
+      text: `Took our rules back out of ${target.product}`,
+      detail: [path],
+    };
+  }
+  const result = target.apply(raw, policies);
+  await writeFile(path, result.text, 'utf8');
+  return {
+    tone: TONE.OK,
+    text: `${target.product}: wrote ${result.summary}`,
+    detail: [
+      path,
+      // Anything that could not be written is named, or somebody trusts a rule that is not there.
+      ...result.untranslated.map(
+        (each) => `not written: ${each.policy}, because ${each.because}`,
+      ),
+      ...(result.notes ?? []),
+    ],
+  };
+}
+
+function isJson(raw: string): boolean {
+  try {
+    JSON.parse(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+interface NativeSummary {
+  done: readonly FlowItem[];
+  written: number;
+  reverting: boolean;
+}
+
+function renderNative(
+  context: CliContext,
+  { done, written, reverting }: NativeSummary,
+): void {
+  const { flow } = context;
   flow.list(reverting ? 'Reverted' : "Written into each agent's own file", done);
   flow.close(
     reverting

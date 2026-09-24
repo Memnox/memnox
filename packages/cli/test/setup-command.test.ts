@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '@memnox/core';
 import { registerSetupCommand } from '../src/commands/setup.command';
+import type { WiringSeams } from '../src/setup-wiring';
 import type { offboardAgent } from '../src/agents/onboard';
 import { readNames } from '../src/agents/names';
 import { readDeclined } from '../src/agents/declined';
@@ -85,6 +86,27 @@ const json = (body: unknown): Response =>
     headers: { 'content-type': 'application/json' },
   });
 
+/** Nothing real is installed: a test that loaded a service would configure the machine running it. */
+function fakeWiring(wired: string[]): WiringSeams {
+  return {
+    interceptors: async (at) => {
+      wired.push(at);
+      return { installed: ['git'], absent: [], directory: '/tmp/bin', pathLine: '' };
+    },
+    service: async () => ({
+      state: { supported: true, installed: true, path: '/tmp/svc', manager: 'launchd' },
+    }),
+    rules: async () => 5,
+    claudeHook: async () => false,
+    codexHook: async () => false,
+    cursorHook: async () => false,
+    geminiHook: async () => false,
+    windsurfHook: async () => false,
+    mcp: async () => ({ wrapped: 0, skipped: false }),
+    keep: async () => undefined,
+  };
+}
+
 describe('memnox setup', () => {
   let home: string;
 
@@ -119,8 +141,12 @@ describe('memnox setup', () => {
     interactive?: boolean;
     /** Whether the scan reached the control plane at the end of the run. */
     reported?: boolean;
-    /** Where this run is pointed, which is the plane the account holds unless said. */
-    url?: string;
+    /** Where this run is pointed, which is the plane the account holds unless said; null passes no `--url`. */
+    url?: string | null;
+    /** Extra flags, for `--yes`. */
+    flags?: string[];
+    /** Stands in for the wiring, and records that it ran. */
+    wired?: string[];
     /** What the account on disk was enrolled against, for the move between planes. */
     enrolledAt?: string;
     /** The answer to the one question that is not about an agent: whether to move. */
@@ -158,12 +184,10 @@ describe('memnox setup', () => {
       handedBack,
       ...(await runCommand(
         (program, context) =>
-          registerSetupCommand(
-            program,
-            context,
-            () => home,
-            () => seams,
-            async (_context, _home, options) => {
+          registerSetupCommand(program, context, {
+            home: () => home,
+            buildSeams: () => seams,
+            connect: async (_context, _home, options) => {
               connects.push(options.url);
               if (driven.refuseConnect === true) {
                 throw new Error(`Could not reach ${options.url}.`);
@@ -175,41 +199,100 @@ describe('memnox setup', () => {
                 mode: 'observe',
               };
             },
-            async ({ shown }) => driven.names?.[shown] ?? null,
-            /* Two questions with one seam: the fallback says which was asked,
-               because only the move between planes defaults to no. */
-            async (_question, fallback) =>
+            ask: async ({ shown }) => driven.names?.[shown] ?? null,
+            // Two questions with one seam: the fallback says which was asked,
+            // because only the move between planes defaults to no.
+            confirm: async (_question, fallback) =>
               fallback === false ? driven.move === true : driven.yes !== false,
-            () => driven.interactive !== false,
-            {},
-            async (at: string) => {
+            interactive: () => driven.interactive !== false,
+            ...(driven.wired === undefined
+              ? {}
+              : { wiringSeams: fakeWiring(driven.wired) }),
+            reportScan: async (at: string) => {
               reports.push(at);
               return driven.reported !== false;
             },
-            async (_home, _leaving, agentId) => {
+            offboard: async (_home, _leaving, agentId) => {
               handedBack.push(agentId);
               const result = driven.handBack?.(agentId) ?? {
                 outcome: 'done',
                 revoked: true,
               };
-              /* What the real one does, because the rest of the run turns on it:
-                 an agent handed back is one the loop below offers again. */
+              // What the real one does, because an agent handed back is one the loop
+              // below offers again.
               if (result.outcome === 'done') {
                 await retireRecord(home, agentId, '2026-09-12T00:00:00.000Z');
               }
               return result as Awaited<ReturnType<typeof offboardAgent>>;
             },
-          ),
-        ['setup', '--no-probe', '--no-open', '--url', driven.url ?? BASE],
+          }),
+        [
+          'setup',
+          '--no-probe',
+          '--no-open',
+          ...(driven.url === null ? [] : ['--url', driven.url ?? BASE]),
+          ...(driven.flags ?? []),
+        ],
         driven.recorder,
       )),
     };
   }
 
-  it('logs the machine in as its first step when it is not connected', async () => {
+  it('logs the machine in first when it is pointed at a control plane', async () => {
     const { connects } = await run({ connected: false, yes: false });
 
     expect(connects).toHaveLength(1);
+  });
+
+  /* Setup used to open with the device flow, so "no account, no network" was
+     true of every command but the one the site told people to run. */
+  describe('on a machine with no account', () => {
+    it('connects nothing, sends nothing, and still puts the machine under Memnox', async () => {
+      const wired: string[] = [];
+      const { connects, reports, out } = await run({
+        connected: false,
+        url: null,
+        wired,
+      });
+
+      expect(connects).toEqual([]);
+      expect(reports).toEqual([]);
+      expect(wired).toEqual([home]);
+      expect(out.text).toContain('This machine is under Memnox.');
+      expect(out.text).toContain('Nothing left this machine');
+      expect(out.text).toContain('memnox login');
+    });
+
+    it('asks once for the machine, never a name per agent', async () => {
+      const { out } = await run({ connected: false, url: null, wired: [] });
+
+      expect(out.text).not.toContain('will recognise');
+      expect(out.text).toContain('What they can reach today');
+    });
+
+    it('changes nothing when the answer is no', async () => {
+      const wired: string[] = [];
+      const { out } = await run({ connected: false, url: null, yes: false, wired });
+
+      expect(wired).toEqual([]);
+      expect(out.text).toContain('Nothing on this machine changed.');
+    });
+
+    it('wires a machine nobody is at only when told to with --yes', async () => {
+      const unasked: string[] = [];
+      await run({ connected: false, url: null, interactive: false, wired: unasked });
+      const told: string[] = [];
+      await run({
+        connected: false,
+        url: null,
+        interactive: false,
+        flags: ['--yes'],
+        wired: told,
+      });
+
+      expect(unasked).toEqual([]);
+      expect(told).toEqual([home]);
+    });
   });
 
   describe('when the run is pointed somewhere else than the credential', () => {
@@ -526,7 +609,18 @@ describe('memnox setup', () => {
 
     const text = out.text;
     expect(text).toContain('nobody can be asked');
-    expect(text).toContain('memnox agents onboard');
+    expect(text).toContain('memnox setup --yes');
     expect(await readRecord(home, 'agt_claude-code')).toBeNull();
+  });
+
+  /* An agent running setup for its person has no terminal, so the console's "hand
+     it to your agent" prompt ended on a machine that was logged in and wired nothing. */
+  it('puts every agent in under its own name when told to with --yes', async () => {
+    const wired: string[] = [];
+    await run({ interactive: false, flags: ['--yes'], wired });
+
+    const record = await readRecord(home, 'agt_claude-code');
+    expect(record?.product).toBe('Claude Code');
+    expect(wired).toEqual([home]);
   });
 });

@@ -1,16 +1,16 @@
-import { join } from 'node:path';
 import {
   loadOrCreateConfig,
   loadPolicySet,
-  readPolicyRegistry,
   versionPolicySet,
   type Policy,
   type UnreadablePolicyFile,
 } from '@memnox/core';
+import { readRegisteredFiles } from './policy-path';
 
-const CONFIG_DIR = '.memnox';
-const REGISTRY_FILE = 'policies.json';
-
+/**
+ * The two numbers the scan closes on: what can act here, and how much of it is governed.
+ * Rules are loaded rather than counted as files, so rules covering nothing count as none.
+ */
 export interface LocalCounts {
   /** The rules actually in force, so "governed" can be counted rather than guessed. */
   policies: Policy[];
@@ -22,34 +22,30 @@ export interface LocalCounts {
   approvedAgents: string[];
 }
 
-/**
- * The rules on this machine, loaded rather than counted. A file count would let the
- * scan print a reassuring "8 governed" about rules that cover none of what it just
- * listed, which is the one lie the whole screen exists to avoid.
- *
- * Loaded file by file: the registry names every repository on the disk, and one stale
- * file must not blank the rest. What did not load is carried, never swallowed.
- */
+const NO_RULES_VERSION = 'none';
+
+/** The registered rules, file by file so one stale file never blanks the rest. */
 export async function readLocalCounts(homeDir: string): Promise<LocalCounts> {
   const config = await loadOrCreateConfig(homeDir);
   const approvedAgents = config.approvedAgents;
-  const empty = { policies: [], unreadable: [], policyVersion: 'none', approvedAgents };
-
-  let files: string[];
-  try {
-    files = await readPolicyRegistry(join(homeDir, CONFIG_DIR, REGISTRY_FILE));
-  } catch {
-    // No registry yet is the ordinary first run, and no rules is the true answer.
-    return empty;
+  const files = await readRegisteredFiles(homeDir);
+  if (files.length === 0) {
+    return {
+      policies: [],
+      unreadable: [],
+      policyVersion: NO_RULES_VERSION,
+      approvedAgents,
+    };
   }
-  if (files.length === 0) return empty;
 
   const set = await loadPolicySet(files);
   return {
     policies: set.policies,
     unreadable: set.unreadable,
     policyVersion:
-      set.policies.length === 0 ? 'none' : versionPolicySet(set.policies).version,
+      set.policies.length === 0
+        ? NO_RULES_VERSION
+        : versionPolicySet(set.policies).version,
     approvedAgents,
   };
 }

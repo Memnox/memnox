@@ -32,7 +32,8 @@
     "memnox-intercept": "dist/bin/intercept.js",
     "memnox-git-credential": "dist/bin/git-credential.js",
     "memnox-egress": "dist/bin/egress.js",
-    "memnox-edit-hook": "dist/bin/edit-hook.js"
+    "memnox-edit-hook": "dist/bin/edit-hook.js",
+    "memnox-session": "dist/bin/session.js"
   },
   "engines": {
     "node": ">=22"

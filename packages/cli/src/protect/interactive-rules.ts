@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   DECISION_EFFECT,
   DOMAIN_CHOICES,
   policiesFrom,
-  POLICY_FILE_EXTENSION,
   recommendedAnswers,
   writePolicyDocumentFile,
   type DecisionEffect,
@@ -11,6 +11,9 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { registerPolicyFile } from '../policy-registry';
+import { WRITTEN_POLICY_FILE } from './merge-rules';
+
+/** The five-domain questionnaire behind `protect --interactive` and `--yes`. */
 
 /** The question, asked wherever the caller says. Injected, so tests need no terminal. */
 export type DomainAsker = (
@@ -25,20 +28,24 @@ const KEYS: Readonly<Record<string, DecisionEffect>> = {
   d: DECISION_EFFECT.DENY,
 };
 
-export const promptOnTerminal: DomainAsker = async (question, because, recommended) => {
+export async function promptOnTerminal(
+  question: string,
+  because: string,
+  recommended: DecisionEffect,
+): Promise<DecisionEffect> {
   const { createInterface } = await import('node:readline/promises');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = await rl.question(
+    const answer = await prompt.question(
       `\n  ${question}\n  ${because}\n  [a]llow  as[k]  [d]eny  (enter = ${recommended})  > `,
     );
     const key = answer.trim().toLowerCase().charAt(0);
     // Enter takes the recommendation, because that is what most people mean by it.
     return key === '' ? recommended : (KEYS[key] ?? recommended);
   } finally {
-    rl.close();
+    prompt.close();
   }
-};
+}
 
 /**
  * Five questions, then a file they can read. The output is the point: a wizard whose
@@ -65,9 +72,12 @@ export async function runInteractive(
   }
 
   const policies = policiesFrom(answers);
-  const path = `memnox.policies${POLICY_FILE_EXTENSION}`;
+  // The answers are about this machine, so one file holds them wherever setup is run:
+  // a copy per folder put the same rule in force once for every folder it was run from.
+  const home = homedir();
+  const path = join(home, WRITTEN_POLICY_FILE);
   await writePolicyDocumentFile(path, { version: 1, policies });
-  await registerPolicyFile(homedir(), path);
+  await registerPolicyFile(home, path);
 
   flow.table(
     `Written to ${path}`,

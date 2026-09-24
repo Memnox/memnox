@@ -16,22 +16,17 @@ import {
   type Boundary,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
-import { TONE } from '../flow';
-import { policySetInForce, resolvePolicyFile, sayWhatDidNotLoad } from '../policy-path';
+import { TONE, type Tone } from '../flow';
+import {
+  policySetInForce,
+  resolvePolicyFile,
+  renderWhatDidNotLoad,
+} from '../policy-path';
 
 /**
- * Can I leave this running?
- *
- * The boundary is rendered by asking the engine action by action, so what is on screen
- * is what will actually happen rather than a description of what the rules intend. A
- * screen that summarised the policy would be the one place a person trusts most and
- * the one most likely to be subtly wrong.
- *
- * Reached through `memnox next --agent`, because it answers the same question the
- * primary screen does from the other side: `next` reads the ledger for what a person
- * has already approved often enough to hand over, and this reads the rules for what
- * would happen if they did. Two commands for one decision was one of them going
- * unrun.
+ * Whether an agent can be left running, rendered by asking the engine action by action.
+ * Reached through `memnox next --agent`: `next` reads the ledger backwards for what was
+ * approved, and this reads the rules forwards for what would happen.
  */
 
 export interface BoundaryOptions {
@@ -41,6 +36,11 @@ export interface BoundaryOptions {
   role?: string;
   roles?: boolean;
 }
+
+/** Enough of a band to recognise it, and never enough to scroll. */
+const BAND_SHOWN = 12;
+
+const DEFAULT_AGENT = 'claude-code';
 
 /** True when the flags asked what an agent may do rather than what to hand over next. */
 export function wantsBoundary(options: BoundaryOptions): boolean {
@@ -53,40 +53,59 @@ export async function renderBoundary(
   context: CliContext,
   options: BoundaryOptions,
 ): Promise<void> {
-  /* Every file in force, not this directory's: a registered checkout's rules
-     govern this machine whichever directory the reader is standing in, and one
-     that will not load must not take the boundary down with it. */
+  // Every file in force rather than this directory's, and one that will not load stays out.
   const rules = await policySetInForce(homedir(), options.file);
   if (rules.policies.length === 0) {
     throw new Error(
       `No rules at ${resolvePolicyFile(options.file)}, so there is no boundary to show. Write one:  memnox protect --yes`,
     );
   }
-  sayWhatDidNotLoad(context, rules);
+  renderWhatDidNotLoad(context, rules);
 
-  const candidatesFor = (): CandidateAction[] =>
-    interceptedBinaries().flatMap((binary) => actionsForCli(binary));
-
+  const candidates = interceptedBinaries().flatMap((binary) => actionsForCli(binary));
   if (options.roles === true) {
-    await renderWorkforce(
-      context,
-      rules.policies,
-      candidatesFor(),
-      options.json === true,
-    );
+    await renderWorkforce(context, rules.policies, candidates, options.json === true);
     return;
   }
+  renderAgentBoundary(context, { policies: rules.policies, candidates, options });
+}
 
-  const name = options.agent ?? 'claude-code';
-  const gate = new LocalGate(rules.policies, {
+interface AgentBoundaryInput {
+  policies: readonly Policy[];
+  candidates: readonly CandidateAction[];
+  options: BoundaryOptions;
+}
+
+function renderAgentBoundary(context: CliContext, input: AgentBoundaryInput): void {
+  const { role, json } = input.options;
+  const name = input.options.agent ?? DEFAULT_AGENT;
+  // Evaluated as the job, so a `roles:` rule fires rather than the product's own rules.
+  const gate = new LocalGate([...input.policies], {
     agentName: name,
-    /* Evaluated as the job, so a `roles:` rule fires. Without this the screen
-       would show what the product may do and call it what the role may do. */
-    ...(options.role === undefined ? {} : { agentRole: options.role }),
+    ...(role === undefined ? {} : { agentRole: role }),
   });
-  const candidates = candidatesFor();
+  const boundary = boundaryThrough(gate, role ?? name, input.candidates);
+  const radius = blastRadiusOf(boundary, credentialsIn(boundary));
 
-  const boundary = boundaryFor(options.role ?? name, candidates, (action) => {
+  if (json === true) {
+    context.out.json({
+      boundary,
+      radius,
+      ready: readyToEnable(radius),
+      ...(role === undefined ? {} : { role }),
+    });
+    return;
+  }
+  render(context, boundary, radius, role);
+}
+
+/** Every candidate asked of the engine, so the screen is what will happen. */
+function boundaryThrough(
+  gate: LocalGate,
+  subject: string,
+  candidates: readonly CandidateAction[],
+): Boundary {
+  return boundaryFor(subject, candidates, (action) => {
     const verdict = gate.evaluate({ action });
     return {
       effect: verdict.effect,
@@ -94,18 +113,6 @@ export async function renderBoundary(
       matched: verdict.matchedPolicies.length > 0,
     };
   });
-  const radius = blastRadiusOf(boundary, credentialsIn(boundary));
-
-  if (options.json === true) {
-    context.out.json({
-      boundary,
-      radius,
-      ready: readyToEnable(radius),
-      ...(options.role === undefined ? {} : { role: options.role }),
-    });
-    return;
-  }
-  render(context, boundary, radius, options.role);
 }
 
 /** Named from the rules that fired, so nothing here opens a credential to list it. */
@@ -127,54 +134,13 @@ function render(
   role?: string,
 ): void {
   const { flow, style } = context;
-
-  band(context, 'Runs on its own', inBand(boundary, BAND.AUTOMATIC), TONE.OK);
-  band(context, 'Waits for you', inBand(boundary, BAND.NEEDS_APPROVAL), TONE.WARN);
-  band(context, 'Never', inBand(boundary, BAND.NEVER), TONE.WARN);
-
-  if (boundary.ungoverned.length > 0) {
-    /* Not filed under "runs on its own": an unruled capability is not a permitted
-       one, and putting it in the allowed band would be the screen telling a
-       comfortable lie. */
-    flow.list(`No rule at all, ${boundary.ungoverned.length} capabilities`, [
-      ...boundary.ungoverned.slice(0, BAND_SHOWN).map((action) => ({
-        tone: TONE.DIM,
-        text: action,
-      })),
-      ...(boundary.ungoverned.length > BAND_SHOWN
-        ? [
-            {
-              tone: TONE.DIM,
-              text: `and ${boundary.ungoverned.length - BAND_SHOWN} more`,
-            },
-          ]
-        : []),
-    ]);
-    flow.aside(
-      style.dim(
-        'These are not allowed or refused. Nothing has an opinion about them yet.',
-      ),
-    );
-  }
+  renderBand(context, 'Runs on its own', inBand(boundary, BAND.AUTOMATIC), TONE.OK);
+  renderBand(context, 'Waits for you', inBand(boundary, BAND.NEEDS_APPROVAL), TONE.WARN);
+  renderBand(context, 'Never', inBand(boundary, BAND.NEVER), TONE.WARN);
+  renderUngoverned(context, boundary.ungoverned);
+  renderRadius(context, radius, role);
 
   const ready = readyToEnable(radius);
-  flow.rows('If this runs unattended', [
-    { label: 'on its own', value: String(radius.automatic) },
-    { label: 'waits', value: String(radius.needsApproval) },
-    { label: 'never', value: String(radius.never) },
-    { label: 'no rule', value: String(radius.ungoverned) },
-    /* A role outlives the product holding it: a rule about "deployer" keeps
-       holding when the team swaps Claude Code for Codex, which a rule about an
-       agent cannot. */
-    ...(role === undefined
-      ? []
-      : [
-          {
-            label: 'a job',
-            value: 'not a product, so whichever agent is enrolled under it',
-          },
-        ]),
-  ]);
   flow.close(
     ready.ready
       ? style.ok(`Ready: ${ready.because}`)
@@ -187,41 +153,68 @@ function render(
   }
 }
 
-/** Enough of a band to recognise it, and never enough to scroll. */
-const BAND_SHOWN = 12;
+/** Not filed under "runs on its own": an unruled capability is not a permitted one. */
+function renderUngoverned(context: CliContext, ungoverned: readonly string[]): void {
+  if (ungoverned.length === 0) return;
+  context.flow.list(`No rule at all, ${ungoverned.length} capabilities`, [
+    ...ungoverned
+      .slice(0, BAND_SHOWN)
+      .map((action) => ({ tone: TONE.DIM, text: action })),
+    ...moreThanShown(ungoverned.length),
+  ]);
+  context.flow.aside(
+    context.style.dim(
+      'These are not allowed or refused. Nothing has an opinion about them yet.',
+    ),
+  );
+}
 
-function band(
+function renderRadius(context: CliContext, radius: BlastRadius, role?: string): void {
+  context.flow.rows('If this runs unattended', [
+    { label: 'on its own', value: String(radius.automatic) },
+    { label: 'waits', value: String(radius.needsApproval) },
+    { label: 'never', value: String(radius.never) },
+    { label: 'no rule', value: String(radius.ungoverned) },
+    // A role outlives the product holding it, so a rule about a job survives a swap.
+    ...(role === undefined
+      ? []
+      : [
+          {
+            label: 'a job',
+            value: 'not a product, so whichever agent is enrolled under it',
+          },
+        ]),
+  ]);
+}
+
+/** The line that says a band was cut short, or nothing when all of it fit. */
+function moreThanShown(total: number): { tone: Tone; text: string }[] {
+  if (total <= BAND_SHOWN) return [];
+  return [{ tone: TONE.DIM, text: `and ${total - BAND_SHOWN} more` }];
+}
+
+function renderBand(
   context: CliContext,
   title: string,
   entries: readonly { action: string; because: string }[],
-  tone: (typeof TONE)[keyof typeof TONE],
+  tone: Tone,
 ): void {
   if (entries.length === 0) return;
   context.flow.list(`${title}, ${entries.length}`, [
     ...entries.slice(0, BAND_SHOWN).map((entry) => ({ tone, text: entry.action })),
-    ...(entries.length > BAND_SHOWN
-      ? [{ tone: TONE.DIM, text: `and ${entries.length - BAND_SHOWN} more` }]
-      : []),
+    ...moreThanShown(entries.length),
   ]);
 }
 
-/**
- * Every job the rules name, and what each may do.
- *
- * The question a workforce raises is not "what may this binary do" but "who is allowed
- * to do what", and the answer has to come from asking the engine once per role rather
- * than from reading the rule file — a table that summarised the rules would be the one
- * screen people trust most and the one most likely to be subtly wrong.
- */
+/** Every job the rules name, and what each may do, asked of the engine once per role. */
 async function renderWorkforce(
   context: CliContext,
   policies: readonly Policy[],
-  candidates: CandidateAction[],
+  candidates: readonly CandidateAction[],
   asJson: boolean,
 ): Promise<void> {
-  const roles = rolesIn([...policies]);
   const { flow } = context;
-
+  const roles = rolesIn([...policies]);
   if (roles.length === 0) {
     flow.close('No rule here names a job, so there is no workforce to show.');
     flow.hint(
@@ -230,25 +223,14 @@ async function renderWorkforce(
     return;
   }
 
-  const standings = [];
-  for (const role of roles) {
+  const standings = roles.map((role) => {
     const gate = new LocalGate([...policies], { agentName: role, agentRole: role });
-    const boundary = boundaryFor(role, candidates, (action) => {
-      const verdict = gate.evaluate({ action });
-      return {
-        effect: verdict.effect,
-        reason: verdict.reason,
-        matched: verdict.matchedPolicies.length > 0,
-      };
-    });
-    standings.push(standingFor(role, boundary));
-  }
-
+    return standingFor(role, boundaryThrough(gate, role, candidates));
+  });
   if (asJson) {
     context.out.json({ roles: standings });
     return;
   }
-
   flow.table(
     'The jobs these rules name',
     ['Job', 'On its own', 'Asked', 'Never'],

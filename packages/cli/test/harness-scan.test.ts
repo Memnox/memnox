@@ -47,7 +47,7 @@ const seams = (): ReturnType<typeof fakeSeams> =>
 describe('memnox scan, with a harness on the machine', () => {
   it('says a harness is a harness, and how many principals sit behind it', async () => {
     const { out } = await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan'],
     );
 
@@ -61,7 +61,7 @@ describe('memnox scan, with a harness on the machine', () => {
 
   it('credits the filter the host already applies rather than counting past it', async () => {
     const { out } = await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan'],
     );
 
@@ -72,7 +72,7 @@ describe('memnox scan, with a harness on the machine', () => {
 
   it('names the path no single tool takes', async () => {
     const { out } = await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan'],
     );
 
@@ -86,7 +86,7 @@ describe('memnox scan, with a harness on the machine', () => {
 
   it('carries the harness and the chain through --json', async () => {
     const { out } = await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan', '--json'],
     );
     const inventory = JSON.parse(out.text) as {
@@ -108,7 +108,8 @@ describe('memnox scan, with a harness on the machine', () => {
 describe('memnox explain <harness>', () => {
   it('answers with what it runs, not with what it is', async () => {
     const { out } = await runCommand(
-      (program, context) => registerExplainCommand(program, context, seams),
+      (program, context) =>
+        registerExplainCommand(program, context, { buildSeams: seams }),
       ['explain', 'ruflo'],
     );
 
@@ -122,12 +123,13 @@ describe('memnox explain <harness>', () => {
   it('shows the chain a harness can complete, from the last saved scan', async () => {
     // Explain never starts an MCP server, so the tools have to come from a saved scan.
     await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan', '--save'],
     );
 
     const { out } = await runCommand(
-      (program, context) => registerExplainCommand(program, context, seams),
+      (program, context) =>
+        registerExplainCommand(program, context, { buildSeams: seams }),
       ['explain', 'hermes'],
     );
 
@@ -140,7 +142,8 @@ describe('memnox explain <harness>', () => {
       fakeSeams(FakeMachine.from(MACHINE), { projectDirs: [PROJECT] });
 
     const { out } = await runCommand(
-      (program, context) => registerExplainCommand(program, context, fresh),
+      (program, context) =>
+        registerExplainCommand(program, context, { buildSeams: fresh }),
       ['explain', 'hermes'],
     );
 
@@ -158,7 +161,8 @@ describe('memnox explain <agent>', () => {
     const only = (): ReturnType<typeof fakeSeams> => fakeSeams(machine);
 
     const { out } = await runCommand(
-      (program, context) => registerExplainCommand(program, context, only),
+      (program, context) =>
+        registerExplainCommand(program, context, { buildSeams: only }),
       ['explain', 'cursor'],
     );
 
@@ -185,12 +189,12 @@ describe('memnox explain <agent>', () => {
 describe('what the scan names, explain can answer', () => {
   it('answers for every name the rendered scan puts on screen', async () => {
     await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan', '--save'],
     );
 
     const { out } = await runCommand(
-      (program, context) => registerScanCommand(program, context, seams),
+      (program, context) => registerScanCommand(program, context, { buildSeams: seams }),
       ['scan'],
     );
 
@@ -210,7 +214,8 @@ describe('what the scan names, explain can answer', () => {
     for (const subject of named) {
       await expect(
         runCommand(
-          (program, context) => registerExplainCommand(program, context, seams),
+          (program, context) =>
+            registerExplainCommand(program, context, { buildSeams: seams }),
           ['explain', subject],
         ),
         `the scan names "${subject}" and explain cannot answer for it`,
@@ -220,7 +225,8 @@ describe('what the scan names, explain can answer', () => {
 
   it('says a server was not asked rather than that it holds nothing', async () => {
     const { out } = await runCommand(
-      (program, context) => registerExplainCommand(program, context, seams),
+      (program, context) =>
+        registerExplainCommand(program, context, { buildSeams: seams }),
       ['explain', 'crm'],
     );
     expect(out.text).toContain('MCP server');

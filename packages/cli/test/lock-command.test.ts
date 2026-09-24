@@ -29,12 +29,7 @@ const lock = async (args: string[], at: Date = NOW) => {
   try {
     return await runCommand(
       (program, context) =>
-        registerLockCommand(
-          program,
-          context,
-          () => home,
-          () => at,
-        ),
+        registerLockCommand(program, context, { home: () => home, now: () => at }),
       args,
     );
   } finally {

@@ -15,6 +15,8 @@ export default defineConfig({
   },
   test: {
     include: ['packages/*/test/**/*.test.ts'],
+    // A test that falls back to a default seam must land in a temp dir, never in ~/.memnox.
+    setupFiles: ['./test-setup/isolated-home.ts'],
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],

@@ -5,7 +5,7 @@ import { runCommand } from './cli-harness';
 const HOME = '/home/dev';
 const env = (args: string[]) =>
   runCommand(
-    (program, context) => registerEnvCommand(program, context, () => HOME),
+    (program, context) => registerEnvCommand(program, context, { home: () => HOME }),
     args,
   );
 

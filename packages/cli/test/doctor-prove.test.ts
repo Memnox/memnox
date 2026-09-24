@@ -18,15 +18,10 @@ const proofs = (...states: SeamProof['state'][]): SeamProof[] =>
 async function verify(given: SeamProof[]) {
   return runCommand(
     (program, context) =>
-      registerDoctorCommand(
-        program,
-        context,
-        undefined,
-        () => '/work',
-        undefined,
-        undefined,
-        async () => given,
-      ),
+      registerDoctorCommand(program, context, {
+        cwd: () => '/work',
+        probe: async () => given,
+      }),
     ['doctor', '--prove'],
   );
 }

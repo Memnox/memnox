@@ -1,23 +1,20 @@
 import { homedir } from 'node:os';
 import {
+  POLICY_FILE_EXTENSION,
   readPolicyDocumentFile,
   writePolicyDocumentFile,
   type Policy,
 } from '@memnox/core';
 import { registerPolicyFile } from '../policy-registry';
 
+/** Rules written into the policy file, replacing only the ones the writer owns by name. */
+
+/** The file every `protect` writer adds its rules to, relative to where it runs. */
+export const WRITTEN_POLICY_FILE = `memnox.policies${POLICY_FILE_EXTENSION}`;
+
 /**
- * Rules added to whatever the file already holds, replacing only the ones the
- * caller owns by name.
- *
- * Every writer here used to build the document from its own rules alone, so
- * writing a second set silently deleted the first while reporting success:
- * `protect --for gh` then `protect --for git` left a file with git in it and
- * nothing about gh, and nobody was told. Re-running for the same thing has to
- * update rather than duplicate, which is what matching on name gives.
- *
- * One function rather than one per writer, because three of them had the same
- * bug and the fourth would have had it too.
+ * Merged by name, so a second `protect --for` never deletes the first set and a re-run
+ * updates rather than duplicates.
  */
 export async function mergeRules(
   path: string,

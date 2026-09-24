@@ -1,28 +1,26 @@
+/**
+ * `memnox claims`: what the agent said it did, against what the record says, reported and
+ * never refereed. No model reads the transcript: the patterns are a checked-in table.
+ */
+
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
+
 import type { Command } from 'commander';
+
 import {
   CLAIM_VERDICT,
   checkClaims,
+  LEDGER_SESSION_LIMIT,
   type CheckedClaim,
   type EventQuery,
 } from '@memnox/core';
+
 import type { CliContext } from '../cli-context';
-import { TONE } from '../flow';
+import { TONE, type Tone } from '../flow';
 import { withEvents } from '../event-store';
 import { transcriptPathFor } from '../memnox-paths';
 
-/**
- * What the agent said it did, against what the record says it did.
- *
- * Reported, never refereed, and the vocabulary is chosen so it stays that way:
- * `unsupported` means this machine holds nothing that would have produced the claim,
- * which is very often work that happened somewhere it cannot see. Calling that a lie
- * would be an accusation built on a gap. `contradicted` is the one that matters — it
- * ran, and it failed, and somebody was told otherwise.
- *
- * No model reads the transcript. The patterns are a table, checked in and reviewable.
- */
 export function registerClaimsCommand(
   program: Command,
   context: CliContext,
@@ -33,34 +31,48 @@ export function registerClaimsCommand(
     .description('Check what an agent said against what it actually did')
     .option('--file <path>', 'read the text from here instead of the transcript')
     .option('--json', 'machine-readable output')
-    .action(
-      async (session: string | undefined, options: { file?: string; json?: boolean }) => {
-        if (options.json !== true) context.flow.open('memnox claims');
-        const text = await readText(home(), session, options.file);
-        if (text === null) {
-          throw new Error(
-            session === undefined
-              ? 'Name a session, or pass --file. A transcript needs "memnox run --transcript".'
-              : `No transcript for ${session}. Start the agent with "memnox run --transcript".`,
-          );
-        }
-
-        const filter: EventQuery = { limit: 2000 };
-        if (session !== undefined) filter.sessionId = session;
-
-        const checked = await withEvents(home(), async (store) =>
-          checkClaims(text, await store.query(filter)),
-        );
-
-        if (options.json === true) {
-          context.out.json(checked);
-          return;
-        }
-        render(context, checked);
-      },
+    .action(async (session: string | undefined, options: ClaimsOptions) =>
+      runClaims(context, home, session, options),
     );
 }
 
+interface ClaimsOptions {
+  file?: string;
+  json?: boolean;
+}
+
+/** What the agent said it did, checked against what the ledger recorded. */
+async function runClaims(
+  context: CliContext,
+  home: () => string,
+  session: string | undefined,
+  options: ClaimsOptions,
+): Promise<void> {
+  if (options.json !== true) context.flow.open('memnox claims');
+  const text = await readText(home(), session, options.file);
+  if (text === null) {
+    throw new Error(
+      session === undefined
+        ? 'Name a session, or pass --file. A transcript needs "memnox run --transcript".'
+        : `No transcript for ${session}. Start the agent with "memnox run --transcript".`,
+    );
+  }
+
+  const filter: EventQuery = { limit: LEDGER_SESSION_LIMIT };
+  if (session !== undefined) filter.sessionId = session;
+
+  const checked = await withEvents(home(), async (store) =>
+    checkClaims(text, await store.query(filter)),
+  );
+
+  if (options.json === true) {
+    context.out.json(checked);
+    return;
+  }
+  renderClaims(context, checked);
+}
+
+/** The transcript kept for a session, or the file named instead, or null when neither exists. */
 async function readText(
   home: string,
   session: string | undefined,
@@ -77,13 +89,14 @@ async function readText(
 }
 
 /** Supported, contradicted, or neither, and the vocabulary keeps the three apart. */
-function toneOf(claim: CheckedClaim): (typeof TONE)[keyof typeof TONE] {
+function toneOf(claim: CheckedClaim): Tone {
   if (claim.verdict === CLAIM_VERDICT.SUPPORTED) return TONE.OK;
   if (claim.verdict === CLAIM_VERDICT.CONTRADICTED) return TONE.WARN;
   return TONE.DIM;
 }
 
-function render(context: CliContext, checked: readonly CheckedClaim[]): void {
+/** `contradicted` is the one that matters: it ran, it failed, and somebody was told otherwise. */
+function renderClaims(context: CliContext, checked: readonly CheckedClaim[]): void {
   const { flow, style } = context;
   if (checked.length === 0) {
     flow.close('Nothing in that text reads as a claim about what was done.');
