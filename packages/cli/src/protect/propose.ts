@@ -18,7 +18,7 @@ import { readState, registerApplied, writeState, type HardenSeams } from './hard
  * finds, and propose the fixes or write them. Every step prints its undo first.
  */
 
-export interface ProposeInput {
+interface ProposeInput {
   seams: HardenSeams;
   cwd: string;
   now: string;

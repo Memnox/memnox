@@ -64,7 +64,7 @@ export async function takeTakeover(
 }
 
 /** A chore a session does at most so often, such as renewing its holds. */
-export interface Chore {
+interface Chore {
   name: string;
   sessionId: string;
   everyMs: number;

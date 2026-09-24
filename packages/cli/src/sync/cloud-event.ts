@@ -38,7 +38,7 @@ export interface CloudEvent {
 }
 
 /** A machine reporting on itself is automation unless an actor is named. */
-export type CloudEventInput = Omit<CloudEvent, 'actorType'> & { actorType?: ActorType };
+type CloudEventInput = Omit<CloudEvent, 'actorType'> & { actorType?: ActorType };
 
 export function eventOf(input: CloudEventInput): CloudEvent {
   return {

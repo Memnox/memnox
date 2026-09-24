@@ -50,7 +50,7 @@ interface Named {
   to: string;
 }
 
-export interface AskForNamesInput<T extends { id: string; kind: string }> {
+interface AskForNamesInput<T extends { id: string; kind: string }> {
   context: CliContext;
   home: string;
   agents: readonly T[];
@@ -117,7 +117,7 @@ async function askForAgentName<T extends { id: string; kind: string }>(
   return { agentId: agent.id, from: before, to: written.name };
 }
 
-export interface AskForOneNameInput {
+interface AskForOneNameInput {
   home: string;
   agent: { id: string; kind: string };
   names: AgentNames;

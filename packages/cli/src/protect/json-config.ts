@@ -16,7 +16,7 @@ export const REWRITE = {
   UNREADABLE: 'unreadable',
 } as const;
 
-export type Rewrite = (typeof REWRITE)[keyof typeof REWRITE];
+type Rewrite = (typeof REWRITE)[keyof typeof REWRITE];
 
 export const BACKUP_SUFFIX = '.memnox-backup';
 

@@ -52,7 +52,7 @@ function stampOf(at: string): string {
   return at.replace(/[:.]/g, '').replace(/-/g, '');
 }
 
-export interface OnboardBackupInput {
+interface OnboardBackupInput {
   home: string;
   agentId: string;
   configPath: string;

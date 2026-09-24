@@ -6,7 +6,7 @@ import { MEMNOX_HOME, readJsonFile, writeJsonFile } from '@memnox/core';
 
 const CURSOR_FILE = 'sync.json';
 
-export interface Cursor {
+interface Cursor {
   /** The `at` of the newest event known to have landed. */
   pushedThrough?: string;
   lastPushAt?: string;

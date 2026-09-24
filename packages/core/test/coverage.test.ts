@@ -202,7 +202,10 @@ describe("an agent's own policy hook", () => {
 
   // Cursor's hooks see no web fetch, so its network stays with the other seams.
   it('holds only what that agent reports to its hook', () => {
-    const coverage = coverageFor('cursor', 'agt_x', every, { ...NOTHING, ownPolicyHook: true });
+    const coverage = coverageFor('cursor', 'agt_x', every, {
+      ...NOTHING,
+      ownPolicyHook: true,
+    });
 
     expect(seam(coverage, 'filesystem')?.state).toBe(SEAM_STATE.HELD);
     expect(seam(coverage, 'network')?.state).toBe(SEAM_STATE.OPEN);

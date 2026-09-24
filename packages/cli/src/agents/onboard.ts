@@ -128,7 +128,7 @@ async function configFor(
   return null;
 }
 
-export interface OnboardInput {
+interface OnboardInput {
   home: string;
   project: string;
   account: Account;

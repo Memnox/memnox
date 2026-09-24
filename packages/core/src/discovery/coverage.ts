@@ -79,7 +79,10 @@ const OWN_HOOK_TOOLS: ReadonlyMap<string, HookedTools> = new Map<string, HookedT
     'gemini-cli',
     { filesystem: 'file read and write', network: 'web fetch', mcp: 'MCP tool call' },
   ],
-  [DISCOVERED_AGENT_KIND.CURSOR, { filesystem: 'file read and write', mcp: 'MCP tool call' }],
+  [
+    DISCOVERED_AGENT_KIND.CURSOR,
+    { filesystem: 'file read and write', mcp: 'MCP tool call' },
+  ],
   ['windsurf', { filesystem: 'file read and write', mcp: 'MCP tool call' }],
 ]);
 

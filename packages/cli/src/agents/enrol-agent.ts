@@ -70,7 +70,7 @@ export function sponsorOf(account: Account): Sponsor {
   };
 }
 
-export interface EnrolAgentInput {
+interface EnrolAgentInput {
   sponsor: Sponsor;
   agentId: string;
   hostname: string;

@@ -45,7 +45,7 @@ export const RELEASE_COLUMN = 'authorizedBy';
  * Append-only, enforced by the database. The one legal update is releasing a held call:
  * `authorizedBy` going from null to a name, once, with nothing else moving.
  */
-export function appendOnlyTrigger(): string {
+function appendOnlyTrigger(): string {
   const unchanged = IMMUTABLE_COLUMNS.map(
     (column) => `NEW.${column} IS NOT OLD.${column}`,
   ).join('\n        OR ');
@@ -58,7 +58,7 @@ export function appendOnlyTrigger(): string {
       END;`;
 }
 
-export interface Migration {
+interface Migration {
   version: number;
   sql: string;
 }

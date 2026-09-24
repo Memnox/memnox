@@ -28,7 +28,7 @@ interface Ending {
 }
 
 /** A batch that fits one post, and the actions it covers, so the cursor moves no further. */
-export interface FittedBatch {
+interface FittedBatch {
   drafts: CloudEvent[];
   through: MemnoxEvent[];
 }

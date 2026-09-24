@@ -173,9 +173,10 @@ describe('comments stay short enough to be read', () => {
     const blocks = readFileSync(file, 'utf8')
       .split('\n')
       .flatMap((line, index) => (/^\s*\/\*(?!\*)/.test(line) ? [index + 1] : []));
-    expect(blocks, `${file}: a /* */ comment at lines ${blocks.join(', ')}. Use //.`).toEqual(
-      [],
-    );
+    expect(
+      blocks,
+      `${file}: a /* */ comment at lines ${blocks.join(', ')}. Use //.`,
+    ).toEqual([]);
   });
 
   it.each(sources)('%s keeps every doc comment to three lines of text', (file) => {
@@ -183,9 +184,10 @@ describe('comments stay short enough to be read', () => {
     const long = [...source.matchAll(/\/\*\*[\s\S]*?\*\//g)]
       .filter((match) => match[0].split('\n').length > LONGEST_DOC_COMMENT)
       .map((match) => source.slice(0, match.index).split('\n').length);
-    expect(long, `${file}: doc comments over three lines at lines ${long.join(', ')}.`).toEqual(
-      [],
-    );
+    expect(
+      long,
+      `${file}: doc comments over three lines at lines ${long.join(', ')}.`,
+    ).toEqual([]);
   });
 
   it.each(sources)('%s keeps every // comment to two lines', (file) => {
@@ -195,9 +197,10 @@ describe('comments stay short enough to be read', () => {
       run = line.trim().startsWith('//') ? run + 1 : 0;
       if (run === LONGEST_LINE_COMMENT_RUN + 1) long.push(index + 1);
     }
-    expect(long, `${file}: a // comment runs past two lines at ${long.join(', ')}.`).toEqual(
-      [],
-    );
+    expect(
+      long,
+      `${file}: a // comment runs past two lines at ${long.join(', ')}.`,
+    ).toEqual([]);
   });
 
   it.each(sources)('%s gives each symbol one doc comment', (file) => {
@@ -205,9 +208,10 @@ describe('comments stay short enough to be read', () => {
     const stacked = [...source.matchAll(/\*\/[ \t]*\n[ \t]*\/\*\*/g)].map(
       (match) => source.slice(0, match.index).split('\n').length,
     );
-    expect(stacked, `${file}: two doc comments in a row at ${stacked.join(', ')}.`).toEqual(
-      [],
-    );
+    expect(
+      stacked,
+      `${file}: two doc comments in a row at ${stacked.join(', ')}.`,
+    ).toEqual([]);
   });
 });
 
@@ -278,7 +282,9 @@ describe('functions and modules stay small enough to hold in your head', () => {
 
   it.each(sources)('%s names locals in camelCase', (file) => {
     const snake = [
-      ...readFileSync(file, 'utf8').matchAll(/\b(?:const|let|function) ([a-z]+_[a-z_]+)\b/g),
+      ...readFileSync(file, 'utf8').matchAll(
+        /\b(?:const|let|function) ([a-z]+_[a-z_]+)\b/g,
+      ),
     ].map((match) => match[1]);
     expect(snake, `${file}: snake_case names ${snake.join(', ')}.`).toEqual([]);
   });
