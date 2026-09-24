@@ -241,6 +241,22 @@ npm install -g memnox     # or just use npx
 Node 22 or newer, on macOS or Linux. On Windows, run it inside WSL —
 [ADR 0001](docs/adr/0001-windows-support.md) says why.
 
+After `memnox setup`, Memnox lives in your agent session, and the terminal needs a
+handful of commands:
+
+```sh
+memnox setup      # put this machine under Memnox, once
+memnox status     # where this machine stands
+memnox rewind     # undo what an agent did to your files
+memnox doctor     # check the wiring, and prove it holds
+memnox stop       # turn protection off on purpose and on the record, e.g. --for 30m
+memnox start      # turn it back on, in the mode it was stopped in
+memnox update     # the latest version, with the wiring pointed at it
+```
+
+`memnox login` connects the machine to your team. Everything else happens in your agent
+session, and `memnox help --all` lists every command.
+
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)

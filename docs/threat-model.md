@@ -54,6 +54,9 @@ any `UPDATE` except recording who released a held call.
 | Another local user reads the ledger | **Covered** by owner-only permissions, and no further |
 | Malicious MCP server lies in `tools/list` | **Partly.** Classification is by name and annotation; a tool that lies about its name is classified by the lie |
 | A dependency of ours is compromised | **Not covered.** Four runtime dependencies, pinned, with a lockfile |
+| Agent writes outside the repository it was started in | **Covered** by the repository boundary, which asks first, for `memnox run` sessions and hooked agents alike |
+| A freshly cloned repository turns the agent against the machine | **Covered** by `memnox run --untrusted` where the kernel holds a sandbox; the run refuses to start where none can |
+| A newly installed agent or MCP server does more than it should | **Partly.** It starts on probation, so its writes and outward actions ask for seven days; after that only the rules decide |
 | Memnox itself sends something somewhere | **Covered by construction.** Nothing in the shipped code originates a network request; the only sockets are the daemon's unix socket and the egress proxy on loopback, which forwards the agent's own traffic |
 
 ## Where it would fail
@@ -82,6 +85,15 @@ any `UPDATE` except recording who released a held call.
    agent. So the record can be short where the disk was full or the file unwritable,
    and nothing says so at the time. The alternative — refusing to act because the
    record failed — is a tool people uninstall.
+8. **The egress proxy sees only what is pointed at it.** Outside `--untrusted`, a tool
+   that ignores `HTTPS_PROXY`, or an agent started from the desktop with no proxy in
+   its own settings, reaches the network directly and unrecorded. Inside HTTPS only
+   the destination is known, and which agent sent a request is what its proxy URL
+   declares rather than anything proven.
+9. **Linux holds less than macOS.** Landlock needs a `python3` helper to apply it,
+   holds TCP only from ABI 4, cannot let an agent create a new file directly in the
+   home directory, and with ABI 1 refuses every rename across directories. Each of
+   these is printed at the start of the run rather than discovered later.
 
 ## Reporting
 

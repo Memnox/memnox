@@ -1051,17 +1051,36 @@ The local OSS runtime creates the entry point.
 
 The cloud creates organizational value.
 
+> **Memnox on your machine knows this session. Memnox Cloud knows everything around it.**
+
 ### Local Memnox
 
-Free and open source.
+Free and open source, and it lives inside the agent session rather than beside it.
 
 ```text
-memnox scan
-memnox explain
-memnox context
-memnox protect
-memnox watch
-memnox lock
+npx memnox setup
+```
+
+Once. After that the developer works in Claude, Codex or Cursor, and Memnox works in there with them:
+
+* a hook before every tool call in each agent that has one, so allow, ask and deny arrive in the agent's own prompt
+* the boundary and the decisions already taken, told to the agent before it acts
+* the unusual asked about: a first action, a secret followed by a push, a session that read an injected instruction
+* writes kept in the repository, outbound traffic through a proxy, and a sandboxed run for a repository nobody trusts yet
+* probation for an agent or an MCP server that has just arrived
+* a checkpoint before the first write, rewind when a session goes wrong, and replay of one session step by step
+* a daemon that keeps all of it in place while the machine changes underneath
+
+The terminal is the escape hatch, not the product:
+
+```text
+memnox setup
+memnox status
+memnox rewind
+memnox doctor
+memnox stop
+memnox start
+memnox update
 ```
 
 It helps one developer understand and control their local agents.
@@ -1093,6 +1112,16 @@ The organization-wide control plane.
 ```
 
 The cloud is not simply a dashboard.
+
+It knows what no single machine can:
+
+* every agent on every machine, who owns it, and which ones nobody enrolled
+* rules that remember who decided them and who approved them, so the reason an agent is given names a person and a day
+* exceptions with an owner and an end
+* every MCP server the team runs, with the unmanaged ones named first
+* one hash chain across machines, and an audit report with that chain verified
+* spend per agent, where the agents report it
+* one agent frozen everywhere, or every machine put in enforce, from one place
 
 It is the **shared intelligence and authority layer for every agent in the organization.**
 

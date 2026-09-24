@@ -7,6 +7,47 @@ Anywhere a flag names a stretch of time (`--since`, `--for`, `--usage`,
 number is read in whatever that flag is about, so `--for 30` is half an hour and
 `--days 30` is a month. `--since` also takes an ISO timestamp.
 
+## At the terminal
+
+`memnox --help` lists only what a person types at a terminal: `setup`, `status`,
+`rewind`, `doctor`, `stop`, `start`, `update`, and `login` for the team. Everything
+else happens in your agent session, and every command below is still there:
+`memnox help --all` lists them all, and `memnox help <command>` describes one.
+
+### `memnox stop`
+Turns protection off on this machine, on purpose and on the record. Every seam and
+hook lets everything through without ruling, and the daemon stops putting hooks back
+and adopting new agents, so nothing turns protection on again behind your back.
+
+| Flag | What it does |
+|---|---|
+| `--for <duration>` | come back on by itself after this long, e.g. `30m` or `2h` |
+| `--reason <text>` | why, in the words your team will read |
+
+The mode in `config.toml` is left as it was, and `~/.memnox/stopped.json` says who
+stopped it, why, until when, and in which mode. A seam reads that file before it
+rules, and reads the expiry itself, so a timed stop ends on time whether or not the
+daemon is running; the daemon then records the end and raises a desktop notice. The
+stop and the start are both ledger rows naming who, so `timeline` and `why` show
+them. On an enrolled machine the next sync reports each as
+`machine.protection.stopped` or `machine.protection.started`, and the heartbeat
+reports the machine as running `off`, because a machine turning its own protection
+off is something its team has to see. `memnox status` shows the stop first.
+
+### `memnox start`
+Turns protection back on, in exactly the mode it was stopped in. Where a timed stop
+already ran out, it says so rather than recording a start of its own.
+
+### `memnox update`
+Prints the installed version and the latest published one, and upgrades only after
+you say yes, with the command for how this copy was installed: `npm install -g
+memnox@latest` for an npm global install, `pnpm add -g memnox@latest` for pnpm.
+From the npx cache, or anywhere the path does not say, it prints the command
+instead of guessing. After the upgrade the new copy runs the same wiring setup
+draws, which is idempotent, so the hooks and the service point at it; the rules are
+left alone. The version is asked of `npm view` only when you run this, and offline
+it says so and changes nothing.
+
 ## What can act here
 
 ### `memnox scan`
@@ -333,6 +374,7 @@ Proposes reversible steps by default and prints the undo before it runs anything
 | `--revert-native` | take ours back out, leaving theirs |
 | `--for <name>` | write rules for one CLI or MCP server only |
 | `--from-usage <window>` | draft ask rules for what was granted and never used |
+| `--ask <action...>` / `--deny <action...>` | write a rule you decided here; on an enrolled machine the next sync offers it to your team as a proposal a second admin approves |
 | `--interceptors` | install the PATH wrappers for every CLI this machine has |
 | `--hooks` | install `pre-push` and `pre-commit` in this repository |
 | `--claude-hook` | make Claude Code take a lease before it writes a file |
@@ -548,6 +590,7 @@ governed shell, and a session id. Hands back the agent's own exit code. When
 | `--shell <path>` | the shell the agent should use |
 | `--transcript` | keep a local copy of what the agent printed |
 | `--no-guard` | start outside the kernel sandbox even when a profile exists |
+| `--untrusted` | a repository nobody here vouched for: see below |
 
 The governed shell obeys the shell contract: `$SHELL -c "<line>"` is what an
 agent's Bash tool calls, and every command in that line is ruled on separately,
@@ -561,9 +604,56 @@ against. `--role <name>` is the job the agent is enrolled under, matched by a
 rule's `roles:`. A session that declares nothing is *undeclared* throughout,
 never in violation — nothing is inferred.
 
+**Writes stay in the repository.** A write or delete outside the repository the session
+started in asks first, whatever the rules allow, and so does one outside the paths
+`--paths` declared. Temp is exempt. Reads outside are governed by your rules as before.
+The same boundary holds for an agent that was only hooked: the edit hook asks in Claude
+Code, where its person sees the prompt, and refuses with the reason in Cursor, Codex,
+Gemini CLI and Windsurf, which cannot ask. A hooked agent's shell commands meet the
+boundary when they run in a checkout; one that has changed directory out of every
+repository has no repository to be kept in.
+
+**The network goes through the egress proxy.** The agent is started with `HTTP_PROXY`,
+`HTTPS_PROXY` and `ALL_PROXY` pointing at the daemon's proxy (its own when no daemon is
+running), `NO_PROXY` for loopback, and `NODE_USE_ENV_PROXY=1` so Node's own `fetch`
+obeys too. Every request is ruled on by host, written to the ledger with the host only,
+and entered in the agent's destination record. What the proxy does not see:
+
+- anything that ignores the proxy variables, since outside `--untrusted` nothing forces it;
+- an agent started from the desktop or a dock icon, which inherits no environment from
+  `memnox run`. It goes through the proxy only if its own settings name one;
+- the body of an HTTPS request, where only the destination is known;
+- which agent sent a request, beyond the session its proxy URL declares.
+
+**`--untrusted`** is the preset for a fresh clone of somebody else's repository. Writes
+reach only the repository, temp and the agent's own state; the Memnox rules, the trust
+given and the answers to held calls stay unwritable inside it. Credentials and home
+dotfiles are unreadable. TCP reaches only this session's own egress proxy, where package
+registries and the agent's model provider go through and every other host asks. Every
+outward or destructive action asks. On macOS seatbelt holds all of it. On Linux Landlock
+holds the files, and holds TCP from ABI 4 (Linux 6.7); the ruleset is applied by a small
+`python3` helper, and the start screen says plainly when the kernel, the helper or the
+ABI is missing. Where no kernel can hold the wall the run refuses to start, and
+`--no-guard` runs it with only the seams asking. Held calls are answered from files the
+agent must not be able to write, so a shell command inside the wall that would ask is
+refused with its reason instead; a request the proxy asks about is raised outside the
+wall and answered with `memnox approvals`, and a file edit asks in the agent's own prompt.
+
+When a run starts in a repository nobody here has worked in (no commit of yours, not
+one the seams have seen, no matching origin), it prints one line suggesting `--untrusted`.
+
+### `memnox agents trust <agent>` / `memnox mcp trust <server>`
+An agent the daemon adopted, or an MCP server it wrapped, starts **on probation for seven
+days**: its writes, outward and destructive actions ask whatever the rules allow, and
+its reads do not. The notice that announced it says so, and `memnox status` lists what
+is on probation and until when. `trust` ends one now, on the record. A probation that
+was served or ended is never started again because a config was rewritten.
+
 ### `memnox daemon`
 Holds the rules in one process so an interceptor pays a connect instead of a file
 read. Optional: an interceptor that cannot reach it evaluates in process instead.
+It also runs the egress proxy on `127.0.0.1:8888` (any free port when that is taken),
+bounded in connections and idle time, started and stopped with it.
 
 ## What happened
 
@@ -592,10 +682,34 @@ takes its own milestone first, so what it replaced is still reachable.
 | `--take` | keep the tree as it is now, restoring nothing |
 | `--note <text>` | what this milestone is, for the listing |
 | `--forget [keep]` | drop all but the newest few; the newest is never dropped |
+| `--session <id>` | back to before that session first changed anything |
+| `--last` | the same, for the session whose milestone is newest |
 
 It moves files and nothing else, it leaves ignored files alone, and it refuses outright
 mid-merge or mid-rebase — a restore there would write over the state that says how to
 finish. `memnox run` takes one automatically unless you pass `--no-milestone`.
+
+Agents started without `memnox run` are covered too. The editor hook keeps a milestone
+before a session's first write in a repository, and the shell seams keep one before a
+command that destroys work: `rm`, `rm -r`, `git reset --hard`, `git clean`,
+`git checkout -- .`, `git restore .` and a `mv` of three or more paths. The first write is kept once per
+session and repository, a destructive command at most once every twenty seconds per
+session, and every milestone is labelled with its agent, session and reason, which
+`--list` shows. Only the newest twenty are kept in a repository. The marks that remember
+which sessions already have one live in `~/.memnox/checkpoints.json`, so a hook that owes
+nothing starts no process, and every git call goes to the real git rather than the
+interceptor on PATH. A milestone that cannot be kept is logged and never stops the agent.
+
+### `memnox replay [session]`
+One session step by step, in the order it happened: every action with its surface,
+operation, target and verdict (and what enforce would have said while it was observed),
+exit codes, breaker trips and who resumed them, holds still waiting, and the milestones
+kept for it. The five actions right before a failure or a breaker trip are marked with
+`>` and carry their reasons and the id `memnox trace` opens. No session, or `--last`,
+means the most recent one; `--json` prints the replay itself. It is read from the
+ledger, the pause records and the repositories the session kept milestones in, so it
+works long after every process involved has gone. A hold that was answered is visible
+only where its row names who allowed it, because an answered hold is cleared from disk.
 
 ### `memnox trace <id>`
 One action end to end: the command, the rule that governed it, the exit code, the

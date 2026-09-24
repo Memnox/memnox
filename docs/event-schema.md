@@ -25,7 +25,7 @@ Published as JSON Schema at `https://memnox.dev/schema/event-v1.json`, and expor
 | `sessionId` | string | one piece of work is one session |
 | `agent` | string | the product, e.g. `claude-code`. Never a credential |
 | `actorType` | `agent` \| `human` \| `automation` | |
-| `surface` | `mcp` \| `shell` \| `git` \| `filesystem` \| `network` \| `question` | where it was caught |
+| `surface` | `mcp` \| `shell` \| `git` \| `filesystem` \| `network` \| `question` \| `config` | where it was caught; `config` is a change to an agent's configuration the daemon made or noticed, left out of every count of agent work and not sent to the control plane |
 | `operation` | string | `github.merge_pull_request`, `rm` |
 | `class` | `read` \| `write` \| `destructive` \| `communication` \| `unknown` | |
 | `effect` | `allow` \| `ask` \| `deny` | |

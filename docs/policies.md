@@ -112,3 +112,9 @@ anything that is not an allow.
 Nobody, by name. An `ask` holds the call for whoever is at the terminal, because
 naming an approver needs an identity this machine does not have. `approvers` is
 accepted and recorded, and routing it to a named person is the cloud's half.
+
+A rule your workspace publishes is stricter about it. When a team rule names
+approvers, asks for more than one approval, or carries a rate limit, the pulled copy
+of an `ask` is a `deny` on this machine, and an `allow` is left out, because a question
+here goes to whoever answers first and nothing here counts calls. Holding it to less
+than the team wrote would be the one direction a gate must not fail in.
