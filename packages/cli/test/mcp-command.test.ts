@@ -15,12 +15,10 @@ async function run(
 ): Promise<RecordedOutput> {
   const out = new RecordedOutput();
   const program = new Command();
-  registerMcpCommand(
-    program,
-    new CliContext(out, plainStyle),
-    () => home,
-    () => proxyPresent,
-  );
+  registerMcpCommand(program, new CliContext(out, plainStyle), {
+    home: () => home,
+    resolveBinary: () => proxyPresent,
+  });
   await program.parseAsync(args, { from: 'user' });
   return out;
 }

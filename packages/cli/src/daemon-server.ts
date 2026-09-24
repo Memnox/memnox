@@ -9,7 +9,7 @@ import {
   describePause,
   encode,
   decodeRequest,
-  LineReader,
+  LineBuffer,
   SessionLimits,
   SessionPauses,
   ENFORCEMENT_MODE,
@@ -27,7 +27,14 @@ import {
   type DaemonResponse,
   type LocalGate,
   type SessionPause,
+  UNNAMED_AGENT,
+  UNNAMED_SESSION,
 } from '@memnox/core';
+
+/**
+ * The daemon: one process holding the rules, so a seam pays a connect rather than a file
+ * read per command. Optional, because every seam falls back to evaluating in process.
+ */
 
 interface DaemonDeps {
   gate?: LocalGate;
@@ -39,23 +46,16 @@ interface DaemonDeps {
   budgets?: readonly Budget[];
   /** What the rest of the fleet has spent, as of the last heartbeat. */
   fleetSpend?: readonly FleetSpend[];
-  /**
-   * What has already been spent today, read from the ledger once at startup. Without
-   * it a daily budget resets whenever the daemon does, which is a budget anybody can
-   * clear by killing a process.
-   */
+  /** Spent today, read from the ledger at startup, or killing the daemon clears a budget. */
   spentAlready?: readonly MemnoxEvent[];
   now?: () => string;
   log: (message: string) => void;
 }
 
-/**
- * One process holding the rules, so an interceptor pays a connect rather than a file
- * read on every command. Nothing here is required: an interceptor that cannot reach
- * the daemon evaluates in process instead, which is slower and exactly as strict.
- */
 /** The shorter of the two platform limits, so one number is right on both. */
 const SOCKET_PATH_LIMIT = 103;
+const SOCKET_DIR_MODE = 0o700;
+const SOCKET_MODE = 0o600;
 
 export class MemnoxDaemon {
   private readonly limits: SessionLimits;
@@ -77,16 +77,15 @@ export class MemnoxDaemon {
 
   async listen(home: string): Promise<string> {
     const path = socketPathFor(home);
-    /* A unix socket path is capped by the kernel — 104 bytes on macOS, 108 on Linux —
-       and over it `listen` fails with EADDRINUSE, which sends somebody hunting for a
-       process that does not exist. Named here, because the fix is a shorter home. */
+    // Over the kernel's cap `listen` fails with EADDRINUSE, which sends somebody hunting
+    // for a process that does not exist, so the real cause is named here.
     if (Buffer.byteLength(path) > SOCKET_PATH_LIMIT) {
       throw new Error(
         `The daemon's socket path is ${Buffer.byteLength(path)} bytes and the kernel allows ${SOCKET_PATH_LIMIT}:\n  ${path}\n` +
           'Use a shorter home directory. The interceptors still evaluate in process, which is the same rules.',
       );
     }
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await mkdir(dirname(path), { recursive: true, mode: SOCKET_DIR_MODE });
     // A stale socket from a killed daemon would refuse every connection.
     await rm(path, { force: true });
 
@@ -97,8 +96,8 @@ export class MemnoxDaemon {
       server.once('error', reject);
       server.listen(path, () => resolve());
     });
-    // Owner-only: anything that can talk to this socket can ask about your rules.
-    await chmod(path, 0o600);
+    // Owner only, because anything that can talk to this socket can ask about your rules.
+    await chmod(path, SOCKET_MODE);
     return path;
   }
 
@@ -109,8 +108,13 @@ export class MemnoxDaemon {
     this.server = null;
   }
 
+  /** Lifts a hold, so `memnox resume` reaches the daemon that is enforcing it. */
+  resume(sessionId: string): boolean {
+    return this.held.delete(sessionId);
+  }
+
   private serve(socket: Socket): void {
-    const reader = new LineReader();
+    const reader = new LineBuffer();
     socket.setEncoding('utf8');
     socket.on('data', (chunk: string) => {
       for (const line of reader.push(chunk)) {
@@ -137,15 +141,18 @@ export class MemnoxDaemon {
     return { id: request.id, ok: true };
   }
 
+  private now(): string {
+    return this.deps.now?.() ?? new Date().toISOString();
+  }
+
   /**
-   * What happened, after it happened. The breaker watches outcomes, so this is the
-   * only place any of its signals can be counted — a request on its own cannot say
-   * whether the same command has now failed eleven times.
+   * What happened, after it happened. The breaker watches outcomes, so this is the only
+   * place its signals can be counted.
    */
   private record(request: DaemonRequest): DaemonResponse {
-    const sessionId = request.sessionId ?? 'ses_local';
+    const sessionId = request.sessionId ?? UNNAMED_SESSION;
     const action = request.action ?? 'unknown';
-    const now = (this.deps.now ?? (() => new Date().toISOString()))();
+    const now = this.now();
 
     const breach = this.breaker.observe({
       sessionId,
@@ -159,11 +166,9 @@ export class MemnoxDaemon {
       ...(request.outOfScope === undefined ? {} : { outOfScope: request.outOfScope }),
       ...(request.costUsd === undefined ? {} : { costUsd: request.costUsd }),
     });
-    if (breach !== null) this.hold(sessionId, breach, action, now);
+    if (breach !== null) this.hold({ sessionId, breach, lastAction: action, now });
 
-    /* Only what actually ran is charged. An action the rules refused never reached a
-       terminal, so charging for it would let a strict policy exhaust the budget it
-       was protecting. */
+    // Only what ran is charged, or a strict policy would exhaust the budget it protects.
     if (request.exitCode === undefined || request.exitCode === 0) {
       this.charge(sessionId, action, now);
     }
@@ -177,7 +182,7 @@ export class MemnoxDaemon {
       schemaVersion: EVENT_SCHEMA_VERSION,
       at: now,
       sessionId,
-      agent: 'an agent',
+      agent: UNNAMED_AGENT,
       actorType: ACTOR_TYPE.AGENT,
       surface: EVENT_SURFACE.SHELL,
       operation: action,
@@ -189,12 +194,8 @@ export class MemnoxDaemon {
   }
 
   /** Held in memory and on disk: the seams are other processes and have to see it. */
-  private hold(
-    sessionId: string,
-    breach: BreakerBreach,
-    lastAction: string,
-    now: string,
-  ): void {
+  private hold(input: HoldInput): void {
+    const { sessionId, breach, lastAction, now } = input;
     if (this.held.has(sessionId)) return;
     const pause: SessionPause = {
       sessionId,
@@ -215,7 +216,7 @@ export class MemnoxDaemon {
 
   /** Non-null when this session is held. Shaped as a refusal an agent can read. */
   private heldResponse(request: DaemonRequest): DaemonResponse | null {
-    const pause = this.held.get(request.sessionId ?? 'ses_local');
+    const pause = this.held.get(request.sessionId ?? UNNAMED_SESSION);
     if (pause === undefined) return null;
     return {
       id: request.id,
@@ -226,67 +227,63 @@ export class MemnoxDaemon {
     };
   }
 
-  /** Lifts a hold, so `memnox resume` reaches the daemon that is enforcing it. */
-  resume(sessionId: string): boolean {
-    return this.held.delete(sessionId);
-  }
-
+  /** Pause, then budget, then limits, then rules: each stops the call before the next is asked. */
   private evaluate(request: DaemonRequest): DaemonResponse {
     const action = request.action;
     if (action === undefined) {
       return { id: request.id, ok: false, error: 'evaluate needs an action' };
     }
-    const now = (this.deps.now ?? (() => new Date().toISOString()))();
-    const sessionId = request.sessionId ?? 'ses_local';
-
-    /* A held session runs nothing, whatever the rules say. Checked first because a
-       pause is about the session and not about this one call. */
-    const paused = this.heldResponse(request);
-    if (paused !== null) return paused;
-
-    /* An allowance that has run out stops the action before the rules are consulted,
-       and says so in those words: "not allowed" and "no allowance left until tomorrow"
-       lead to different fixes, and confusing them sends somebody editing rules. */
-    const budgets = this.deps.budgets ?? [];
-    if (budgets.length > 0) {
-      const spent = exhaustedBy(
-        budgets,
-        action,
-        [...(this.deps.spentAlready ?? []), ...this.charged],
-        now,
-        sessionId,
-        1,
-        undefined,
-        this.deps.fleetSpend ?? [],
-      );
-      if (spent !== null) {
-        return {
-          id: request.id,
-          ok: true,
-          effect: DECISION_EFFECT.DENY,
-          reason: spent.reason,
-          limit: `budget:${spent.budget.name}`,
-        };
-      }
-    }
-
-    /* Limits are counted before the rules are consulted: a session already past its
-       ceiling is stopped whatever the rules would have said about this one call. */
-    const breach = this.limits.record(
-      sessionId,
-      `${action}:${request.target ?? ''}`,
-      now,
+    const call: EvaluatedCall = {
+      request,
+      action,
+      now: this.now(),
+      sessionId: request.sessionId ?? UNNAMED_SESSION,
+    };
+    return (
+      this.heldResponse(request) ??
+      this.budgetRefusal(call) ??
+      this.limitRefusal(call) ??
+      this.ruleVerdict(call)
     );
-    if (breach !== null) {
-      return {
-        id: request.id,
-        ok: true,
-        effect: DECISION_EFFECT.DENY,
-        reason: breach.reason,
-        limit: breach.kind,
-      };
-    }
+  }
 
+  /** "No allowance left" and "not allowed" lead to different fixes, so a spent budget says so. */
+  private budgetRefusal(call: EvaluatedCall): DaemonResponse | null {
+    const budgets = this.deps.budgets ?? [];
+    if (budgets.length === 0) return null;
+    const spent = exhaustedBy(budgets, {
+      action: call.action,
+      events: [...(this.deps.spentAlready ?? []), ...this.charged],
+      now: call.now,
+      sessionId: call.sessionId,
+      fleet: this.deps.fleetSpend ?? [],
+    });
+    if (spent === null) return null;
+    return {
+      id: call.request.id,
+      ok: true,
+      effect: DECISION_EFFECT.DENY,
+      reason: spent.reason,
+      limit: `budget:${spent.budget.name}`,
+    };
+  }
+
+  /** A session already past its ceiling is stopped whatever the rules say about this call. */
+  private limitRefusal(call: EvaluatedCall): DaemonResponse | null {
+    const fingerprint = `${call.action}:${call.request.target ?? ''}`;
+    const breach = this.limits.record(call.sessionId, fingerprint, call.now);
+    if (breach === null) return null;
+    return {
+      id: call.request.id,
+      ok: true,
+      effect: DECISION_EFFECT.DENY,
+      reason: breach.reason,
+      limit: breach.kind,
+    };
+  }
+
+  private ruleVerdict(call: EvaluatedCall): DaemonResponse {
+    const { request, action } = call;
     const gate = this.deps.gate;
     if (gate === undefined) {
       return {
@@ -296,37 +293,37 @@ export class MemnoxDaemon {
         reason: 'no rules configured',
       };
     }
-
-    const verdict = gate.evaluate({
-      action,
-      ...(request.target === undefined ? {} : { target: request.target }),
-    });
-
-    if (verdict.effect !== DECISION_EFFECT.ALLOW) {
-      const seen = this.violations.record({
-        action,
-        at: now,
-        ...(request.target === undefined ? {} : { target: request.target }),
-      });
-      const repeated = this.violations.isRepeated(action, request.target)
-        ? ` (asked ${seen} times now — the rule may not match how this work is done)`
-        : '';
-      return {
-        id: request.id,
-        ok: true,
-        effect: verdict.effect,
-        reason: `${verdict.reason}${repeated}`,
-        ...(verdict.alternative === undefined
-          ? {}
-          : { alternative: verdict.alternative }),
-      };
+    const target = request.target === undefined ? {} : { target: request.target };
+    const verdict = gate.evaluate({ action, ...target });
+    if (verdict.effect === DECISION_EFFECT.ALLOW) {
+      return { id: request.id, ok: true, effect: verdict.effect, reason: verdict.reason };
     }
 
+    const seen = this.violations.record({ action, at: call.now, ...target });
+    const repeated = this.violations.isRepeated(action, request.target)
+      ? ` (asked ${seen} times now, so the rule may not match how this work is done)`
+      : '';
     return {
       id: request.id,
       ok: true,
       effect: verdict.effect,
-      reason: verdict.reason,
+      reason: `${verdict.reason}${repeated}`,
+      ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
     };
   }
+}
+
+interface HoldInput {
+  sessionId: string;
+  breach: BreakerBreach;
+  lastAction: string;
+  now: string;
+}
+
+/** One evaluate request, with the defaults every step would otherwise resolve again. */
+interface EvaluatedCall {
+  request: DaemonRequest;
+  action: string;
+  now: string;
+  sessionId: string;
 }

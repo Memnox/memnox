@@ -72,14 +72,22 @@ describe('wiring a machine that has just been set up', () => {
 
     expect(wired.editHooks).toEqual(['Codex', 'Cursor']);
     const codex = await readFile(join(machine, '.codex', 'hooks.json'), 'utf8');
-    expect(codex).toContain('apply_patch');
+    // No matcher, so every tool Codex runs meets the rules, its patch tool included.
+    const codexHooks = JSON.parse(codex) as {
+      hooks: Record<string, { matcher?: string; hooks: { command: string }[] }[]>;
+    };
+    expect(codexHooks.hooks['PreToolUse']?.[0]?.matcher).toBeUndefined();
     expect(codex).toContain('--agent codex-cli');
+    expect(codex).toContain('--policy');
     const cursor = JSON.parse(
       await readFile(join(machine, '.cursor', 'hooks.json'), 'utf8'),
     ) as { version: number; hooks: Record<string, { command: string }[]> };
     expect(cursor.version).toBe(1);
     expect(Object.keys(cursor.hooks)).toEqual([
       'preToolUse',
+      'beforeShellExecution',
+      'beforeMCPExecution',
+      'beforeReadFile',
       'afterFileEdit',
       'sessionEnd',
       'postToolUse',

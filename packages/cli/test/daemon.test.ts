@@ -8,7 +8,7 @@ import {
   DECISION_EFFECT,
   encode,
   decodeResponse,
-  LineReader,
+  LineBuffer,
   LocalGate,
   SessionLimits,
   SessionPauses,
@@ -41,7 +41,7 @@ function gate(): LocalGate {
 function ask(path: string, request: DaemonRequest): Promise<DaemonResponse> {
   return new Promise((resolve, reject) => {
     const socket = connect(path, () => socket.write(encode(request)));
-    const reader = new LineReader();
+    const reader = new LineBuffer();
     socket.setEncoding('utf8');
     socket.on('data', (chunk: string) => {
       for (const line of reader.push(chunk)) {
@@ -146,7 +146,7 @@ describe('the daemon', () => {
     const { daemon, path } = await running();
     const response = await new Promise<DaemonResponse>((resolve, reject) => {
       const socket = connect(path, () => socket.write('not json\n'));
-      const reader = new LineReader();
+      const reader = new LineBuffer();
       socket.setEncoding('utf8');
       socket.on('data', (chunk: string) => {
         for (const line of reader.push(chunk)) {

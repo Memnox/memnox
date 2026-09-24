@@ -1,12 +1,11 @@
+/**
+ * A line-delimited JSON protocol over a Unix socket, kept small because an interceptor
+ * asks on every command an agent types, so asking has to cost a connect and one line.
+ */
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
 import type { DecisionEffect } from '../constants/decision.constants';
 
-/**
- * A line-delimited JSON protocol over a Unix socket. Deliberately small: an
- * interceptor runs on every command an agent types, so the cost of asking has to be a
- * connect and one line, and anything richer would be a reason to stop asking.
- */
 export const SOCKET_FILE = 'memnox.sock';
 
 export function socketPathFor(home: string): string {
@@ -18,8 +17,7 @@ export const DAEMON_METHOD = {
   EVALUATE: 'evaluate',
   /** Ask a person, through whatever terminal the daemon owns. */
   HOLD: 'hold',
-  /** Record what happened, so a session is one timeline — and so the breaker can
-   * count outcomes. Every signal it watches needs to know how the command ended. */
+  /** Record how a command ended, so a session is one timeline and the breaker can count outcomes. */
   RECORD: 'record',
   /** Whether this session is held, asked before anything runs. */
   STATUS: 'status',
@@ -66,38 +64,28 @@ export function encode(message: DaemonRequest | DaemonResponse): string {
 
 /** Null rather than a throw: a garbled line is a bad client, not a crash. */
 export function decodeRequest(line: string): DaemonRequest | null {
-  try {
-    const parsed: unknown = JSON.parse(line);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const message = parsed as Partial<DaemonRequest>;
-    if (typeof message.id !== 'number' || typeof message.method !== 'string') return null;
-    return message as DaemonRequest;
-  } catch {
-    // Not JSON. The caller answers with an error rather than dropping the connection.
-    return null;
-  }
+  const message = parseMessage<DaemonRequest>(line);
+  if (message === null || typeof message.method !== 'string') return null;
+  // The id and method are checked; the rest is optional by the protocol's own shape.
+  return message as DaemonRequest;
 }
 
 export function decodeResponse(line: string): DaemonResponse | null {
+  const message = parseMessage<DaemonResponse>(line);
+  // Only the id is required; every other field of a response is optional.
+  return message === null ? null : (message as DaemonResponse);
+}
+
+/** An object carrying a numeric id, or null for anything else, including a line that is not JSON. */
+function parseMessage<T extends { id: number }>(line: string): Partial<T> | null {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(line);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const message = parsed as Partial<DaemonResponse>;
-    if (typeof message.id !== 'number') return null;
-    return message as DaemonResponse;
+    parsed = JSON.parse(line);
   } catch {
     return null;
   }
-}
-
-/** Splits a socket stream into whole lines; a partial write is normal on a pipe. */
-export class LineReader {
-  private pending = '';
-
-  push(chunk: string): string[] {
-    this.pending += chunk;
-    const lines = this.pending.split('\n');
-    this.pending = lines.pop() ?? '';
-    return lines.filter((line) => line.trim() !== '');
-  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  // Narrowed field by field by the callers, starting with the id here.
+  const message = parsed as Partial<T>;
+  return typeof message.id === 'number' ? message : null;
 }

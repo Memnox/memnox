@@ -1,12 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import {
-  policiesFrom,
-  POLICY_FILE_EXTENSION,
-  recommendedAnswers,
-  rememberRepository,
-} from '@memnox/core';
+import { ownProcessEnv, POLICY_FILE_EXTENSION, rememberRepository } from '@memnox/core';
 import { installInterceptors, INTERCEPT_BINARY } from '@memnox/interceptors';
-import { wrapEveryServer } from './commands/mcp.command';
+import { wrapEveryServer } from './mcp/wrap-servers';
 import { installClaudeHook } from './protect/claude-hook';
 import {
   installCodexHook,
@@ -15,25 +10,18 @@ import {
   installWindsurfHook,
 } from './protect/agent-hooks';
 import { mergeRules } from './protect/merge-rules';
-import { installService } from './daemon/service';
+import {
+  baselineRules,
+  moveOutOfProject,
+  writeMachineRules,
+} from './protect/machine-rules';
+import { installService, type InstallResult } from './daemon/service';
+import { keepBoundary } from './keeper/kept';
+import { wireSessionTools } from './session-tools/session-entry';
 
 /**
- * The things that turn an enrolled machine into a governed one.
- *
- * `setup` connected the machine and put its agents under Memnox, and then
- * stopped: no wrapper was in the path of any command, no rule had an opinion
- * about anything, and nothing pulled the workspace's rules unless somebody kept
- * a terminal open. So the guided run ended by saying the agents were under
- * Memnox while `scan` on the next line still said none of their capabilities
- * was governed. Onboarding is consent; this is the wiring that consent was for.
- *
- * Nothing here is new machinery. Each step calls what already owns it, which is
- * what makes `memnox uninstall` able to take all of them back out. One is the
- * lease Claude Code, Codex and Cursor take before they write a file: their own file
- * tools write from inside the agent and pass through no wrapper, so without it two
- * agents on one file never met. Another is the MCP proxy in front of each server, which is
- * where an outward action (the message, the issue, the deploy) is compared
- * against what another agent on another machine is about to do.
+ * The wiring that turns an enrolled machine into a governed one, each step calling what
+ * already owns it so `memnox uninstall` can take them all back out.
  */
 
 export const WIRED = {
@@ -56,10 +44,7 @@ export interface Wiring {
   daemonNote?: string;
   /** Whether Claude Code now takes a lease before it writes a file. */
   claudeHook: boolean;
-  /**
-   * The other coding agents that now take one too, by name. Each is hooked only
-   * where it is installed, so this is empty on a machine with neither.
-   */
+  /** The other coding agents that now take one too, by name, hooked only where installed. */
   editHooks: string[];
   /** The repository the daemon now watches for edits by anything with no hooks. */
   watching?: string;
@@ -67,6 +52,8 @@ export interface Wiring {
   mcpServers: number;
   /** Set where the proxy is not on PATH, so wrapping would break the agents. */
   mcpUnwrapped?: true;
+  /** Agents that can now ask Memnox from inside a session, through the session server. */
+  sessionTools?: string[];
 }
 
 export interface WiringSeams {
@@ -80,21 +67,22 @@ export interface WiringSeams {
   geminiHook?: (home: string) => Promise<boolean>;
   windsurfHook?: (home: string) => Promise<boolean>;
   mcp?: (home: string, project: string) => Promise<{ wrapped: number; skipped: boolean }>;
+  keep?: (home: string, hooked: readonly string[]) => Promise<void>;
+  session?: (home: string) => Promise<{ held: string[] }>;
 }
 
 /**
- * The baseline every machine should start with: destructive work denied, work
- * somebody else sees held for a person, reads left alone.
- *
- * Merged rather than written over, because a machine that already has rules is
- * the ordinary case on the second run and replacing them would be this command
- * quietly undoing somebody's edits.
+ * The baseline every machine starts with, merged rather than written over, or a second
+ * run quietly undoes somebody's edits. The secret rules go to the machine's own file, so
+ * they hold in every repository and not only the one setup ran in.
  */
 async function writeBaseline(home: string, cwd: string): Promise<number> {
-  const policies = policiesFrom(recommendedAnswers());
+  const { machine, project } = baselineRules();
+  await writeMachineRules(home, machine);
   const path = `${cwd}/memnox.policies${POLICY_FILE_EXTENSION}`;
-  await mergeRules(path, policies, home);
-  return policies.length;
+  await moveOutOfProject(path, machine);
+  await mergeRules(path, project, home);
+  return machine.length + project.length;
 }
 
 export async function wireMachine(
@@ -109,17 +97,17 @@ export async function wireMachine(
   const rules = await (seams.rules ?? writeBaseline)(home, cwd);
   const service = await (seams.service ?? installService)(home);
   const claudeHook = await (seams.claudeHook ?? installClaudeHook)(home);
-  /* Codex and Cursor write files from inside themselves too, and an edit either
-     makes on another computer met nothing until it had a hook of its own. */
-  const codexHook = await (seams.codexHook ?? installCodexHook)(home);
-  const cursorHook = await (seams.cursorHook ?? installCursorHook)(home);
-  const geminiHook = await (seams.geminiHook ?? installGeminiHook)(home);
-  const windsurfHook = await (seams.windsurfHook ?? installWindsurfHook)(home);
+  const editHooks = await installEditHooks(home, seams);
   const mcp = await (seams.mcp ?? wrapEveryServer)(home, cwd);
-  /* The repository setup runs in is one agents here work in, so the daemon
-     watches it for edits by anything with no hooks. */
+  const session = await (seams.session ?? wireSessionTools)(home);
+  // Agents here work in this repository, so the daemon watches it for unhooked edits.
   const root = repositoryOf(cwd);
   if (root !== null) rememberRepository(home, root);
+  // Written last, so the daemon starts keeping only what this run actually put in place.
+  await (seams.keep ?? keepBoundary)(home, [
+    ...(claudeHook ? ['Claude Code'] : []),
+    ...editHooks,
+  ]);
 
   return {
     interceptors: installed.installed.length,
@@ -128,19 +116,25 @@ export async function wireMachine(
     daemon: daemonState(service),
     claudeHook,
     ...(root === null ? {} : { watching: root }),
-    editHooks: [
-      ...(codexHook ? ['Codex'] : []),
-      ...(cursorHook ? ['Cursor'] : []),
-      ...(geminiHook ? ['Gemini CLI'] : []),
-      ...(windsurfHook ? ['Windsurf'] : []),
-    ],
+    editHooks,
     mcpServers: mcp.wrapped,
     ...(mcp.skipped ? { mcpUnwrapped: true as const } : {}),
+    sessionTools: session.held,
     ...(service.warning === undefined ? {} : { daemonNote: service.warning }),
   };
 }
 
-function daemonState(service: Awaited<ReturnType<typeof installService>>): WiredState {
+/** Every other agent that writes files from inside itself, by the name a screen prints. */
+async function installEditHooks(home: string, seams: WiringSeams): Promise<string[]> {
+  const hooked: string[] = [];
+  if (await (seams.codexHook ?? installCodexHook)(home)) hooked.push('Codex');
+  if (await (seams.cursorHook ?? installCursorHook)(home)) hooked.push('Cursor');
+  if (await (seams.geminiHook ?? installGeminiHook)(home)) hooked.push('Gemini CLI');
+  if (await (seams.windsurfHook ?? installWindsurfHook)(home)) hooked.push('Windsurf');
+  return hooked;
+}
+
+function daemonState(service: InstallResult): WiredState {
   if (!service.state.supported) return WIRED.UNSUPPORTED;
   return service.state.installed ? WIRED.DONE : WIRED.FAILED;
 }
@@ -150,6 +144,8 @@ function repositoryOf(cwd: string): string | null {
   try {
     return execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd,
+      // Setup's own question, so it goes to the real git rather than through the gate.
+      env: ownProcessEnv(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();

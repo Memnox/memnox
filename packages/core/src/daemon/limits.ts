@@ -1,8 +1,8 @@
 /**
- * A session that has been running for six hours, or has called the same tool four
- * hundred times, is not doing what somebody asked. Limits are counted per session and
- * stated in the config, so a runaway ends without anybody having to be watching.
+ * Per-session ceilings on runtime, tool calls and repeats, stated in the config, so a
+ * runaway session ends without anybody having to be watching.
  */
+import { MINUTE_MS } from '../domain/time';
 
 export const LIMIT = {
   RUNTIME: 'runtime',
@@ -44,8 +44,7 @@ export interface SessionCounts {
 
 /**
  * Counting only. What to do about a breach is the caller's, because stopping an agent
- * mid-task is a decision somebody has to have configured rather than one a counter
- * takes on its own.
+ * mid-task is a decision somebody configured rather than one a counter takes.
  */
 export class SessionLimits {
   private readonly sessions = new Map<string, SessionCounts>();
@@ -81,7 +80,10 @@ export class SessionLimits {
     session.toolCalls += 1;
     const repeats = (session.repeats.get(fingerprint) ?? 0) + 1;
     session.repeats.set(fingerprint, repeats);
+    return this.countBreach(session, repeats) ?? this.runtimeBreach(session, now);
+  }
 
+  private countBreach(session: SessionCounts, repeats: number): LimitBreach | null {
     if (this.limits.toolCalls > 0 && session.toolCalls > this.limits.toolCalls) {
       return {
         kind: LIMIT.TOOL_CALLS,
@@ -98,25 +100,23 @@ export class SessionLimits {
         reason: `the same action has run ${repeats} times, which is a loop rather than work`,
       };
     }
-
-    const minutes = (Date.parse(now) - Date.parse(session.startedAt)) / 60_000;
-    if (this.limits.runtimeMinutes > 0 && minutes > this.limits.runtimeMinutes) {
-      return {
-        kind: LIMIT.RUNTIME,
-        reached: Math.floor(minutes),
-        ceiling: this.limits.runtimeMinutes,
-        reason: `this session has been running ${Math.floor(minutes)} minutes, past the ${this.limits.runtimeMinutes} you allow`,
-      };
-    }
     return null;
+  }
+
+  private runtimeBreach(session: SessionCounts, now: string): LimitBreach | null {
+    const minutes = (Date.parse(now) - Date.parse(session.startedAt)) / MINUTE_MS;
+    if (this.limits.runtimeMinutes <= 0 || minutes <= this.limits.runtimeMinutes)
+      return null;
+    return {
+      kind: LIMIT.RUNTIME,
+      reached: Math.floor(minutes),
+      ceiling: this.limits.runtimeMinutes,
+      reason: `this session has been running ${Math.floor(minutes)} minutes, past the ${this.limits.runtimeMinutes} you allow`,
+    };
   }
 }
 
-/**
- * The same refusal, again and again. Somebody being told no three times is not being
- * stubborn; it is a rule that does not match how the work actually gets done, and the
- * third attempt is when that becomes worth saying.
- */
+/** The same refusal a third time is a rule that does not match how the work gets done. */
 export const REPEATED_VIOLATION_THRESHOLD = 3;
 
 export interface Violation {
@@ -125,11 +125,15 @@ export interface Violation {
   at: string;
 }
 
+function violationKey(action: string, target: string | undefined): string {
+  return `${action}:${target ?? ''}`;
+}
+
 export class ViolationMemory {
   private readonly seen = new Map<string, Violation[]>();
 
   record(violation: Violation): number {
-    const key = `${violation.action}:${violation.target ?? ''}`;
+    const key = violationKey(violation.action, violation.target);
     const previous = this.seen.get(key) ?? [];
     previous.push(violation);
     this.seen.set(key, previous);
@@ -138,7 +142,7 @@ export class ViolationMemory {
 
   /** Every previous attempt at this exact thing, so `why` can name them. */
   history(action: string, target?: string): readonly Violation[] {
-    return this.seen.get(`${action}:${target ?? ''}`) ?? [];
+    return this.seen.get(violationKey(action, target)) ?? [];
   }
 
   isRepeated(action: string, target?: string): boolean {

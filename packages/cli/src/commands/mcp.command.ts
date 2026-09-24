@@ -1,135 +1,44 @@
+/** `memnox mcp`: routing this machine's MCP servers through the proxy, and putting them back. */
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { Command } from 'commander';
-import {
-  CONFIG_FORMAT,
-  formatOf,
-  MCP_CONFIG_LOCATIONS,
-  planUnwrap,
-  planUpgrade,
-  planWrap,
-  PROXY_BINARY,
-  readTextServers,
-  rewriteTextServers,
-  serversKeyOf,
-  type ConfigFormat,
-  type DiscoveredAgentKind,
-  type ServerLaunch,
-} from '@memnox/core';
+import { planWrap, PROBATION_KIND, PROXY_BINARY, type WrapPlan } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
-import { backupPathFor } from '../memnox-paths';
 import { onPath } from '../on-path';
+import {
+  isProxyOnPath,
+  readConfigs,
+  writeRelaunches,
+  type BinaryResolver,
+  type ConfigFile,
+} from '../mcp/server-configs';
+import { unwrapEveryServer } from '../mcp/wrap-servers';
+import { markMcp } from '../keeper/kept';
+import { runTrust } from '../probation-view';
+import { runSessionToggle } from '../session-tools/session-toggle';
 
-interface ConfigFile {
-  path: string;
-  raw: string;
-  format: ConfigFormat;
-  /** Only a JSON config carries these; a text one is edited in place instead. */
-  config?: Record<string, unknown>;
-  key?: string;
-  servers: Record<string, ServerLaunch>;
-  /** Servers declared by URL. Named so a run can say what it skipped and why. */
-  urlOnly: string[];
-  /** The agent these servers belong to, written into each wrapped line. */
-  agent?: DiscoveredAgentKind;
+/** What `mcp` reads from outside itself, each injected so a test can pin it. */
+interface McpDeps {
+  home: () => string;
+  resolveBinary: BinaryResolver;
+  project: () => string;
 }
 
-async function readConfigs(home: string, project: string): Promise<ConfigFile[]> {
-  const found: ConfigFile[] = [];
-  // One list, shared with the detectors and the wiring check, or they drift apart.
-  const places = MCP_CONFIG_LOCATIONS.map((each) => ({
-    path: join(each.scope === 'home' ? home : project, each.relative),
-    owner: each.agent === undefined ? {} : { agent: each.agent },
-  }));
-  for (const { path, owner } of places) {
-    let raw: string;
-    try {
-      raw = await readFile(path, 'utf8');
-    } catch (err) {
-      // A config this machine does not have is the ordinary case, not a failure.
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw err;
-    }
-
-    const format = formatOf(path);
-    if (format !== CONFIG_FORMAT.JSON) {
-      const { servers, urlOnly } = readTextServers(format, raw);
-      if (Object.keys(servers).length === 0 && urlOnly.length === 0) continue;
-      found.push({ path, raw, format, servers, urlOnly, ...owner });
-      continue;
-    }
-
-    let config: Record<string, unknown>;
-    try {
-      config = JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      // Never rewrite a file we could not parse: we would lose what it held.
-      continue;
-    }
-    const key = serversKeyOf(config);
-    if (key === null) continue;
-    found.push({
-      path,
-      raw,
-      format,
-      config,
-      key,
-      servers: config[key] as Record<string, ServerLaunch>,
-      urlOnly: [],
-      ...owner,
-    });
-  }
-  return found;
+interface WrapOptions {
+  dryRun?: boolean;
 }
-
-/**
- * Backup first, always. The failure that matters is an editor that will not start.
- *
- * A JSON config is written whole; a TOML or YAML one has its two launch lines replaced
- * and every other byte copied through, so comments and key order survive the round trip.
- */
-async function writeConfig(
-  home: string,
-  file: ConfigFile,
-  servers: Record<string, ServerLaunch>,
-  changed: Record<string, ServerLaunch>,
-): Promise<void> {
-  const backup = backupPathFor(home, file.path);
-  await mkdir(dirname(backup), { recursive: true, mode: 0o700 });
-  await copyFile(file.path, backup);
-
-  if (file.format !== CONFIG_FORMAT.JSON) {
-    await writeFile(
-      file.path,
-      rewriteTextServers(file.format, file.raw, changed),
-      'utf8',
-    );
-    return;
-  }
-  const next = { ...file.config, [file.key as string]: servers };
-  await writeFile(file.path, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-}
-
-/**
- * Wrapping points every server at a binary. If that binary is not on PATH the agent
- * starts nothing at all, which is a worse failure than being ungoverned — so it is
- * checked before a single config is touched, not discovered afterwards.
- */
-function proxyOnPath(resolve: (binary: string) => boolean = defaultResolve): boolean {
-  return resolve(PROXY_BINARY);
-}
-
-const defaultResolve = (binary: string): boolean => onPath(binary);
 
 export function registerMcpCommand(
   program: Command,
   context: CliContext,
-  home: () => string = homedir,
-  resolveBinary: (binary: string) => boolean = defaultResolve,
-  project: () => string = () => process.cwd(),
+  overrides: Partial<McpDeps> = {},
 ): void {
+  const deps: McpDeps = {
+    home: homedir,
+    resolveBinary: onPath,
+    project: () => process.cwd(),
+    ...overrides,
+  };
   const mcp = program
     .command('mcp')
     .description('Route this machine’s MCP servers through the Memnox proxy');
@@ -138,164 +47,122 @@ export function registerMcpCommand(
     .command('wrap')
     .description('Repoint every MCP server at the proxy, keeping a backup')
     .option('--dry-run', 'print what would change and write nothing')
-    .action(async (options: { dryRun?: boolean }) => {
-      const { flow, style } = context;
-      flow.open('memnox mcp wrap');
-      if (options.dryRun !== true && !proxyOnPath(resolveBinary)) {
-        throw new Error(
-          `"${PROXY_BINARY}" is not on PATH, so wrapping would stop your agents starting at all.\n` +
-            'Install the CLI first (npm install -g memnox), then run this again.',
-        );
-      }
-      const configs = await readConfigs(home(), project());
-      if (configs.length === 0) {
-        flow.close('No MCP config on this machine, so there is nothing to wrap.');
-        return;
-      }
-
-      let wrapped = 0;
-      for (const file of configs) {
-        const plan = planWrap(file.servers, file.agent);
-        if (plan.wrap.length === 0 && plan.alreadyWrapped.length === 0) continue;
-
-        flow.list(file.path, [
-          ...plan.wrap.map((each) => ({
-            tone: TONE.OK,
-            text: `${each.name}  ${each.before.command} → proxy`,
-          })),
-          ...plan.alreadyWrapped.map((each) => ({
-            tone: TONE.DIM,
-            text: `${each} is already wrapped`,
-          })),
-          // A URL upstream has no command line to repoint, and saying so beats silence.
-          ...file.urlOnly.map((each) => ({
-            tone: TONE.DIM,
-            text: `${each} is declared by URL, so it is left alone`,
-          })),
-        ]);
-        wrapped += plan.wrap.length;
-
-        if (options.dryRun === true || plan.wrap.length === 0) continue;
-        const next = { ...file.servers };
-        const changed: Record<string, ServerLaunch> = {};
-        for (const each of plan.wrap) {
-          next[each.name] = each.after;
-          changed[each.name] = each.after;
-        }
-        await writeConfig(home(), file, next, changed);
-      }
-
-      if (options.dryRun === true) {
-        flow.close(`${wrapped} server(s) would be wrapped. Nothing was changed.`);
-        return;
-      }
-      flow.close(
-        wrapped === 0
-          ? 'Every server was already wrapped.'
-          : style.ok(`${wrapped} server(s) wrapped.`),
-      );
-      if (wrapped > 0) {
-        flow.hint('Restart your agent, then "memnox mcp unwrap" to undo.');
-      }
-    });
+    .action(async (options: WrapOptions) => runWrap(context, deps, options));
 
   mcp
     .command('unwrap')
     .description('Put every MCP server back the way it was')
-    .action(async () => {
-      const { flow, style } = context;
-      flow.open('memnox mcp unwrap');
-      const restored = await unwrapEveryServer(home(), project(), context);
-      flow.close(
-        restored === 0
-          ? 'Nothing here was wrapped, so nothing was changed.'
-          : style.ok(`${restored} server(s) restored.`),
-      );
-      if (restored > 0) flow.hint('Restart your agent.');
-    });
+    .action(async () => runUnwrap(context, deps));
+
+  mcp
+    .command('session <state>')
+    .description(
+      'Turn the Memnox tools an agent can call from inside a session on or off',
+    )
+    .action(async (state: string) =>
+      runSessionToggle(context, deps.home(), state, deps.resolveBinary),
+    );
+
+  mcp
+    .command('trust <server>')
+    .description("End a server's probation now, so only your rules decide what it does")
+    .action(async (server: string) =>
+      runTrust({
+        context,
+        home: deps.home(),
+        kind: PROBATION_KIND.MCP_SERVER,
+        name: server,
+        now: new Date(),
+      }),
+    );
 }
 
-/**
- * Wraps what is there, for `setup` to call rather than tell somebody to.
- *
- * The same reasoning as `unwrapEveryServer` below: leaving a person to run a
- * second command is the trap. A guided run that enrolled the machine, wired the
- * interceptors and then said nothing about MCP left every outward tool call (the
- * message, the issue, the deploy) going straight out with nothing to compare it
- * against another agent's.
- *
- * Silent, and the caller reports the count. Skipped where the proxy is not on
- * PATH, because wrapping onto a binary that is not there stops agents starting
- * at all, which is the one failure worse than not wrapping.
- */
-export async function wrapEveryServer(
-  home: string,
-  project: string,
-  resolveBinary: (binary: string) => boolean = defaultResolve,
-): Promise<{ wrapped: number; skipped: boolean }> {
-  if (!proxyOnPath(resolveBinary)) return { wrapped: 0, skipped: true };
-  const configs = await readConfigs(home, project);
-  let wrapped = 0;
+/** Repoints every MCP server at the proxy, keeping a backup of each config. */
+async function runWrap(
+  context: CliContext,
+  deps: McpDeps,
+  options: WrapOptions,
+): Promise<void> {
+  const { flow, style } = context;
+  const dryRun = options.dryRun === true;
+  flow.open('memnox mcp wrap');
+  if (!dryRun && !isProxyOnPath(deps.resolveBinary)) {
+    throw new Error(
+      `"${PROXY_BINARY}" is not on PATH, so wrapping would stop your agents starting at all.\n` +
+        'Install the CLI first (npm install -g memnox), then run this again.',
+    );
+  }
+  const configs = await readConfigs(deps.home(), deps.project());
+  if (configs.length === 0) {
+    flow.close('No MCP config on this machine, so there is nothing to wrap.');
+    return;
+  }
 
+  const wrapped = await wrapEach(context, deps, configs, dryRun);
+
+  if (dryRun) {
+    flow.close(`${wrapped} server(s) would be wrapped. Nothing was changed.`);
+    return;
+  }
+  await markMcp(deps.home(), true);
+  flow.close(
+    wrapped === 0
+      ? 'Every server was already wrapped.'
+      : style.ok(`${wrapped} server(s) wrapped.`),
+  );
+  if (wrapped > 0) flow.hint('Restart your agent, then "memnox mcp unwrap" to undo.');
+}
+
+/** Shows each config's plan and, unless this is a dry run, writes it; answers how many. */
+async function wrapEach(
+  context: CliContext,
+  deps: McpDeps,
+  configs: readonly ConfigFile[],
+  dryRun: boolean,
+): Promise<number> {
+  let wrapped = 0;
   for (const file of configs) {
     const plan = planWrap(file.servers, file.agent);
-    /* And the lines an older version wrapped without the agent's name, so a
-       refusal on another machine names this agent without a second command. */
-    const upgrades = planUpgrade(file.servers, file.agent);
-    if (plan.wrap.length === 0 && upgrades.length === 0) continue;
-    const next = { ...file.servers };
-    const changed: Record<string, ServerLaunch> = {};
-    for (const each of [...plan.wrap, ...upgrades]) {
-      next[each.name] = each.after;
-      changed[each.name] = each.after;
-    }
-    await writeConfig(home, file, next, changed);
+    if (plan.wrap.length === 0 && plan.alreadyWrapped.length === 0) continue;
+    renderPlan(context, file, plan);
     wrapped += plan.wrap.length;
+    if (!dryRun && plan.wrap.length > 0) {
+      await writeRelaunches(deps.home(), file, plan.wrap);
+    }
   }
-  return { wrapped, skipped: false };
+  return wrapped;
 }
 
-/**
- * Puts every wrapped server back, and answers how many.
- *
- * Lifted out of the subcommand so `uninstall` can call the same code rather than
- * print an instruction. Leaving a person to run a second command was the trap:
- * `uninstall` removed the interceptors, said "nothing of Memnox is left", and left
- * three agent configs invoking `memnox-mcp-proxy`. Remove the package after that
- * and every wrapped server fails to start, with the command that would fix it
- * gone from the machine.
- *
- * The original command is read out of the wrapped entry rather than out of the
- * backup, which is what lets this run after `--purge` has deleted the backups.
- */
-export async function unwrapEveryServer(
-  home: string,
-  project: string,
-  context: CliContext,
-): Promise<number> {
-  const configs = await readConfigs(home, project);
-  let restored = 0;
+/** One config's servers, and what wrapping does or does not do to each. */
+function renderPlan(context: CliContext, file: ConfigFile, plan: WrapPlan): void {
+  context.flow.list(file.path, [
+    ...plan.wrap.map((each) => ({
+      tone: TONE.OK,
+      text: `${each.name}  ${each.before.command} → proxy`,
+    })),
+    ...plan.alreadyWrapped.map((each) => ({
+      tone: TONE.DIM,
+      text: `${each} is already wrapped`,
+    })),
+    // A URL upstream has no command line to repoint, and saying so beats silence.
+    ...file.urlOnly.map((each) => ({
+      tone: TONE.DIM,
+      text: `${each} is declared by URL, so it is left alone`,
+    })),
+  ]);
+}
 
-  for (const file of configs) {
-    const { restore } = planUnwrap(file.servers);
-    if (restore.length === 0) continue;
-
-    context.flow.list(
-      file.path,
-      restore.map((each) => ({
-        tone: TONE.OK,
-        text: `${each.name}  proxy → ${each.after.command}`,
-      })),
-    );
-    restored += restore.length;
-
-    const next = { ...file.servers };
-    const changed: Record<string, ServerLaunch> = {};
-    for (const each of restore) {
-      next[each.name] = each.after;
-      changed[each.name] = each.after;
-    }
-    await writeConfig(home, file, next, changed);
-  }
-  return restored;
+/** Puts every wrapped server back the way its own config had it. */
+async function runUnwrap(context: CliContext, deps: McpDeps): Promise<void> {
+  const { flow, style } = context;
+  flow.open('memnox mcp unwrap');
+  const restored = await unwrapEveryServer(deps.home(), deps.project(), context);
+  // Written down, or the daemon wraps them all again on its next pass.
+  await markMcp(deps.home(), false);
+  flow.close(
+    restored === 0
+      ? 'Nothing here was wrapped, so nothing was changed.'
+      : style.ok(`${restored} server(s) restored.`),
+  );
+  if (restored > 0) flow.hint('Restart your agent.');
 }
