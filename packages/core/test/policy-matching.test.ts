@@ -43,6 +43,15 @@ describe('argument matching', () => {
     expect(result.effect).toBe(DECISION_EFFECT.ALLOW);
   });
 
+  it('blocks the same command when a newline splits it, not just the one-liner', () => {
+    const result = engine(noRecursiveDelete).evaluate(
+      { action: 'mcp.run_shell', arguments: { command: 'cd /tmp\nsudo rm -rf /var' } },
+      AGENT,
+    );
+
+    expect(result.effect).toBe(DECISION_EFFECT.DENY);
+  });
+
   it('narrows with each named argument — every one must match', () => {
     const scoped = rule({
       name: 'no-force-push-on-release',
