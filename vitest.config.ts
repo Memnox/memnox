@@ -15,6 +15,9 @@ export default defineConfig({
   },
   test: {
     include: ['packages/*/test/**/*.test.ts'],
+    // A backstop for a hung test, not a budget: a third of the suite does real
+    // filesystem work, and vitest's 5s default failed under its own parallelism.
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
