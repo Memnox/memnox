@@ -1,7 +1,6 @@
 /**
- * The layer under the rules that nobody has to write: a session's writes stay in its
- * repository, and an untrusted repository or an agent on probation asks before it acts
- * outside the machine. It only ever turns an allow into an ask, so a deny stays a deny.
+ * The layer under the rules nobody has to write: writes stay in the repository, untrusted
+ * work asks before it acts outside, and refuses an MCP change or a key file. Only tightens.
  */
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -90,6 +89,8 @@ export interface Containment {
 export interface ContainmentAsk {
   reason: string;
   signal: string;
+  /** A refusal rather than a question, for what an untrusted repository never gets. */
+  refuses?: true;
 }
 
 const FILE_WRITES: readonly string[] = [
@@ -139,11 +140,13 @@ export function containmentAsk(
   toolClass?: string,
 ): ContainmentAsk | null {
   const kind = containedClassOf(request.action, toolClass);
+  const secret = untrustedSecret(request, containment);
+  if (secret !== null) return secret;
   if (kind === CONTAINED.READ) return null;
   if (isQuiet(request, containment)) return null;
   return (
     boundaryAsk(request, containment) ??
-    untrustedAsk(kind, containment) ??
+    untrustedAsk(kind, containment, request.action) ??
     probationAsk(containment)
   );
 }
@@ -184,12 +187,40 @@ function boundaryAsk(
   };
 }
 
+/** Key files by name; a template of names is left readable, as the credential rule leaves it. */
+const KEY_FILE = /^\.env(\.(?!example$|sample$|template$)[\w.-]+)?$/;
+
+/** A key file inside an untrusted repository is its author's, and nothing here needs it. */
+function untrustedSecret(
+  request: ActionRequest,
+  containment: Containment,
+): ContainmentAsk | null {
+  if (containment.untrusted !== true || request.action !== ACTION.FILESYSTEM_READ)
+    return null;
+  const name = (request.target ?? '').split('/').pop() ?? '';
+  if (!KEY_FILE.test(name)) return null;
+  return {
+    reason: `${name} is a key file in an untrusted repository, so it is not read.`,
+    signal: CONTAINMENT_SIGNAL.UNTRUSTED,
+    refuses: true,
+  };
+}
+
 function untrustedAsk(
   kind: ContainedClass,
   containment: Containment,
+  action: string,
 ): ContainmentAsk | null {
   if (containment.untrusted !== true) return null;
   if (kind !== CONTAINED.OUTWARD && kind !== CONTAINED.DESTRUCTIVE) return null;
+  // An MCP tool is how an untrusted repository's instructions reach somebody's accounts.
+  if (action.startsWith('mcp.')) {
+    return {
+      reason: `This session runs an untrusted repository, so an MCP tool that changes something is refused; reading through it is not.`,
+      signal: CONTAINMENT_SIGNAL.UNTRUSTED,
+      refuses: true,
+    };
+  }
   return {
     reason: `This session runs an untrusted repository, so every ${kind} action asks first.`,
     signal: CONTAINMENT_SIGNAL.UNTRUSTED,

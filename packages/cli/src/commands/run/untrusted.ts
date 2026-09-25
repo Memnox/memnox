@@ -114,6 +114,7 @@ export function untrustedPreset(input: UntrustedInput): UntrustedPreset {
       ],
       statePrefixes: own,
       proxyPort: input.proxyPort,
+      workspace: input.workspace,
     },
     env: Object.fromEntries(
       CACHE_VARIABLES.map((name) => [name, join(input.scratch, name.toLowerCase())]),

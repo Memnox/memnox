@@ -22,6 +22,18 @@ export interface UntrustedGuard {
   statePrefixes: readonly string[];
   /** The egress proxy's port, the only TCP destination left. Null leaves TCP alone. */
   proxyPort: number | null;
+  /** The repository, whose own key files stay unreadable while a template of names does not. */
+  workspace?: string;
+}
+
+/** The repository's `.env` files unreadable, its templates of names handed back after. */
+function keyFileRules(workspace: string | undefined): string[] {
+  if (workspace === undefined) return [];
+  const root = literalRegex(workspace);
+  return [
+    `(deny file-read-data (regex #"^${root}/(.*/)?\\.env(\\.[^/]*)?$"))`,
+    `(allow file-read-data (regex #"^${root}/(.*/)?\\.env\\.(example|sample|template)$"))`,
+  ];
 }
 
 function quote(path: string): string {
@@ -48,6 +60,7 @@ export function untrustedSeatbeltProfile(guard: UntrustedGuard): string {
       (path) => `(allow file-read-data (regex #"^${literalRegex(path)}"))`,
     ),
     ...guard.unreadable.map((path) => `(deny file-read-data (subpath ${quote(path)}))`),
+    ...keyFileRules(guard.workspace),
     '(deny file-write*)',
     ...guard.writable.map((path) => `(allow file-write* (subpath ${quote(path)}))`),
     ...guard.statePrefixes.map(

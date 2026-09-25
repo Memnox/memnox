@@ -118,7 +118,7 @@ export class LocalGate {
     });
     const contained = this.contained(request, evaluation.effect);
     return {
-      effect: contained === null ? evaluation.effect : DECISION_EFFECT.ASK,
+      effect: effectUnder(evaluation.effect, contained),
       reason: contained === null ? evaluation.reason : contained.reason,
       signals: [
         ...evaluation.matchedPolicies.map(
@@ -137,13 +137,22 @@ export class LocalGate {
     };
   }
 
-  /** Only an allow is ever turned into an ask; a rule that asks or denies already said more. */
+  /** Only an allow is ever tightened; a rule that asks or denies already said more. */
   private contained(
     request: ActionRequest,
     effect: DecisionEffect,
   ): ContainmentAsk | null {
     const containment = this.options.containment;
     if (containment === undefined || effect !== DECISION_EFFECT.ALLOW) return null;
-    return containmentAsk(request, containment);
+    return containmentAsk(request, containment, request.toolClass);
   }
+}
+
+/** What containment makes of the rules' allow: a refusal where it refuses, else a question. */
+function effectUnder(
+  effect: DecisionEffect,
+  contained: ContainmentAsk | null,
+): DecisionEffect {
+  if (contained === null) return effect;
+  return contained.refuses === true ? DECISION_EFFECT.DENY : DECISION_EFFECT.ASK;
 }
