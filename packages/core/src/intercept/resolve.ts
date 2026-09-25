@@ -6,6 +6,7 @@ import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
 import { classifyWriter } from './writers';
 import { environmentRead, variablesPrinted } from './environment-reads';
 import {
+  fileStatementIn,
   inspectStatement,
   isDatabaseClient,
   nonLocalHost,
@@ -82,7 +83,8 @@ function resolveSqlStatement(
   stdin?: string,
 ): ResolvedAction | null {
   if (!isDatabaseClient(binary)) return null;
-  const statement = statementIn(binary, args, stdin);
+  const statement =
+    statementIn(binary, args, stdin) ?? fileStatementIn(binary, args, env);
   if (statement === null) return null;
   const sql = inspectStatement(binary, statement);
   // Unrecognised is handed to the client's own table, which knows a session can do anything.
