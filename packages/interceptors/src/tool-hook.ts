@@ -96,7 +96,12 @@ export async function answerToolCall(
   if (mode === ENFORCEMENT_MODE.OFF) return null;
 
   const authorizer = seams.authorizer ?? (await authorizerFor(context));
-  const ruled = await ruleOnTool(call, { authorizer, mode, env: context.env });
+  const ruled = await ruleOnTool(call, {
+    authorizer,
+    mode,
+    env: context.env,
+    home: context.home,
+  });
   const ruling = await withSessionGrant(ruled, sessionFor(call, context), context.home);
   if (isWorthRecording(ruling)) {
     const sink = seams.sink === undefined ? openLedger(context.home) : seams.sink;

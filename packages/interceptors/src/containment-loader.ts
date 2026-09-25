@@ -70,7 +70,8 @@ export async function containmentFor(
           agent,
           now,
         );
-  const untrusted = session?.untrusted === true;
+  const untrusted =
+    session?.untrusted === true || (await clonedByAnAgent(home, root ?? cwd, now));
   if (root === undefined && onProbation === null && !untrusted) return null;
   return {
     ...(root === undefined ? {} : { root }),
@@ -89,6 +90,12 @@ export async function containmentFor(
           },
         }),
   };
+}
+
+/** A repository an agent cloned is untrusted wherever work happens inside it. */
+async function clonedByAnAgent(home: string, root: string, now: Date): Promise<boolean> {
+  const entries = await new ProbationRegister(home).all();
+  return probationOf(entries, PROBATION_KIND.REPOSITORY, root, now) !== null;
 }
 
 function agentOfMarkers(env: NodeJS.ProcessEnv): string | null {

@@ -19,12 +19,22 @@ interface TrustInput {
 }
 
 /** Ends one probation now. Says so plainly when there was nothing to end. */
+const WHAT_IS_TRUSTED: Readonly<Record<ProbationKind, string>> = {
+  [PROBATION_KIND.AGENT]: 'agent',
+  [PROBATION_KIND.MCP_SERVER]: 'MCP server',
+  [PROBATION_KIND.REPOSITORY]: 'repository',
+};
+
+const TRUST_COMMAND: Readonly<Record<ProbationKind, string>> = {
+  [PROBATION_KIND.AGENT]: 'memnox agents trust',
+  [PROBATION_KIND.MCP_SERVER]: 'memnox mcp trust',
+  [PROBATION_KIND.REPOSITORY]: 'memnox repo trust',
+};
+
 export async function runTrust(input: TrustInput): Promise<void> {
   const { context, kind, name } = input;
-  const what = kind === PROBATION_KIND.AGENT ? 'agent' : 'MCP server';
-  context.flow.open(
-    kind === PROBATION_KIND.AGENT ? 'memnox agents trust' : 'memnox mcp trust',
-  );
+  const what = WHAT_IS_TRUSTED[kind];
+  context.flow.open(TRUST_COMMAND[kind]);
   const trusted = await new ProbationRegister(input.home).trust(kind, name, input.now);
   if (trusted === null) {
     context.flow.close(

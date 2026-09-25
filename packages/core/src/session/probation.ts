@@ -15,6 +15,8 @@ export const PROBATION_DAYS = 7;
 export const PROBATION_KIND = {
   AGENT: 'agent',
   MCP_SERVER: 'mcp-server',
+  /** A repository an agent cloned, which is a stranger's code until a person says otherwise. */
+  REPOSITORY: 'repository',
 } as const;
 
 export type ProbationKind = (typeof PROBATION_KIND)[keyof typeof PROBATION_KIND];
@@ -35,6 +37,7 @@ export interface ProbationEntry {
 
 /** The command that ends one entry now, quoted wherever probation is explained. */
 export function trustCommandFor(kind: ProbationKind, name: string): string {
+  if (kind === PROBATION_KIND.REPOSITORY) return `memnox repo trust ${name}`;
   return kind === PROBATION_KIND.AGENT
     ? `memnox agents trust ${name}`
     : `memnox mcp trust ${name}`;

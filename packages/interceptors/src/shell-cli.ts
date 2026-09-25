@@ -209,6 +209,7 @@ async function buildSeam(): Promise<ShellSeam> {
     authorizer: await buildAuthorizer(),
     workingDirectory: process.cwd(),
     env: process.env,
+    home: homedir(),
     hold: buildHold(),
     agent: process.env[ENV_AGENT_NAME] ?? DEFAULT_AGENT_NAME,
     ...(sessionId === undefined ? {} : { sessionId }),

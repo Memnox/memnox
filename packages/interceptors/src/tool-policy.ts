@@ -50,6 +50,8 @@ export interface ToolPolicyDeps {
   authorizer: HookAuthorizer;
   mode: EnforcementMode;
   env: NodeJS.ProcessEnv;
+  /** Where a clone the agent makes is put on probation. Absent, nothing is noted. */
+  home?: string;
 }
 
 /** Deny beats ask beats allow, so a call is ruled by its worst action and not its last. */
@@ -136,6 +138,7 @@ async function ruleOnLine(call: ToolCall, deps: ToolPolicyDeps): Promise<Ruled> 
     authorizer: deps.authorizer,
     env: deps.env,
     ...(call.cwd === undefined ? {} : { workingDirectory: call.cwd }),
+    ...(deps.home === undefined ? {} : { home: deps.home }),
   });
   const { decision } = await seam.gate([call.shell ?? '']);
   return {

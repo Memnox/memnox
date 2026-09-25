@@ -17,6 +17,10 @@ import {
   UNNAMED_AGENT,
   UNNAMED_SESSION,
   alternativeFor,
+  cloneTargetOf,
+  normalizeShellCommand,
+  PROBATION_KIND,
+  ProbationRegister,
   type ActionRequest,
   type Alternative,
   type DecisionEffect,
@@ -88,6 +92,9 @@ export interface ShellSeamDeps {
    * Absent on a machine running one agent, which must stay free of every cost this adds.
    */
   leases?: SeamLeases;
+  /** Where a repository an agent clones is put on probation. Absent, nothing is noted. */
+  home?: string;
+  now?: () => Date;
 }
 
 const NO_COMMAND = 'no command to run';
@@ -197,7 +204,10 @@ export class ShellSeam {
     decision: ShellDecision,
   ): Promise<ShellOutcome> {
     const held = await this.claim(line);
-    if (held === null) return { run: command, exitCode: SHELL_EXIT_OK, decision };
+    if (held === null) {
+      await this.noteClones(line);
+      return { run: command, exitCode: SHELL_EXIT_OK, decision };
+    }
     // A refusal, because the command did not run, and
     // the reason names another agent rather than a rule.
     return {
@@ -245,6 +255,27 @@ export class ShellSeam {
         reason: what,
       },
     };
+  }
+
+  /**
+   * A repository an agent is about to clone is a stranger's code, so it starts on
+   * probation and the work done inside it is contained until a person trusts it.
+   */
+  private async noteClones(line: string): Promise<void> {
+    const home = this.deps.home;
+    if (home === undefined) return;
+    const cwd = this.deps.workingDirectory ?? process.cwd();
+    const register = new ProbationRegister(home);
+    for (const command of normalizeShellCommand(line).parsed) {
+      const target = cloneTargetOf(command.argv, cwd);
+      if (target === null) continue;
+      await register
+        .start(
+          { kind: PROBATION_KIND.REPOSITORY, name: target.directory, label: target.url },
+          (this.deps.now ?? ((): Date => new Date()))(),
+        )
+        .catch(() => null);
+    }
   }
 
   private allowedByPerson(): null {
