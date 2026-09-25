@@ -259,3 +259,13 @@ describe('whose pid a lease belongs to', () => {
     expect(holderPid(0, 99)).toBe(99);
   });
 });
+
+describe('two leases one process takes in the same instant', () => {
+  it('are two leases, not one written over the other', () => {
+    const holder = { agent: 'claude-code', sessionId: 'ses_1', pid: 42 };
+    const now = '2026-09-25T10:00:00.000Z';
+    const billing = leaseFor({ path: 'src/billing', holder }, now);
+    const auth = leaseFor({ path: 'src/auth', holder }, now);
+    expect(billing.id).not.toBe(auth.id);
+  });
+});

@@ -293,20 +293,25 @@ export class ShellSeam {
     const leases = this.deps.leases;
     if (leases === undefined) return null;
 
+    const workingDirectory = this.deps.workingDirectory ?? leases.repositoryRoot;
+    // Every file a command writes, since `touch a b` or `mv x y` claims both ends.
+    const claimed = new Set<string>();
     for (const resolved of resolveShellLine(line, this.deps.env ?? {}).actions) {
       if (!takesLease(String(resolved.class))) continue;
-      const workingDirectory = this.deps.workingDirectory ?? leases.repositoryRoot;
-      const path = leasePathFor(resolved.target, leases.repositoryRoot, workingDirectory);
-      if (path === null) continue;
-
-      const scope = leaseScopeFor(path, leases.isDirectory);
-      const intent = `${resolved.action} ${resolved.target ?? ''}`.trim();
-      const verdict = await leases.gate.claim(scope, leases.holder, intent);
-      if (proceeds(verdict)) continue;
-      return {
-        message: verdict.message ?? `${scope} is held by another agent.`,
-        exitCode: SHELL_EXIT_WITHHELD,
-      };
+      for (const target of targetsRuledOn(resolved)) {
+        const path = leasePathFor(target, leases.repositoryRoot, workingDirectory);
+        if (path === null) continue;
+        const scope = leaseScopeFor(path, leases.isDirectory);
+        if (claimed.has(scope)) continue;
+        claimed.add(scope);
+        const intent = `${resolved.action} ${target ?? ''}`.trim();
+        const verdict = await leases.gate.claim(scope, leases.holder, intent);
+        if (proceeds(verdict)) continue;
+        return {
+          message: verdict.message ?? `${scope} is held by another agent.`,
+          exitCode: SHELL_EXIT_WITHHELD,
+        };
+      }
     }
     return null;
   }

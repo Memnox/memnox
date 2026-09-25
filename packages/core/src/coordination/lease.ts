@@ -1,3 +1,4 @@
+import { shortDigest } from '../domain/digest';
 import { minutesToMs, msToMinutes } from '../domain/time';
 import { describeSpan, IN_MINUTES } from '../domain/duration-text';
 /**
@@ -155,7 +156,8 @@ function expiryAfter(now: string, minutes: number): string {
 export function leaseFor(request: LeaseRequest, now: string): Lease {
   const { path, holder, activity } = request;
   return {
-    id: `lse_${Date.parse(now).toString(36)}_${holder.pid.toString(36)}`,
+    // The path too, or two paths one command writes in the same millisecond share a file.
+    id: `lse_${Date.parse(now).toString(36)}_${holder.pid.toString(36)}_${shortDigest(path).slice(0, 8)}`,
     path,
     holder,
     takenAt: now,

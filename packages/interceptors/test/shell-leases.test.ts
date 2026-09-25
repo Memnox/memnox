@@ -64,6 +64,29 @@ describe('taking a lease where the write happens', () => {
     expect(held.map((lease) => lease.path)).toEqual(['src/billing']);
   });
 
+  it('takes every directory a shell write lands in, not only the first', async () => {
+    const registry = new LeaseRegistry(await home(), () => true);
+    const outcome = await seamFor(registry, cursor).gate([
+      'touch /work/repo/src/billing/a.ts /work/repo/src/auth/b.ts > /work/repo/docs/notes.md',
+    ]);
+    expect(outcome.exitCode).toBe(SHELL_EXIT_OK);
+    const held = (await registry.held(NOW)).map((lease) => lease.path).sort();
+    expect(held).toEqual(['docs', 'src/auth', 'src/billing']);
+  });
+
+  it('withholds a write to the second file when another agent holds it', async () => {
+    const registry = new LeaseRegistry(await home(), () => true);
+    await registry.take(
+      { path: 'src/auth', holder: cursor, minutes: 60, activity: 'rewriting login' },
+      NOW,
+    );
+    const outcome = await seamFor(registry, claude).gate([
+      "sed -i 's/a/b/' /work/repo/src/billing/a.ts /work/repo/src/auth/b.ts",
+    ]);
+    expect(outcome.exitCode).toBe(SHELL_EXIT_WITHHELD);
+    expect(outcome.message).toContain('cursor');
+  });
+
   it('never takes one for a read, so nothing here can make a reader wait', async () => {
     const registry = new LeaseRegistry(await home(), () => true);
     const outcome = await seamFor(registry, cursor).gate([
