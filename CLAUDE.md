@@ -301,7 +301,7 @@ answers before the loop starts rather than interrupting it half an hour in.
 | ID | Goal | Deliver | Accept | Depends | Size |
 |---|---|---|---|---|---|
 | OSS-9.1 | Milestone snapshots | `core/recovery`: tree object of tracked + untracked-not-ignored, written with `commit-tree` under `refs/memnox/milestones/<id>`; never a branch, never the stash | Snapshot of a dirty tree round-trips; `git log` and `git stash list` unchanged | 5.1 | L |
-| OSS-9.2 | `memnox rewind` | `--list`, `--to <id>`, default = the last milestone; restores the working tree only | Files added since the milestone are removed, files changed are restored, ignored files untouched | 9.1 | L |
+| OSS-9.2 | `memnox rewind` | `--list`, `--to <id>`, default = the last milestone; restores the working tree only | Files added since the milestone are removed, files changed are restored; an ignored file of a megabyte or less is put back, and one made since is never removed | 9.1 | L |
 | OSS-9.3 | Rewind is undoable | A rewind takes its own milestone first | `rewind` twice returns to where it started | 9.2 | S |
 | OSS-9.4 | Refuse an unsafe rewind | Merge, rebase, bisect or detached mid-operation → refuse and say which | Fixture repos per state | 9.2 | S |
 | OSS-9.5 | Milestone on task start | `memnox run` takes one; interceptors take one before the first write-class action of a session | One session, one milestone, not one per command | 9.1, 7.2 | M |

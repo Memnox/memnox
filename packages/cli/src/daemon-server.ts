@@ -153,6 +153,12 @@ export class MemnoxDaemon {
     const sessionId = request.sessionId ?? UNNAMED_SESSION;
     const action = request.action ?? 'unknown';
     const now = this.now();
+    if (request.driftOnly === true) {
+      const drift = this.breaker.observeDrift(sessionId);
+      if (drift !== null)
+        this.hold({ sessionId, breach: drift, lastAction: action, now });
+      return { id: request.id, ok: true };
+    }
 
     const breach = this.breaker.observe({
       sessionId,

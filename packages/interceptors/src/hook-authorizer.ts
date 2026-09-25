@@ -9,6 +9,7 @@ import {
   type Alternative,
   type DecisionEffect,
   type LocalGate,
+  SCOPE_MATCH,
 } from '@memnox/core';
 
 import { EGRESS_ACTIONS } from './tool-hook.constants';
@@ -32,6 +33,8 @@ export interface HookVerdict {
   shadowEffect?: DecisionEffect;
   /** The environment the call named, so the refusal says where it would have landed. */
   environment?: string;
+  /** Outside the task the session declared, which the circuit breaker counts. */
+  outOfScope?: boolean;
 }
 
 export interface HookAuthorizerDeps {
@@ -108,6 +111,7 @@ export class HookAuthorizer {
       ...(verdict.shadowEffect === undefined
         ? {}
         : { shadowEffect: verdict.shadowEffect }),
+      ...(verdict.scope?.match === SCOPE_MATCH.OUT_OF_SCOPE ? { outOfScope: true } : {}),
     };
   }
 }

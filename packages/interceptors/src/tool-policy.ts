@@ -44,6 +44,8 @@ export interface ToolRuling {
   reason: string;
   rule?: string;
   alternative?: Alternative;
+  /** Outside the task the session declared, which the circuit breaker counts. */
+  outOfScope?: boolean;
 }
 
 export interface ToolPolicyDeps {
@@ -92,6 +94,7 @@ export async function ruleOnTool(
     reason: verdict.reason,
     ...(verdict.rule === undefined ? {} : { rule: verdict.rule }),
     ...(verdict.alternative === undefined ? {} : { alternative: verdict.alternative }),
+    ...(verdict.outOfScope === true ? { outOfScope: true } : {}),
   };
 }
 
@@ -157,6 +160,7 @@ async function ruleOnLine(call: ToolCall, deps: ToolPolicyDeps): Promise<Ruled> 
       ...(decision.environment === undefined
         ? {}
         : { environment: decision.environment }),
+      ...(decision.outOfScope === true ? { outOfScope: true } : {}),
     },
   };
 }

@@ -58,6 +58,7 @@ export interface ShellDecision {
   /** Where the refusal says to go instead, so a hooked shell tool names it too. */
   alternative?: Alternative;
   environment?: string;
+  outOfScope?: boolean;
 }
 
 export interface ShellOutcome {
@@ -372,5 +373,6 @@ function decisionOf(ruling: Ruling, asked: boolean): ShellDecision {
     ...(ruling.verdict.environment === undefined
       ? {}
       : { environment: ruling.verdict.environment }),
+    ...(ruling.verdict.outOfScope === true ? { outOfScope: true } : {}),
   };
 }

@@ -41,6 +41,8 @@ export interface DaemonRequest {
   exitCode?: number;
   /** On RECORD: whether it fell outside the declared task. */
   outOfScope?: boolean;
+  /** On RECORD: only the drift is being reported, so nothing is charged or counted as done. */
+  driftOnly?: boolean;
   /** On RECORD: what it cost, when a surface can report one. Never estimated. */
   costUsd?: number;
 }

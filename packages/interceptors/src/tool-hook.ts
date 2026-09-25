@@ -22,6 +22,7 @@ import { HookAuthorizer } from './hook-authorizer';
 import { readHookConfig } from './hook-config';
 import { loadHookGate } from './hook-gate-loader';
 import { toolCallOf, type ToolCall } from './tool-calls';
+import { reportToDaemon } from './daemon-client';
 import {
   isWorthRecording,
   putsQuestion,
@@ -103,6 +104,16 @@ export async function answerToolCall(
     home: context.home,
   });
   const ruling = await withSessionGrant(ruled, sessionFor(call, context), context.home);
+  // The breaker counts drift for a session only the hooks see, which reports nothing else.
+  if (ruling.effect === DECISION_EFFECT.ALLOW && ruling.outOfScope === true) {
+    await reportToDaemon(context.home, {
+      action: ruling.action,
+      ...(ruling.target === undefined ? {} : { target: ruling.target }),
+      sessionId: sessionFor(call, context),
+      outOfScope: true,
+      driftOnly: true,
+    }).catch(() => null);
+  }
   if (isWorthRecording(ruling)) {
     const sink = seams.sink === undefined ? openLedger(context.home) : seams.sink;
     await keep(sink, call, ruling, context);

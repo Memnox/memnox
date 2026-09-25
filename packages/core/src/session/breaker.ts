@@ -135,6 +135,17 @@ export class CircuitBreaker {
     );
   }
 
+  /**
+   * One action outside the declared task, from a seam that reports nothing else, so the
+   * action count, the failure run and the spend are left as they were.
+   */
+  observeDrift(sessionId: string): BreakerBreach | null {
+    const state = this.sessions.get(sessionId) ?? emptyState();
+    this.sessions.set(sessionId, state);
+    state.outOfScope += 1;
+    return this.scopeDrift(state);
+  }
+
   private errorLoop(outcome: ActionOutcome, same: number): BreakerBreach | null {
     if (!outcome.failed || same < this.thresholds.errorLoop) return null;
     return {

@@ -35,6 +35,8 @@ export interface ReportOptions {
   /** How the command ended. The breaker's error and progress signals need this. */
   exitCode?: number;
   outOfScope?: boolean;
+  /** Only the drift, from a seam that reports nothing else, so nothing is charged. */
+  driftOnly?: boolean;
   /** Reported, never estimated. Absent on every surface that cannot know it. */
   costUsd?: number;
   timeoutMs?: number;
@@ -73,6 +75,7 @@ export function reportToDaemon(
     ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
     ...(options.exitCode === undefined ? {} : { exitCode: options.exitCode }),
     ...(options.outOfScope === undefined ? {} : { outOfScope: options.outOfScope }),
+    ...(options.driftOnly === true ? { driftOnly: true } : {}),
     ...(options.costUsd === undefined ? {} : { costUsd: options.costUsd }),
   });
 }
