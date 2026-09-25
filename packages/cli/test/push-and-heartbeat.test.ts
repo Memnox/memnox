@@ -14,7 +14,7 @@ import {
   type MemnoxEvent,
 } from '@memnox/core';
 import { draftFrom, fitting } from '../src/sync/action-rows';
-import { signBody } from '../src/sync/push';
+import { pushFrom, signBody } from '../src/sync/push';
 import { readCursor } from '../src/sync/push-cursor';
 import { syncLoop, type Pass } from '../src/sync/heartbeat';
 
@@ -167,6 +167,26 @@ describe('the cursor', () => {
 
   it('starts empty, which is where every machine starts', async () => {
     expect(await readCursor(home)).toEqual({});
+  });
+});
+
+/* A cursor outlives a logout, so without a floor a machine enrolled into a new
+   workspace sent it what it recorded while it answered to another, or to none. */
+describe('where a push starts', () => {
+  const enrolledAt = '2026-09-24T21:49:08.498Z';
+
+  it('sends nothing recorded before this enrolment, however old the cursor', () => {
+    expect(pushFrom('2026-09-24T21:37:27.112Z', enrolledAt)).toBe(enrolledAt);
+  });
+
+  it('starts at the enrolment when nothing has been sent yet', () => {
+    expect(pushFrom(undefined, enrolledAt)).toBe(enrolledAt);
+  });
+
+  it('reaches a minute behind the cursor once it is past the enrolment', () => {
+    expect(pushFrom('2026-09-24T22:10:00.000Z', enrolledAt)).toBe(
+      '2026-09-24T22:09:00.000Z',
+    );
   });
 });
 

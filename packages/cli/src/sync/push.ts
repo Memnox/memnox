@@ -125,6 +125,18 @@ export async function pushFindings(
   return rows.length === 0 ? NOTHING : sentWhole(rows);
 }
 
+/**
+ * Where a pass starts: a minute behind the cursor, and never before this enrolment.
+ * The cursor outlives a logout, so without the floor a new workspace was sent what
+ * this machine did while it answered to another one, or to none.
+ */
+export function pushFrom(pushedThrough: string | undefined, enrolledAt: string): string {
+  const floor = Date.parse(enrolledAt);
+  if (pushedThrough === undefined) return new Date(floor).toISOString();
+  const behind = Date.parse(pushedThrough) - OVERLAP_MS;
+  return new Date(Math.max(behind, floor)).toISOString();
+}
+
 export async function pushEvents(
   home: string,
   account: Account,
@@ -133,15 +145,9 @@ export async function pushEvents(
 ): Promise<PushResult> {
   const now = seams.now ?? ((): Date => new Date());
   const cursor = await readCursor(home);
-  const since =
-    cursor.pushedThrough === undefined
-      ? undefined
-      : new Date(Date.parse(cursor.pushedThrough) - OVERLAP_MS).toISOString();
+  const since = pushFrom(cursor.pushedThrough, account.enrolledAt);
 
-  const events = await ledger.query({
-    ...(since === undefined ? {} : { since }),
-    limit: BATCH,
-  });
+  const events = await ledger.query({ since, limit: BATCH });
   if (events.length === 0) return NOTHING;
 
   const { drafts, through } = fitting(events);
