@@ -3,8 +3,23 @@
  * because two resolvers would mean a rule written from one screen failing at another.
  */
 import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
-import { inspectSql, isDatabaseClient, nonLocalHost, SQL_RISK, statementIn } from './sql';
-import { actionForCommand, classOf, targetIn, verbTableFor } from '../verbs/index';
+import { classifyWriter } from './writers';
+import {
+  inspectStatement,
+  isDatabaseClient,
+  nonLocalHost,
+  SQL_RISK,
+  statementIn,
+} from './sql';
+import {
+  actionForCommand,
+  classOf,
+  refineVerb,
+  targetIn,
+  verbArgv,
+  verbTableFor,
+} from '../verbs/index';
+import { TOOL_CLASS } from '../discovery/classify';
 import type { ToolClass } from '../discovery/classify';
 import { normalizeShellCommand, type OpaqueReason } from '../domain/shell-normalizer';
 import { ACTION } from '../constants/action.constants';
@@ -27,16 +42,26 @@ export interface ResolvedAction {
   method?: string;
 }
 
-/** Most specific first: a SQL statement, then a verb table, then a reader, then the generic classifiers. */
+export interface ResolveOptions {
+  /** What the command reads on standard input, from a heredoc or a here-string. */
+  stdin?: string;
+}
+
+/**
+ * Most specific first: a SQL statement, then a verb table, then a reader, then a writer,
+ * then the generic classifiers.
+ */
 export function resolveAction(
   binary: string,
   args: readonly string[],
   env: NodeJS.ProcessEnv = {},
+  options: ResolveOptions = {},
 ): ResolvedAction {
   return (
-    resolveSqlStatement(binary, args, env) ??
+    resolveSqlStatement(binary, args, env, options.stdin) ??
     resolveFromVerbTable(binary, args) ??
     resolveReader(binary, args, env) ??
+    resolveWriter(binary, args, env) ??
     resolveGeneric(binary, args) ?? {
       action: ACTION.SHELL_EXECUTE,
       class: COMMAND_CLASS.NORMAL,
@@ -50,11 +75,14 @@ function resolveSqlStatement(
   binary: string,
   args: readonly string[],
   env: NodeJS.ProcessEnv,
+  stdin?: string,
 ): ResolvedAction | null {
   if (!isDatabaseClient(binary)) return null;
-  const statement = statementIn(binary, args);
+  const statement = statementIn(binary, args, stdin);
   if (statement === null) return null;
-  const sql = inspectSql(statement);
+  const sql = inspectStatement(binary, statement);
+  // Unrecognised is handed to the client's own table, which knows a session can do anything.
+  if (sql.risk === SQL_RISK.UNKNOWN) return null;
   const host = nonLocalHost(args, env);
   // An unbounded delete is its own action, the same way `git.push-force` is not `git.push`.
   const suffix = sql.risk === SQL_RISK.UNBOUNDED ? '-unbounded' : '';
@@ -72,10 +100,12 @@ function resolveFromVerbTable(
 ): ResolvedAction | null {
   const table = verbTableFor(binary);
   if (table === null) return null;
-  const verb = classOf(table, args);
-  const target = targetIn(verb, args);
+  // Flags that come before the verb, as `kubectl --context prod delete`, are not the verb.
+  const argv = verbArgv(table, args);
+  const verb = refineVerb(binary, argv, classOf(table, argv));
+  const target = targetIn(verb, argv);
   return {
-    action: actionForCommand(binary, table, args),
+    action: actionForCommand(binary, table, argv, verb),
     class: verb.class,
     because: verb.note ?? `${binary} ${verb.match}`,
     ...(target === undefined ? {} : { target }),
@@ -98,6 +128,22 @@ function resolveReader(
     because: reading.because,
     ...(reading.target === undefined ? {} : { target: reading.target }),
     targets: reading.targets,
+  };
+}
+
+function resolveWriter(
+  binary: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): ResolvedAction | null {
+  const writing = classifyWriter(binary, args, env);
+  if (writing === null || writing.targets.length === 0) return null;
+  return {
+    action: writing.action,
+    class: writing.class,
+    because: writing.because,
+    ...(writing.target === undefined ? {} : { target: writing.target }),
+    targets: writing.targets,
   };
 }
 
@@ -155,11 +201,64 @@ export function resolveShellLine(
   const normalized = normalizeShellCommand(line);
   const actions: ResolvedAction[] = [];
   // The literal form: a verb table matches argv in the order somebody typed it.
-  for (const command of normalized.commands) {
-    const argv = splitCommandLine(command);
-    const binary = argv[0];
-    if (binary === undefined) continue;
-    actions.push(resolveAction(binary, argv.slice(1), env));
+  for (const command of normalized.parsed) {
+    const [path, ...args] = command.argv;
+    if (path === undefined) continue;
+    const binary = path.split('/').pop() ?? path;
+    const resolved = resolveAction(
+      binary,
+      args,
+      env,
+      command.stdin === undefined ? {} : { stdin: command.stdin },
+    );
+    actions.push(resolved);
+    // `cp` is ruled on as a read of its source, and its destination is a write as well.
+    if (resolved.action === ACTION.FILESYSTEM_READ) {
+      const written = resolveWriter(binary, args, env);
+      if (written !== null) actions.push(written);
+    }
+    // A move takes the file away as surely as a copy reads it.
+    if (binary === 'mv') {
+      const moved = classifyReader('cp', args, env);
+      if (moved !== null && moved.targets.length > 0) {
+        actions.push({ ...moved, because: 'mv takes the file it is given' });
+      }
+    }
   }
-  return { actions, opaque: normalized.opaque };
+  const redirected = redirectActions(normalized.redirects, env);
+  return { actions: [...actions, ...redirected], opaque: normalized.opaque };
+}
+
+/** `> file` and `< file` as the writes and reads they are, which argv never shows. */
+function redirectActions(
+  redirects: { writes: readonly string[]; reads: readonly string[] },
+  env: NodeJS.ProcessEnv,
+): ResolvedAction[] {
+  const actions: ResolvedAction[] = [];
+  const writes = redirects.writes.map((path) => absoluteFrom(path, env));
+  const reads = redirects.reads.map((path) => absoluteFrom(path, env));
+  if (writes.length > 0) {
+    actions.push({
+      action: ACTION.FILESYSTEM_WRITE,
+      class: TOOL_CLASS.WRITE,
+      because: 'a redirect writes the file',
+      target: writes[0] as string,
+      targets: writes,
+    });
+  }
+  if (reads.length > 0) {
+    actions.push({
+      action: ACTION.FILESYSTEM_READ,
+      class: TOOL_CLASS.READ,
+      because: 'a redirect reads the file',
+      target: reads[0] as string,
+      targets: reads,
+    });
+  }
+  return actions;
+}
+
+function absoluteFrom(path: string, env: NodeJS.ProcessEnv): string {
+  // A reader's path rules, so a redirect names a file the way `cat` would.
+  return classifyReader('cat', [path], env)?.target ?? path;
 }

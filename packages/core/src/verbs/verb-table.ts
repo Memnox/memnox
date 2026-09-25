@@ -15,8 +15,13 @@ export const VERB_TAG = {
 export type VerbTag = (typeof VERB_TAG)[keyof typeof VERB_TAG];
 
 export interface Verb {
-  /** An argv pattern: literal words, `*` for one argument, `**` for the rest. */
+  /**
+   * An argv pattern: literal words, `*` for one argument, `**` for the rest, and `$` for
+   * nothing after, so `branch $` is the listing and not `branch feature`.
+   */
   match: string;
+  /** The action's own name, where the pattern alone would give two verbs one name. */
+  name?: string;
   class: ToolClass;
   tags?: VerbTag[];
   /** Shown in `explain` and in the timeline, e.g. "preview deploy". */
@@ -32,6 +37,15 @@ export interface VerbTable {
   /** The sentence a scan prints when this CLI is logged in. */
   headline: string;
   verbs: Verb[];
+  /**
+   * Flags that may come before the verb and take a value, as `kubectl --context prod delete`.
+   * An entry ending in `=` takes its value joined, as terraform's `-chdir=dir`.
+   */
+  globalFlags?: string[];
+  /** Flags that may come before the verb and take no value. */
+  globalSwitches?: string[];
+  /** Flags whose value is an HTTP method, which may be run on as `-XPOST` or lowercased. */
+  methodFlags?: string[];
 }
 
 export interface VerbMatch {
@@ -49,6 +63,8 @@ function specificity(pattern: string): number {
     pattern
       .split(/\s+/)
       .filter((word) => word !== '*' && word !== '**')
+      // Nothing after is a constraint, so it outranks the same words that allow more.
+      .map((word) => (word === '$' ? '$*' : word))
       // A prefix like `delete-**` is more specific than a bare word but less than a literal.
       .reduce((total, word) => total + (word.endsWith('*') ? 1 : 2), 0)
   );
@@ -86,6 +102,7 @@ function matchesPattern(pattern: string, argv: readonly string[]): boolean {
 
   for (const word of words) {
     if (word === '**') return true;
+    if (word === '$') return index >= argv.length;
     if (word === '*') {
       if (index >= argv.length) return false;
       index += 1;
@@ -117,7 +134,7 @@ function matchesPattern(pattern: string, argv: readonly string[]): boolean {
 function consumedBy(pattern: string, argv: readonly string[]): number {
   let index = 0;
   for (const word of pattern.split(/\s+/).filter((each) => each !== '')) {
-    if (word === '**') break;
+    if (word === '**' || word === '$') break;
     if (word.startsWith('-')) continue;
     if (index >= argv.length) break;
     index += 1;
@@ -134,6 +151,61 @@ export function targetIn(verb: Verb, argv: readonly string[]): string | undefine
     .slice(consumedBy(verb.match, argv))
     .filter((argument) => !argument.startsWith('-'));
   return positional[positional.length - 1];
+}
+
+/**
+ * argv as a table reads it: `--flag=value` split in two, a method flag's value run on or
+ * lowercased made plain, and the CLI's own flags before the verb taken out, so
+ * `kubectl -n prod delete pod x` is a delete rather than an unknown.
+ */
+export function verbArgv(table: VerbTable, argv: readonly string[]): string[] {
+  const methodFlags = table.methodFlags ?? [];
+  const split: string[] = [];
+  for (const arg of argv) {
+    const long = /^(--[\w-]+)=(.*)$/.exec(arg);
+    if (long !== null) {
+      split.push(long[1] as string, long[2] as string);
+      continue;
+    }
+    const runOn = methodFlags.find(
+      (flag) =>
+        !flag.startsWith('--') && arg.startsWith(flag) && arg.length > flag.length,
+    );
+    if (runOn !== undefined) {
+      split.push(runOn, arg.slice(runOn.length));
+      continue;
+    }
+    split.push(arg);
+  }
+  for (let index = 0; index + 1 < split.length; index += 1) {
+    if (methodFlags.includes(split[index] as string)) {
+      split[index + 1] = (split[index + 1] as string).toUpperCase();
+    }
+  }
+  return withoutLeadingGlobals(table, split);
+}
+
+function withoutLeadingGlobals(table: VerbTable, argv: readonly string[]): string[] {
+  const valued = table.globalFlags ?? [];
+  const switches = table.globalSwitches ?? [];
+  let index = 0;
+  while (index < argv.length) {
+    const arg = argv[index] as string;
+    if (valued.some((flag) => flag.endsWith('=') && arg.startsWith(flag))) {
+      index += 1;
+      continue;
+    }
+    if (valued.includes(arg)) {
+      index += 2;
+      continue;
+    }
+    if (switches.includes(arg)) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  return argv.slice(index);
 }
 
 /** Null when nothing in the table covers this command, which is `unknown`, not safe. */
@@ -176,25 +248,60 @@ export function destructiveVerbs(table: VerbTable): Verb[] {
  * written from one screen matches at every other.
  */
 export function verbAction(cli: string, verb: Verb): string {
+  if (verb.name !== undefined) return `${cli}.${verb.name}`;
   // Flags stay in the name, so a rule about force-pushing does not deny every push, and a
   // prefix keeps its stem, so `delete-**` and `describe-**` are two names rather than none.
   const words = verb.match
     .split(/\s+/)
     .map((word) => word.replace(/-?\*+$/, ''))
-    .filter((word) => word !== '')
+    .filter((word) => word !== '' && word !== '$')
     .map((word) => word.replace(/^-+/, '').toLowerCase());
   return words.length === 0 ? `${cli}.run` : `${cli}.${words.join('-')}`;
 }
 
-/** The action a command line resolves to, whether or not a table covers it. */
+/**
+ * The action a command line resolves to, whether or not a table covers it. A verb already
+ * chosen, as a refined one is, names the action instead of matching again.
+ */
 export function actionForCommand(
   cli: string,
   table: VerbTable,
   argv: readonly string[],
+  chosen?: Verb,
 ): string {
-  const matched = matchVerb(table, argv);
-  return matched === null ? `${cli}.unknown` : verbAction(cli, matched.verb);
+  const verb = chosen ?? matchVerb(table, argv)?.verb ?? UNKNOWN_VERB;
+  return verb === UNKNOWN_VERB ? `${cli}.unknown` : verbAction(cli, verb);
 }
+
+const GRAPHQL_MUTATION = /^\s*mutation\b/;
+const QUERY_FIELD = /^query=(.*)$/s;
+
+/**
+ * Where an argv pattern cannot see the difference, the argument can: a GraphQL call is
+ * always a POST with a field, and only the query text says whether it reads or changes.
+ */
+export function refineVerb(cli: string, argv: readonly string[], verb: Verb): Verb {
+  if (cli !== 'gh' || argv[0] !== 'api' || !argv.includes('graphql')) return verb;
+  const query = argv
+    .map((arg) => QUERY_FIELD.exec(arg)?.[1])
+    .find((each) => each !== undefined);
+  // A query from a file or stdin cannot be read here, so it keeps the write it matched.
+  if (query === undefined || query.startsWith('@')) return verb;
+  return GRAPHQL_BY_KIND[GRAPHQL_MUTATION.test(query) ? 'mutation' : 'query'];
+}
+
+const GRAPHQL_BY_KIND: Readonly<Record<'mutation' | 'query', Verb>> = {
+  query: {
+    match: 'api graphql **',
+    class: TOOL_CLASS.READ,
+    note: 'a GraphQL query reads',
+  },
+  mutation: {
+    match: 'api graphql **',
+    class: TOOL_CLASS.WRITE,
+    note: 'a GraphQL mutation changes something',
+  },
+};
 
 export function hasTag(verb: Verb, tag: VerbTag): boolean {
   return (verb.tags ?? []).includes(tag);
@@ -227,6 +334,9 @@ export function commandGlobFor(
   const verb = verbForAction(action, tableFor);
   if (verb === null) return null;
   const cli = action.slice(0, action.indexOf('.'));
+  // Nothing after is the command exactly, with no glob to widen it.
+  if (/\s\$$/.test(verb.match))
+    return `${cli} ${verb.match.replace(/\s*\$$/, '').trim()}`;
   // `**` means "and the rest", which is exactly what a trailing glob says.
   const pattern = verb.match.replace(/\s*\*\*\s*$/, '').trim();
   return pattern === '' ? `${cli}*` : `${cli} ${pattern}*`;

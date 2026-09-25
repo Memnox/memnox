@@ -162,3 +162,88 @@ reason = "that is a credential"
     expect(out.text).toContain('ALLOW');
   });
 });
+
+describe('memnox policy test and a rule narrowed by class', () => {
+  const CHANGES_ONLY = `
+version = 1
+[[policies]]
+name = "cli-changes"
+[policies.match]
+actions = ["gh.*", "mcp.*"]
+classes = ["write", "destructive", "communication"]
+[policies.decision]
+effect = "deny"
+reason = "changes are not for agents"
+`;
+
+  async function changesOnly(): Promise<string> {
+    const path = join(await mkdtemp(join(tmpdir(), 'memnox-pt-')), 'p.toml');
+    await writeFile(path, CHANGES_ONLY);
+    return path;
+  }
+
+  it('lets a read through, the way the seam would', async () => {
+    const out = await run(['policy', 'test', 'gh pr view 12', '-f', await changesOnly()]);
+    expect(out.text).toContain('ALLOW');
+  });
+
+  it('refuses the change', async () => {
+    const out = await run([
+      'policy',
+      'test',
+      'gh pr merge 12',
+      '-f',
+      await changesOnly(),
+    ]);
+    expect(out.text).toContain('DENY');
+  });
+
+  it('takes the class of an action named outright from its verb or its tool name', async () => {
+    const file = await changesOnly();
+    expect((await run(['policy', 'test', 'gh.pr-view', '-f', file])).text).toContain(
+      'ALLOW',
+    );
+    expect((await run(['policy', 'test', 'gh.pr-merge', '-f', file])).text).toContain(
+      'DENY',
+    );
+    expect((await run(['policy', 'test', 'mcp.list_issues', '-f', file])).text).toContain(
+      'ALLOW',
+    );
+    expect(
+      (await run(['policy', 'test', 'mcp.merge_pull_request', '-f', file])).text,
+    ).toContain('DENY');
+  });
+
+  it('takes a class somebody names', async () => {
+    const out = await run([
+      'policy',
+      'test',
+      'mcp.frob',
+      '-c',
+      'write',
+      '-f',
+      await changesOnly(),
+    ]);
+    expect(out.text).toContain('DENY');
+  });
+
+  it('rules on a redirect in the line', async () => {
+    const path = join(await mkdtemp(join(tmpdir(), 'memnox-pt-')), 'p.toml');
+    await writeFile(
+      path,
+      `version = 1
+[[policies]]
+name = "dotfiles"
+[policies.match]
+actions = ["filesystem.write"]
+targets = ["**/.bashrc"]
+[policies.decision]
+effect = "deny"
+reason = "a dotfile runs on every shell"
+`,
+    );
+    const out = await run(['policy', 'test', 'echo x > ~/.bashrc', '-f', path]);
+    expect(out.text).toContain('DENY');
+    expect(out.text).toContain('dotfiles');
+  });
+});

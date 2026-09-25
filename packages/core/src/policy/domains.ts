@@ -111,6 +111,7 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
       'git.reset-hard',
       'git.branch-d',
       'git.clean-fd',
+      'git.clean-f',
       'git.reset',
       'git.clean',
     ],

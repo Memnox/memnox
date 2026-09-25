@@ -105,8 +105,8 @@ function boundaryThrough(
   subject: string,
   candidates: readonly CandidateAction[],
 ): Boundary {
-  return boundaryFor(subject, candidates, (action) => {
-    const verdict = gate.evaluate({ action });
+  return boundaryFor(subject, candidates, (action, toolClass) => {
+    const verdict = gate.evaluate({ action, toolClass });
     return {
       effect: verdict.effect,
       reason: verdict.reason,

@@ -1,3 +1,11 @@
+import {
+  liftHeredocs,
+  splitOutsideQuotes,
+  takeRedirects,
+  tokenizeQuoted,
+  type Token,
+} from './shell-words';
+
 /** Indirection the normalizer could not resolve. Never silently ignored. */
 export const OPAQUE_REASON = {
   /** $VAR, `cmd`, or $(cmd), where the real command is not knowable here. */
@@ -26,10 +34,27 @@ export interface NormalizedCommand {
   commands: string[];
   /** Sorted, deduplicated. Non-empty means something could not be resolved. */
   opaque: OpaqueReason[];
+  /**
+   * The same commands again, as argv with quoting kept and redirects taken out, so a
+   * quoted `"SELECT 1; DROP TABLE t"` stays one argument rather than two commands.
+   */
+  parsed: ParsedCommand[];
+  /** Files the line's redirects write and read, which no argv shows. */
+  redirects: Redirects;
+}
+
+export interface ParsedCommand {
+  argv: string[];
+  /** A heredoc or here-string, which is where `psql <<EOF` keeps its statement. */
+  stdin?: string;
+}
+
+export interface Redirects {
+  writes: string[];
+  reads: string[];
 }
 
 const MAX_DEPTH = 4;
-const SEPARATORS = /\|\||&&|[|;\n]/;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*$/;
 const EXPANSION = /\$\{?[A-Za-z_(]|`/;
 const INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash']);
@@ -47,42 +72,63 @@ const DOWNLOADERS = new Set(['curl', 'wget', 'fetch']);
 interface FoundCommand {
   canonical: string;
   literal: string;
+  parsed: ParsedCommand;
+}
+
+interface Walk {
+  found: FoundCommand[];
+  opaque: Set<OpaqueReason>;
+  redirects: Redirects;
 }
 
 export function normalizeShellCommand(raw: string): NormalizedCommand {
-  const found: FoundCommand[] = [];
-  const opaque = new Set<OpaqueReason>();
-  walk(raw, 0, found, opaque);
+  const state: Walk = {
+    found: [],
+    opaque: new Set(),
+    redirects: { writes: [], reads: [] },
+  };
+  walk(raw, 0, state);
 
-  // Deduplicated on the canonical form, so both lists name the same commands.
+  // Deduplicated on the canonical form, so every list names the same commands.
   const seen = new Set<string>();
   const segments: string[] = [];
   const commands: string[] = [];
-  for (const command of found) {
-    if (command.canonical.length === 0 || seen.has(command.canonical)) continue;
-    seen.add(command.canonical);
+  const parsed: ParsedCommand[] = [];
+  for (const command of state.found) {
+    const key = `${command.canonical}\u0000${command.parsed.stdin ?? ''}`;
+    if (command.canonical.length === 0 || seen.has(key)) continue;
+    seen.add(key);
     segments.push(command.canonical);
     commands.push(command.literal);
+    parsed.push(command.parsed);
   }
-  return { segments, commands, opaque: [...opaque].sort() };
+  return {
+    segments,
+    commands,
+    opaque: [...state.opaque].sort(),
+    parsed,
+    redirects: {
+      writes: [...new Set(state.redirects.writes)],
+      reads: [...new Set(state.redirects.reads)],
+    },
+  };
 }
 
-function walk(
-  raw: string,
-  depth: number,
-  found: FoundCommand[],
-  opaque: Set<OpaqueReason>,
-): void {
+function walk(raw: string, depth: number, state: Walk): void {
+  const { found, opaque } = state;
   if (depth > MAX_DEPTH) {
     opaque.add(OPAQUE_REASON.TOO_DEEP);
     return;
   }
-  const pipeline = raw.split(SEPARATORS).map((part) => part.trim());
+  const { text, bodies } = liftHeredocs(raw);
+  const pipeline = splitOutsideQuotes(text).map((part) => part.trim());
   const pipesIntoInterpreter = pipeline.length > 1 && endsInInterpreter(pipeline);
 
   for (const part of pipeline) {
     if (part.length === 0) continue;
-    const words = stripEnvAssignments(tokenize(part));
+    const tokens = stripEnvTokens(tokenizeQuoted(part));
+    const { kept, stdin } = takeRedirects(tokens, bodies, state.redirects);
+    const words = kept.map((token) => token.text);
     if (words.length === 0) continue;
 
     if (EXPANSION.test(part)) opaque.add(OPAQUE_REASON.EXPANSION);
@@ -94,19 +140,30 @@ function walk(
 
     const inner = unwrap(binary, words, opaque);
     if (inner !== null) {
-      walk(inner, depth + 1, found, opaque);
+      walk(inner, depth + 1, state);
       continue;
     }
-    found.push({ canonical: canonicalize(words), literal: words.join(' ') });
+    found.push({
+      canonical: canonicalize(words),
+      literal: words.join(' '),
+      parsed: { argv: words, ...(stdin === undefined ? {} : { stdin }) },
+    });
   }
+}
+
+function stripEnvTokens(tokens: readonly Token[]): Token[] {
+  let index = 0;
+  while (index < tokens.length && ENV_ASSIGNMENT.test(tokens[index]?.text ?? ''))
+    index += 1;
+  return tokens.slice(index);
 }
 
 /** `curl x | sh`, where the last stage decides whether the pipeline executes. */
 function endsInInterpreter(pipeline: readonly string[]): boolean {
   const last = pipeline[pipeline.length - 1];
   if (last === undefined) return false;
-  const words = stripEnvAssignments(tokenize(last));
-  return INTERPRETERS.has(basename(words[0] ?? ''));
+  const words = stripEnvTokens(tokenizeQuoted(last));
+  return INTERPRETERS.has(basename(words[0]?.text ?? ''));
 }
 
 /** Returns the wrapped command when this word list is a wrapper, else null. */
@@ -159,40 +216,6 @@ function decodeBase64(value: string): string | null {
   } catch {
     return null; // Not valid base64, so treat it as an ordinary argument.
   }
-}
-
-/** Splits on whitespace, honouring quotes and keeping quoted content intact. */
-function tokenize(input: string): string[] {
-  const words: string[] = [];
-  let current = '';
-  let quote: string | null = null;
-
-  for (const character of input) {
-    if (quote !== null) {
-      if (character === quote) quote = null;
-      else current += character;
-      continue;
-    }
-    if (character === '"' || character === "'") {
-      quote = character;
-      continue;
-    }
-    if (/\s/.test(character)) {
-      if (current.length > 0) words.push(current);
-      current = '';
-      continue;
-    }
-    current += character;
-  }
-  if (current.length > 0) words.push(current);
-  return words;
-}
-
-/** `FOO=bar rm -rf /` runs rm, not FOO. */
-function stripEnvAssignments(words: readonly string[]): string[] {
-  let index = 0;
-  while (index < words.length && ENV_ASSIGNMENT.test(words[index] ?? '')) index += 1;
-  return words.slice(index);
 }
 
 function basename(word: string): string {

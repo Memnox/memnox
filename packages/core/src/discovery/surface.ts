@@ -136,7 +136,15 @@ const DESTRUCTIVE_VERBS = [
   'purge',
   'truncate',
   'revoke',
+  'erase',
+  'wipe',
+  'terminate',
+  'kill',
+  'unpublish',
+  'uninstall',
+  'deprovision',
 ];
+/** Verbs that are only ever verbs, so they count wherever they sit in a name. */
 const WRITE_VERBS = [
   'write',
   'create',
@@ -145,16 +153,91 @@ const WRITE_VERBS = [
   'edit',
   'add',
   'insert',
+  'send',
+  'upload',
+  'publish',
+  'rename',
+  'redeploy',
+  'rerun',
+  'retry',
+  'cancel',
+  'restart',
+  'rollback',
+  'revert',
+  'dispatch',
+  'execute',
+  'exec',
+  'invoke',
+  'approve',
+  'reject',
+  'reopen',
+  'close',
+  'assign',
+  'unassign',
+  'refund',
+  'capture',
+  'confirm',
+  'void',
+  'finalize',
+  'scale',
+  'enable',
+  'disable',
+  'upsert',
+  'replace',
+  'save',
+  'subscribe',
+  'unsubscribe',
+  'invite',
+  'grant',
+  'unlink',
+  'attach',
+  'detach',
+  'sync',
+  'provision',
+  'promote',
+  'fork',
+  'archive',
+  'unarchive',
+  'resend',
+  'rotate',
+  'reset',
+  'toggle',
+  'pause',
+  'resume',
+  'suspend',
+  'reactivate',
+];
+/**
+ * Verbs that are nouns as often as verbs: `get_workflow_run` reads a run and
+ * `list_deploy_keys` lists keys, while `merge_pull_request` merges. They count unless the
+ * name opens with a read verb.
+ */
+const NOUN_LIKE_WRITE_VERBS = [
   'set',
   'post',
-  'send',
   'merge',
   'push',
   'apply',
   'deploy',
-  'upload',
-  'publish',
-  'rename',
+  'run',
+  'start',
+  'stop',
+  'trigger',
+  'commit',
+  'tag',
+  'label',
+  'lock',
+  'unlock',
+  'charge',
+  'transfer',
+  'move',
+  'patch',
+  'pay',
+  'install',
+  'link',
+  'import',
+  'schedule',
+  'mark',
 ];
 const READ_VERBS = [
   'get',
@@ -165,6 +248,16 @@ const READ_VERBS = [
   'find',
   'query',
   'describe',
+  'retrieve',
+  'show',
+  'view',
+  'count',
+  'check',
+  'inspect',
+  'lookup',
+  'download',
+  'export',
+  'explain',
 ];
 
 /**
@@ -214,8 +307,11 @@ export function effectOfName(name: string): ToolEffect | null {
   const has = (verbs: readonly string[]): boolean =>
     verbs.some((verb) => segments.includes(verb));
 
+  const opensWithRead = READ_VERBS.includes(segments[0] ?? '');
+
   if (has(DESTRUCTIVE_VERBS)) return TOOL_EFFECT.DESTRUCTIVE;
   if (has(WRITE_VERBS)) return TOOL_EFFECT.WRITE;
+  if (!opensWithRead && has(NOUN_LIKE_WRITE_VERBS)) return TOOL_EFFECT.WRITE;
   if (has(READ_VERBS)) return TOOL_EFFECT.READ;
   return null;
 }

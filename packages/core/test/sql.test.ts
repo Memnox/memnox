@@ -22,7 +22,16 @@ describe('reading the statement, not the tool', () => {
     ['SELECT * FROM users', SQL_RISK.READS],
     ['show tables', SQL_RISK.READS],
     ['EXPLAIN SELECT 1', SQL_RISK.READS],
-    ['VACUUM', SQL_RISK.UNKNOWN],
+    ['VACUUM', SQL_RISK.WRITES],
+    ['DROP VIEW active_users', SQL_RISK.DROPS],
+    ['DROP FUNCTION f()', SQL_RISK.DROPS],
+    ['COPY users FROM STDIN', SQL_RISK.WRITES],
+    ['COPY users TO STDOUT', SQL_RISK.READS],
+    ['SELECT * INTO archive FROM users', SQL_RISK.WRITES],
+    ['DO $$ BEGIN PERFORM 1; END $$', SQL_RISK.WRITES],
+    ['SELECT 1; DROP TABLE users', SQL_RISK.DROPS],
+    ['\\dt', SQL_RISK.READS],
+    ['FROBNICATE users', SQL_RISK.UNKNOWN],
   ])('reads %s as %s', (sql, risk) => {
     expect(inspectSql(sql).risk).toBe(risk);
   });
@@ -57,7 +66,11 @@ describe('reading the statement, not the tool', () => {
   });
 
   it('says unknown rather than assuming a statement it does not recognise is safe', () => {
-    expect(inspectSql('CALL do_the_thing()').class).toBe('unknown');
+    expect(inspectSql('FROBNICATE users').class).toBe('unknown');
+  });
+
+  it('calls a procedure a write, since what it runs cannot be read from here', () => {
+    expect(inspectSql('CALL do_the_thing()').class).toBe('write');
   });
 });
 

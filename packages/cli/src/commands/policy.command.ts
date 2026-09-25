@@ -20,7 +20,11 @@ import {
   MEMNOX_HOME,
   readPolicyRegistry,
   renameEffectsIn,
-  resolveAction,
+  resolveShellLine,
+  classifyToolCall,
+  HTTP_METHOD_ARGUMENT,
+  verbForAction,
+  verbTableFor,
   POLICY_REGISTRY_FILE,
   targetsRuledOn,
   type ActionRequest,
@@ -43,6 +47,8 @@ interface TestOptions {
   file?: string;
   agent: string;
   target?: string;
+  /** What the action does, for an action named outright whose class nothing here knows. */
+  class?: string;
 }
 
 interface CheckOptions {
@@ -56,14 +62,10 @@ interface PolicyDeps {
   env: NodeJS.ProcessEnv;
 }
 
-/** Quotes kept together, order preserved: this is argv as the kernel would hand it over. */
-function splitCommand(input: string): string[] {
-  return (input.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((word) =>
-    word.replace(/^["']|["']$/g, ''),
-  );
-}
-
-/** Classified exactly as an interceptor would, or `git.push` would not match `git push --force`. */
+/**
+ * Classified exactly as a seam would: the whole line through the shell resolver, so a
+ * redirect or a second command is ruled on, and each with the class a rule narrows by.
+ */
 function requestsFor(
   input: string,
   options: TestOptions,
@@ -71,27 +73,42 @@ function requestsFor(
 ): ActionRequest[] {
   // Already a namespaced action, e.g. from a git hook.
   if (!input.includes(' ') && input.includes('.')) {
+    const toolClass = options.class ?? classOfAction(input);
     return [
       {
         action: input,
         ...(options.target === undefined ? {} : { target: options.target }),
+        ...(toolClass === undefined ? {} : { toolClass }),
       },
     ];
   }
 
-  // Split in argv order rather than normalized, because order is what a verb pattern matches.
-  const argv = splitCommand(input);
-  const binary = argv[0] ?? input;
-  const resolved = resolveAction(binary, argv.slice(1), env);
+  const actions = resolveShellLine(input, env).actions;
+  if (actions.length === 0) return [{ action: input }];
+  return actions.flatMap((resolved) => {
+    const common = {
+      action: resolved.action,
+      toolClass: options.class ?? String(resolved.class),
+      ...(resolved.method === undefined
+        ? {}
+        : { arguments: { [HTTP_METHOD_ARGUMENT]: resolved.method } }),
+    };
+    if (options.target !== undefined) return [{ ...common, target: options.target }];
+    // One per file named, through the shell seam's own helper, so this stays a dry run.
+    return targetsRuledOn(resolved).map((target) => ({
+      ...common,
+      ...(target === undefined ? {} : { target }),
+    }));
+  });
+}
 
-  if (options.target !== undefined) {
-    return [{ action: resolved.action, target: options.target }];
-  }
-  // One per file named, through the shell seam's own helper, so this stays a dry run.
-  return targetsRuledOn(resolved).map((target) => ({
-    action: resolved.action,
-    ...(target === undefined ? {} : { target }),
-  }));
+/** The class a seam would send for an action named outright: its verb, or its tool name. */
+function classOfAction(action: string): string | undefined {
+  const verb = verbForAction(action, verbTableFor);
+  if (verb !== null) return verb.class;
+  if (action.startsWith('mcp.'))
+    return classifyToolCall(action.split('.').pop() ?? '').class;
+  return undefined;
 }
 
 export function registerPolicyCommand(
@@ -122,6 +139,10 @@ export function registerPolicyCommand(
     .option('-f, --file <path>', 'policy file (default: whichever exists)')
     .option('-a, --agent <name>', 'agent the rules are matched against', 'agent')
     .option('-t, --target <target>', 'what the action operates on')
+    .option(
+      '-c, --class <class>',
+      'what it does: read, write, destructive, communication',
+    )
     .action(async (action: string, options: TestOptions) =>
       runTest(context, deps, action, options),
     );

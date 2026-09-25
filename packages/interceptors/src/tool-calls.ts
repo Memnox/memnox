@@ -2,7 +2,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import {
   ACTION,
-  classifyTool,
+  classifyToolCall,
   HTTP_METHOD,
   HTTP_METHOD_ARGUMENT,
   TOOL_CLASS,
@@ -199,8 +199,8 @@ function fileRequest(action: string, path: string, base: PathBase): ToolRequest 
 function mcpRequests(server: string, tool: string, input: HookFields): ToolRequest[] {
   const common = {
     target: server,
-    // By name, as the proxy classifies it, so a rule about changes lets `list_issues` through.
-    class: classifyTool({ name: tool }).class,
+    // As the proxy classifies it, so a rule about changes lets `list_issues` through.
+    class: classifyToolCall(tool, input).class,
     arguments: flatArguments(input),
   };
   return [

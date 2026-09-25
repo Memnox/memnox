@@ -65,7 +65,11 @@ export function actionsForCli(binary: string): CandidateAction[] {
 export function boundaryFor(
   agent: string,
   candidates: readonly CandidateAction[],
-  decide: (action: string) => {
+  // The class goes too, or a rule written about changes decides a read as well.
+  decide: (
+    action: string,
+    toolClass: ToolClass,
+  ) => {
     effect: DecisionEffect;
     reason: string;
     matched: boolean;
@@ -75,7 +79,7 @@ export function boundaryFor(
   const ungoverned: string[] = [];
 
   for (const candidate of candidates) {
-    const verdict = decide(candidate.action);
+    const verdict = decide(candidate.action, candidate.class);
     if (!verdict.matched) {
       // Counted rather than filed as automatic, because an unruled capability is not a permitted one.
       ungoverned.push(candidate.action);

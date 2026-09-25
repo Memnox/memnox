@@ -146,7 +146,7 @@ describe('the seed tables', () => {
       expect(classOf(table, argv(line)).class).toBe('destructive');
     }
     // Case still separates them: `-d` is the safe delete and `-D` is the forced one.
-    expect(classOf(table, argv('branch -d feature'))).toBe(UNKNOWN_VERB);
+    expect(classOf(table, argv('branch -d feature')).class).toBe('write');
     expect(classOf(table, argv('branch -D feature')).class).toBe('destructive');
   });
 

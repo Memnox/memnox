@@ -111,7 +111,7 @@ const CURL_VALUE_FLAGS = new Set([
   '--upload-file',
 ]);
 
-function positionalArgs(
+export function positionalArgs(
   args: readonly string[],
   valueFlags: ReadonlySet<string>,
 ): string[] {
@@ -339,7 +339,7 @@ const READERS = new Set([
  * Absolute, because a rule names an absolute path and a command names whatever was
  * convenient, so `cat .ssh/id_ed25519` and `cat ~/.ssh/id_ed25519` reach one rule.
  */
-function absolutePath(candidate: string, env: NodeJS.ProcessEnv): string {
+export function absolutePath(candidate: string, env: NodeJS.ProcessEnv): string {
   const path = withHomeExpanded(candidate, env['HOME'] ?? env['USERPROFILE']);
   if (path.startsWith('/')) return path;
 

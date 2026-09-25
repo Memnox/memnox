@@ -20,7 +20,7 @@ name = "git-deny"
 description = "Force-pushing, and hard resets"
 
 [policies.match]
-actions = [ "git.push-force", "git.push-f", "git.reset-hard", "git.branch-d", "git.clean-fd", "git.reset", "git.clean" ]
+actions = [ "git.push-force", "git.push-f", "git.reset-hard", "git.branch-d", "git.clean-fd", "git.clean-f", "git.reset", "git.clean" ]
 
 [policies.decision]
 effect = "deny"
