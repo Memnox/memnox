@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import {
   ACTION,
   classifyToolCall,
+  environmentOfArguments,
   HTTP_METHOD,
   HTTP_METHOD_ARGUMENT,
   TOOL_CLASS,
@@ -44,6 +45,8 @@ export interface ToolRequest {
   class: ToolClass;
   /** Local only: ruled on for what it carries and never written to a row. */
   arguments?: Record<string, string>;
+  /** The environment the call named, for a rule's `environments` and the refusal. */
+  environment?: string;
 }
 
 /** A tool call about to run, and what it does. */
@@ -197,7 +200,9 @@ function fileRequest(action: string, path: string, base: PathBase): ToolRequest 
  * rules write it, and `mcp.<tool>` of the server as the proxy asks, or one seam's rule missed.
  */
 function mcpRequests(server: string, tool: string, input: HookFields): ToolRequest[] {
+  const environment = environmentOfArguments(input);
   const common = {
+    ...(environment === undefined ? {} : { environment }),
     target: server,
     // As the proxy classifies it, so a rule about changes lets `list_issues` through.
     class: classifyToolCall(tool, input).class,

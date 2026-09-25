@@ -177,13 +177,17 @@ export function policiesFrom(
         alternative: {
           // Every choice above names at least one action.
           action: choice.actions[0] as string,
-          note: 'Ask somebody, or change this rule if it is wrong for your work.',
+          note: GENERATED_ALTERNATIVE_NOTE,
         },
       },
     });
   }
   return policies;
 }
+
+/** Written on every generated rule, which names no way forward particular to one command. */
+export const GENERATED_ALTERNATIVE_NOTE =
+  'Ask somebody, or change this rule if it is wrong for your work.';
 
 /** What a run with no questions asked would write. */
 export function recommendedAnswers(): Map<PolicyDomain, DecisionEffect> {

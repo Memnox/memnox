@@ -1,5 +1,6 @@
 import {
   classifyToolCall,
+  environmentOfArguments,
   DECISION_EFFECT,
   PROTECTION_STOPPED_REASON,
   type ActionRequest,
@@ -108,7 +109,9 @@ export class LocalGateAuthorizer implements CallAuthorizer {
   }
 
   private requestFor(call: ToolCall): ActionRequest {
+    const environment = environmentOfArguments(call.arguments);
     return {
+      ...(environment === undefined ? {} : { environment }),
       action: operationFor(call.name),
       target: this.serverName,
       // By name and statement, since the proxy keeps no manifest and a `query` can drop.

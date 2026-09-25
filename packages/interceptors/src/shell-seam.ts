@@ -16,7 +16,9 @@ import {
   TOOL_CLASS,
   UNNAMED_AGENT,
   UNNAMED_SESSION,
+  alternativeFor,
   type ActionRequest,
+  type Alternative,
   type DecisionEffect,
   type HoldService,
 } from '@memnox/core';
@@ -49,6 +51,9 @@ export interface ShellDecision {
    * True when a person was put in front of it, which is what a hand-over is counted from.
    */
   asked?: boolean;
+  /** Where the refusal says to go instead, so a hooked shell tool names it too. */
+  alternative?: Alternative;
+  environment?: string;
 }
 
 export interface ShellOutcome {
@@ -155,9 +160,24 @@ export class ShellSeam {
         const request = this.requestFor(resolved.action, target ?? line, {
           toolClass: String(resolved.class),
           ...(resolved.method === undefined ? {} : { method: resolved.method }),
+          ...(resolved.environment === undefined
+            ? {}
+            : { environment: resolved.environment }),
         });
+        const verdict = await this.deps.authorizer.authorize(request);
+        const alternative = alternativeFor(
+          verdict.alternative,
+          resolved.alternative,
+          resolved.action,
+        );
         ruling = worse(ruling, {
-          verdict: await this.deps.authorizer.authorize(request),
+          verdict: {
+            ...verdict,
+            ...(alternative === undefined ? {} : { alternative }),
+            ...(resolved.environment === undefined
+              ? {}
+              : { environment: resolved.environment }),
+          },
           action: resolved.action,
           ...(target === undefined ? {} : { target }),
           class: String(resolved.class),
@@ -262,12 +282,17 @@ export class ShellSeam {
   private requestFor(
     action: string,
     target: string,
-    { toolClass, method }: { toolClass?: string; method?: string } = {},
+    {
+      toolClass,
+      method,
+      environment,
+    }: { toolClass?: string; method?: string; environment?: string } = {},
   ): ActionRequest {
     return {
       action,
       target,
       ...(toolClass === undefined ? {} : { toolClass }),
+      ...(environment === undefined ? {} : { environment }),
       // LOCAL ONLY. The SDK strips this before anything reaches the runtime.
       arguments: {
         command: target,
@@ -304,5 +329,11 @@ function decisionOf(ruling: Ruling, asked: boolean): ShellDecision {
     ...(ruling.target === undefined ? {} : { target: ruling.target }),
     ...(ruling.verdict.rule === undefined ? {} : { rule: ruling.verdict.rule }),
     ...(asked ? { asked: true } : {}),
+    ...(ruling.verdict.alternative === undefined
+      ? {}
+      : { alternative: ruling.verdict.alternative }),
+    ...(ruling.verdict.environment === undefined
+      ? {}
+      : { environment: ruling.verdict.environment }),
   };
 }

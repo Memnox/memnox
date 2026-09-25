@@ -66,3 +66,23 @@ function statementArgument(args: Readonly<Record<string, unknown>>): string | nu
   }
   return null;
 }
+
+/** Argument names an MCP call gives its environment under, as Railway's tools do. */
+const ENVIRONMENT_ARGUMENTS = [
+  'environment',
+  'environmentName',
+  'environment_name',
+  'env',
+  'stage',
+];
+
+/** The environment a call names in its own arguments, as it named it. */
+export function environmentOfArguments(
+  args: Readonly<Record<string, unknown>>,
+): string | undefined {
+  for (const key of ENVIRONMENT_ARGUMENTS) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  return undefined;
+}

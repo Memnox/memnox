@@ -13,6 +13,8 @@ export const DEPLOY_TABLES: readonly VerbTable[] = [
     name: 'vercel',
     credential: ['~/.vercel/auth.json', 'VERCEL_TOKEN'],
     headline: 'can deploy to production',
+    environmentFlags: ['--target', '--environment'],
+    productionSwitches: ['--prod'],
     globalFlags: [
       '--scope',
       '-S',
@@ -44,6 +46,8 @@ export const DEPLOY_TABLES: readonly VerbTable[] = [
     name: 'railway',
     credential: ['~/.railway/config.json'],
     headline: 'can deploy',
+    environmentFlags: ['-e', '--environment'],
+    environmentVariables: ['RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME'],
     verbs: [
       {
         match: 'delete **',
@@ -146,6 +150,8 @@ export const DEPLOY_TABLES: readonly VerbTable[] = [
     name: 'netlify',
     credential: ['~/.netlify'],
     headline: 'can deploy',
+    environmentFlags: ['--context'],
+    productionSwitches: ['--prod'],
     verbs: [
       { match: 'sites:delete **', class: GONE },
       { match: 'deploy --prod', class: WRITE, tags: [PROD] },

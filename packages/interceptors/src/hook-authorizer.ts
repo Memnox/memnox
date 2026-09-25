@@ -2,6 +2,7 @@ import {
   DECISION_EFFECT,
   PROTECTION_STOPPED_REASON,
   describeAlternative,
+  describeEnvironment,
   describeEgress,
   inspectEgress,
   type ActionRequest,
@@ -29,6 +30,8 @@ export interface HookVerdict {
   decisionId?: string;
   /** What an observed rule would have decided, had it been enforcing. */
   shadowEffect?: DecisionEffect;
+  /** The environment the call named, so the refusal says where it would have landed. */
+  environment?: string;
 }
 
 export interface HookAuthorizerDeps {
@@ -110,6 +113,8 @@ export class HookAuthorizer {
  */
 export function describeVerdict(verdict: HookVerdict): string {
   const parts = [verdict.reason];
+  const environment = describeEnvironment(verdict.environment);
+  if (environment !== null) parts.push(environment);
   if (verdict.alternative !== undefined)
     parts.push(describeAlternative(verdict.alternative));
   if (verdict.approvalId !== undefined) {

@@ -104,8 +104,15 @@ async function worstOf(
       toolClass: request.class,
       ...(request.target === undefined ? {} : { target: request.target }),
       ...(request.arguments === undefined ? {} : { arguments: request.arguments }),
+      ...(request.environment === undefined ? {} : { environment: request.environment }),
     });
-    const next = { request, verdict };
+    const next = {
+      request,
+      verdict:
+        request.environment === undefined
+          ? verdict
+          : { ...verdict, environment: request.environment },
+    };
     if (worst === null || severityOf(next) > severityOf(worst)) worst = next;
   }
   // A call is only built with at least one request, so this is the unreachable case.
@@ -138,6 +145,12 @@ async function ruleOnLine(call: ToolCall, deps: ToolPolicyDeps): Promise<Ruled> 
       effect: decision.effect,
       reason: decision.reason,
       ...(decision.rule === undefined ? {} : { rule: decision.rule }),
+      ...(decision.alternative === undefined
+        ? {}
+        : { alternative: decision.alternative }),
+      ...(decision.environment === undefined
+        ? {}
+        : { environment: decision.environment }),
     },
   };
 }

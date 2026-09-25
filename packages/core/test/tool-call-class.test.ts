@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectOfName } from '../src/discovery/surface';
-import { classifyToolCall } from '../src/intercept/tool-call';
+import { classifyToolCall, environmentOfArguments } from '../src/intercept/tool-call';
 
 describe('an MCP tool named for what it does', () => {
   it.each([
@@ -55,5 +55,15 @@ describe('an MCP call read by the statement it was handed', () => {
       classifyToolCall('pg_execute', { statements: ['SELECT 1', 'TRUNCATE users'] })
         .class,
     ).toBe('destructive');
+  });
+});
+
+describe('the environment an MCP call names', () => {
+  it('is read from the call’s own arguments, as it was named', () => {
+    expect(environmentOfArguments({ environment: 'production', service: 'api' })).toBe(
+      'production',
+    );
+    expect(environmentOfArguments({ environmentName: 'staging' })).toBe('staging');
+    expect(environmentOfArguments({ service: 'api' })).toBeUndefined();
   });
 });

@@ -41,6 +41,7 @@ export const DATA_TABLES: readonly VerbTable[] = [
     name: 'stripe',
     credential: ['~/.config/stripe/config.toml', 'STRIPE_API_KEY'],
     headline: 'can move money',
+    productionSwitches: ['--live'],
     globalFlags: [
       '--api-key',
       '--project-name',

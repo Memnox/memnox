@@ -14,6 +14,7 @@ import {
 import {
   actionForCommand,
   classOf,
+  environmentIn,
   refineVerb,
   targetIn,
   verbArgv,
@@ -40,6 +41,8 @@ export interface ResolvedAction {
   alternative?: string;
   /** The HTTP method, for a command that makes a request. */
   method?: string;
+  /** The environment the command names, as it named it, for a rule's `environments`. */
+  environment?: string;
 }
 
 export interface ResolveOptions {
@@ -59,7 +62,7 @@ export function resolveAction(
 ): ResolvedAction {
   return (
     resolveSqlStatement(binary, args, env, options.stdin) ??
-    resolveFromVerbTable(binary, args) ??
+    resolveFromVerbTable(binary, args, env) ??
     resolveReader(binary, args, env) ??
     resolveWriter(binary, args, env) ??
     resolveGeneric(binary, args) ?? {
@@ -97,6 +100,7 @@ function resolveSqlStatement(
 function resolveFromVerbTable(
   binary: string,
   args: readonly string[],
+  env: NodeJS.ProcessEnv,
 ): ResolvedAction | null {
   const table = verbTableFor(binary);
   if (table === null) return null;
@@ -104,12 +108,14 @@ function resolveFromVerbTable(
   const argv = verbArgv(table, args);
   const verb = refineVerb(binary, argv, classOf(table, argv));
   const target = targetIn(verb, argv);
+  const environment = environmentIn(table, args, env);
   return {
     action: actionForCommand(binary, table, argv, verb),
     class: verb.class,
     because: verb.note ?? `${binary} ${verb.match}`,
     ...(target === undefined ? {} : { target }),
     ...(verb.alternative === undefined ? {} : { alternative: verb.alternative }),
+    ...(environment === undefined ? {} : { environment }),
   };
 }
 

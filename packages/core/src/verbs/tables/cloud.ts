@@ -14,6 +14,8 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'aws',
     credential: ['~/.aws/credentials', '~/.aws/config', 'AWS_ACCESS_KEY_ID'],
     headline: 'can modify infrastructure',
+    environmentFlags: ['--profile'],
+    environmentVariables: ['AWS_PROFILE'],
     globalFlags: [
       '--profile',
       '--region',
@@ -96,6 +98,8 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'gcloud',
     credential: ['~/.config/gcloud'],
     headline: 'can modify cloud projects',
+    environmentFlags: ['--project', '--configuration'],
+    environmentVariables: ['CLOUDSDK_CORE_PROJECT', 'CLOUDSDK_ACTIVE_CONFIG_NAME'],
     globalFlags: ['--project', '--account', '--configuration', '--verbosity', '--format'],
     globalSwitches: ['--quiet', '-q'],
     verbs: [
@@ -112,6 +116,7 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'az',
     credential: ['~/.azure/azureProfile.json'],
     headline: 'can modify subscriptions',
+    environmentFlags: ['--subscription'],
     globalFlags: ['--subscription', '--output', '-o'],
     globalSwitches: ['--only-show-errors', '--verbose', '--debug'],
     verbs: [
@@ -126,6 +131,7 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'kubectl',
     credential: ['~/.kube/config'],
     headline: 'can change what runs in your clusters',
+    environmentFlags: ['--context'],
     globalFlags: [
       '--context',
       '--namespace',
@@ -198,6 +204,7 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'terraform',
     credential: ['~/.terraform.d/credentials.tfrc.json'],
     headline: 'can apply infrastructure changes',
+    environmentVariables: ['TF_WORKSPACE'],
     globalFlags: ['-chdir='],
     verbs: [
       {
@@ -241,6 +248,8 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
     name: 'docker',
     credential: ['~/.docker/config.json'],
     headline: 'can push images to your registries',
+    environmentFlags: ['--context', '-c'],
+    environmentVariables: ['DOCKER_CONTEXT'],
     globalFlags: ['--context', '-c', '-H', '--host', '--config', '--log-level', '-l'],
     globalSwitches: ['-D', '--debug', '--tls', '--tlsverify'],
     verbs: [

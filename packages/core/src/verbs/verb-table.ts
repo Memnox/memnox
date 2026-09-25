@@ -46,6 +46,39 @@ export interface VerbTable {
   globalSwitches?: string[];
   /** Flags whose value is an HTTP method, which may be run on as `-XPOST` or lowercased. */
   methodFlags?: string[];
+  /** Flags that name the environment a command acts in, as railway's `--environment`. */
+  environmentFlags?: string[];
+  /** Variables that name it when no flag does, as `AWS_PROFILE`. */
+  environmentVariables?: string[];
+  /** Switches that say production outright, as `vercel --prod` and `stripe --live`. */
+  productionSwitches?: string[];
+}
+
+/** What `--prod` and `--live` say, which is a fact the CLI states rather than a name matched. */
+export const PRODUCTION_ENVIRONMENT = 'production';
+
+/**
+ * The environment a command names, as it named it: `prod-eu-1` stays `prod-eu-1`, since
+ * a rule about production has to say which names it means rather than trust a guess.
+ */
+export function environmentIn(
+  table: VerbTable,
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = {},
+): string | undefined {
+  if ((table.productionSwitches ?? []).some((flag) => argv.includes(flag))) {
+    return PRODUCTION_ENVIRONMENT;
+  }
+  for (const flag of table.environmentFlags ?? []) {
+    for (const [index, arg] of argv.entries()) {
+      if (arg === flag && argv[index + 1] !== undefined) return argv[index + 1];
+      if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+    }
+  }
+  const named = (table.environmentVariables ?? [])
+    .map((name) => env[name])
+    .find((value) => value !== undefined && value !== '');
+  return named;
 }
 
 export interface VerbMatch {

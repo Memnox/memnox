@@ -78,6 +78,27 @@ egress proxy, and `UNKNOWN` where nothing could read it. A rule narrowed by `cla
 `arguments` is not written into Claude Code's native permissions, which can only name the
 whole tool and would ask about every read.
 
+### Where a command lands
+
+A command's environment is the one it names, as it names it: railway's `--environment`,
+kubectl's `--context`, aws's `--profile`, gcloud's `--project`, docker's `--context`, and
+`RAILWAY_ENVIRONMENT`, `AWS_PROFILE`, `TF_WORKSPACE` or `DOCKER_CONTEXT` where no flag says.
+`vercel --prod`, `netlify --prod` and `stripe --live` are `production`, because the CLI says
+so outright. An MCP call names its own in an `environment`, `environmentName`, `env` or
+`stage` argument. Nothing is guessed from a name, so a rule lists the names it means:
+
+```toml
+[policies.match]
+actions = [ "railway.*", "kubectl.*", "mcp.*" ]
+environments = [ "prod*", "production" ]
+classes = [ "write", "destructive", "communication" ]
+```
+
+A command that names no environment never matches such a rule, so pair it with a rule
+that has no `environments` if an unnamed one should be refused too. The refusal says
+which environment it was, and names the verb table's way forward where the rule only
+said to ask somebody.
+
 ### The action is the verb *and its flags*
 
 `git push --force` is `git.push-force`, not `git.push`. They are separate on purpose:
