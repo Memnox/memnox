@@ -90,6 +90,11 @@ export class LocalGate {
     return this.notice === null ? verdict : this.notice.consider(request, verdict);
   }
 
+  /** Something the agent read addressed it like a prompt. True when a session was marked. */
+  taint(source: string): boolean {
+    return this.notice?.taint?.(source) !== undefined;
+  }
+
   /** A person said yes to what was asked, so noticing learns it rather than asking again. */
   personAllowed(request?: ActionRequest): void {
     this.notice?.personAllowed(request);

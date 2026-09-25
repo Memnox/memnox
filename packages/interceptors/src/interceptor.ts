@@ -20,6 +20,7 @@ import {
   type LocalGate,
   type LocalVerdict,
   type Overlay,
+  SCOPE_MATCH,
 } from '@memnox/core';
 
 import { NOBODY_TO_ASK } from './tool-hook.constants';
@@ -56,6 +57,8 @@ export interface InterceptOutcome {
   reason?: string;
   /** The rule that decided, so `why` can name it rather than only quote it. */
   rule?: EventRuleRef;
+  /** Outside what the session declared it was for, which is what the breaker counts. */
+  outOfScope?: boolean;
 }
 
 export interface InterceptDeps {
@@ -107,9 +110,10 @@ export async function ruleOnCommand(
     ...(verdict.target === undefined ? {} : { target: verdict.target }),
   };
   const decision = gate.evaluate(request);
-  if (decision.effect === DECISION_EFFECT.ALLOW) return observed(base, decision);
+  const scoped = outsideScope(decision) ? { ...base, outOfScope: true } : base;
+  if (decision.effect === DECISION_EFFECT.ALLOW) return observed(scoped, decision);
 
-  const decided = { ...base, ...decidedBy(decision) };
+  const decided = { ...scoped, ...decidedBy(decision) };
   const evidence = evidenceLines(decision, deps);
   if (decision.effect === DECISION_EFFECT.ASK) {
     const command = [binary, ...args];
@@ -126,6 +130,11 @@ export async function ruleOnCommand(
   }
   const message = [refusal(verdict, decision), ...evidence].join('\n');
   return { ...decided, allowed: false, message };
+}
+
+/** Only a declared task has a scope to be outside of; with none, nothing is counted. */
+function outsideScope(decision: LocalVerdict): boolean {
+  return decision.scope?.match === SCOPE_MATCH.OUT_OF_SCOPE;
 }
 
 /** An allow that enforce would have asked about keeps the reason, so the row says so. */

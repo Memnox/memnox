@@ -57,6 +57,8 @@ export interface NoticePort {
   consider<T extends VerdictLike>(request: ActionRequest, verdict: T): T;
   /** A person allowed what was asked; absent a request, everything asked in this process. */
   personAllowed(request?: ActionRequest): void;
+  /** Puts the session under suspicion, where the port keeps one. */
+  taint?(source: string): Taint;
 }
 
 export interface UnusualNoticeDeps {

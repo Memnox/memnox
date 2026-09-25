@@ -211,6 +211,7 @@ async function handAndRecord(
     action: outcome.action,
     exitCode: status,
     ...(outcome.target === undefined ? {} : { target: outcome.target }),
+    ...(outcome.outOfScope === true ? { outOfScope: true } : {}),
     ...sessionField(context),
   });
   await recordAllowed(outcome, status, context);

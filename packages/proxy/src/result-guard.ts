@@ -1,4 +1,4 @@
-import { digest, type DecisionEffect } from '@memnox/core';
+import { digest, hasInstructionShape, type DecisionEffect } from '@memnox/core';
 
 import type { JsonRpcMessage } from './json-rpc';
 
@@ -6,21 +6,6 @@ import type { JsonRpcMessage } from './json-rpc';
  * What a proxied tool call and its result leave
  * behind: a digest, a verdict, and a quotation frame.
  */
-
-/**
- * Phrases that try to address the model rather than answer the tool call. Cheap and
- * certain only: this marks content for the record, it never decides anything, and the
- * stripping of authority is a type rather than the outcome of this list being right.
- */
-const INSTRUCTION_SHAPES: readonly RegExp[] = [
-  /\bignore (all |any )?(previous|prior|earlier|above) instructions?\b/i,
-  /\bdisregard (all |any )?(previous|prior|earlier|the) (instructions?|rules?|system prompt)\b/i,
-  /\byou are now\b/i,
-  /\bnew (system )?(instructions?|prompt)\s*:/i,
-  /<\s*(system|important_instructions)\s*>/i,
-  /\bdo not tell the user\b/i,
-  /\b(reveal|print|output) (your|the) (system prompt|instructions)\b/i,
-];
 
 /** What one proxied tool call did, with the payload hashed rather than kept. */
 export interface McpCallRecord {
@@ -71,10 +56,6 @@ export function textOfResult(message: JsonRpcMessage): string {
     if (typeof text === 'string') parts.push(text);
   }
   return parts.join('\n');
-}
-
-export function hasInstructionShape(text: string): boolean {
-  return INSTRUCTION_SHAPES.some((shape) => shape.test(text));
 }
 
 export function resultRecordOf(message: JsonRpcMessage): McpResultRecord {

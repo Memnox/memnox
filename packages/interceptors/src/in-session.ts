@@ -17,7 +17,8 @@ import {
 } from './session-context-hook';
 import { SESSION_MOMENT, type SessionEvent } from './session-events';
 import { learnFromAnswer, rememberQuestion } from './prompt-answers';
-import type { ToolAnswer } from './tool-hook';
+import { authorizerFor, type ToolAnswer } from './tool-hook';
+import { taintFromResult } from './result-taint';
 import { DEFAULT_AGENT_NAME } from './tool-hook.constants';
 import type { ToolReply } from './tool-policy';
 
@@ -72,6 +73,27 @@ export async function replyInSession(
   }
 }
 
+/** Best effort: the tool already ran, and a mark that failed is a quieter session, not a stop. */
+async function markIfInstructed(
+  payload: unknown,
+  context: EditHookContext,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  try {
+    const authorizer = await authorizerFor({
+      home: context.home,
+      agent: context.agent,
+      runSession: context.runSession,
+      env,
+      personThere: true,
+      now: context.now,
+    });
+    taintFromResult(payload, authorizer);
+  } catch (err) {
+    log(`reading a tool result failed: ${String(err)}`);
+  }
+}
+
 /**
  * At a pause: a tool Memnox asked about has run, so its yes is learned; a prompt is read for
  * a decision it names, returned to ride beside any note. Null where there is nothing to add.
@@ -85,6 +107,7 @@ export async function beforePause(
   try {
     if (pause.moment === SESSION_MOMENT.AFTER_TOOL) {
       await learnFromAnswer(payload, { ...context, env });
+      await markIfInstructed(payload, context, env);
       return null;
     }
     if (pause.moment !== SESSION_MOMENT.PROMPT || pause.prompt === undefined) return null;

@@ -61,6 +61,11 @@ export class HookAuthorizer {
     );
   }
 
+  /** Marks the session wary of what it reads, where the gate has a session to mark. */
+  taint(source: string): boolean {
+    return this.deps.gate?.taint(source) ?? false;
+  }
+
   /** A person said yes to what was asked, so the same new thing is not asked twice. */
   personAllowed(request?: ActionRequest): void {
     this.deps.gate?.personAllowed(request);
