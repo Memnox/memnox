@@ -128,13 +128,42 @@ export function untrustedLandlockPlan(
   const dotfiles = inHome
     .filter((path) => path.startsWith(`${guard.home}/.`))
     .flatMap((path) => deniedBeside(path, keeps, list));
+  // Out of the writes too, since a Landlock write grant reads as well.
+  const keyFiles = guard.workspace === undefined ? [] : keyFilesIn(guard.workspace, list);
   return {
-    read: carve('/', [...dotfiles, ...guard.unreadable], list),
+    read: carve('/', [...dotfiles, ...guard.unreadable, ...keyFiles], list),
     write: [...guard.writable, ...state].flatMap((path) =>
-      carve(path, guard.unwritable, list),
+      carve(path, [...guard.unwritable, ...keyFiles], list),
     ),
     connectPorts: guard.proxyPort === null ? null : [guard.proxyPort],
   };
+}
+
+/** Key files by name, a template of names aside, as the macOS profile reads them. */
+const KEY_FILE = /^\.env(\.(?!example$|sample$|template$)[\w.-]+)?$/;
+
+/** Where key files are looked for, and where they never are, bounded so a walk stays short. */
+const KEY_FILE_DEPTH = 3;
+const NOT_SEARCHED = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'vendor',
+  'target',
+]);
+
+/** The repository's own key files, found by name and never opened. */
+function keyFilesIn(root: string, list: ListDirectory, depth = 0): string[] {
+  if (depth > KEY_FILE_DEPTH) return [];
+  return list(root)
+    .filter((entry) => !entry.symlink)
+    .flatMap((entry) => {
+      const path = join(root, entry.name);
+      if (KEY_FILE.test(entry.name)) return [path];
+      if (NOT_SEARCHED.has(entry.name)) return [];
+      return keyFilesIn(path, list, depth + 1);
+    });
 }
 
 /** The plan `protect --os-guard` wrote as rules: reads and writes carved around the denials. */
