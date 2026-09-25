@@ -1,6 +1,8 @@
 import { homedir } from 'node:os';
 
 import {
+  FileToolPins,
+  loadOrCreateConfig,
   CloudActions,
   CloudNotes,
   ENV_AGENT_NAME,
@@ -61,7 +63,14 @@ async function main(): Promise<void> {
     process.exit(EXIT.FAILED);
   }
 
-  const home = homedir();
+  new McpFirewall(await firewallOptionsFor(args, homedir())).start();
+}
+
+/** Everything the proxy is wired to on this machine, read once where it starts. */
+async function firewallOptionsFor(
+  args: NonNullable<ReturnType<typeof parseFirewallArgs>>,
+  home: string,
+): Promise<FirewallOptions> {
   const gate = await loadLocalGate(
     localGateEnvironment(process.env),
     args.serverName,
@@ -72,8 +81,9 @@ async function main(): Promise<void> {
   const session = process.env[SESSION_VAR];
   // The environment `memnox run` sets, then the agent the wrapped line was written for.
   const agent = process.env[ENV_AGENT_NAME] ?? args.agent;
+  const mode = (await loadOrCreateConfig(home).catch(() => null))?.mode;
 
-  const options: FirewallOptions = {
+  return {
     command: args.command,
     serverName: args.serverName,
     ...(gate === null ? {} : { gate }),
@@ -88,10 +98,12 @@ async function main(): Promise<void> {
     notes: new CloudNotes(home),
     probation: () => serverProbation(home, args.serverName),
     notice: await noticeFor({ home, gate, agent, session }),
+    // What each server listed last time, so a tool that arrived since is said at once.
+    pins: new FileToolPins(home),
+    ...(mode === undefined ? {} : { mode }),
     allowPattern: process.env[ENV_TOOLS_ALLOW],
     denyPattern: process.env[ENV_TOOLS_DENY],
   };
-  new McpFirewall(options).start();
 }
 
 interface NoticeWiring {

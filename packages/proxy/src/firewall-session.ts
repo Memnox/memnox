@@ -1,5 +1,6 @@
 import {
   classifyToolCall,
+  type McpToolDeclaration,
   DECISION_EFFECT,
   describeAlternative,
   describeHold,
@@ -63,6 +64,8 @@ export interface FirewallSessionDeps {
   notes?: () => Promise<SessionNote[]>;
   /** A result read like instructions, so the session is put under suspicion for a while. */
   onInstruction?: (call: ToolCall) => void;
+  /** Every tool the server listed, before the filter hides any, to compare with last time. */
+  onListing?: (tools: readonly McpToolDeclaration[]) => void;
 }
 
 type MessageId = string | number;
@@ -206,6 +209,7 @@ export class FirewallSession {
     const id = identify(message);
     if (id !== null && this.listRequestIds.has(id)) {
       this.listRequestIds.delete(id);
+      this.deps.onListing?.(declarationsIn(message));
       return this.deps.channel.toClient(serializeMessage(this.filterListing(message)));
     }
 
@@ -304,6 +308,27 @@ export class FirewallSession {
     if (this.deps.channel.toServer(payload)) return;
     this.deps.log('wrapped server is not accepting input; dropped a raw line');
   }
+}
+
+/** Each listed tool's name and annotations, which is all a comparison needs. */
+function declarationsIn(message: JsonRpcMessage): McpToolDeclaration[] {
+  const tools = message.result === undefined ? undefined : message.result['tools'];
+  if (!Array.isArray(tools)) return [];
+  return tools
+    .map((tool: unknown) => {
+      const annotations: unknown =
+        typeof tool === 'object' && tool !== null
+          ? Reflect.get(tool, 'annotations')
+          : undefined;
+      return {
+        name: toolNameOf(tool),
+        // The server's own hints, taken as it sent them, since that is what classifies them.
+        ...(typeof annotations === 'object' && annotations !== null
+          ? { annotations: annotations as McpToolDeclaration['annotations'] }
+          : {}),
+      };
+    })
+    .filter((tool) => tool.name !== '');
 }
 
 function toolNameOf(tool: unknown): string {

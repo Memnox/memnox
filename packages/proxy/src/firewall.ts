@@ -1,8 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
 import {
+  changingTools,
+  ENFORCEMENT_MODE,
   exitCodeForSignal,
+  toolArrivalEvent,
   UNNAMED_AGENT,
+  UNNAMED_SESSION,
+  type EnforcementMode,
+  type McpToolDeclaration,
+  type PinnedTool,
+  type ToolPins,
   type EventSink,
   type HoldService,
   type LocalGate,
@@ -77,6 +85,10 @@ export interface FirewallOptions {
   probation?: ProbationLookup;
   /** Where an instruction-shaped result puts the session under suspicion. Absent, nowhere. */
   notice?: UnusualNotice;
+  /** What this server listed last time. Absent means no listing is compared. */
+  pins?: ToolPins;
+  /** The machine's mode, for the row a new tool is recorded under. */
+  mode?: EnforcementMode;
 }
 
 /**
@@ -158,9 +170,50 @@ export class McpFirewall {
       ...(options.agent === undefined ? {} : { agent: options.agent }),
       ...notesFor(options),
       ...taintFor(options),
+      onListing: (tools) => {
+        void this.compareListing(tools).catch(() => undefined);
+      },
       // Every call reaches the ledger once, when its outcome is known.
       record: (call) => this.write(call),
     });
+  }
+
+  /**
+   * A tool that changes things and was not there last time is said on stderr and kept as a
+   * row, with whether any rule covers it, because a server can grow one between two sessions.
+   */
+  private async compareListing(tools: readonly McpToolDeclaration[]): Promise<void> {
+    const pins = this.options.pins;
+    if (pins === undefined) return;
+    const change = await pins.compare(this.options.serverName, tools);
+    const arrived = changingTools(change);
+    if (change.first || arrived.length === 0) return;
+    const unruled = arrived.filter((tool) => !this.ruled(tool)).map((tool) => tool.name);
+    this.log(
+      `${this.options.serverName} now lists ${arrived.map((tool) => tool.name).join(', ')}, which change something outside this machine${unruled.length === 0 ? '' : `, and no rule covers ${unruled.join(', ')}`}`,
+    );
+    await this.ledger?.append(
+      toolArrivalEvent({
+        server: this.options.serverName,
+        tools: arrived,
+        unruled,
+        sessionId: this.options.sessionId ?? UNNAMED_SESSION,
+        agent: this.options.agent ?? UNNAMED_AGENT,
+        at: (this.options.now ?? (() => new Date()))().toISOString(),
+        mode: this.options.mode ?? ENFORCEMENT_MODE.ENFORCE,
+      }),
+    );
+  }
+
+  /** Whether any rule speaks to a call of this tool, under either name the seams use. */
+  private ruled(tool: PinnedTool): boolean {
+    const gate = this.options.gate;
+    if (gate === undefined) return false;
+    return [`mcp.${tool.name}`, `mcp.${this.options.serverName}.${tool.name}`].some(
+      (action) =>
+        gate.evaluate({ action, target: this.options.serverName, toolClass: tool.class })
+          .matchedPolicies.length > 0,
+    );
   }
 
   /**
