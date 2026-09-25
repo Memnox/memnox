@@ -39,7 +39,12 @@ import {
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { defaultScanSeams, scanMachine } from '../machine-scan';
-import { renderServerHealth, serverHealthOf } from './doctor/servers';
+import {
+  recentlyStopped,
+  renderServerHealth,
+  renderStopped,
+  serverHealthOf,
+} from './doctor/servers';
 import { describeCount } from '../plural';
 import { TONE, type Tone } from '../flow';
 import { policySetInForce } from '../policy-path';
@@ -147,10 +152,12 @@ async function runDoctorCommand(deps: DoctorDeps, options: DoctorOptions): Promi
 async function runServers(deps: DoctorDeps, asJson: boolean): Promise<void> {
   const { report } = await scanMachine(defaultScanSeams(deps.cwd()), { probe: true });
   const servers = serverHealthOf(report);
+  const stopped = await recentlyStopped(deps.home(), deps.now());
   if (asJson) {
-    deps.context.out.json({ servers });
+    deps.context.out.json({ servers, stopped });
     return;
   }
+  renderStopped(deps.context, stopped);
   if (!renderServerHealth(deps.context, servers)) process.exitCode = EXIT.FAILED;
 }
 

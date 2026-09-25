@@ -2,9 +2,16 @@
  * Whether each MCP server an agent is configured with actually answers: started and asked
  * for its tools, the way `memnox scan` asks, because configured is not the same as there.
  */
-import type { DiscoveryReport } from '@memnox/core';
+import {
+  DAY_MS,
+  EVENT_SURFACE,
+  SERVER_DOWN_OPERATION,
+  type DiscoveryReport,
+  type MemnoxEvent,
+} from '@memnox/core';
 
 import type { CliContext } from '../../cli-context';
+import { withEvents } from '../../event-store';
 import { TONE } from '../../flow';
 
 interface ServerHealth {
@@ -71,4 +78,27 @@ export function renderServerHealth(
         ),
   );
   return silent === 0;
+}
+
+/** Servers that died under an agent in the last day, as the proxy saw it happen. */
+export async function recentlyStopped(home: string, now: Date): Promise<MemnoxEvent[]> {
+  const since = new Date(now.getTime() - DAY_MS).toISOString();
+  const rows = await withEvents(home, (store) =>
+    store.query({ surface: EVENT_SURFACE.CONFIG, since, withConfig: true }),
+  ).catch(() => []);
+  return rows.filter((row) => row.operation === SERVER_DOWN_OPERATION);
+}
+
+export function renderStopped(
+  context: CliContext,
+  stopped: readonly MemnoxEvent[],
+): void {
+  if (stopped.length === 0) return;
+  context.flow.list(
+    'Stopped under an agent in the last day',
+    stopped.map((row) => ({
+      tone: TONE.WARN,
+      text: `${row.at.slice(0, 16)}  ${row.reason}`,
+    })),
+  );
 }

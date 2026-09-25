@@ -129,3 +129,34 @@ export function toolArrivalEvent(input: ToolArrivalRow): MemnoxEvent {
     reason: `${input.server} listed ${names}, which it did not before and which change something outside this machine; ${cover}`,
   };
 }
+
+/** The row a wrapped server stopping under a working agent is recorded under. */
+export const SERVER_DOWN_OPERATION = 'config.drift.server-down';
+
+export interface ServerDownRow {
+  server: string;
+  exitCode: number;
+  sessionId: string;
+  agent: string;
+  at: string;
+  mode: EnforcementMode;
+}
+
+export function serverDownEvent(input: ServerDownRow): MemnoxEvent {
+  return {
+    id: newEventId(),
+    schemaVersion: EVENT_SCHEMA_VERSION,
+    at: input.at,
+    sessionId: input.sessionId,
+    agent: input.agent,
+    actorType: ACTOR_TYPE.AUTOMATION,
+    surface: EVENT_SURFACE.CONFIG,
+    operation: SERVER_DOWN_OPERATION,
+    target: input.server,
+    class: TOOL_CLASS.READ,
+    effect: DECISION_EFFECT.ALLOW,
+    mode: input.mode,
+    reason: `${input.server} stopped with exit code ${input.exitCode} while an agent was using it`,
+    exitCode: input.exitCode,
+  };
+}

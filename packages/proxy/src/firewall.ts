@@ -4,6 +4,7 @@ import {
   changingTools,
   ENFORCEMENT_MODE,
   exitCodeForSignal,
+  serverDownEvent,
   toolArrivalEvent,
   UNNAMED_AGENT,
   UNNAMED_SESSION,
@@ -149,6 +150,8 @@ export class McpFirewall {
   private readonly ledger: EventSink | null;
   private child: ChildProcess | null = null;
   private readonly authorizer: CallAuthorizer;
+  /** Set once the agent is ending the session, so its server stopping is not reported. */
+  private ending = false;
   /** Filled by the first listing; built before the authorizer, which reads it. */
   private readonly manifest = new ToolManifest();
 
@@ -210,6 +213,27 @@ export class McpFirewall {
     );
   }
 
+  /** Said at once; the row, where there is a ledger, is what the exit waits for. */
+  private serverDown(status: number): Promise<void> | null {
+    this.log(
+      `${this.options.serverName} stopped with exit code ${status}, so every call to it will fail until the agent reconnects`,
+    );
+    const ledger = this.ledger;
+    if (ledger === null) return null;
+    return ledger
+      .append(
+        serverDownEvent({
+          server: this.options.serverName,
+          exitCode: status,
+          sessionId: this.options.sessionId ?? UNNAMED_SESSION,
+          agent: this.options.agent ?? UNNAMED_AGENT,
+          at: (this.options.now ?? (() => new Date()))().toISOString(),
+          mode: this.options.mode ?? ENFORCEMENT_MODE.ENFORCE,
+        }),
+      )
+      .catch(() => undefined);
+  }
+
   /** Whether any rule speaks to a call of this tool, under either name the seams use. */
   private ruled(tool: PinnedTool): boolean {
     const gate = this.options.gate;
@@ -266,9 +290,16 @@ export class McpFirewall {
     this.child = child;
     child.on('exit', (code) => {
       const status = code === null ? 0 : code;
-      // At once where nothing is held, since the exit code is the wrapped server's.
-      if (this.authorizer.close === undefined) return exit(status);
-      void this.close().then(() => exit(status));
+      const finish = (): void => {
+        // At once where nothing is held, since the exit code is the wrapped server's.
+        if (this.authorizer.close === undefined) return exit(status);
+        void this.close().then(() => exit(status));
+      };
+      // A server that dies under a working agent is said, since everything using it now fails.
+      if (status === 0 || this.ending) return finish();
+      const row = this.serverDown(status);
+      if (row === null) return finish();
+      void row.then(finish);
     });
     // A test that injects its own exit owns its own signals.
     if (deps.exit === undefined) this.releaseOnSignals(child, exit);
@@ -283,6 +314,8 @@ export class McpFirewall {
   private releaseOnSignals(child: ChildProcess, exit: (code: number) => void): void {
     for (const signal of ENDING_SIGNALS) {
       process.once(signal, () => {
+        // The agent ended it, so the server stopping is not news.
+        this.ending = true;
         void this.close().then(() => {
           child.kill(signal);
           exit(exitCodeForSignal(signal));
