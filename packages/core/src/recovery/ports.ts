@@ -20,6 +20,8 @@ export interface WorktreePort {
   remove(path: string): Promise<void>;
   /** Copies a file, true when it did. Absent or false means start from nothing instead. */
   copy?(from: string, to: string): Promise<boolean>;
+  /** A file's size in bytes, or null for none. Absent means no ignored file is kept. */
+  size?(path: string): Promise<number | null>;
 }
 
 export const REWIND_REFUSAL = {

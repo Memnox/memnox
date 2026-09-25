@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, copyFile, rm, rmdir } from 'node:fs/promises';
+import { access, copyFile, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { ownProcessEnv } from '../coordination/own-path';
@@ -60,6 +60,16 @@ export class NodeWorktree implements WorktreePort {
     } catch {
       // No index yet, as in a repository nothing was ever added to.
       return false;
+    }
+  }
+
+  async size(path: string): Promise<number | null> {
+    try {
+      const found = await stat(path);
+      return found.isFile() ? found.size : null;
+    } catch {
+      // Gone since it was listed, which is nothing to keep.
+      return null;
     }
   }
 

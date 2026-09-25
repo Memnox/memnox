@@ -17,6 +17,12 @@ import {
 } from './milestone';
 import { REWIND_REFUSAL, RewindRefused, type GitPort, type WorktreePort } from './ports';
 
+/** An ignored file bigger than this is build output or data, never something to put back. */
+const MOST_IGNORED_BYTES = 1024 * 1024;
+
+/** Enough for a repository's local config and keys, and a bound on a stray listing. */
+const MOST_IGNORED_FILES = 200;
+
 /** A scratch index, so `git add -A` never touches the one the person is staging into. */
 const SCRATCH_INDEX = '.git/memnox-index';
 
@@ -97,9 +103,31 @@ export class Milestones {
     const env = scratchEnv(root);
     await this.seedIndex(root, env);
     await this.git.run(['add', '-A', '--', '.'], env);
+    const kept = await this.smallIgnored(root);
+    // Forced, since they are ignored; only here, never into the person's own index.
+    if (kept.length > 0) await this.git.run(['add', '-f', '--', ...kept], env);
     const tree = await this.git.run(['write-tree'], env);
     const files = nonEmptyLines(await this.git.run(['ls-files', '--', '.'], env)).length;
     return { tree, files };
+  }
+
+  /**
+   * Ignored files worth putting back: `.env` or local config the agent could wreck. A
+   * wholly ignored directory, `node_modules` or `dist`, comes back as one entry and is skipped.
+   */
+  private async smallIgnored(root: string): Promise<string[]> {
+    const size = this.tree.size;
+    if (size === undefined) return [];
+    const listing = await this.git
+      .run(['ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
+      .catch(() => '');
+    const kept: string[] = [];
+    for (const path of nonEmptyLines(listing)) {
+      if (path.endsWith('/') || kept.length >= MOST_IGNORED_FILES) continue;
+      const bytes = await size.call(this.tree, `${root}/${path}`);
+      if (bytes !== null && bytes <= MOST_IGNORED_BYTES) kept.push(path);
+    }
+    return kept;
   }
 
   /**
@@ -164,9 +192,20 @@ export class Milestones {
     const env = scratchEnv(root);
     await this.git.run(['read-tree', target.commit], env);
     await this.git.run(['checkout-index', '-a', '-f'], env);
-    // Unlinked rather than `git rm`, which would consult the person's own index.
-    for (const path of added) await this.tree.remove(`${root}/${path}`);
+    // Unlinked rather than `git rm`, which would consult the person's own index. An ignored
+    // file made since is left, since a rewind never deletes what git would never track.
+    const ignored = new Set(await this.ignoredAmong(added));
+    for (const path of added) {
+      if (!ignored.has(path)) await this.tree.remove(`${root}/${path}`);
+    }
     return { restored: target, kept };
+  }
+
+  private async ignoredAmong(paths: readonly string[]): Promise<string[]> {
+    if (paths.length === 0) return [];
+    // `check-ignore` exits non-zero when none are ignored, which is an answer, not a failure.
+    const listing = await this.git.run(['check-ignore', '--', ...paths]).catch(() => '');
+    return nonEmptyLines(listing);
   }
 
   private async find(id: string): Promise<Milestone> {
