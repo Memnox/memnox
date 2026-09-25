@@ -11,6 +11,8 @@ export const NOTICE_SIGNAL = {
   CHAIN: 'chain',
   /** A tool result earlier in the session read like instructions. */
   TAINT: 'taint',
+  /** A session that only read outside this machine makes its first change there. */
+  TURN: 'turn',
 } as const;
 
 export type NoticeSignal = (typeof NOTICE_SIGNAL)[keyof typeof NOTICE_SIGNAL];

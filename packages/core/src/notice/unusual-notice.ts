@@ -34,6 +34,7 @@ import {
 } from './notice-state';
 import type { NoticeStore } from './notice-store';
 import { taintClearedRow, taintedRow } from './taint-row';
+import { mayTurn, turnStep } from './turn';
 import { applyNotices, noticesFor, type NoticeFacts, type VerdictLike } from './unusual';
 
 export interface NoticeSettings {
@@ -98,8 +99,9 @@ export class UnusualNotice implements NoticePort {
     return this.deps.sessionId ?? `${AGENT_SESSION_PREFIX}${this.deps.agent}`;
   }
 
-  consider<T extends VerdictLike>(request: ActionRequest, verdict: T): T {
-    if (this.deps.settings.mode === NOTICE_MODE.OFF) return verdict;
+  consider<T extends VerdictLike>(request: ActionRequest, given: T): T {
+    if (this.deps.settings.mode === NOTICE_MODE.OFF) return given;
+    const verdict = this.turned(request, given);
     const shape = shapeOf(request, this.deps.home);
     // The ordinary call reads no file at all, which is what keeps this off the hot path.
     if (!isNoticeable(shape) || verdict.effect === DECISION_EFFECT.DENY) return verdict;
@@ -154,6 +156,21 @@ export class UnusualNotice implements NoticePort {
     store.writeSignals(this.session, withoutTaint(signals));
     this.record(taintClearedRow({ ...this.rowIdentity(), taint, at: this.now(), by }));
     return taint;
+  }
+
+  /** Only an action outside this machine reads the session's file, and only an allow counts. */
+  private turned<T extends VerdictLike>(request: ActionRequest, verdict: T): T {
+    if (verdict.effect !== DECISION_EFFECT.ALLOW || !mayTurn(request)) return verdict;
+    const store = this.deps.store;
+    const step = turnStep(request, store.readSignals(this.session));
+    if (step === null) return verdict;
+    store.writeSignals(this.session, step.signals);
+    if (step.notice === null) return verdict;
+    return applyNotices(verdict, {
+      notices: [step.notice],
+      mode: this.deps.settings.mode,
+      action: request.action,
+    });
   }
 
   private awaitAnswer(request: ActionRequest, shape: ActionShape): void {

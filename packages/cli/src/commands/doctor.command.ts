@@ -38,6 +38,8 @@ import {
   agentNameIn,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
+import { defaultScanSeams, scanMachine } from '../machine-scan';
+import { renderServerHealth, serverHealthOf } from './doctor/servers';
 import { describeCount } from '../plural';
 import { TONE, type Tone } from '../flow';
 import { policySetInForce } from '../policy-path';
@@ -72,6 +74,7 @@ interface DoctorOptions {
   byAgent?: boolean;
   wiring?: boolean;
   prove?: boolean;
+  servers?: boolean;
 }
 
 function defaultSeams(given: Partial<DoctorSeams>): DoctorSeams {
@@ -113,6 +116,7 @@ export function registerDoctorCommand(
       '--prove',
       'ask every seam to refuse something, and report what actually came back',
     )
+    .option('--servers', 'start every MCP server and say which ones answer')
     .action(async (options: DoctorOptions) => runDoctorCommand(deps, options));
 }
 
@@ -135,7 +139,19 @@ async function runDoctorCommand(deps: DoctorDeps, options: DoctorOptions): Promi
     return;
   }
   if (options.wiring === true) return runWiring(deps, options.json === true);
+  if (options.servers === true) return runServers(deps, options.json === true);
   return runFindings(deps, options);
+}
+
+/** Starts each configured server, because a server that does not answer fails the agent. */
+async function runServers(deps: DoctorDeps, asJson: boolean): Promise<void> {
+  const { report } = await scanMachine(defaultScanSeams(deps.cwd()), { probe: true });
+  const servers = serverHealthOf(report);
+  if (asJson) {
+    deps.context.out.json({ servers });
+    return;
+  }
+  if (!renderServerHealth(deps.context, servers)) process.exitCode = EXIT.FAILED;
 }
 
 /** Whether the seams are installed, which is a different question from whether they bite. */

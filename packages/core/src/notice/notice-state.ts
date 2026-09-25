@@ -26,6 +26,10 @@ export interface Taint {
 export interface SessionSignals {
   acquired: Acquired[];
   taint?: Taint;
+  /** Reads outside this machine this session, before it changed anything there. */
+  outsideReads?: number;
+  /** Set at the first change outside, so the turn is asked about once. */
+  outsideChanged?: boolean;
 }
 
 export function emptySeen(): SeenSet {
