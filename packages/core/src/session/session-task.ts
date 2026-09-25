@@ -8,6 +8,8 @@ import {
   type ScopeSubject,
 } from '../domain/task';
 import type { ActionRequest } from '../domain/action-event';
+import { shortDigest } from '../domain/digest';
+import { HOUR_MS } from '../domain/time';
 import { JsonRecordDir } from '../store/json-records';
 
 /**
@@ -123,4 +125,56 @@ export function scopeOf(
 export function describeDrift(task: SessionTask, drift: ScopeComparison): string {
   if (drift.match !== SCOPE_MATCH.OUT_OF_SCOPE) return '';
   return `"${task.statement}" declared ${drift.dimension} ${(drift.declared ?? []).join(', ')}; this touches ${drift.actual ?? 'something else'}`;
+}
+
+/** How long a task declared for a repository stands, since a forgotten one would narrow for ever. */
+export const REPOSITORY_TASK_HOURS = 12;
+
+const REPOSITORY_TASK_DIR = 'repo-tasks';
+
+export interface RepositoryTask extends SessionTask {
+  root: string;
+  until: string;
+}
+
+/**
+ * A task somebody declared for a repository rather than for one session, which is how a
+ * session only the hooks see gets one: nobody knows its id, everybody knows the repository.
+ */
+export class RepositoryTasks {
+  private readonly records: JsonRecordDir<RepositoryTask>;
+
+  constructor(home: string) {
+    this.records = new JsonRecordDir(join(home, MEMNOX_HOME, REPOSITORY_TASK_DIR));
+  }
+
+  async declare(
+    root: string,
+    declaration: Omit<TaskDeclaration, 'sessionId'>,
+    moment: { now: string; hours?: number },
+  ): Promise<RepositoryTask> {
+    const hours = moment.hours ?? REPOSITORY_TASK_HOURS;
+    const task: RepositoryTask = {
+      ...taskFor({ ...declaration, sessionId: `repo:${root}` }, moment.now),
+      root,
+      until: new Date(Date.parse(moment.now) + hours * HOUR_MS).toISOString(),
+    };
+    await this.records.write(idFor(root), task);
+    return task;
+  }
+
+  /** The task standing for this repository, or null where none is or it ran out. */
+  async inForce(root: string | null, now: string): Promise<RepositoryTask | null> {
+    if (root === null) return null;
+    const task = await this.records.read(idFor(root));
+    return task !== null && task.until > now ? task : null;
+  }
+
+  async clear(root: string): Promise<void> {
+    await this.records.remove(idFor(root));
+  }
+}
+
+function idFor(root: string): string {
+  return shortDigest(root);
 }

@@ -35,6 +35,7 @@ import { registerUninstallCommand } from './commands/uninstall.command';
 import { registerRunCommand } from './commands/run.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerRepoCommand } from './commands/repo.command';
+import { registerTaskCommand } from './commands/task.command';
 import { unwrapEveryServer } from './mcp/wrap-servers';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
@@ -129,6 +130,7 @@ function registerCommands(program: Command, context: CliContext): void {
   registerDaemonCommand(program, context);
   registerMcpCommand(program, context);
   registerRepoCommand(program, context);
+  registerTaskCommand(program, context);
   registerWhyCommand(program, context);
   registerTimelineCommand(program, context);
   registerPurgeCommand(program, context);

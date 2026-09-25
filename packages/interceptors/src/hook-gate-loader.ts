@@ -8,7 +8,10 @@ import {
   stateLabelsOf,
   type Containment,
   type SessionTask,
+  RepositoryTasks,
 } from '@memnox/core';
+
+import { repositoryRootOf } from './seam-runtime';
 
 import { containmentFor } from './containment-loader';
 import type { HookConfig } from './hook-config';
@@ -86,8 +89,12 @@ async function readSession(
   now: () => string,
 ): Promise<{ task: SessionTask | null; containment: Containment | null }> {
   const sessionId = config.sessionId;
-  const task =
+  const declared =
     sessionId === undefined ? null : await new SessionTasks(home).read(sessionId);
+  // A session nobody named a task for takes the one somebody declared for its repository.
+  const task =
+    declared ??
+    (await new RepositoryTasks(home).inForce(repositoryRootOf(process.cwd()), now()));
   const containment = await containmentFor({
     home,
     env: process.env,
