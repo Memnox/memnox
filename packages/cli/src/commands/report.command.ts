@@ -2,13 +2,20 @@ import { homedir } from 'node:os';
 
 import type { Command } from 'commander';
 
-import { operationsReport, recommendation, type OperationsReport } from '@memnox/core';
-import { LEDGER_WINDOW_LIMIT } from '@memnox/core';
+import {
+  LEDGER_SESSION_LIMIT,
+  LEDGER_WINDOW_LIMIT,
+  operationsReport,
+  recommendation,
+  summarizeSession,
+  type OperationsReport,
+} from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
 import { resolveWindowStart } from '../days-back';
 import { TONE, type FlowRow } from '../flow';
 import { withEvents } from '../event-store';
+import { renderSessionSummary } from '../report/session-view';
 
 /**
  * `memnox report`: what the agents did in a window, and what of it was wasted, because
@@ -28,13 +35,54 @@ export function registerReportCommand(
     .command('report')
     .description('What your agents did in a window, and what of it was redone')
     .option('--since <window>', 'how far back, e.g. 1d', '1d')
+    .option('--session <id>', 'one session instead of a window: its id, or "last"')
     .option('--json', 'machine-readable output')
-    .action(async (options: ReportOptions) => runReport(context, home, now, options));
+    .action(async (options: ReportOptions) =>
+      options.session === undefined
+        ? runReport(context, home, now, options)
+        : runSessionReport(context, home(), options.session, options.json === true),
+    );
 }
 
 interface ReportOptions {
   since: string;
   json?: boolean;
+  session?: string;
+}
+
+/** The session that last recorded anything, which is the one somebody just finished. */
+const LAST_SESSION = 'last';
+
+async function runSessionReport(
+  context: CliContext,
+  home: string,
+  asked: string,
+  asJson: boolean,
+): Promise<void> {
+  const sessionId = asked === LAST_SESSION ? await lastSession(home) : asked;
+  const events =
+    sessionId === null
+      ? []
+      : await withEvents(home, (store) =>
+          store.query({ sessionId, limit: LEDGER_SESSION_LIMIT }),
+        );
+  const summary = summarizeSession(events);
+  if (asJson) {
+    context.out.json(summary);
+    return;
+  }
+  context.flow.open('memnox report');
+  if (summary === null) {
+    context.flow.close(`Nothing was recorded for session ${asked}.`);
+    context.flow.hint('memnox timeline   the sessions that were');
+    return;
+  }
+  renderSessionSummary(context, summary);
+}
+
+async function lastSession(home: string): Promise<string | null> {
+  const [latest] = await withEvents(home, (store) => store.query({ limit: 1 }));
+  return latest?.sessionId ?? null;
 }
 
 /** What the agents did in a window, and what of it was redone. */

@@ -17,7 +17,12 @@ export const REPLAY_STEP = {
   RESUME: 'resumed',
   HOLD: 'hold',
   MILESTONE: 'milestone',
+  /** Something an agent can reach changed on this machine: a server, a tool, a config. */
+  CAPABILITY: 'capability',
 } as const;
+
+/** How far before a session its capability changes are shown, which is where a cause sits. */
+export const CAPABILITY_LOOKBACK_MINUTES = 60;
 
 export type ReplayStepKind = (typeof REPLAY_STEP)[keyof typeof REPLAY_STEP];
 
@@ -80,6 +85,8 @@ export interface ReplayInput {
   pause?: SessionPause | null;
   pending?: readonly PendingApproval[];
   milestones?: readonly Milestone[];
+  /** Config rows from around the session, so what changed sits beside what was done. */
+  capability?: readonly MemnoxEvent[];
 }
 
 function actionSummary(event: MemnoxEvent): string {
@@ -202,6 +209,20 @@ function markLeadUp(steps: ReplayStep[], index: number): void {
   }
 }
 
+function capabilityStep(event: MemnoxEvent): ReplayStep {
+  const what =
+    event.target === undefined ? event.operation : `${event.operation} ${event.target}`;
+  return {
+    kind: REPLAY_STEP.CAPABILITY,
+    at: event.at,
+    summary: `changed  ${what}: ${event.reason}`,
+    eventId: event.id,
+    surface: event.surface,
+    operation: event.operation,
+    ...(event.target === undefined ? {} : { target: event.target }),
+  };
+}
+
 /** Every record about one session, merged into the order it happened in. */
 export function buildReplay(input: ReplayInput): SessionReplay {
   const events = input.events.filter((event) => event.sessionId === input.sessionId);
@@ -214,6 +235,7 @@ export function buildReplay(input: ReplayInput): SessionReplay {
     ...(input.milestones ?? [])
       .filter((milestone) => milestone.sessionId === input.sessionId)
       .map(milestoneStep),
+    ...(input.capability ?? []).map(capabilityStep),
   ];
   // Stable, so two records at one instant keep the order they were written in.
   steps.sort((a, b) => a.at.localeCompare(b.at));

@@ -25,6 +25,7 @@ import { renderCli, type ExplainedCli } from './explain/cli';
 import { readDormantHere } from '../keeper/keep-dormant';
 import { readCoverageFacts, readLastProbedScan, renderAgent } from './explain/agent';
 import { renderServer, serverNamed, withVerdicts } from './explain/server';
+import { authorityFor } from './explain/authority-view';
 
 /** What `explain` reads the machine through, injected so a test never reads the real one. */
 interface ExplainDeps {
@@ -127,10 +128,19 @@ async function resolveAgent(query: ExplainQuery): Promise<boolean> {
   if (agent === undefined) return false;
 
   // Explain never starts an MCP server, so the tools come from the last scan that did.
+  const last = await readLastProbedScan(query.seams);
+  const rules = await policySetInForce(query.home, query.file);
   renderAgent(query.context, {
     agent,
     report: query.report,
-    last: await readLastProbedScan(query.seams),
+    last,
+    authority: authorityFor({
+      agentKind: agent.kind,
+      agentId: agent.id,
+      report: query.report,
+      last,
+      policies: rules.policies,
+    }),
     facts: await readCoverageFacts({
       dir: query.dir,
       home: query.home,

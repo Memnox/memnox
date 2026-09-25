@@ -339,7 +339,10 @@ export function describeTools(tools: readonly SnapshotTool[]): string {
   const destructive = tools.filter(
     (tool) => tool.effect === TOOL_EFFECT.DESTRUCTIVE,
   ).length;
+  const read = tools.filter((tool) => tool.effect === TOOL_EFFECT.READ).length;
   const parts = [`${tools.length} tool${tools.length === 1 ? '' : 's'}`];
+  // The reads too, so "14 tools" and "3 write" say how many only look.
+  if (read > 0) parts.push(`${read} read`);
   if (write > 0) parts.push(`${write} write`);
   if (destructive > 0) parts.push(`${destructive} destructive`);
   return parts.join(' · ');

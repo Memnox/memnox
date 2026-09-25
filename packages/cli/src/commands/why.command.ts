@@ -23,6 +23,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { withEvents } from '../event-store';
 import type { FlowRow } from '../flow';
+import { leadUpTo, renderLeadUp, type LeadUp } from './why/lead-up';
 
 /** How long `gh` is given to answer, because `why` is read while somebody waits. */
 const FORGE_TIMEOUT_MS = 3_000;
@@ -75,7 +76,8 @@ async function runWhy(
       renderNothingFound(context, id);
       return;
     }
-    await renderAnswer(context, event, options.evidence === true, deps.now());
+    const leadUp = await leadUpTo(store, event, deps.home());
+    await renderAnswer(context, { event, leadUp }, options.evidence === true, deps.now());
   });
 }
 
@@ -107,12 +109,13 @@ function renderNothingFound(context: CliContext, id: string | undefined): void {
 
 async function renderAnswer(
   context: CliContext,
-  event: MemnoxEvent,
+  { event, leadUp }: { event: MemnoxEvent; leadUp: LeadUp },
   withEvidence: boolean,
   now: Date,
 ): Promise<void> {
   const { flow, style } = context;
   renderDecision(context, event);
+  renderLeadUp(context, leadUp);
   if (withEvidence) {
     renderEvidence(context, event);
     await renderRepoEvidence(context, event, now);

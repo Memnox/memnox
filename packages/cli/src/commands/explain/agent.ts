@@ -19,6 +19,7 @@ import type {
   DiscoveryReport,
   EnvironmentSnapshot,
   SeamCoverage,
+  SystemAuthority,
 } from '@memnox/core';
 import type { CliContext } from '../../cli-context';
 import { TONE, type FlowRow } from '../../flow';
@@ -29,6 +30,7 @@ import { DEFAULT_SHELL, loginPathConfigured } from '../../protect/shell-profile'
 import { offboardCommand, type NamedDormant } from '../../keeper/keep-dormant';
 import type { ScanSeams } from '../../machine-scan';
 import type { Style } from '../../style';
+import { renderAuthority } from './authority-view';
 
 /** Any one of these set means egress is going through a proxy something can observe. */
 const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy'] as const;
@@ -41,6 +43,8 @@ interface RenderAgentInput {
   facts: CoverageFacts;
   /** Present when the agent has sat idle a month while holding reach. */
   dormant?: NamedDormant;
+  /** What its reads and changes meet in each system, under the rules in force. */
+  authority?: readonly SystemAuthority[];
   asJson: boolean;
 }
 
@@ -61,7 +65,14 @@ export function renderAgent(context: CliContext, input: RenderAgentInput): void 
   const coverage = coverageFor(agent.kind, agent.id, report.surfaces, facts);
   const dormant = input.dormant ?? null;
   if (input.asJson) {
-    context.out.json({ agent, harness, combined, coverage, dormant });
+    context.out.json({
+      agent,
+      harness,
+      combined,
+      coverage,
+      dormant,
+      authority: input.authority ?? [],
+    });
     return;
   }
 
@@ -72,6 +83,7 @@ export function renderAgent(context: CliContext, input: RenderAgentInput): void 
     ...dormantRows(dormant, context.style),
   ]);
   renderCombined(context, combined, last);
+  renderAuthority(context, input.authority ?? []);
   renderCoverage(context, agent, coverage);
   // A harness filters its own tools; what it cannot see is what lies underneath it.
   if (harness !== null) {

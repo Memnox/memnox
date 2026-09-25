@@ -154,3 +154,17 @@ describe('an agent that updated itself', () => {
     expect(describeUpdate(update as never)).toContain('same capabilities');
   });
 });
+
+describe('a server that went away', () => {
+  it('is an alert, because what relied on it now fails', () => {
+    const alerts = alertsFor([
+      {
+        subject: 'server',
+        name: 'railway',
+        direction: 'narrows',
+        detail: 'removed',
+      } as never,
+    ]);
+    expect(alerts.map((alert) => alert.kind)).toEqual(['server-gone']);
+  });
+});

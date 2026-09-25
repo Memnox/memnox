@@ -20,6 +20,11 @@ import {
   type Milestone,
   type ReplayStep,
   type SessionReplay,
+  CAPABILITY_LOOKBACK_MINUTES,
+  EVENT_SURFACE,
+  minutesToMs,
+  type MemnoxEvent,
+  type SqliteEventStore,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { withEvents } from '../event-store';
@@ -95,23 +100,43 @@ async function replayOf(
   asked: string | undefined,
 ): Promise<SessionReplay> {
   const home = deps.home();
-  const { sessionId, events } = await withEvents(home, async (store) => {
+  const { sessionId, events, capability } = await withEvents(home, async (store) => {
     const id = asked ?? (await store.query({ limit: LEDGER_LATEST_ONLY }))[0]?.sessionId;
     if (id === undefined) {
       throw new Error('Nothing recorded yet, so there is no session to replay.');
     }
-    return {
-      sessionId: id,
-      events: await store.query({ sessionId: id, limit: LEDGER_SESSION_LIMIT }),
-    };
+    const events = await store.query({ sessionId: id, limit: LEDGER_SESSION_LIMIT });
+    return { sessionId: id, events, capability: await capabilityAround(store, events) };
   });
   return buildReplay({
     sessionId,
     events,
+    capability,
     pause: await new SessionPauses(home).read(sessionId),
     pending: await new PendingApprovals(home).list(deps.now().toISOString()),
     milestones: await milestonesOf(deps, sessionId),
   });
+}
+
+/** What changed on the machine from a while before the session until it ended. */
+async function capabilityAround(
+  store: SqliteEventStore,
+  events: readonly MemnoxEvent[],
+): Promise<MemnoxEvent[]> {
+  const first = events[0];
+  const last = events[events.length - 1];
+  if (first === undefined || last === undefined) return [];
+  const since = new Date(
+    Date.parse(first.at) - minutesToMs(CAPABILITY_LOOKBACK_MINUTES),
+  ).toISOString();
+  const rows = await store.query({
+    surface: EVENT_SURFACE.CONFIG,
+    since,
+    until: last.at,
+    withConfig: true,
+    limit: LEDGER_SESSION_LIMIT,
+  });
+  return rows.filter((row) => row.surface === EVENT_SURFACE.CONFIG);
 }
 
 /** Where the session kept milestones, as the seams marked it, and wherever this is run. */
@@ -182,5 +207,6 @@ function toneOf(step: ReplayStep): FlowItem['tone'] {
   if (step.kind === REPLAY_STEP.TRIP || step.leadUp === true) return TONE.WARN;
   if (step.kind === REPLAY_STEP.MILESTONE || step.kind === REPLAY_STEP.RESUME)
     return TONE.OK;
+  if (step.kind === REPLAY_STEP.CAPABILITY) return TONE.WARN;
   return TONE.DIM;
 }

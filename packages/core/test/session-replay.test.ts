@@ -137,3 +137,28 @@ describe('a session replayed', () => {
     expect(JSON.parse(JSON.stringify(replay))).toEqual(replay);
   });
 });
+
+describe('what changed on the machine, beside what the session did', () => {
+  it('puts a capability change in the order it happened, and leaves the ending alone', () => {
+    const replay = buildReplay({
+      sessionId: 'ses_1',
+      events: [event('e1', 2), event('e2', 5, { operation: 'mcp.railway.redeploy' })],
+      capability: [
+        event('c1', 4, {
+          sessionId: 'cfg_1',
+          surface: 'config',
+          operation: 'config.drift.new-write-tool',
+          target: 'railway',
+          reason: 'railway can now change something outside this machine',
+        }),
+      ],
+    });
+    expect(replay.steps.map((step) => step.kind)).toEqual([
+      REPLAY_STEP.ACTION,
+      REPLAY_STEP.CAPABILITY,
+      REPLAY_STEP.ACTION,
+    ]);
+    expect(replay.steps[1]?.summary).toContain('config.drift.new-write-tool railway');
+    expect(replay.end).toBe(REPLAY_END.CLEAN);
+  });
+});

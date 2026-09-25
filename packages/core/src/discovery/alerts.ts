@@ -18,6 +18,8 @@ export const ALERT = {
   AGENT_WIDENED: 'agent-widened',
   /** Something that runs other agents gained another one, or reached another machine. */
   HARNESS_WIDENED: 'harness-widened',
+  /** A server an agent was configured with is gone, so what used it will now fail. */
+  SERVER_GONE: 'server-gone',
 } as const;
 
 export type AlertKind = (typeof ALERT)[keyof typeof ALERT];
@@ -33,10 +35,28 @@ export interface Alert {
 
 export function alertsFor(changes: readonly EnvironmentChange[]): Alert[] {
   return changes.flatMap((change) => {
+    if (isServerGone(change)) return [serverGone(change.name)];
     if (change.direction !== CHANGE_DIRECTION.WIDENS) return [];
     const alert = alertFor(change);
     return alert === null ? [] : [alert];
   });
+}
+
+/** The one narrowing worth hearing about: less reach is good news unless something relied on it. */
+export function isServerGone(change: EnvironmentChange): boolean {
+  return (
+    change.direction === CHANGE_DIRECTION.NARROWS &&
+    change.subject === CHANGE_SUBJECT.SERVER
+  );
+}
+
+function serverGone(name: string): Alert {
+  return {
+    kind: ALERT.SERVER_GONE,
+    name,
+    headline: `the MCP server ${name} is gone, so an agent that relied on it will fail`,
+    next: 'memnox doctor',
+  };
 }
 
 /** The first kind that fits, in order of how urgently somebody should hear it. */

@@ -13,3 +13,5 @@ export * from './session-replay';
 export * from './probation';
 export * from './session-containment';
 export * from './destinations';
+export * from './session-summary';
+export * from './authority';

@@ -19,6 +19,7 @@ import {
   watchedRepositories,
   type EnvironmentChange,
   type McpLister,
+  isServerGone,
 } from '@memnox/core';
 
 import type { ScanSeams } from '../machine-scan';
@@ -35,6 +36,7 @@ export const DRIFT_GROUP = {
   CREDENTIAL: 'credential',
   SELF_UPDATE: 'self-update',
   DEFINITION: 'definition',
+  SERVER_GONE: 'server-gone',
 } as const;
 
 export type DriftGroup = (typeof DRIFT_GROUP)[keyof typeof DRIFT_GROUP];
@@ -46,6 +48,8 @@ export interface DriftItem {
   agent?: string;
   file?: string;
   summary: string;
+  /** What the change brought, such as "14 tools · 11 read · 3 write". */
+  detail?: string;
 }
 
 /** The arrow a comparison writes between a before and an after, as in "1 → 3 agents". */
@@ -67,6 +71,7 @@ const GROUP_OF_ALERT: Readonly<Record<string, DriftGroup>> = {
   [ALERT.NEW_WRITE_TOOL]: DRIFT_GROUP.NEW_WRITE_TOOL,
   [ALERT.AGENT_WIDENED]: DRIFT_GROUP.WIDENED,
   [ALERT.HARNESS_WIDENED]: DRIFT_GROUP.WIDENED,
+  [ALERT.SERVER_GONE]: DRIFT_GROUP.SERVER_GONE,
 };
 
 /** Never a lister that starts anything: the daemon reads configs and never runs a server. */
@@ -112,6 +117,7 @@ export function driftItems(drift: Drift): DriftItem[] {
 
 /** A change is an item when it raised an alert, or when an agent gained a whole surface. */
 function itemOfChange(change: EnvironmentChange): DriftItem[] {
+  if (isServerGone(change)) return [goneItem(change)];
   if (change.direction !== CHANGE_DIRECTION.WIDENS) return [];
   // Our own session tools, which setup put there: announcing them as new would be noise.
   if (change.name === SESSION_SERVER) return [];
@@ -131,8 +137,18 @@ function itemOfChange(change: EnvironmentChange): DriftItem[] {
       name: change.name,
       ...(change.grantedBy === undefined ? {} : { file: change.grantedBy }),
       summary: `${headline}. ${beforeAndAfter(change)}`,
+      detail: change.detail,
     },
   ];
+}
+
+function goneItem(change: EnvironmentChange): DriftItem {
+  return {
+    group: DRIFT_GROUP.SERVER_GONE,
+    name: change.name,
+    ...(change.grantedBy === undefined ? {} : { file: change.grantedBy }),
+    summary: `the MCP server ${change.name} is gone. before: configured; after: absent`,
+  };
 }
 
 /** A count that moved already says both ends, and anything else was absent before. */
@@ -177,7 +193,9 @@ function noticeFor(group: DriftGroup, items: readonly DriftItem[]): string {
     case DRIFT_GROUP.CREDENTIAL:
       return `${names} newly reachable by an agent here. "memnox explain ${first.name}" says which.`;
     case DRIFT_GROUP.NEW_SERVER:
-      return `New MCP server: ${names}. "memnox scan --mcp ${first.name}" shows what it brings.`;
+      return `New MCP server: ${names}${countsOf(items)}. "memnox scan --mcp ${first.name}" shows what it brings.`;
+    case DRIFT_GROUP.SERVER_GONE:
+      return `MCP server gone: ${names}. An agent that relied on it will now fail. "memnox doctor" checks what is left.`;
     case DRIFT_GROUP.NEW_WRITE_TOOL:
       return `${names} can now change something outside this machine. "memnox protect" puts a rule in front.`;
     case DRIFT_GROUP.SELF_UPDATE:
@@ -187,6 +205,14 @@ function noticeFor(group: DriftGroup, items: readonly DriftItem[]): string {
     case DRIFT_GROUP.WIDENED:
       return `${names} reaches more than it did. "memnox timeline --since 1h" shows what moved.`;
   }
+}
+
+/** What one new server brings, where the scan already knew its tools. */
+function countsOf(items: readonly DriftItem[]): string {
+  const detail = items.length === 1 ? items[0]?.detail : undefined;
+  return detail === undefined || detail === '' || detail.startsWith('0 ')
+    ? ''
+    : ` (${detail})`;
 }
 
 /** "a, b, c and 2 more", which is as many as a notice can carry and still be read. */
