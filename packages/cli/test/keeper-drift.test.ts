@@ -176,6 +176,8 @@ describe('drift notices', () => {
 
 describe('the keeper writing what it changed to the ledger', () => {
   const onlyClaude = (): KeepSeams => ({
+    // Nothing on PATH decides this: whether memnox-session is installed is the machine's business.
+    session: async () => ({ held: [], written: [], files: [] }),
     targets: [
       {
         name: 'Claude Code',

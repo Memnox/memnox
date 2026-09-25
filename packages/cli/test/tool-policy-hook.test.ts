@@ -148,6 +148,8 @@ describe("the machine's own rules", () => {
 describe('the hook every agent runs rules on every tool call', () => {
   const claude = (home: string) => join(home, '.claude', 'settings.json');
   const onlyClaude: KeepSeams = {
+    // Nothing on PATH decides this: whether memnox-session is installed is the machine's business.
+    session: async () => ({ held: [], written: [], files: [] }),
     targets: [
       {
         name: 'Claude Code',

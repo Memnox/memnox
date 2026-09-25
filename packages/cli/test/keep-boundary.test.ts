@@ -30,6 +30,8 @@ describe('the daemon keeping the boundary setup drew', () => {
   /* Only Claude Code, and no MCP config: a test that rewrote real configs would
      repoint the agents of whoever ran it. */
   const onlyClaude: KeepSeams = {
+    // Nothing on PATH decides this: whether memnox-session is installed is the machine's business.
+    session: async () => ({ held: [], written: [], files: [] }),
     targets: [
       {
         name: 'Claude Code',
