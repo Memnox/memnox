@@ -136,7 +136,10 @@ async function capabilityAround(
     withConfig: true,
     limit: LEDGER_SESSION_LIMIT,
   });
-  return rows.filter((row) => row.surface === EVENT_SURFACE.CONFIG);
+  // Changes to the machine only: a session's own summary is filed here too, and is not one.
+  return rows.filter(
+    (row) => row.surface === EVENT_SURFACE.CONFIG && row.operation.startsWith('config.'),
+  );
 }
 
 /** Where the session kept milestones, as the seams marked it, and wherever this is run. */

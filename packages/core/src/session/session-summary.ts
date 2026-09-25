@@ -126,3 +126,22 @@ function systemsOf(ran: readonly MemnoxEvent[]): SystemTouched[] {
     (a, b) => b.reads + b.changes - (a.reads + a.changes) || a.name.localeCompare(b.name),
   );
 }
+
+/** The systems named in a line, by name; the rest are counted. */
+const SYSTEMS_IN_LINE = 3;
+
+/** One line for the end of a run, when the rail has closed and the terminal is the agent's. */
+export function describeSummary(summary: SessionSummary): string {
+  const systems = summary.systems
+    .slice(0, SYSTEMS_IN_LINE)
+    .map((each) => `${each.name} ${each.reads} read, ${each.changes} changed`);
+  const more = summary.systems.length - SYSTEMS_IN_LINE;
+  const parts = [
+    `${summary.actions} action(s)`,
+    `${summary.filesRead} file(s) read, ${summary.filesChanged} changed`,
+    ...systems,
+    ...(more > 0 ? [`${more} more system(s)`] : []),
+    ...(summary.blockedCount > 0 ? [`${summary.blockedCount} stopped`] : []),
+  ];
+  return `session ${summary.sessionId}: ${parts.join('; ')}. memnox report --session ${summary.sessionId}`;
+}

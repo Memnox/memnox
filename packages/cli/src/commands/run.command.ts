@@ -8,12 +8,16 @@ import {
   LeaseRegistry,
   SESSION_VAR,
   SessionContainments,
+  LEDGER_SESSION_LIMIT,
+  summarizeSession,
+  describeSummary,
 } from '@memnox/core';
 import { FALLBACK_SHELL, interceptorDirFor, REAL_SHELL_VAR } from '@memnox/interceptors';
 import type { CliContext } from '../cli-context';
 import type { FlowRow } from '../flow';
 import { sessionGuardPath } from '../memnox-paths';
 import { describeCount } from '../plural';
+import { withEvents } from '../event-store';
 import { binaryMeantBy, onPath } from '../on-path';
 import {
   nowOf,
@@ -193,10 +197,26 @@ async function startAndRelease(
     // In a `finally`, because an agent that crashed is the one whose paths must not stay held.
     const released = await releaseLeases(run.home, run.sessionId, deps);
     await endContainment(run);
-    if (released > 0) {
-      // Off the rail, because it closed when the agent took over the terminal.
-      context.out.note(`released ${describeCount(released, 'lease')}`);
-    }
+    // Off the rail, because it closed when the agent took over the terminal.
+    const said = [
+      released > 0 ? `released ${describeCount(released, 'lease')}` : null,
+      await summaryOf(run),
+    ].filter((line): line is string => line !== null);
+    if (said.length > 0) context.out.note(said.join('\n'));
+  }
+}
+
+/** What the session did, in one line, so nobody has to ask for it. Null when nothing was kept. */
+async function summaryOf(run: PreparedRun): Promise<string | null> {
+  try {
+    const events = await withEvents(run.home, (store) =>
+      store.query({ sessionId: run.sessionId, limit: LEDGER_SESSION_LIMIT }),
+    );
+    const summary = summarizeSession(events);
+    return summary === null ? null : describeSummary(summary);
+  } catch {
+    // A ledger that will not open is no reason to make an agent's exit fail.
+    return null;
   }
 }
 

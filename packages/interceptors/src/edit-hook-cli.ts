@@ -23,6 +23,7 @@ import { checkpointBeforeFirstWrite } from './checkpoint-seam';
 import { canAskPerson } from './edit-hook';
 import { fieldsOf } from './hook-payload';
 import { answerPause } from './edit-pause';
+import { keepSessionSummary } from './session-summary-row';
 import { answeredSessionStart, beforePause, replyInSession } from './in-session';
 import { log, readStdin } from './seam-runtime';
 import { sessionEventOf } from './session-events';
@@ -155,6 +156,10 @@ async function releaseSession(ended: string, context: EditHookContext): Promise<
     sessionId: context.runSession ?? ended,
     pid: context.pid,
   });
+  // A session `memnox run` started is summed up when it exits, on the terminal.
+  if (context.runSession === undefined) {
+    await keepSessionSummary(context.home, ended, context.now());
+  }
 }
 
 /**
