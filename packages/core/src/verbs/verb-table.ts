@@ -313,14 +313,30 @@ const QUERY_FIELD = /^query=(.*)$/s;
  * Where an argv pattern cannot see the difference, the argument can: a GraphQL call is
  * always a POST with a field, and only the query text says whether it reads or changes.
  */
-export function refineVerb(cli: string, argv: readonly string[], verb: Verb): Verb {
-  if (cli !== 'gh' || argv[0] !== 'api' || !argv.includes('graphql')) return verb;
+export function refineVerb(table: VerbTable, argv: readonly string[], verb: Verb): Verb {
+  if (table.name !== 'gh' || argv[0] !== 'api') return verb;
+  if (!argv.includes('graphql')) return restVerb(table, argv, verb);
   const query = argv
     .map((arg) => QUERY_FIELD.exec(arg)?.[1])
     .find((each) => each !== undefined);
   // A query from a file or stdin cannot be read here, so it keeps the write it matched.
   if (query === undefined || query.startsWith('@')) return verb;
   return GRAPHQL_BY_KIND[GRAPHQL_MUTATION.test(query) ? 'mutation' : 'query'];
+}
+
+/** REST paths whose meaning a rule is written about, so `gh api` is not a way around it. */
+const REST_VERBS: readonly { path: RegExp; method: string; match: string }[] = [
+  { path: /\/pulls\/\d+\/merge$/, method: 'PUT', match: 'pr merge **' },
+];
+
+function restVerb(table: VerbTable, argv: readonly string[], verb: Verb): Verb {
+  const methodAt = argv.findIndex((arg) => arg === '-X' || arg === '--method');
+  const method = methodAt === -1 ? undefined : argv[methodAt + 1];
+  for (const rest of REST_VERBS) {
+    if (method !== rest.method || !argv.some((arg) => rest.path.test(arg))) continue;
+    return table.verbs.find((each) => each.match === rest.match) ?? verb;
+  }
+  return verb;
 }
 
 const GRAPHQL_BY_KIND: Readonly<Record<'mutation' | 'query', Verb>> = {

@@ -4,6 +4,7 @@
  */
 import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
 import { classifyWriter } from './writers';
+import { environmentRead, variablesPrinted } from './environment-reads';
 import {
   inspectStatement,
   isDatabaseClient,
@@ -106,7 +107,7 @@ function resolveFromVerbTable(
   if (table === null) return null;
   // Flags that come before the verb, as `kubectl --context prod delete`, are not the verb.
   const argv = verbArgv(table, args);
-  const verb = refineVerb(binary, argv, classOf(table, argv));
+  const verb = refineVerb(table, argv, classOf(table, argv));
   const target = targetIn(verb, argv);
   const environment = environmentIn(table, args, env);
   return {
@@ -232,7 +233,11 @@ export function resolveShellLine(
     }
   }
   const redirected = redirectActions(normalized.redirects, env);
-  return { actions: [...actions, ...redirected], opaque: normalized.opaque };
+  const printed = environmentRead(variablesPrinted(normalized.parsed));
+  return {
+    actions: [...actions, ...redirected, ...(printed === null ? [] : [printed])],
+    opaque: normalized.opaque,
+  };
 }
 
 /** `> file` and `< file` as the writes and reads they are, which argv never shows. */

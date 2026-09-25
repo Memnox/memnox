@@ -182,7 +182,7 @@ const KNOWN_CREDENTIAL_NAMES = new Set([
   'VERCEL_TOKEN',
 ]);
 
-function looksLikeCredential(name: string): boolean {
+export function looksLikeCredential(name: string): boolean {
   return KNOWN_CREDENTIAL_NAMES.has(name.toUpperCase()) || KEY_LIKE.test(name);
 }
 

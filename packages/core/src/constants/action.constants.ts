@@ -18,7 +18,12 @@ export const ACTION = {
   HTTP_REQUEST: 'http.request',
   /** A tunnel through the egress proxy, where only the destination is knowable. */
   HTTP_CONNECT: 'http.connect',
+  /** Printing a variable's value, which is how a key leaves without a file being read. */
+  ENVIRONMENT_READ: 'environment.read',
 } as const;
+
+/** The target of a command that prints every variable at once. */
+export const EVERY_VARIABLE = 'all';
 
 export type ActionName = (typeof ACTION)[keyof typeof ACTION];
 

@@ -6,3 +6,4 @@ export * from './actor';
 export * from './untrusted-guard';
 export * from './writers';
 export * from './tool-call';
+export * from './environment-reads';

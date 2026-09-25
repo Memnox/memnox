@@ -223,3 +223,15 @@ describe('verbs a read-only policy has to see', () => {
     expect(only('git branch feature').action).toBe('git.branch');
   });
 });
+
+describe('gh api is not a way around a rule about a verb', () => {
+  it('names a merge through the REST path as the merge it is', () => {
+    expect(only('gh api -X PUT repos/acme/app/pulls/12/merge').action).toBe(
+      'gh.pr-merge',
+    );
+    expect(only('gh api --method=PUT repos/acme/app/pulls/12/merge').action).toBe(
+      'gh.pr-merge',
+    );
+    expect(only('gh api repos/acme/app/pulls/12/merge').action).toBe('gh.api');
+  });
+});

@@ -4,6 +4,7 @@ import { TOOL_CLASS } from '../discovery/classify';
 import {
   ACTION,
   CHANGING_HTTP_METHODS,
+  EVERY_VARIABLE,
   HTTP_METHOD_ARGUMENT,
 } from '../constants/action.constants';
 
@@ -76,7 +77,7 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
     recommended: DECISION_EFFECT.DENY,
     because:
       'almost no task needs the key itself, and a leaked one is somebody’s weekend',
-    actions: [ACTION.FILESYSTEM_READ],
+    actions: [ACTION.FILESYSTEM_READ, ACTION.ENVIRONMENT_READ],
     // The directory too, or asking about `~/.aws` itself answers "no rule matched".
     targets: [
       '**/.ssh',
@@ -93,6 +94,17 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
       '!**/.env.example',
       '!**/.env.sample',
       '!**/.env.template',
+      // A variable printed is the same key read another way: `printenv`, `echo $STRIPE_KEY`.
+      EVERY_VARIABLE,
+      '*_KEY',
+      '*_KEYS',
+      '*_SECRET',
+      '*_TOKEN',
+      '*_PASSWORD',
+      '*_CREDENTIALS',
+      'DATABASE_URL',
+      'MONGODB_URI',
+      'REDIS_URL',
     ],
   },
   {
