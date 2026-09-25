@@ -1,3 +1,4 @@
+import { FileGrants } from './session-grants';
 import {
   DEFAULT_HOLD_TIMEOUT_MS,
   DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS,
@@ -140,5 +141,7 @@ export function holdFor(deps: HoldForInput): HoldService {
     // Somebody elsewhere has to be found and their answer travel back, so they get longer.
     deps.timeoutMs ??
       (deps.interactive ? DEFAULT_HOLD_TIMEOUT_MS : DEFAULT_UNATTENDED_HOLD_TIMEOUT_MS),
+    // On disk, because the process that heard the answer is rarely the one asked next.
+    new FileGrants(deps.home),
   );
 }

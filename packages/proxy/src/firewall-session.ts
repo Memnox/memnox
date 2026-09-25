@@ -1,4 +1,5 @@
 import {
+  classifyToolCall,
   DECISION_EFFECT,
   describeAlternative,
   describeHold,
@@ -172,6 +173,9 @@ export class FirewallSession {
       operation: call.name,
       fingerprint: digest(`${call.name}:${JSON.stringify(call.arguments ?? {})}`),
       reason: verdict.reason,
+      class: classifyToolCall(call.name, call.arguments ?? {}).class,
+      // The server's tool, so a yes on one server is not a yes on another with the name.
+      grantKey: `mcp.${this.deps.server ?? ''}.${call.name}`,
       ...(this.deps.server === undefined ? {} : { target: this.deps.server }),
     };
 

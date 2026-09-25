@@ -47,20 +47,80 @@ describe('holding a call for a person', () => {
     expect(prompt.ask).toHaveBeenCalledTimes(1);
   });
 
-  it('scopes a session grant to that session and that call', async () => {
+  it('scopes a session grant to that session and the action it named', async () => {
     const service = new HoldService(answering(HOLD_ANSWER.SESSION));
     await service.hold(REQUEST);
 
-    expect(service.hasSessionGrant(REQUEST)).toBe(true);
-    expect(service.hasSessionGrant({ ...REQUEST, sessionId: 'ses_2' })).toBe(false);
-    expect(service.hasSessionGrant({ ...REQUEST, fingerprint: 'other' })).toBe(false);
+    expect(await service.hasSessionGrant(REQUEST)).toBe(true);
+    expect(await service.hasSessionGrant({ ...REQUEST, sessionId: 'ses_2' })).toBe(false);
+    // The question named the action, so the same action on another target is covered.
+    expect(await service.hasSessionGrant({ ...REQUEST, fingerprint: 'other' })).toBe(
+      true,
+    );
+    expect(
+      await service.hasSessionGrant({
+        ...REQUEST,
+        operation: 'something.else',
+        fingerprint: 'x',
+      }),
+    ).toBe(false);
+  });
+
+  it('grants a delete for that one call, never by name', async () => {
+    const service = new HoldService(answering(HOLD_ANSWER.SESSION));
+    const deleting = { ...REQUEST, class: 'destructive' };
+    await service.hold(deleting);
+
+    expect(await service.hasSessionGrant(deleting)).toBe(true);
+    expect(await service.hasSessionGrant({ ...deleting, fingerprint: 'other' })).toBe(
+      false,
+    );
+  });
+
+  it('stops asking after the second yes to the same action in a session', async () => {
+    const prompt = { ask: vi.fn(async () => ({ answer: HOLD_ANSWER.ONCE })) };
+    const service = new HoldService(prompt);
+
+    const first = await service.hold(REQUEST);
+    const second = await service.hold({ ...REQUEST, fingerprint: 'another call' });
+    const third = await service.hold({ ...REQUEST, fingerprint: 'a third' });
+
+    expect(first.learned).toBeUndefined();
+    expect(second.learned).toBe(true);
+    expect(third.fromSessionGrant).toBe(true);
+    expect(prompt.ask).toHaveBeenCalledTimes(2);
+    // A new session starts over.
+    await service.hold({ ...REQUEST, sessionId: 'ses_2' });
+    expect(prompt.ask).toHaveBeenCalledTimes(3);
+  });
+
+  it('never learns a delete, however many times it was allowed', async () => {
+    const prompt = { ask: vi.fn(async () => ({ answer: HOLD_ANSWER.ONCE })) };
+    const service = new HoldService(prompt);
+    const deleting = { ...REQUEST, class: 'destructive' };
+
+    for (const fingerprint of ['a', 'b', 'c'])
+      await service.hold({ ...deleting, fingerprint });
+    expect(prompt.ask).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not count a no toward learning', async () => {
+    const answers = [HOLD_ANSWER.DENY, HOLD_ANSWER.ONCE, HOLD_ANSWER.ONCE];
+    const prompt = {
+      ask: vi.fn(async () => ({ answer: answers.shift() ?? HOLD_ANSWER.ONCE })),
+    };
+    const service = new HoldService(prompt);
+
+    await service.hold(REQUEST);
+    const afterOneYes = await service.hold({ ...REQUEST, fingerprint: 'b' });
+    expect(afterOneYes.learned).toBeUndefined();
   });
 
   it('forgets a session’s grants when the session ends', async () => {
     const service = new HoldService(answering(HOLD_ANSWER.SESSION));
     await service.hold(REQUEST);
     service.forget('ses_1');
-    expect(service.hasSessionGrant(REQUEST)).toBe(false);
+    expect(await service.hasSessionGrant(REQUEST)).toBe(false);
   });
 
   it('denies when a person says no', async () => {

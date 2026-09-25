@@ -1,5 +1,6 @@
 import {
   containmentAsk,
+  grantKeyFor,
   DECISION_EFFECT,
   describeEgress,
   digest,
@@ -205,6 +206,8 @@ export class EgressSeam {
       agent: caller.agent ?? UNNAMED_AGENT,
       operation: request.action,
       fingerprint: digest(`${request.action}:${request.target ?? ''}`),
+      // One host, since a yes to one site is not a yes to the internet.
+      grantKey: grantKeyFor(request.action, request.target),
       reason: verdict.reason,
       ...(request.target === undefined ? {} : { target: request.target }),
     });

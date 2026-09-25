@@ -2,6 +2,7 @@ export * from './policy-file';
 export * from './local-gate';
 export * from './containment';
 export * from './hold';
+export * from './session-grants';
 export * from './evidence';
 export * from './tty-prompt';
 export * from './pending';

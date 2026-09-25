@@ -14,6 +14,8 @@ import {
   UNNAMED_SESSION,
   type EnforcementMode,
   type EventSink,
+  FileGrants,
+  grantKeyFor,
 } from '@memnox/core';
 
 import { HookAuthorizer } from './hook-authorizer';
@@ -94,7 +96,8 @@ export async function answerToolCall(
   if (mode === ENFORCEMENT_MODE.OFF) return null;
 
   const authorizer = seams.authorizer ?? (await authorizerFor(context));
-  const ruling = await ruleOnTool(call, { authorizer, mode, env: context.env });
+  const ruled = await ruleOnTool(call, { authorizer, mode, env: context.env });
+  const ruling = await withSessionGrant(ruled, sessionFor(call, context), context.home);
   if (isWorthRecording(ruling)) {
     const sink = seams.sink === undefined ? openLedger(context.home) : seams.sink;
     await keep(sink, call, ruling, context);
@@ -105,6 +108,40 @@ export async function answerToolCall(
     reply: toolReply(call, ruling, context.personThere),
     asked: putsQuestion(call, ruling, context.personThere),
   };
+}
+
+/**
+ * An ask a person already answered in this session, twice or "for this session", is let
+ * through rather than put to them again. Only an ask: a refusal is never granted around.
+ */
+async function withSessionGrant(
+  ruling: ToolRuling,
+  sessionId: string,
+  home: string,
+): Promise<ToolRuling> {
+  if (ruling.effect !== DECISION_EFFECT.ASK) return ruling;
+  const covered = await new FileGrants(home)
+    .covers({
+      sessionId,
+      operation: grantKeyFor(ruling.action, ruling.target),
+      fingerprint: ruling.target ?? ruling.action,
+      class: ruling.class,
+    })
+    .catch(() => false);
+  if (!covered) return ruling;
+  return {
+    ...ruling,
+    effect: DECISION_EFFECT.ALLOW,
+    reason: `a person already allowed ${ruling.action} in this session`,
+  };
+}
+
+/** The session `memnox run` set, then the host's own, the way every row here is filed. */
+export function sessionFor(
+  call: ToolCall,
+  context: Pick<ToolHookContext, 'runSession'>,
+): string {
+  return context.runSession ?? (call.sessionId === '' ? UNNAMED_SESSION : call.sessionId);
 }
 
 /** Said when the rules could not be read, so a person knows the refusal is ours and why. */
@@ -156,8 +193,7 @@ async function keep(
       await overlaysInForce(context.home),
       at,
     );
-    const sessionId =
-      context.runSession ?? (call.sessionId === '' ? UNNAMED_SESSION : call.sessionId);
+    const sessionId = sessionFor(call, context);
     await sink.append(
       toolEventFor(call, ruling, {
         ...provenance,

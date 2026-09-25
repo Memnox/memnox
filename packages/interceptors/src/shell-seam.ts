@@ -224,6 +224,7 @@ export class ShellSeam {
       fingerprint: digest(line),
       reason: ruling.verdict.reason,
       command: line,
+      class: ruling.class,
     };
     const result = await hold.hold(request);
     // One yes covered the whole line, so everything it asked about is learned.

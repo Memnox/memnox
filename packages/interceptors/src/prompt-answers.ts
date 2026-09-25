@@ -11,6 +11,8 @@ import {
   DECISION_EFFECT,
   digest,
   ENFORCEMENT_MODE,
+  FileGrants,
+  grantKeyFor,
   EVENT_SCHEMA_VERSION,
   localRuleRef,
   newEventId,
@@ -111,8 +113,24 @@ export async function learnFromAnswer(
   if (taken.ask === null) return false;
   await store.write(session, taken.state);
   await recordYes(taken.ask, session, deps);
+  await countYes(taken.ask, session, deps.home);
   await teachNotice(hook, deps).catch(() => undefined);
   return true;
+}
+
+/**
+ * Counted toward the session's grants, so the second yes to the same action is the last
+ * one anybody is asked for. Best effort, since the tool already ran.
+ */
+async function countYes(ask: PendingAsk, sessionId: string, home: string): Promise<void> {
+  await new FileGrants(home)
+    .approved({
+      sessionId,
+      operation: grantKeyFor(ask.action, ask.target),
+      fingerprint: ask.target ?? ask.action,
+      class: ask.class,
+    })
+    .catch(() => undefined);
 }
 
 /** The same call ruled on again in this process, so noticing holds the question, then the yes. */

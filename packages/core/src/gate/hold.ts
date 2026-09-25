@@ -1,4 +1,5 @@
 import { minutesToMs } from '../domain/time';
+import { MemoryGrants, type GrantSubject, type SessionGrants } from './session-grants';
 
 /**
  * Holding a call for a person while the agent waits on the other end of a pipe, so every
@@ -51,6 +52,13 @@ export interface HoldRequest {
   evidence?: readonly string[];
   /** The command as typed, when there is one. `[e]` edits this and nothing else. */
   command?: string;
+  /** What the action does, so a yes to a delete is only ever a yes to that delete. */
+  class?: string;
+  /**
+   * What "for this session" covers, where the operation alone is too wide: a host for a
+   * web request, a server's tool for an MCP call. The operation when absent.
+   */
+  grantKey?: string;
 }
 
 export interface HoldAsked {
@@ -92,6 +100,8 @@ export interface HoldResult {
   fromSessionGrant?: true;
   /** The replacement command, when a person edited it. Never run without ruling on it. */
   edited?: string;
+  /** This yes was the one that taught the session to stop asking about the action. */
+  learned?: true;
 }
 
 export function isAllowed(result: HoldResult): boolean {
@@ -99,26 +109,23 @@ export function isAllowed(result: HoldResult): boolean {
 }
 
 /**
- * Grants live for one session and in memory only, because one that survived a restart
- * would be a permission nobody remembers giving.
+ * Grants live for one session. Kept on disk where the caller is one process of many, as
+ * every hook and shell wrapper is, since a grant in memory ended with the process.
  */
 export class HoldService {
-  private readonly granted = new Map<string, Set<string>>();
-
   constructor(
     private readonly prompt: HoldPrompt,
     private readonly timeoutMs: number = DEFAULT_HOLD_TIMEOUT_MS,
+    private readonly grants: SessionGrants = new MemoryGrants(),
   ) {}
 
-  /** Whether this exact call was already answered "for this session". */
-  hasSessionGrant(request: HoldRequest): boolean {
-    const grants = this.granted.get(request.sessionId);
-    if (grants === undefined) return false;
-    return grants.has(request.fingerprint);
+  /** Whether this call was already answered "for this session", or learned. */
+  async hasSessionGrant(request: HoldRequest): Promise<boolean> {
+    return this.grants.covers(subjectOf(request));
   }
 
   async hold(request: HoldRequest): Promise<HoldResult> {
-    if (this.hasSessionGrant(request)) {
+    if (await this.hasSessionGrant(request)) {
       return {
         outcome: HOLD_OUTCOME.ALLOWED,
         answer: HOLD_ANSWER.SESSION,
@@ -139,26 +146,35 @@ export class HoldService {
     return this.resultOf(asked, request);
   }
 
-  private resultOf(asked: HoldAsked, request: HoldRequest): HoldResult {
+  private async resultOf(asked: HoldAsked, request: HoldRequest): Promise<HoldResult> {
     const answer = asked.answer;
     if (answer === HOLD_ANSWER.DENY) {
       return { outcome: HOLD_OUTCOME.DENIED, answer };
     }
     if (answer === HOLD_ANSWER.EDIT) return editedResult(asked, request);
-    if (answer === HOLD_ANSWER.SESSION) this.grant(request);
-    return { outcome: HOLD_OUTCOME.ALLOWED, answer };
+    const subject = subjectOf(request);
+    if (answer === HOLD_ANSWER.SESSION) await this.grants.grant(subject);
+    const learned = await this.grants.approved(subject);
+    return {
+      outcome: HOLD_OUTCOME.ALLOWED,
+      answer,
+      ...(learned ? { learned: true } : {}),
+    };
   }
 
-  private grant(request: HoldRequest): void {
-    const grants = this.granted.get(request.sessionId) ?? new Set<string>();
-    grants.add(request.fingerprint);
-    this.granted.set(request.sessionId, grants);
-  }
-
-  /** Ends a session's grants. Called when the session does. */
+  /** Ends a session's grants where they are held in memory. On disk they age out. */
   forget(sessionId: string): void {
-    this.granted.delete(sessionId);
+    if (this.grants instanceof MemoryGrants) this.grants.forget(sessionId);
   }
+}
+
+function subjectOf(request: HoldRequest): GrantSubject {
+  return {
+    sessionId: request.sessionId,
+    operation: request.grantKey ?? request.operation,
+    fingerprint: request.fingerprint,
+    ...(request.class === undefined ? {} : { class: request.class }),
+  };
 }
 
 /**
