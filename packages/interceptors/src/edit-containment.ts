@@ -19,8 +19,15 @@ import type { EditHookContext } from './edit-claims';
 import { EDIT_HOOK_EVENT } from './edit-hook';
 import { readMachineMode } from './tool-hook';
 
-/** What a refused agent is told, so it asks its person rather than retrying. */
-const ASK_YOUR_PERSON = 'Ask the person you work for before writing there.';
+/** What a refused agent is told, since a yes in chat never reaches this hook and a detour is the same write. */
+export const NOT_FROM_CHAT =
+  'A yes in the conversation cannot allow this, because Memnox never sees it, and making the same write another way, such as through the shell, is the same write. Tell your person it was held and why.';
+
+/** The way through that actually reaches Memnox, where the host has a prompt to show. */
+const CLAUDE_WAY =
+  'They can allow it by switching Claude Code to a mode that shows permission prompts, such as default, and asking again, or make the change themselves.';
+
+const OTHER_WAY = 'They can make the change themselves.';
 
 /** The reply that holds this write back, or null where containment has nothing to say. */
 export async function containedEdit(
@@ -62,11 +69,11 @@ function replyFor(host: EditHost, asked: ContainmentAsk, asking: boolean): strin
         permissionDecision: asking ? 'ask' : 'deny',
         permissionDecisionReason: asking
           ? asked.reason
-          : `${asked.reason} ${ASK_YOUR_PERSON}`,
+          : `${asked.reason} ${NOT_FROM_CHAT} ${CLAUDE_WAY}`,
       },
     });
   }
-  const told = `${asked.reason} ${ASK_YOUR_PERSON}`;
+  const told = `${asked.reason} ${NOT_FROM_CHAT} ${OTHER_WAY}`;
   if (host === EDIT_HOST.GEMINI)
     return JSON.stringify({ decision: 'deny', reason: told });
   if (host === EDIT_HOST.WINDSURF) return told;

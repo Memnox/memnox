@@ -6,7 +6,7 @@ import { PROBATION_KIND, ProbationRegister, SessionContainments } from '@memnox/
 import { EDIT_HOST, EDIT_MOMENT, type AgentEdits } from '../src/agent-edits';
 import { containmentFor } from '../src/containment-loader';
 import type { EditHookContext } from '../src/edit-claims';
-import { containedEdit } from '../src/edit-containment';
+import { containedEdit, NOT_FROM_CHAT } from '../src/edit-containment';
 
 const NOW = new Date('2026-09-24T10:00:00.000Z');
 const REPO = '/work/shop';
@@ -66,7 +66,32 @@ describe('a hooked agent writing outside its repository', () => {
       agent_message: string;
     };
     expect(parsed.permission).toBe('deny');
-    expect(parsed.agent_message).toContain('Ask the person you work for');
+    expect(parsed.agent_message).toContain(NOT_FROM_CHAT);
+  });
+
+  /* Auto mode shows no prompt, and an agent told to ask in chat took the yes and wrote
+     through the shell instead, so the refusal says a chat yes counts for nothing. */
+  it('tells a Claude Code agent nobody can be asked that a yes in chat allows nothing', async () => {
+    const reply = await containedEdit(
+      edits('/etc/hosts'),
+      false,
+      context(await home()),
+      () => REPO,
+    );
+    const parsed = JSON.parse(reply ?? '{}') as {
+      hookSpecificOutput: {
+        permissionDecision: string;
+        permissionDecisionReason: string;
+      };
+    };
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(NOT_FROM_CHAT);
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
+      'mode that shows permission prompts',
+    );
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).not.toContain(
+      'Ask the person',
+    );
   });
 
   it('writes inside the repository without a word', async () => {

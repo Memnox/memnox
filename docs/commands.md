@@ -609,9 +609,14 @@ started in asks first, whatever the rules allow, and so does one outside the pat
 `--paths` declared. Temp is exempt. Reads outside are governed by your rules as before.
 The same boundary holds for an agent that was only hooked: the edit hook asks in Claude
 Code, where its person sees the prompt, and refuses with the reason in Cursor, Codex,
-Gemini CLI and Windsurf, which cannot ask. A hooked agent's shell commands meet the
-boundary when they run in a checkout; one that has changed directory out of every
-repository has no repository to be kept in.
+Gemini CLI and Windsurf, which cannot ask. Claude Code in `auto`, `dontAsk` or
+`bypassPermissions` shows no prompt a hook can rely on, so there it refuses too. A
+refusal tells the agent that a yes in the conversation allows nothing, since Memnox never
+sees it, and that the same write made another way is the same write; the person allows
+it from a mode that shows prompts, or makes the change themselves. A hooked agent's shell
+commands meet the boundary only where the command names what it writes. A redirect,
+`sed -i` or a script run through an interpreter writes a file the shell seam cannot see,
+so a hook alone does not hold those writes today.
 
 **The network goes through the egress proxy.** The agent is started with `HTTP_PROXY`,
 `HTTPS_PROXY` and `ALL_PROXY` pointing at the daemon's proxy (its own when no daemon is
