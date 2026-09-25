@@ -24,7 +24,7 @@ import { answerQuestion, renderAnswer } from './explain/question';
 import { renderCli, type ExplainedCli } from './explain/cli';
 import { readDormantHere } from '../keeper/keep-dormant';
 import { readCoverageFacts, readLastProbedScan, renderAgent } from './explain/agent';
-import { renderServer, serverNamed } from './explain/server';
+import { renderServer, serverNamed, withVerdicts } from './explain/server';
 
 /** What `explain` reads the machine through, injected so a test never reads the real one. */
 interface ExplainDeps {
@@ -198,7 +198,9 @@ async function resolveServer(query: ExplainQuery): Promise<boolean> {
   const server = serverNamed(query.report, query.subject);
   if (server === null) return false;
 
-  renderServer(query.context, server, query.asJson);
+  const rules = await policySetInForce(query.home, query.file);
+  renderWhatDidNotLoad(query.context, rules);
+  renderServer(query.context, withVerdicts(server, rules.policies), query.asJson);
   return true;
 }
 
