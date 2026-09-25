@@ -71,7 +71,7 @@ export async function ruleOnTool(
 ): Promise<ToolRuling> {
   const ruled =
     call.shell === undefined
-      ? await worstOf(call.requests, deps.authorizer)
+      ? await worstOf(call.requests, deps.authorizer, call.cwd)
       : await ruleOnLine(call, deps);
   // A freeze is a person stopping this agent on purpose, so observe does not soften it.
   const applied =
@@ -96,6 +96,7 @@ export async function ruleOnTool(
 async function worstOf(
   requests: readonly ToolRequest[],
   authorizer: HookAuthorizer,
+  workingDirectory?: string,
 ): Promise<Ruled> {
   let worst: Ruled | null = null;
   for (const request of requests) {
@@ -105,6 +106,8 @@ async function worstOf(
       ...(request.target === undefined ? {} : { target: request.target }),
       ...(request.arguments === undefined ? {} : { arguments: request.arguments }),
       ...(request.environment === undefined ? {} : { environment: request.environment }),
+      // Where the agent works, so a rule about `{workspace}` can tell inside from outside.
+      ...(workingDirectory === undefined ? {} : { workingDirectory }),
     });
     const next = {
       request,

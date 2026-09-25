@@ -25,12 +25,47 @@ export function matchesPattern(pattern: string, value: string): boolean {
   return compile(pattern).test(value.toLowerCase());
 }
 
-/** True when any pattern matches. An undefined pattern list matches everything. */
+/** A pattern that takes matches back out, as `!api.stripe.com` or `!{workspace}/**`. */
+const EXCLUDE = '!';
+
+/**
+ * True when any pattern matches and no `!` pattern does. An undefined list matches
+ * everything, and so does one of exclusions only, since it names what it leaves out.
+ * A value nobody reported cannot be shown to be excluded, so the rule still applies.
+ */
 export function matchesAny(
   patterns: readonly string[] | undefined,
   value: string | undefined,
 ): boolean {
   if (!patterns || patterns.length === 0) return true;
-  if (value === undefined) return patterns.includes(WILDCARD);
-  return patterns.some((pattern) => matchesPattern(pattern, value));
+  const excluded = patterns.filter((pattern) => pattern.startsWith(EXCLUDE));
+  const included = patterns.filter((pattern) => !pattern.startsWith(EXCLUDE));
+  if (value === undefined) return included.length === 0 || included.includes(WILDCARD);
+  if (excluded.some((pattern) => matchesPattern(pattern.slice(EXCLUDE.length), value))) {
+    return false;
+  }
+  return (
+    included.length === 0 || included.some((pattern) => matchesPattern(pattern, value))
+  );
+}
+
+/** Stands for the directory the agent is working in, so a rule can say inside or outside it. */
+export const WORKSPACE_TOKEN = '{workspace}';
+
+// Never a path, so a pattern about a workspace nobody reported matches and excludes nothing.
+const NO_WORKSPACE = '\u0000no-workspace';
+
+export function withWorkspace(
+  patterns: readonly string[] | undefined,
+  workingDirectory: string | undefined,
+): readonly string[] | undefined {
+  if (
+    patterns === undefined ||
+    !patterns.some((each) => each.includes(WORKSPACE_TOKEN))
+  ) {
+    return patterns;
+  }
+  const root =
+    workingDirectory === undefined ? NO_WORKSPACE : workingDirectory.replace(/\/+$/, '');
+  return patterns.map((pattern) => pattern.split(WORKSPACE_TOKEN).join(root));
 }

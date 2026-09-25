@@ -9,7 +9,7 @@ import {
   EFFECT_PRECEDENCE,
 } from '../constants/decision.constants';
 import { normalizeActionRequest } from '../domain/action-identity';
-import { matchesAny } from './pattern-matcher';
+import { matchesAny, withWorkspace } from './pattern-matcher';
 import { TOOL_CLASS } from '../discovery/classify';
 import { matchesAnyTimeWindow } from './time-window';
 import { classifyRisk } from './risk-classifier';
@@ -170,7 +170,10 @@ export class PolicyEngine {
     return (
       this.inScope(policy, request) &&
       matchesAny(policy.match.actions, request.action) &&
-      matchesAny(policy.match.targets, request.target) &&
+      matchesAny(
+        withWorkspace(policy.match.targets, request.workingDirectory),
+        request.target,
+      ) &&
       matchesAny(policy.match.environments, request.environment) &&
       matchesAny(policy.match.agents, context.agentName) &&
       matchesAny(policy.match.roles, context.agentRole) &&

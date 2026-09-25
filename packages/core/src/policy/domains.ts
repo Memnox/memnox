@@ -89,6 +89,10 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
       '**/.kube/**',
       '**/.env',
       '**/.env.*',
+      // A template holds names and no values, and reading it is how an agent learns the shape.
+      '!**/.env.example',
+      '!**/.env.sample',
+      '!**/.env.template',
     ],
   },
   {

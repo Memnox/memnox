@@ -57,7 +57,25 @@ denied — it is never invented.
 | `classes` | what the action does: `read`, `write`, `destructive`, `communication`, `unknown` |
 | `arguments` | a named argument, e.g. `method = ["POST", "DELETE"]` on `http.request` |
 
-Patterns take `*`.
+Patterns take `*`. A pattern starting with `!` takes matches back out, and `{workspace}`
+stands for the directory the agent is working in:
+
+```toml
+# Ask about every host except the two this project talks to.
+[policies.match]
+actions = [ "http.request" ]
+targets = [ "*", "!api.stripe.com", "!api.github.com" ]
+
+# Refuse a write anywhere but the workspace, and let the workspace through untouched.
+[policies.match]
+actions = [ "filesystem.write", "filesystem.delete" ]
+targets = [ "!{workspace}/**" ]
+```
+
+A list of exclusions only covers everything it does not name. A request that reports no
+target, or no working directory, cannot be shown to be excluded, so the rule still
+applies to it. Claude Code's native permissions and the kernel wall cannot leave
+anything out, so an exclusion is left to the rules there, and those two stay wider.
 
 ### Reads and changes under one name
 

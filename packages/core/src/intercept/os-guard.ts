@@ -186,6 +186,8 @@ export function guardPlanFrom(
     if (!reads && !writes) continue;
 
     for (const target of targets) {
+      // The kernel profile only denies, so an exception stays with the rules and the wall stays wider.
+      if (target.startsWith('!')) continue;
       const path = guardPathFor(target, home);
       if (path === null) {
         skipped.push(target);
