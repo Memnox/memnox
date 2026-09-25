@@ -176,10 +176,12 @@ export function destructiveVerbs(table: VerbTable): Verb[] {
  * written from one screen matches at every other.
  */
 export function verbAction(cli: string, verb: Verb): string {
-  // Flags stay in the name, so a rule about force-pushing does not deny every push.
+  // Flags stay in the name, so a rule about force-pushing does not deny every push, and a
+  // prefix keeps its stem, so `delete-**` and `describe-**` are two names rather than none.
   const words = verb.match
     .split(/\s+/)
-    .filter((word) => word !== '' && !word.includes('*'))
+    .map((word) => word.replace(/-?\*+$/, ''))
+    .filter((word) => word !== '')
     .map((word) => word.replace(/^-+/, '').toLowerCase());
   return words.length === 0 ? `${cli}.run` : `${cli}.${words.join('-')}`;
 }

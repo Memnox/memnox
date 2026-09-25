@@ -6,6 +6,7 @@ import {
   hasTag,
   matchVerb,
   UNKNOWN_VERB,
+  verbAction,
   verbForAction,
   VERB_TAG,
 } from '../src/verbs/verb-table';
@@ -171,5 +172,78 @@ describe('finding the verb an action name came from', () => {
   it('answers null for a name no table produces', () => {
     expect(verbForAction('git.unknown', verbTableFor)).toBeNull();
     expect(verbForAction('nonsense', verbTableFor)).toBeNull();
+  });
+});
+
+/* `aws ec2 describe-instances` matched no read, since `describe-**` was held against the
+   service name, and most writes matched nothing, so an agent's changes were never asked about. */
+describe('aws, by the verb its operation starts with', () => {
+  it.each([
+    ['ec2 describe-instances', 'read'],
+    ['lambda list-functions', 'read'],
+    ['s3api get-object --bucket b --key k out', 'read'],
+    ['iam get-user', 'read'],
+    ['ec2 run-instances --image-id ami-1', 'write'],
+    ['lambda update-function-code --function-name f', 'write'],
+    ['s3api put-object --bucket b --key k', 'write'],
+    ['dynamodb create-table --table-name t', 'write'],
+    ['s3 cp ./build s3://site --recursive', 'write'],
+    ['s3 sync ./build s3://site', 'write'],
+    ['iam attach-user-policy --user-name u', 'write'],
+    ['sns publish --message hi', 'communication'],
+    ['sqs send-message --queue-url q', 'communication'],
+    ['dynamodb delete-table --table-name t', 'destructive'],
+    ['s3 rm s3://b/k', 'destructive'],
+  ])('aws %s is a %s', (line, expected) => {
+    expect(classFor('aws', line)).toBe(expected);
+  });
+});
+
+/* `gh api` was a read whatever it sent, so a POST through it was never asked about. */
+describe('gh api, by what it sends', () => {
+  it.each([
+    ['api repos/o/r/pulls', 'read'],
+    ['api -X GET search/issues -f q=bug', 'read'],
+    ['api --method GET search/issues -f q=bug', 'read'],
+    ['api -X POST repos/o/r/issues', 'write'],
+    ['api --method PATCH repos/o/r', 'write'],
+    ['api repos/o/r/issues -f title=t', 'write'],
+    ['api repos/o/r/issues -F title=t', 'write'],
+    ['api graphql --raw-field query=mutation', 'write'],
+    ['api repos/o/r/issues --input body.json', 'write'],
+    ['api -X DELETE repos/o/r', 'destructive'],
+  ])('gh %s is a %s', (line, expected) => {
+    expect(classFor('gh', line)).toBe(expected);
+  });
+
+  it('knows the everyday pull request and issue verbs', () => {
+    expect(classFor('gh', 'issue create --title t')).toBe('write');
+    expect(classFor('gh', 'pr comment 12 --body hi')).toBe('communication');
+    expect(classFor('gh', 'issue list')).toBe('read');
+    expect(classFor('gh', 'run view 3')).toBe('read');
+  });
+});
+
+describe('the name each verb is recorded under', () => {
+  /* Names dropped every word with a `*`, so `iam delete-**` and `iam **` were both
+     `aws.iam`, and `explain` could show the write's note on the delete. */
+  it('never gives two verbs of different classes one name', () => {
+    for (const table of VERB_TABLES) {
+      const classes = new Map<string, string>();
+      for (const verb of table.verbs) {
+        const name = verbAction(table.name, verb);
+        const seen = classes.get(name);
+        expect(
+          seen === undefined || seen === verb.class,
+          `${name} names two classes`,
+        ).toBe(true);
+        classes.set(name, verb.class);
+      }
+    }
+  });
+
+  it('keeps the stem of a prefix, so a delete and a describe are told apart', () => {
+    expect(verbForAction('aws.iam-delete', verbTableFor)?.class).toBe('destructive');
+    expect(verbForAction('aws.describe', verbTableFor)?.class).toBe('read');
   });
 });
