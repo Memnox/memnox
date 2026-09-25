@@ -24,6 +24,11 @@ export interface PolicyMatch {
   workingDirectories?: string[];
   /** Source control branch, e.g. "main", "release/*". */
   branches?: string[];
+  /**
+   * What the action does, so one rule can let reads through and ask about changes. An
+   * action nothing classified counts as unknown, which a rule lists to reach it.
+   */
+  classes?: string[];
   /** Every named argument must match; matched only by the in-process gate. */
   arguments?: Record<string, string[]>;
   /** An action that does not state its size still matches, because it cannot prove it is under. */

@@ -103,6 +103,7 @@ export async function ruleOnCommand(
 
   const request = {
     action: verdict.action,
+    toolClass: verdict.class,
     ...(verdict.target === undefined ? {} : { target: verdict.target }),
   };
   const decision = gate.evaluate(request);

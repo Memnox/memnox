@@ -54,8 +54,29 @@ denied — it is never invented.
 | `targets` | what it operates on: a path, a branch, a host |
 | `agents` | which agent, by product name |
 | `environments` | `production`, `staging`, whatever you name |
+| `classes` | what the action does: `read`, `write`, `destructive`, `communication`, `unknown` |
+| `arguments` | a named argument, e.g. `method = ["POST", "DELETE"]` on `http.request` |
 
 Patterns take `*`.
+
+### Reads and changes under one name
+
+`gh api`, an MCP server's tools and a web request each go by one action name whether they
+read or change something. `classes` is how one rule asks about the change and lets the
+read through:
+
+```toml
+[policies.match]
+actions = [ "mcp.*" ]
+classes = [ "write", "destructive", "communication", "unknown" ]
+```
+
+An action nothing classified counts as `unknown`, so list it where a tool that could not be
+read should still be asked about. An `http.request` names its method in `arguments`: `GET`
+for a fetch or a search, what `curl` or `wget` was told, the method on the wire at the
+egress proxy, and `UNKNOWN` where nothing could read it. A rule narrowed by `classes` or
+`arguments` is not written into Claude Code's native permissions, which can only name the
+whole tool and would ask about every read.
 
 ### The action is the verb *and its flags*
 

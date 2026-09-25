@@ -5,7 +5,9 @@ import {
   CLAIM_ANSWER,
   changesExternalState,
   keepClaimed,
+  LOOKING_HTTP_METHODS,
   meetingReason,
+  requestMethodOf,
   TOOL_CLASS,
   type IntendedAction,
   type LeaseHolder,
@@ -39,26 +41,6 @@ const GH_REPO_FLAGS: readonly string[] = ['-R', '--repo'];
 
 /** A pull request or issue by its URL, which `gh` takes in place of a number. */
 const GH_URL = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)/;
-
-/** `curl` flags that send a body, which is what makes a request an action. */
-const SENDS_BODY: readonly string[] = [
-  '-d',
-  '--data',
-  '--data-raw',
-  '--data-binary',
-  '--data-urlencode',
-  '--json',
-  '-F',
-  '--form',
-  '-T',
-  '--upload-file',
-];
-
-/** `curl` flags that name the method. */
-const METHOD_FLAGS: readonly string[] = ['-X', '--request'];
-
-/** Methods that only look. */
-const LOOKING: readonly string[] = ['GET', 'HEAD', 'OPTIONS'];
 
 export interface GitHubRepository {
   owner: string;
@@ -113,17 +95,7 @@ function isWorthClaiming(
 
 /** Whether a `curl` line sends a body or asks for a method that changes something. */
 function isSending(args: readonly string[]): boolean {
-  if (args.some((arg) => SENDS_BODY.includes(arg) || isInlineBody(arg))) return true;
-  const at = args.findIndex((arg) => METHOD_FLAGS.includes(arg));
-  if (at === -1) return false;
-  const method = args[at + 1];
-  return method !== undefined && !LOOKING.includes(method.toUpperCase());
-}
-
-/** `--data=...` and `-dvalue`, which carry the body in the flag itself. */
-function isInlineBody(arg: string): boolean {
-  if (arg.startsWith('--data=') || arg.startsWith('--json=')) return true;
-  return arg.length > 2 && arg.startsWith('-d') && !arg.startsWith('--');
+  return !LOOKING_HTTP_METHODS.includes(requestMethodOf(args));
 }
 
 /**

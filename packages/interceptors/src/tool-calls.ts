@@ -1,6 +1,13 @@
 import { isAbsolute, join, resolve } from 'node:path';
 
-import { ACTION, TOOL_CLASS, type ToolClass } from '@memnox/core';
+import {
+  ACTION,
+  classifyTool,
+  HTTP_METHOD,
+  HTTP_METHOD_ARGUMENT,
+  TOOL_CLASS,
+  type ToolClass,
+} from '@memnox/core';
 
 import {
   CURSOR_EDIT_TOOLS,
@@ -192,7 +199,8 @@ function fileRequest(action: string, path: string, base: PathBase): ToolRequest 
 function mcpRequests(server: string, tool: string, input: HookFields): ToolRequest[] {
   const common = {
     target: server,
-    class: TOOL_CLASS.UNKNOWN,
+    // By name, as the proxy classifies it, so a rule about changes lets `list_issues` through.
+    class: classifyTool({ name: tool }).class,
     arguments: flatArguments(input),
   };
   return [
@@ -221,7 +229,11 @@ function fetchRequest(input: HookFields): ToolRequest {
     action: EGRESS_REQUEST_ACTION,
     ...(host === undefined ? {} : { target: host }),
     class: TOOL_CLASS.READ,
-    arguments: url === undefined ? {} : { url },
+    // A fetch only ever reads, so a rule about changing a host lets it through.
+    arguments: {
+      [HTTP_METHOD_ARGUMENT]: HTTP_METHOD.GET,
+      ...(url === undefined ? {} : { url }),
+    },
   };
 }
 
@@ -231,7 +243,10 @@ function searchRequest(input: HookFields): ToolRequest {
   return {
     action: EGRESS_REQUEST_ACTION,
     class: TOOL_CLASS.READ,
-    arguments: query === undefined ? {} : { query },
+    arguments: {
+      [HTTP_METHOD_ARGUMENT]: HTTP_METHOD.GET,
+      ...(query === undefined ? {} : { query }),
+    },
   };
 }
 

@@ -14,6 +14,10 @@ export interface Untranslated {
 
 const NAMES_NO_ACTION = 'it names no action, so there is nothing to write';
 
+// Written anyway, a rule about POSTs would ask about every WebFetch, which is the rule inverted.
+const NARROWED_BY_ARGUMENTS =
+  'it covers only some calls, by what they do or carry, and a Claude Code permission can only name the tool';
+
 /** Ours added beside theirs, theirs first, each entry once. */
 function mergeLists(
   ours: readonly string[],
@@ -136,7 +140,9 @@ export function toClaudeCodePermissions(policies: readonly Policy[]): NativeTran
     const skipped =
       actions.length === 0
         ? { policy: policy.name, because: NAMES_NO_ACTION }
-        : writeClaudeRules(policy, actions, permissions);
+        : policy.match.arguments !== undefined || policy.match.classes !== undefined
+          ? { policy: policy.name, because: NARROWED_BY_ARGUMENTS }
+          : writeClaudeRules(policy, actions, permissions);
     if (skipped !== null) untranslated.push(skipped);
   }
   return { permissions, untranslated };

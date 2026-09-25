@@ -121,7 +121,21 @@ In `observe` mode step 4 records the verdict and applies nothing, keeping what e
 way. `interceptors/src/tool-calls.ts` maps each tool to an action: file reads, searches
 and writes to `filesystem.read` or `filesystem.write` on the absolute path, a fetch to
 `http.request` on its host, a command line through the shell classifier, and an MCP
-tool to `mcp.<server>.<tool>`. An allow says nothing, so the agent's own permission
+tool to `mcp.<server>.<tool>`.
+
+**A rule can tell a read from a change under the same name.** Every request carries
+`toolClass` (read, write, destructive, communication or unknown) from whichever classifier
+saw it: the verb tables for a CLI, the tool classifier by name for an MCP call, and the
+tool table for an agent's own tools. A rule narrows itself with `classes`, and an
+`http.request` names its `method`: `GET` for a fetch or a search, what argv says for `curl`
+and `wget`, the one on the wire at the egress proxy, and `UNKNOWN` where nothing could
+read it. The baseline asks about MCP tools that write, delete, send or cannot be
+classified, about the write and delete verbs of the CLIs that act on somebody else's
+system, and about `POST`, `PUT`, `PATCH`, `DELETE` and `UNKNOWN` requests, so reading
+documentation, listing issues or describing instances never waits on a person. Such a rule
+is left out of Claude Code's native permissions, which can only name a whole tool.
+
+An allow says nothing, so the agent's own permission
 prompt still runs, and a tool the table does not know is left to the agent. What each
 agent's hook lets this enforce:
 

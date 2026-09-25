@@ -5,7 +5,7 @@
 import { verbTableNames } from '../verbs/tables';
 import { TOOL_CLASS } from '../discovery/classify';
 import { BROWSER_LAUNCHERS } from '../discovery/browser';
-import { ACTION } from '../constants/action.constants';
+import { ACTION, HTTP_METHOD } from '../constants/action.constants';
 
 export const COMMAND_CLASS = {
   NORMAL: 'normal',
@@ -24,6 +24,8 @@ export interface BinaryVerdict {
   target?: string;
   /** Why this class, in the words the refusal will use. */
   because: string;
+  /** The HTTP method a request uses, so a rule can let a read through and ask about a change. */
+  method?: string;
 }
 
 /** Flags that turn a survivable command into an unsurvivable one. */
@@ -132,11 +134,72 @@ function classifyCurl(binary: string, args: readonly string[]): BinaryVerdict {
   const host = candidates.map(hostOf).find((each) => each !== undefined);
   // `curl | sh` is invisible in argv because the shell owns the pipe, so this names the destination.
   return {
-    action: 'http.request',
+    action: ACTION.HTTP_REQUEST,
     class: COMMAND_CLASS.NETWORK,
     ...(host === undefined ? {} : { target: host }),
     because: `${binary} reaches ${host ?? 'the network'}`,
+    method: requestMethodOf(args),
   };
+}
+
+/** Flags that name the method outright, as `-X POST` or `--method=PUT`. */
+const METHOD_FLAGS: readonly string[] = ['-X', '--request', '--method'];
+
+/** Flags that send a body, which a request only does to change something. */
+const BODY_FLAGS: readonly string[] = [
+  '-d',
+  '--data',
+  '--data-raw',
+  '--data-binary',
+  '--data-urlencode',
+  '--json',
+  '-F',
+  '--form',
+  '-T',
+  '--upload-file',
+  '--post-data',
+  '--post-file',
+  '--body-data',
+  '--body-file',
+];
+
+const HEAD_FLAGS: readonly string[] = ['-I', '--head', '--spider'];
+
+const GET_FLAGS: readonly string[] = ['-G', '--get'];
+
+/**
+ * The method a `curl` or `wget` line uses: the one it names, POST where it sends a body
+ * without naming one, HEAD for a look at the headers, and GET otherwise.
+ */
+export function requestMethodOf(args: readonly string[]): string {
+  const named = namedMethod(args);
+  if (named !== null) return named.toUpperCase();
+  // `curl -G -d q=x` puts the data in the query string, so it stays a read.
+  if (args.some((arg) => GET_FLAGS.includes(arg))) return HTTP_METHOD.GET;
+  if (args.some((arg) => BODY_FLAGS.includes(arg) || carriesBody(arg)))
+    return HTTP_METHOD.POST;
+  if (args.some((arg) => HEAD_FLAGS.includes(arg))) return HTTP_METHOD.HEAD;
+  return HTTP_METHOD.GET;
+}
+
+function namedMethod(args: readonly string[]): string | null {
+  for (let index = 0; index < args.length; index += 1) {
+    // Inside the bounds the loop checks, so never undefined.
+    const arg = args[index] as string;
+    if (METHOD_FLAGS.includes(arg)) return args[index + 1] ?? null;
+    const inline = METHOD_FLAGS.find((flag) => arg.startsWith(`${flag}=`));
+    if (inline !== undefined) return arg.slice(inline.length + 1);
+    // `-XPOST`, the short flag with its value run on.
+    if (arg.startsWith('-X') && arg.length > 2) return arg.slice(2);
+  }
+  return null;
+}
+
+/** `--data=...` and `-dvalue`, which carry the body in the flag itself. */
+function carriesBody(arg: string): boolean {
+  if (BODY_FLAGS.some((flag) => flag.startsWith('--') && arg.startsWith(`${flag}=`)))
+    return true;
+  return arg.length > 2 && arg.startsWith('-d') && !arg.startsWith('--');
 }
 
 const PACKAGE_INSTALL_VERBS = ['install', 'add', 'i', 'ci'];

@@ -13,7 +13,7 @@ import {
 import { TOOL_CLASS } from '../src/discovery/classify';
 import { verbAction, verbTableFor } from '../src/verbs/index';
 
-describe('the five domains somebody decides about', () => {
+describe('the domains somebody decides about', () => {
   it('covers each one exactly once', () => {
     const named = DOMAIN_CHOICES.map((choice) => choice.domain).sort();
     expect(named).toEqual([...Object.values(POLICY_DOMAIN)].sort());
@@ -36,14 +36,14 @@ describe('the five domains somebody decides about', () => {
   it('never recommends denying every unknown host, which breaks ordinary work', () => {
     const network = DOMAIN_CHOICES.find((c) => c.domain === POLICY_DOMAIN.NETWORK);
     expect(network?.recommended).not.toBe(DECISION_EFFECT.DENY);
-    expect(network?.because).toContain('breaks ordinary work');
+    expect(network?.because).toContain('ordinary work');
   });
 });
 
 describe('turning answers into rules', () => {
   it('writes one rule per domain that was not left on allow', () => {
     const policies = policiesFrom(recommendedAnswers());
-    expect(policies).toHaveLength(5);
+    expect(policies).toHaveLength(6);
     expect(policies.every((policy) => policy.decision.effect !== 'allow')).toBe(true);
   });
 

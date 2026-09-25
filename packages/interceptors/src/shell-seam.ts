@@ -5,6 +5,7 @@ import {
   describeHold,
   digest,
   EXIT,
+  HTTP_METHOD_ARGUMENT,
   isAllowed as holdAllowed,
   leasePathFor,
   leaseScopeFor,
@@ -151,7 +152,10 @@ export class ShellSeam {
     for (const resolved of resolveShellLine(line, this.deps.env ?? {}).actions) {
       if (resolved.action === SHELL_ACTION) continue;
       for (const target of targetsRuledOn(resolved, line)) {
-        const request = this.requestFor(resolved.action, target ?? line);
+        const request = this.requestFor(resolved.action, target ?? line, {
+          toolClass: String(resolved.class),
+          ...(resolved.method === undefined ? {} : { method: resolved.method }),
+        });
         ruling = worse(ruling, {
           verdict: await this.deps.authorizer.authorize(request),
           action: resolved.action,
@@ -255,12 +259,20 @@ export class ShellSeam {
     return null;
   }
 
-  private requestFor(action: string, target: string): ActionRequest {
+  private requestFor(
+    action: string,
+    target: string,
+    { toolClass, method }: { toolClass?: string; method?: string } = {},
+  ): ActionRequest {
     return {
       action,
       target,
+      ...(toolClass === undefined ? {} : { toolClass }),
       // LOCAL ONLY. The SDK strips this before anything reaches the runtime.
-      arguments: { command: target },
+      arguments: {
+        command: target,
+        ...(method === undefined ? {} : { [HTTP_METHOD_ARGUMENT]: method }),
+      },
       ...(this.deps.sessionId === undefined ? {} : { sessionId: this.deps.sessionId }),
       ...(this.deps.workingDirectory === undefined
         ? {}

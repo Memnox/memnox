@@ -23,6 +23,8 @@ export interface ResolvedAction {
   targets?: readonly string[];
   /** What to do instead, when the table names something. */
   alternative?: string;
+  /** The HTTP method, for a command that makes a request. */
+  method?: string;
 }
 
 /** Most specific first: a SQL statement, then a verb table, then a reader, then the generic classifiers. */
@@ -107,6 +109,7 @@ function resolveGeneric(binary: string, args: readonly string[]): ResolvedAction
     class: generic.class,
     because: generic.because,
     ...(generic.target === undefined ? {} : { target: generic.target }),
+    ...(generic.method === undefined ? {} : { method: generic.method }),
   };
 }
 

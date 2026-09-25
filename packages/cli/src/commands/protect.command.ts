@@ -191,7 +191,7 @@ function declareSeamFlags(protect: Command): void {
     )
     .option('--revert-claude-hook', 'take that hook back out of Claude Code')
     .option('--os-guard', 'write the kernel sandbox profile from your filesystem rules')
-    .option('--interactive', 'walk the five domains and write the rules you choose')
+    .option('--interactive', 'walk the six domains and write the rules you choose')
     .option('--yes', 'take the recommended answer for every domain, asking nothing')
     .option('--observe', 'record verdicts and deny nothing')
     .option('--enforce', 'apply verdicts')

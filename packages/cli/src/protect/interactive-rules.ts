@@ -48,7 +48,7 @@ export async function promptOnTerminal(
 }
 
 /**
- * Five questions, then a file they can read. The output is the point: a wizard whose
+ * Six questions, then a file they can read. The output is the point: a wizard whose
  * result you cannot open and edit is one you have to run again to change your mind.
  */
 export async function runInteractive(

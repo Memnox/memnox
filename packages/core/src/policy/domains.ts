@@ -1,9 +1,14 @@
 import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
 import type { Policy } from './policy';
-import { ACTION } from '../constants/action.constants';
+import { TOOL_CLASS } from '../discovery/classify';
+import {
+  ACTION,
+  CHANGING_HTTP_METHODS,
+  HTTP_METHOD_ARGUMENT,
+} from '../constants/action.constants';
 
 /**
- * The five things somebody decides about when writing rules for the first time, walked
+ * The six things somebody decides about when writing rules for the first time, walked
  * as questions that produce a file they can read afterwards.
  */
 export const POLICY_DOMAIN = {
@@ -12,6 +17,7 @@ export const POLICY_DOMAIN = {
   GIT: 'git',
   MCP: 'mcp',
   NETWORK: 'network',
+  CLI: 'cli',
 } as const;
 
 export type PolicyDomain = (typeof POLICY_DOMAIN)[keyof typeof POLICY_DOMAIN];
@@ -25,7 +31,43 @@ export interface DomainChoice {
   because: string;
   actions: string[];
   targets?: string[];
+  /** Narrows the rule to some calls of an action, as a request's method does. */
+  arguments?: Record<string, string[]>;
+  /** Narrows the rule to what the action does, so reads under the same name go through. */
+  classes?: string[];
 }
+
+/** What changes something, as every classifier spells it. Reads are left out on purpose. */
+const CHANGING_CLASSES: readonly string[] = [
+  TOOL_CLASS.WRITE,
+  TOOL_CLASS.DESTRUCTIVE,
+  TOOL_CLASS.COMMUNICATION,
+];
+
+/**
+ * CLIs whose writes land on somebody else's system. `npm`, `docker` and `playwright` are
+ * not here whole, because their writes are mostly an install, a build or a test run.
+ */
+const REMOTE_CLIS: readonly string[] = [
+  'aws',
+  'gcloud',
+  'az',
+  'gh',
+  'kubectl',
+  'terraform',
+  'vercel',
+  'railway',
+  'fly',
+  'heroku',
+  'netlify',
+  'stripe',
+  'psql',
+  'mysql',
+  'mongosh',
+];
+
+/** The verbs of the mostly local CLIs that publish something outward. */
+const OUTWARD_VERBS: readonly string[] = ['docker.push', 'npm.publish', 'npm.unpublish'];
 
 export const DOMAIN_CHOICES: readonly DomainChoice[] = [
   {
@@ -77,16 +119,30 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
     domain: POLICY_DOMAIN.MCP,
     question: 'MCP tools that change something outside this machine',
     recommended: DECISION_EFFECT.ASK,
-    because: 'these are the calls whose consequences other people see',
+    because:
+      'these are the calls whose consequences other people see, while a tool that only lists or reads is how an agent finds its way',
     actions: ['mcp.*'],
+    // Unknown too: a tool nothing could classify might change anything.
+    classes: [...CHANGING_CLASSES, TOOL_CLASS.UNKNOWN],
   },
   {
     domain: POLICY_DOMAIN.NETWORK,
-    question: 'Requests to hosts no rule names',
+    question: 'Requests that change something on a host no rule names',
     recommended: DECISION_EFFECT.ASK,
     because:
-      'denying every unknown host breaks ordinary work on the first package install',
-    actions: ['http.request'],
+      'a POST, PUT, PATCH or DELETE changes somebody else’s state, while reading documentation or fetching a resource is ordinary work',
+    actions: [ACTION.HTTP_REQUEST],
+    arguments: { [HTTP_METHOD_ARGUMENT]: [...CHANGING_HTTP_METHODS] },
+  },
+  {
+    domain: POLICY_DOMAIN.CLI,
+    question: 'CLIs changing your cloud, repositories, deployments and databases',
+    recommended: DECISION_EFFECT.ASK,
+    because:
+      'a deploy, a merge or a delete lands on somebody else’s system, while listing and reading are how an agent finds its way',
+    actions: [...REMOTE_CLIS.map((cli) => `${cli}.*`), ...OUTWARD_VERBS],
+    // Not unknown: a verb no table knows is allowed and counted rather than blocked.
+    classes: [...CHANGING_CLASSES],
   },
 ];
 
@@ -111,6 +167,8 @@ export function policiesFrom(
       match: {
         actions: choice.actions,
         ...(choice.targets === undefined ? {} : { targets: choice.targets }),
+        ...(choice.arguments === undefined ? {} : { arguments: choice.arguments }),
+        ...(choice.classes === undefined ? {} : { classes: choice.classes }),
       },
       decision: {
         effect,

@@ -8,6 +8,8 @@ import {
   EVENT_SURFACE,
   LocalGate,
   type EventQuery,
+  policiesFrom,
+  recommendedAnswers,
   type EventSink,
   type MemnoxEvent,
   type Policy,
@@ -122,7 +124,9 @@ describe("what each of an agent's own tools does, as a rule names it", () => {
     });
     const search = toolCallOf(claude('WebSearch', { query: 'weather' }), HOME);
     expect(search?.requests[0]?.target).toBeUndefined();
-    expect(search?.requests[0]?.arguments).toEqual({ query: 'weather' });
+    // Both only read, and say so, so a rule about changing a host lets them through.
+    expect(search?.requests[0]?.arguments).toEqual({ method: 'GET', query: 'weather' });
+    expect(fetch?.requests[0]?.arguments).toMatchObject({ method: 'GET' });
   });
 
   it('spells an MCP tool mcp.<server>.<tool>, and a write as filesystem.write', () => {
@@ -435,5 +439,93 @@ describe('a frozen agent, on a machine that is only watching', () => {
     );
 
     expect(answer?.ruling.effect).toBe(DECISION_EFFECT.DENY);
+  });
+});
+
+/* An agent in auto mode was refused a WebFetch of a toolkit's documentation, because the
+   network rule asked about every request and nobody could be asked. */
+describe('reading the web while changing nothing', () => {
+  const baseline = policiesFrom(recommendedAnswers());
+  const seams = {
+    authorizer: authorizer(baseline),
+    mode: ENFORCEMENT_MODE.ENFORCE,
+    sink: null,
+  };
+  const docs = 'https://docs.composio.dev/toolkits/discordbot';
+
+  it('lets a fetch and a search through with nobody there to ask', async () => {
+    const fetch = claude('WebFetch', { url: docs, prompt: 'the trigger slugs' }, 'auto');
+    const search = claude('WebSearch', { query: 'composio discordbot' }, 'auto');
+    for (const call of [fetch, search]) {
+      const answer = await answerToolCall(call, context(false), seams);
+      expect(answer?.ruling.effect ?? DECISION_EFFECT.ALLOW).toBe(DECISION_EFFECT.ALLOW);
+      expect(answer?.reply ?? null).toBeNull();
+    }
+  });
+
+  it('lets a plain curl through and still stops one that posts', async () => {
+    const read = claude('Bash', { command: `curl -s ${docs}` }, 'auto');
+    const post = claude(
+      'Bash',
+      { command: 'curl -X POST https://api.example.com/messages -d text=hi' },
+      'auto',
+    );
+    const readAnswer = await answerToolCall(read, context(false), seams);
+    expect(readAnswer?.ruling.effect ?? DECISION_EFFECT.ALLOW).toBe(
+      DECISION_EFFECT.ALLOW,
+    );
+    const postAnswer = await answerToolCall(post, context(false), seams);
+    expect(postAnswer?.ruling.effect).toBe(DECISION_EFFECT.ASK);
+    expect(postAnswer?.reply?.stdout).toContain('"permissionDecision":"deny"');
+  });
+});
+
+describe('MCP tools and CLIs through the hook', () => {
+  const seams = {
+    authorizer: authorizer(policiesFrom(recommendedAnswers())),
+    mode: ENFORCEMENT_MODE.ENFORCE,
+    sink: null,
+  };
+  const effectOf = async (
+    tool: string,
+    input: Record<string, unknown>,
+  ): Promise<string> =>
+    (await answerToolCall(claude(tool, input, 'auto'), context(false), seams))?.ruling
+      .effect ?? DECISION_EFFECT.ALLOW;
+
+  it('lets an MCP tool that reads through, and asks about one that writes', async () => {
+    expect(await effectOf('mcp__github__list_issues', { repo: 'a/b' })).toBe(
+      DECISION_EFFECT.ALLOW,
+    );
+    expect(await effectOf('mcp__github__create_issue', { title: 't' })).toBe(
+      DECISION_EFFECT.ASK,
+    );
+  });
+
+  it('lets gh read a pull request and asks before it merges one', async () => {
+    expect(await effectOf('Bash', { command: 'gh pr view 12' })).toBe(
+      DECISION_EFFECT.ALLOW,
+    );
+    expect(await effectOf('Bash', { command: 'gh pr merge 12' })).toBe(
+      DECISION_EFFECT.ASK,
+    );
+  });
+
+  it('reads what aws and gh api read, and asks before either changes something', async () => {
+    const effect = (command: string): Promise<string> => effectOf('Bash', { command });
+    expect(await effect('aws ec2 describe-instances')).toBe(DECISION_EFFECT.ALLOW);
+    expect(await effect('gh api repos/o/r/pulls')).toBe(DECISION_EFFECT.ALLOW);
+    expect(await effect('aws s3 sync ./build s3://site')).toBe(DECISION_EFFECT.ASK);
+    expect(await effect('gh api -X POST repos/o/r/issues')).toBe(DECISION_EFFECT.ASK);
+    expect(await effect('gh api repos/o/r/issues -f title=t')).toBe(DECISION_EFFECT.ASK);
+  });
+
+  it('leaves an install and a test run alone', async () => {
+    expect(await effectOf('Bash', { command: 'npm install' })).toBe(
+      DECISION_EFFECT.ALLOW,
+    );
+    expect(await effectOf('Bash', { command: 'npm run test' })).toBe(
+      DECISION_EFFECT.ALLOW,
+    );
   });
 });

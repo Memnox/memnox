@@ -21,3 +21,31 @@ export const ACTION = {
 } as const;
 
 export type ActionName = (typeof ACTION)[keyof typeof ACTION];
+
+/** The argument an `http.request` names its method in, so a rule can tell a read from a change. */
+export const HTTP_METHOD_ARGUMENT = 'method';
+
+export const HTTP_METHOD = {
+  GET: 'GET',
+  HEAD: 'HEAD',
+  POST: 'POST',
+  PUT: 'PUT',
+  /** A request whose method nothing could read, such as a tunnel's, which is ruled as a change. */
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+/** Methods that only look, so reading documentation or fetching a resource never waits on anybody. */
+export const LOOKING_HTTP_METHODS: readonly string[] = [
+  HTTP_METHOD.GET,
+  HTTP_METHOD.HEAD,
+  'OPTIONS',
+];
+
+/** Every method that changes something, and one nobody could read, since that might. */
+export const CHANGING_HTTP_METHODS: readonly string[] = [
+  HTTP_METHOD.POST,
+  HTTP_METHOD.PUT,
+  'PATCH',
+  'DELETE',
+  HTTP_METHOD.UNKNOWN,
+];

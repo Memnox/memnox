@@ -36,6 +36,11 @@ export interface ActionRequest {
   workingDirectory?: string;
   /** Source control branch the work sits on, e.g. "main", "release/24.3". */
   branch?: string;
+  /**
+   * What the action does to the world, as the classifier that saw it named it: read, write,
+   * destructive, communication or unknown. Absent means nothing classified it.
+   */
+  toolClass?: string;
   /** LOCAL ONLY: the raw payload. The SDK strips it; `signals` travel instead. */
   arguments?: Record<string, string>;
   /** What the local gate found. Testimony: it may ask, never loosen. */

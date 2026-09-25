@@ -101,6 +101,7 @@ async function worstOf(
     const verdict = await authorizer.authorize({
       action: request.action,
       ...(request.target === undefined ? {} : { target: request.target }),
+      toolClass: request.class,
       ...(request.arguments === undefined ? {} : { arguments: request.arguments }),
     });
     const next = { request, verdict };
@@ -149,7 +150,7 @@ function classOf(value: string): ToolClass {
 
 /** Said to the model when its agent has no way to put a question to a person. */
 export const NO_WAY_TO_ASK =
-  'A person has to allow this, and this agent cannot ask one from its hook, so it was refused.';
+  'A person has to allow this, and this agent cannot ask one from its hook, so it was refused. A yes in the conversation cannot allow it, and doing the same thing another way is the same action.';
 
 /** The exit code Windsurf reads as "blocked", with the reason on stderr. */
 const WINDSURF_BLOCK = 2;

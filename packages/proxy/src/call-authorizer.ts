@@ -1,4 +1,5 @@
 import {
+  classifyTool,
   DECISION_EFFECT,
   PROTECTION_STOPPED_REASON,
   type ActionRequest,
@@ -110,6 +111,8 @@ export class LocalGateAuthorizer implements CallAuthorizer {
     return {
       action: operationFor(call.name),
       target: this.serverName,
+      // By name, as the ledger and probation classify it, since the proxy keeps no manifest.
+      toolClass: classifyTool({ name: call.name }).class,
       arguments: call.arguments,
       ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
     };
