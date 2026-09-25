@@ -36,6 +36,7 @@ import type { SessionLimits } from './session-limits';
 import type { McpCallRecord } from './result-guard';
 import type { ToolCall } from './tool-call';
 import { ToolFilter } from './tool-filter';
+import { ToolManifest } from './tool-manifest';
 
 /**
  * The MCP proxy: an agent's client on one side, its real server on the other, and a
@@ -148,6 +149,8 @@ export class McpFirewall {
   private readonly ledger: EventSink | null;
   private child: ChildProcess | null = null;
   private readonly authorizer: CallAuthorizer;
+  /** Filled by the first listing; built before the authorizer, which reads it. */
+  private readonly manifest = new ToolManifest();
 
   constructor(private readonly options: FirewallOptions) {
     this.ledger = options.ledger ?? null;
@@ -171,8 +174,10 @@ export class McpFirewall {
       ...notesFor(options),
       ...taintFor(options),
       onListing: (tools) => {
+        this.manifest.listed(tools);
         void this.compareListing(tools).catch(() => undefined);
       },
+      manifest: this.manifest,
       // Every call reaches the ledger once, when its outcome is known.
       record: (call) => this.write(call),
     });
@@ -324,7 +329,12 @@ export class McpFirewall {
     const rules =
       gate === undefined
         ? new UngovernedAuthorizer()
-        : new LocalGateAuthorizer(gate, this.options.serverName, this.options.sessionId);
+        : new LocalGateAuthorizer(
+            gate,
+            this.options.serverName,
+            this.options.sessionId,
+            this.manifest,
+          );
     const probation = this.options.probation;
     const judged =
       probation === undefined

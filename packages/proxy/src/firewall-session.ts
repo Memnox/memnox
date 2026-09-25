@@ -30,6 +30,7 @@ import {
 } from './result-guard';
 import { readToolCall, type ToolCall } from './tool-call';
 import type { ToolFilter } from './tool-filter';
+import type { ToolManifest } from './tool-manifest';
 
 /**
  * One client's session through the proxy: each call checked on the way out, each result
@@ -64,6 +65,8 @@ export interface FirewallSessionDeps {
   notes?: () => Promise<SessionNote[]>;
   /** A result read like instructions, so the session is put under suspicion for a while. */
   onInstruction?: (call: ToolCall) => void;
+  /** What the server said about each tool, so a held call is classified as the rules saw it. */
+  manifest?: ToolManifest;
   /** Every tool the server listed, before the filter hides any, to compare with last time. */
   onListing?: (tools: readonly McpToolDeclaration[]) => void;
 }
@@ -176,7 +179,11 @@ export class FirewallSession {
       operation: call.name,
       fingerprint: digest(`${call.name}:${JSON.stringify(call.arguments ?? {})}`),
       reason: verdict.reason,
-      class: classifyToolCall(call.name, call.arguments ?? {}).class,
+      class: classifyToolCall(
+        call.name,
+        call.arguments ?? {},
+        this.deps.manifest?.declaration(call.name),
+      ).class,
       // The server's tool, so a yes on one server is not a yes on another with the name.
       grantKey: `mcp.${this.deps.server ?? ''}.${call.name}`,
       ...(this.deps.server === undefined ? {} : { target: this.deps.server }),

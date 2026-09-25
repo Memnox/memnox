@@ -10,6 +10,7 @@ import {
   verbTableFor,
   type DiscoveryReport,
   type EnvironmentSnapshot,
+  DestinationRecords,
 } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
@@ -134,6 +135,7 @@ async function resolveAgent(query: ExplainQuery): Promise<boolean> {
     agent,
     report: query.report,
     last,
+    destinations: await new DestinationRecords(query.home).read(agent.kind),
     authority: authorityFor({
       agentKind: agent.kind,
       agentId: agent.id,

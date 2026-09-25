@@ -4,7 +4,7 @@
  */
 import { classifyTool, TOOL_CLASS, type Classification } from '../discovery/classify';
 import { EFFECT_INFERENCE } from '../discovery/discovery.constants';
-import { nameSegments } from '../discovery/surface';
+import { nameSegments, type McpToolDeclaration } from '../discovery/surface';
 import { inspectSql, SQL_RISK } from './sql';
 
 /** Argument names a database tool carries its statement in. */
@@ -39,8 +39,10 @@ const OPENS_LIKE_SQL =
 export function classifyToolCall(
   name: string,
   args: Readonly<Record<string, unknown>> = {},
+  declared?: McpToolDeclaration,
 ): Classification {
-  const named = classifyTool({ name });
+  // The server's own hints where it listed them, since it knows its tool better than a name.
+  const named = classifyTool(declared ?? { name });
   const talksToDatabase = nameSegments(name).some((word) =>
     DATABASE_WORDS.includes(word),
   );

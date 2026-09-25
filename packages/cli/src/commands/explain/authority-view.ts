@@ -6,6 +6,7 @@ import {
   describeTally,
   EFFECT_PRECEDENCE,
   LocalGate,
+  type AgentDestinations,
   type DiscoveryReport,
   type EnvironmentSnapshot,
   type Policy,
@@ -58,6 +59,26 @@ export function authorityFor(input: AuthorityInput): SystemAuthority[] {
       );
     return { effect: worst.effect, matched: worst.matchedPolicies.length > 0 };
   });
+}
+
+/** The hosts shown by name, newest first; the rest are counted. */
+const HOSTS_SHOWN = 5;
+
+/** Where the agent has actually gone through the egress proxy, as watched on this machine. */
+export function renderDestinations(
+  context: CliContext,
+  destinations: AgentDestinations,
+): void {
+  const { hosts } = destinations;
+  if (hosts.length === 0) return;
+  const shown = hosts.slice(0, HOSTS_SHOWN);
+  context.flow.rows(
+    `Hosts it has reached (${hosts.length})`,
+    shown.map((host) => ({
+      label: host.host,
+      value: `${host.count} time(s), first ${host.first.slice(0, 10)}, last ${host.last.slice(0, 10)}`,
+    })),
+  );
 }
 
 export function renderAuthority(

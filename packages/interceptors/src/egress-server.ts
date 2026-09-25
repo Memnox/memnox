@@ -145,9 +145,27 @@ export function recordEgress(
     await ledger?.append(row).catch(() => undefined);
     const agent = ruling.caller.agent;
     if (agent === undefined || ruling.effect !== DECISION_EFFECT.ALLOW) return;
-    await destinations
-      .record(agent, destinationOf(ruling.target), at)
-      .catch(() => undefined);
+    const host = destinationOf(ruling.target);
+    const seen = await destinations.record(agent, host, at).catch(() => null);
+    // The first time is its own row, so a timeline shows when an agent began reaching a host.
+    if (seen?.first === true) {
+      await ledger?.append(firstDestinationRow(row, host)).catch(() => undefined);
+    }
+  };
+}
+
+/** The operation a first visit is recorded under, for a timeline filter to find. */
+export const FIRST_DESTINATION_OPERATION = 'network.first-destination';
+
+function firstDestinationRow(row: MemnoxEvent, host: string): MemnoxEvent {
+  return {
+    ...row,
+    id: newEventId(),
+    operation: FIRST_DESTINATION_OPERATION,
+    target: host,
+    class: TOOL_CLASS.READ,
+    effect: DECISION_EFFECT.ALLOW,
+    reason: `the first time ${row.agent} reached ${host} from this machine`,
   };
 }
 

@@ -103,7 +103,12 @@ describe('what each ruling leaves behind', () => {
       effect: DECISION_EFFECT.DENY,
     });
 
-    expect(rows.map((row) => row.target)).toEqual(['api.example.com', 'blocked.example']);
+    // The first visit to a host is a row of its own beside the request's.
+    expect(rows.map((row) => [row.operation, row.target])).toEqual([
+      ['http.request', 'api.example.com'],
+      ['network.first-destination', 'api.example.com'],
+      ['http.request', 'blocked.example'],
+    ]);
     expect(rows[0]?.surface).toBe('network');
     expect(JSON.stringify(rows)).not.toContain('secret');
     const seen = await destinations.read('claude-code');

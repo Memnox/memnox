@@ -10,6 +10,7 @@ import {
 } from '@memnox/core';
 
 import { operationFor } from './ledger';
+import type { ToolManifest } from './tool-manifest';
 import { heldReason, type SessionLimits } from './session-limits';
 import type { ToolCall } from './tool-call';
 
@@ -89,6 +90,7 @@ export class LocalGateAuthorizer implements CallAuthorizer {
     private readonly gate: LocalGate,
     private readonly serverName: string,
     private readonly sessionId?: string,
+    private readonly manifest?: ToolManifest,
   ) {}
 
   async authorize(call: ToolCall): Promise<CallVerdict> {
@@ -115,7 +117,11 @@ export class LocalGateAuthorizer implements CallAuthorizer {
       action: operationFor(call.name),
       target: this.serverName,
       // By name and statement, since the proxy keeps no manifest and a `query` can drop.
-      toolClass: classifyToolCall(call.name, call.arguments).class,
+      toolClass: classifyToolCall(
+        call.name,
+        call.arguments,
+        this.manifest?.declaration(call.name),
+      ).class,
       arguments: call.arguments,
       ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }),
     };
