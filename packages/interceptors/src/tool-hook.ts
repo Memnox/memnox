@@ -23,6 +23,7 @@ import { toolCallOf, type ToolCall } from './tool-calls';
 import {
   isWorthRecording,
   putsQuestion,
+  refusedUnasked,
   ruleOnTool,
   toolEventFor,
   toolReply,
@@ -158,7 +159,13 @@ async function keep(
     const sessionId =
       context.runSession ?? (call.sessionId === '' ? UNNAMED_SESSION : call.sessionId);
     await sink.append(
-      toolEventFor(call, ruling, { ...provenance, agent: context.agent, sessionId, at }),
+      toolEventFor(call, ruling, {
+        ...provenance,
+        agent: context.agent,
+        sessionId,
+        at,
+        refused: refusedUnasked(call, ruling, context.personThere),
+      }),
     );
   } catch {
     // Nothing to do about a lost row here, and nothing worth interrupting the agent for.

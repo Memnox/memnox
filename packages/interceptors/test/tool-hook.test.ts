@@ -6,10 +6,11 @@ import {
   DECISION_EFFECT,
   ENFORCEMENT_MODE,
   EVENT_SURFACE,
+  EXECUTION,
   LocalGate,
-  type EventQuery,
   policiesFrom,
   recommendedAnswers,
+  type EventQuery,
   type EventSink,
   type MemnoxEvent,
   type Policy,
@@ -273,6 +274,27 @@ describe('the verdict, the mode, and what the agent is told', () => {
     const unattended = await answerToolCall(fetch, context(false), seams);
     expect(unattended?.reply?.stdout).toContain('"permissionDecision":"deny"');
     expect(unattended?.reply?.stdout).toContain(NO_WAY_TO_ASK);
+  });
+
+  /* A refused ask that is recorded with no ending is an approval the
+     workspace's inbox shows as waiting for ever, on a call nothing holds. */
+  it('records an ask nobody could be shown as blocked, and one put to a person as open', async () => {
+    const rows = new Rows();
+    const seams = {
+      authorizer: authorizer(),
+      mode: ENFORCEMENT_MODE.ENFORCE,
+      sink: rows,
+    };
+    const fetch = claude('WebFetch', { url: 'https://api.example.com' });
+
+    await answerToolCall(fetch, context(false), seams);
+    await answerToolCall(fetch, context(true), seams);
+
+    expect(rows.appended[0]).toMatchObject({
+      effect: DECISION_EFFECT.ASK,
+      execution: EXECUTION.BLOCKED,
+    });
+    expect(rows.appended[1]?.execution).toBeUndefined();
   });
 
   it('rules on a command line the way the shell seam does', async () => {

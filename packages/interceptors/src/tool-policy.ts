@@ -7,6 +7,7 @@ import {
   digest,
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
+  EXECUTION,
   localRuleRef,
   newEventId,
   TOOL_CLASS,
@@ -100,8 +101,8 @@ async function worstOf(
   for (const request of requests) {
     const verdict = await authorizer.authorize({
       action: request.action,
-      ...(request.target === undefined ? {} : { target: request.target }),
       toolClass: request.class,
+      ...(request.target === undefined ? {} : { target: request.target }),
       ...(request.arguments === undefined ? {} : { arguments: request.arguments }),
     });
     const next = { request, verdict };
@@ -228,6 +229,12 @@ export interface ToolRowContext {
   at: string;
   bundleHash?: string;
   conditionsInForce?: readonly string[];
+  /**
+   * An ask the host could not put to anybody, so it was refused on the spot.
+   * Recorded as blocked, because a row with no ending is an approval the
+   * workspace's inbox shows as waiting for ever, on a call nothing is holding.
+   */
+  refused?: boolean;
 }
 
 /** The ledger row for a ruling, keyed the way `why` and `next` read every other seam's. */
@@ -259,7 +266,19 @@ export function toolEventFor(
     ...(context.conditionsInForce === undefined
       ? {}
       : { conditionsInForce: context.conditionsInForce }),
+    ...(context.refused === true ? { execution: EXECUTION.BLOCKED } : {}),
   };
+}
+
+/** An ask that became a refusal because the host had nobody to put it to. */
+export function refusedUnasked(
+  call: ToolCall,
+  ruling: ToolRuling,
+  personThere: boolean,
+): boolean {
+  return (
+    ruling.effect === DECISION_EFFECT.ASK && !putsQuestion(call, ruling, personThere)
+  );
 }
 
 /** The action's own domain, so a read reads as a file row and a fetch as a network one. */
