@@ -183,6 +183,8 @@ export function targetIn(verb: Verb, argv: readonly string[]): string | undefine
   const positional = argv
     .slice(consumedBy(verb.match, argv))
     .filter((argument) => !argument.startsWith('-'));
+  // Unmatched, the last word is an argument rather than an object, so name the verb nobody knew.
+  if (verb === UNKNOWN_VERB) return positional[0];
   return positional[positional.length - 1];
 }
 

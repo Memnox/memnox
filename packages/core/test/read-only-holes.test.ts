@@ -165,6 +165,14 @@ describe('flags before the verb are not the verb', () => {
   });
 });
 
+describe('a verb no table knows', () => {
+  it('is aimed at the verb itself, never at an argument', () => {
+    const action = only('git frobnicate --abbrev-ref refs/remotes/origin/HEAD');
+    expect(action.action).toBe('git.unknown');
+    expect(action.target).toBe('frobnicate');
+  });
+});
+
 describe('gh api spells its method many ways', () => {
   it.each([
     ['gh api -XPOST /repos/a/b/issues', 'write'],
