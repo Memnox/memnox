@@ -14,6 +14,7 @@ import {
 } from '@memnox/core';
 
 import { readStatus } from '../commands/status.command';
+import { fetchBrief } from '../sync/memory';
 import type { SessionToolDeps } from './read-tools';
 import type { RewindSeams } from './rewind-tool';
 import { serveSession } from './session-server';
@@ -77,6 +78,7 @@ function depsFor(argv: readonly string[], env: NodeJS.ProcessEnv): SessionToolDe
     now: () => new Date(),
     readStatus,
     milestonesAt,
+    brief: (resources, repository) => fetchBrief(homedir(), resources, repository),
   };
 }
 

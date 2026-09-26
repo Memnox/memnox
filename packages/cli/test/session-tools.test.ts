@@ -12,6 +12,7 @@ import {
   NodeWorktree,
   SqliteEventStore,
   type CheckpointMark,
+  writeWorkspaceMemory,
   type MemnoxEvent,
 } from '@memnox/core';
 import {
@@ -71,6 +72,7 @@ function depsFor(home: string, cwd = home): SessionToolDeps {
     now: () => NOW,
     readStatus: async () => ({ mode: 'observe', rules: 3 }),
     milestonesAt: async () => [],
+    brief: async () => null,
   };
 }
 
@@ -150,12 +152,14 @@ async function call(
 }
 
 describe('the session tools', () => {
-  it('offers exactly why, status, replay, decisions and rewind', () => {
+  it('offers exactly why, status, replay, decisions, memory, brief and rewind', () => {
     expect(SESSION_TOOLS.map((tool) => tool.name)).toEqual([
       'why',
       'status',
       'replay',
       'decisions',
+      'memory',
+      'brief',
       'rewind',
     ]);
   });
@@ -282,6 +286,116 @@ describe('why', () => {
     const answer = await call({ deps }, 'why');
     expect(answer.text).toContain('held for a person');
     expect(answer.text).not.toContain('a later session');
+  });
+});
+
+describe('what the workspace settled, asked from the session', () => {
+  const SETTLED = {
+    hash: 'm1',
+    withheld: 2,
+    syncedAt: '2026-09-24T11:00:00.000Z',
+    facts: [
+      {
+        id: 'f_retry',
+        kind: 'decision',
+        statement: 'Retry logic must remain inside PaymentService.',
+        subject: 'payments',
+        verifiedBy: 'ada@acme.test',
+        settledAt: '2026-05-02T10:00:00.000Z',
+      },
+      {
+        id: 'f_redis',
+        kind: 'decision',
+        statement: 'We do not use Redis for the billing service.',
+        subject: 'billing',
+      },
+    ],
+  };
+
+  async function connected(): Promise<string> {
+    const home = await machine();
+    await writeWorkspaceMemory(home, SETTLED);
+    return home;
+  }
+
+  it('answers with the facts about the words asked, and who confirmed each', async () => {
+    const answer = await call({ deps: depsFor(await connected()) }, 'memory', {
+      about: 'payment retries',
+    });
+    const read = JSON.parse(answer.text) as {
+      facts: { statement: string; settled: string }[];
+      withheld: string;
+    };
+
+    expect(read.facts.map((each) => each.statement)).toEqual([
+      'Retry logic must remain inside PaymentService.',
+    ]);
+    expect(read.facts[0]?.settled).toContain('confirmed by ada@acme.test');
+    expect(read.withheld).toContain('2 fact(s)');
+  });
+
+  it('says a machine that never pulled one holds none, rather than that nothing was settled', async () => {
+    const answer = await call({ deps: depsFor(await machine()) }, 'memory', {
+      about: 'payments',
+    });
+
+    expect(JSON.parse(answer.text)).toMatchObject({ connected: false });
+  });
+
+  /* Cursor and Windsurf add nothing to a session from their hooks, and every host reads
+     this at connect, so it is where they learn to ask before they edit. */
+  it('tells every host at connect to ask for a brief before changing code', async () => {
+    const said = async (home: string): Promise<string> => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      let text = '';
+      output.setEncoding('utf8');
+      output.on('data', (chunk: string) => {
+        text += chunk;
+        input.end();
+      });
+      const served = serveSession({
+        input,
+        output,
+        deps: depsFor(home),
+        seams: seamsFor(),
+      });
+      input.write(
+        `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`,
+      );
+      await served;
+      return (JSON.parse(text.trim()) as { result: { instructions: string } }).result
+        .instructions;
+    };
+
+    expect(await said(await connected())).toContain('call "brief"');
+    expect(await said(await machine())).not.toContain('brief');
+  });
+
+  it('briefs from the workspace when it can be asked', async () => {
+    const asked: string[][] = [];
+    const deps = {
+      ...depsFor(await connected()),
+      brief: async (resources: readonly string[]) => {
+        asked.push([...resources]);
+        return { decisions: [], holders: [] };
+      },
+    };
+
+    const answer = await call({ deps }, 'brief', { paths: 'src/payments, src/billing' });
+
+    expect(asked).toEqual([['src/payments', 'src/billing']]);
+    expect(JSON.parse(answer.text)).toMatchObject({ from: 'the workspace, just now' });
+  });
+
+  it('briefs from what this machine holds when the workspace cannot be asked', async () => {
+    const answer = await call({ deps: depsFor(await connected()) }, 'brief', {
+      paths: 'src/billing/cache.ts',
+    });
+    const read = JSON.parse(answer.text) as { from: string; facts: { about: string }[] };
+
+    expect(read.from).toContain('what this machine pulled');
+    expect(read.facts.map((each) => each.about)).toEqual(['billing']);
   });
 });
 

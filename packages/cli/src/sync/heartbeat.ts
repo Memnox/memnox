@@ -40,6 +40,7 @@ import { CLI_VERSION } from '../defaults';
 import { kindOf, listRecords, onboardedInto } from '../agents/onboarding';
 import { orgPolicyPath, PULL_OUTCOME, pullBundle, type PullResult } from './bundle';
 import { callCloud, CloudUnreachable } from './client';
+import { pullMemory, type MemoryPull } from './memory';
 import {
   pushCensus,
   pushEvents,
@@ -72,6 +73,8 @@ const ANSWERS: readonly string[] = Object.values(HOLD_ANSWER);
 
 export interface Pass {
   pull?: PullResult;
+  /** What the workspace has settled, kept for the hooks and the session tools. */
+  memory?: MemoryPull;
   push?: PushResult;
   /** What this machine can do, sent once per scan. Absent when no scan is kept. */
   census?: PushResult;
@@ -205,7 +208,8 @@ async function passFor(home: string, account: Account): Promise<Pass> {
   const pull = await pullBundle(home, account, await heldHash(home));
   if (pull.outcome === PULL_OUTCOME.REVOKED) return { pull, revoked: true };
 
-  const pass: Pass = { pull };
+  // After the rules, since a rule governs and a memory only informs.
+  const pass: Pass = { pull, memory: await pullMemory(home, account) };
   for (const send of sendsFor(home, account)) {
     const result = await send.run();
     pass[send.key] = result;

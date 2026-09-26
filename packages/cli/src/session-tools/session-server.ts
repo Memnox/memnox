@@ -2,7 +2,7 @@
  * The session server's wire: MCP over newline-delimited JSON on stdio, answering
  * `initialize`, `tools/list` and `tools/call`, and asking the person through the host where it can.
  */
-import { LineBuffer } from '@memnox/core';
+import { LineBuffer, readWorkspaceMemoryCached } from '@memnox/core';
 
 import { answerText } from './bounded';
 import type { SessionToolDeps } from './read-tools';
@@ -71,7 +71,7 @@ class SessionConnection {
     params: Record<string, unknown>,
   ): Promise<void> {
     if (method === 'initialize')
-      return this.send({ id, result: this.initialized(params) });
+      return this.send({ id, result: await this.initialized(params) });
     if (method === 'ping') return this.send({ id, result: {} });
     if (method === 'tools/list')
       return this.send({ id, result: { tools: [...SESSION_TOOLS] } });
@@ -94,7 +94,9 @@ class SessionConnection {
     this.send({ id, result: await this.called(name, record) });
   }
 
-  private initialized(params: Record<string, unknown>): Record<string, unknown> {
+  private async initialized(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     const capabilities = params['capabilities'];
     this.canElicit =
       capabilities !== null &&
@@ -105,8 +107,7 @@ class SessionConnection {
       protocolVersion: typeof asked === 'string' ? asked : PROTOCOL_VERSION,
       capabilities: { tools: {} },
       serverInfo: SERVER_INFO,
-      instructions:
-        'Memnox answers questions about this session for your person. It can explain, report and rewind; it can never approve, allow or change a rule.',
+      instructions: await instructionsFor(this.options.deps.home),
     };
   }
 
@@ -186,4 +187,17 @@ function parsed(line: string): Message | null {
     // Not JSON: answered with a parse error rather than taking the stream down.
     return null;
   }
+}
+
+const ABOUT_SESSION =
+  'Memnox answers questions about this session for your person. It can explain, report and rewind; it can never approve, allow or change a rule.';
+
+/**
+ * Read by every host at connect, which makes it the one place an agent whose hooks add no
+ * context (Cursor, Windsurf) still learns to ask what its workspace settled before it edits.
+ */
+async function instructionsFor(home: string): Promise<string> {
+  const memory = await readWorkspaceMemoryCached(home).catch(() => null);
+  if (memory === null || memory.facts.length === 0) return ABOUT_SESSION;
+  return `${ABOUT_SESSION} Your workspace has settled ${memory.facts.length} decision(s), policies and owners: before you change code, call "brief" with the paths you are about to edit, or "memory" with the subject, and cite what it says. Where your task disagrees with it, ask your person first.`;
 }

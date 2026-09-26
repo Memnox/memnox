@@ -11,6 +11,7 @@ import {
   type ToolArgs,
 } from './read-tools';
 import { rewindTool, type RewindSeams } from './rewind-tool';
+import { briefTool, memoryTool } from './memory-tools';
 
 /** A tool as `tools/list` describes it; the annotations are how a host decides to ask. */
 interface ToolDefinition {
@@ -90,6 +91,31 @@ export const SESSION_TOOLS: readonly ToolDefinition[] = [
       path: { type: 'string', description: 'a file or directory the action touches' },
     },
   ),
+  readTool(
+    'memory',
+    'What your workspace has settled: decisions, policies, who approves what and who owns what, each with who confirmed it, when and where it came from. Ask before planning a change, and cite what it says.',
+    {
+      about: {
+        type: 'string',
+        description:
+          'words or paths the question is about, such as "payment retries" or "src/billing"; the newest when left out',
+      },
+    },
+  ),
+  readTool(
+    'brief',
+    'The brief for what you are about to change: the decisions that bear on these paths, who owns them, which agent already holds them and what landed there lately. Call it before your first edit.',
+    {
+      paths: {
+        type: 'string',
+        description: 'the paths, services or repository about to change, comma separated',
+      },
+      repository: {
+        type: 'string',
+        description: 'the repository, where the workspace knows it by name',
+      },
+    },
+  ),
   {
     name: 'rewind',
     description:
@@ -127,6 +153,10 @@ export async function callTool(
       return replayTool(deps, args);
     case 'decisions':
       return decisionsTool(deps, args);
+    case 'memory':
+      return memoryTool(deps, args);
+    case 'brief':
+      return briefTool(deps, args);
     case 'rewind':
       return rewindTool(deps, seams, args);
     default:

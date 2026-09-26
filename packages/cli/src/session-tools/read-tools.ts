@@ -35,6 +35,8 @@ export interface SessionToolDeps {
   now: () => Date;
   readStatus: (home: string, project: string) => Promise<unknown>;
   milestonesAt: (place: string) => Promise<Milestone[]>;
+  /** The live brief from the workspace, or null where it cannot be asked just now. */
+  brief: (resources: readonly string[], repository?: string) => Promise<unknown>;
 }
 
 /** Tool arguments as the host sent them, read field by field. */
