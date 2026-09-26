@@ -10,6 +10,7 @@ import { TOOL_CLASS } from '../discovery/classify';
 import { SCOPE_MATCH, type ScopeComparison } from '../domain/task';
 import { containmentAsk, type Containment, type ContainmentAsk } from './containment';
 import { allowanceFor, describeAllowance, type Allowance } from './allowances';
+import { selfProtection } from './self-protection';
 import type { NoticePort } from '../notice/unusual-notice';
 import { loadPolicyFiles, type OptionalPolicySources } from './policy-file';
 
@@ -113,7 +114,9 @@ export class LocalGate {
       matchesAny([...patterns], value),
     );
     const evaluation = this.evaluated(request, at, drift);
+    // First: nothing a rule or an allowance says lets an agent change what governs it.
     const contained =
+      selfProtection(request) ??
       offIntent(this.options.task ?? null, request, evaluation.effect) ??
       this.contained(request, evaluation.effect);
     const effect = effectUnder(evaluation.effect, contained);

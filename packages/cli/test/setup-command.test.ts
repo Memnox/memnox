@@ -192,6 +192,8 @@ describe('memnox setup', () => {
         (program, context) =>
           registerSetupCommand(program, context, {
             home: () => home,
+            // A temporary project, or setup writes its rules into the repository running the test.
+            project: () => home,
             buildSeams: () => seams,
             connect: async (_context, _home, options) => {
               connects.push(options.url);

@@ -4,6 +4,7 @@
  */
 import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
 import { classifyWriter } from './writers';
+import { loosens, MEMNOX_ACTION_PREFIX } from '../gate/self-protection';
 import { environmentRead, variablesPrinted } from './environment-reads';
 import {
   fileStatementIn,
@@ -63,6 +64,7 @@ export function resolveAction(
   options: ResolveOptions = {},
 ): ResolvedAction {
   return (
+    resolveMemnox(binary, args) ??
     resolveSqlStatement(binary, args, env, options.stdin) ??
     resolveFromVerbTable(binary, args, env) ??
     resolveReader(binary, args, env) ??
@@ -73,6 +75,27 @@ export function resolveAction(
       because: binary,
     }
   );
+}
+
+/**
+ * A `memnox` command, by its subcommand, so self-protection can tell `memnox why` from
+ * `memnox allow`, typed directly or through `npx`.
+ */
+function resolveMemnox(binary: string, args: readonly string[]): ResolvedAction | null {
+  const words =
+    binary === 'memnox'
+      ? args
+      : binary === 'npx' && (args[0] ?? '').startsWith('memnox')
+        ? args.slice(1)
+        : null;
+  if (words === null) return null;
+  const command = words.join(' ');
+  return {
+    action: `${MEMNOX_ACTION_PREFIX}${words[0] ?? 'scan'}`,
+    class: loosens(command) ? TOOL_CLASS.WRITE : TOOL_CLASS.READ,
+    because: `memnox ${command}`.trim(),
+    target: command === '' ? 'scan' : command,
+  };
 }
 
 /** So `psql -c "DROP TABLE users"` is ruled on as a drop rather than as opening psql. */

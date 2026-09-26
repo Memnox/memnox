@@ -12,3 +12,4 @@ export * from './terminal';
 export * from './refusal-text';
 export * from './policy-sources';
 export * from './allowances';
+export * from './self-protection';
