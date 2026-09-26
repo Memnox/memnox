@@ -38,7 +38,10 @@ describe('the rules the exclusions make possible', () => {
             actions: ['filesystem.write', 'filesystem.delete'],
             targets: ['!{workspace}/**'],
           },
-          decision: { effect: 'deny', reason: 'this agent writes inside its workspace only' },
+          decision: {
+            effect: 'deny',
+            reason: 'this agent writes inside its workspace only',
+          },
         },
       ] as never,
       { agentName: 'agent' },
@@ -71,11 +74,11 @@ describe('the rules the exclusions make possible', () => {
       ] as never,
       { agentName: 'agent' },
     );
-    expect(gate.evaluate({ action: 'http.request', target: 'api.stripe.com' }).effect).toBe(
-      'allow',
-    );
-    expect(gate.evaluate({ action: 'http.request', target: 'paste.example' }).effect).toBe(
-      'ask',
-    );
+    expect(
+      gate.evaluate({ action: 'http.request', target: 'api.stripe.com' }).effect,
+    ).toBe('allow');
+    expect(
+      gate.evaluate({ action: 'http.request', target: 'paste.example' }).effect,
+    ).toBe('ask');
   });
 });
