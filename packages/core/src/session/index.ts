@@ -16,3 +16,4 @@ export * from './destinations';
 export * from './session-summary';
 export * from './authority';
 export * from './agent-lineage';
+export * from './prompt-task';

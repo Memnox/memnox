@@ -96,7 +96,7 @@ export async function answerToolCall(
   // Off means nothing is ruled on or recorded, which is what somebody turning it off wants.
   if (mode === ENFORCEMENT_MODE.OFF) return null;
 
-  const authorizer = seams.authorizer ?? (await authorizerFor(context));
+  const authorizer = seams.authorizer ?? (await authorizerFor(context, call.sessionId));
   const ruled = await ruleOnTool(call, {
     authorizer,
     mode,
@@ -188,9 +188,19 @@ export async function failedToolAnswer(
 }
 
 /** The same gate every seam loads, evaluated as the agent the hook was installed for. */
-export async function authorizerFor(context: ToolHookContext): Promise<HookAuthorizer> {
+export async function authorizerFor(
+  context: ToolHookContext,
+  hostSessionId?: string,
+): Promise<HookAuthorizer> {
   const config = await readHookConfig(context.env, context.home);
-  const gate = await loadHookGate({ ...config, agentName: context.agent }, context.home);
+  const gate = await loadHookGate(
+    {
+      ...config,
+      agentName: context.agent,
+      ...(hostSessionId === undefined || hostSessionId === '' ? {} : { hostSessionId }),
+    },
+    context.home,
+  );
   return new HookAuthorizer(gate === null ? {} : { gate });
 }
 

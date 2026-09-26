@@ -15,6 +15,11 @@ export interface HookConfig {
   agentRole?: string;
   /** The session `memnox run` set, whose declared task a scope rule compares against. */
   sessionId?: string;
+  /**
+   * The agent's own session id, from the hook payload, where no run set one: the key a
+   * task read from the person's prompt is kept under. Read for the task and nothing else.
+   */
+  hostSessionId?: string;
 }
 
 /**

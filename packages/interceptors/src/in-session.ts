@@ -3,7 +3,7 @@
  * a decision already taken where the agent meets it, and a person's yes learned from the
  * agent's own prompt. Every part is best effort, since none of it may stop the agent.
  */
-import { DECISION_EFFECT } from '@memnox/core';
+import { DECISION_EFFECT, SessionTasks, TASK_INTENT, taskFromPrompt } from '@memnox/core';
 
 import { EDIT_HOST } from './agent-edits';
 import type { EditHookContext } from './edit-claims';
@@ -111,19 +111,50 @@ export async function beforePause(
       return null;
     }
     if (pause.moment !== SESSION_MOMENT.PROMPT || pause.prompt === undefined) return null;
-    const lookup = {
-      sessionId: context.runSession ?? pause.sessionId,
-      prompt: pause.prompt,
-    };
-    return await decisionsAt(
+    const sessionId = context.runSession ?? pause.sessionId;
+    const noted = await taskOfPrompt(
+      context.home,
+      sessionId,
+      pause.prompt,
+      context.now(),
+    );
+    const lookup = { sessionId, prompt: pause.prompt };
+    const decided = await decisionsAt(
       pause.cwd === undefined ? lookup : { ...lookup, cwd: pause.cwd },
       depsOf(context, env),
     );
+    const said = [noted, decided].filter((each): each is string => each !== null);
+    return said.length === 0 ? null : said.join('\n');
   } catch (err) {
     log(`session context failed at a pause: ${String(err)}`);
     return null;
   }
 }
+
+/**
+ * The prompt kept as the session's task, so `why` quotes it and an investigation is held to
+ * reading, and what the agent is told when it reads as one. Null when there is nothing to say.
+ */
+async function taskOfPrompt(
+  home: string,
+  sessionId: string,
+  prompt: string,
+  now: Date,
+): Promise<string | null> {
+  if (sessionId === '') return null;
+  const tasks = new SessionTasks(home);
+  const task = taskFromPrompt(prompt, await tasks.read(sessionId), {
+    sessionId,
+    now: now.toISOString(),
+  });
+  if (task === null) return null;
+  await tasks.declare(task);
+  return task.intent === TASK_INTENT.INVESTIGATE ? INVESTIGATION_NOTE : null;
+}
+
+/** Said to the agent when the ask reads as an investigation, so a refusal is no surprise. */
+const INVESTIGATION_NOTE =
+  'Memnox read this ask as an investigation: read anything you need, and nothing outside this machine is changed. If the person wants a change, they will ask for one.';
 
 /** Only an allow a rule spoke on can meet a decision, so an ordinary call reads no file. */
 function carriesDecisions(ruled: ToolAnswer, context: EditHookContext): boolean {

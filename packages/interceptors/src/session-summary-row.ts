@@ -19,19 +19,20 @@ import {
 /** Filed with the config rows, so no count of agent work ever includes it. */
 export const SESSION_SUMMARY_OPERATION = 'session.summary';
 
-/** Best effort: a session ending is never held up by its own record. */
+/** Best effort: a session ending is never held up by its own record. The line, when kept. */
 export async function keepSessionSummary(
   home: string,
   sessionId: string,
   now: Date,
-): Promise<void> {
+): Promise<string | null> {
   const ledger = openLedger(home);
-  if (ledger === null) return;
+  if (ledger === null) return null;
   try {
     const summary = summarizeSession(
       await ledger.query({ sessionId, limit: LEDGER_SESSION_LIMIT }),
     );
-    if (summary === null) return;
+    if (summary === null) return null;
+    const line = describeSummary(summary);
     await ledger.append({
       id: newEventId(),
       schemaVersion: EVENT_SCHEMA_VERSION,
@@ -44,10 +45,12 @@ export async function keepSessionSummary(
       class: TOOL_CLASS.READ,
       effect: DECISION_EFFECT.ALLOW,
       mode: ENFORCEMENT_MODE.ENFORCE,
-      reason: describeSummary(summary),
+      reason: line,
     });
+    return line;
   } catch {
     // Nothing to do about a lost summary, and nothing worth failing the hook for.
+    return null;
   } finally {
     ledger.close();
   }

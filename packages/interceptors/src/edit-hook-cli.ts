@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 
 import {
+  desktopNotice,
   AGENT_FLAG,
   CloudLeases,
   DECISION_EFFECT,
@@ -158,7 +159,9 @@ async function releaseSession(ended: string, context: EditHookContext): Promise<
   });
   // A session `memnox run` started is summed up when it exits, on the terminal.
   if (context.runSession === undefined) {
-    await keepSessionSummary(context.home, ended, context.now());
+    const line = await keepSessionSummary(context.home, ended, context.now());
+    // On the screen as well, since a session ending has nobody watching its terminal.
+    if (line !== null) desktopNotice(line);
   }
 }
 

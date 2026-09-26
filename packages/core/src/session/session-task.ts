@@ -30,6 +30,8 @@ export interface SessionTask {
   expectedActions?: number;
   /** `investigate` holds the session to reading: a change outside this machine is refused. */
   intent?: TaskIntent;
+  /** `prompt` when read from what the person typed, which a declared task always replaces. */
+  declaredBy?: string;
 }
 
 export const TASK_INTENT = { INVESTIGATE: 'investigate' } as const;

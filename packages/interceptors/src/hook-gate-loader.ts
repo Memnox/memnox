@@ -93,7 +93,7 @@ async function readSession(
   home: string,
   now: () => string,
 ): Promise<{ task: SessionTask | null; containment: Containment | null }> {
-  const sessionId = config.sessionId;
+  const sessionId = config.sessionId ?? config.hostSessionId;
   const declared =
     sessionId === undefined ? null : await new SessionTasks(home).read(sessionId);
   // A session nobody named a task for takes the one somebody declared for its repository.
