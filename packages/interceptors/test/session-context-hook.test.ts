@@ -15,6 +15,9 @@ import {
   LocalGate,
   MOST_BOUNDARY_CHARS,
   MOST_DECISIONS_PER_CALL,
+  MOST_FACTS_PER_CALL,
+  writeWorkspaceMemory,
+  type WorkspaceFact,
   NOTICE_MODE,
   renderConfig,
   UnusualNotice,
@@ -193,6 +196,96 @@ describe('a remembered decision, where the agent meets it', () => {
     expect(JSON.parse(preToolContext('x'))).toEqual({
       hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: 'x' },
     });
+  });
+});
+
+describe('what the workspace settled, where the agent meets it', () => {
+  const settled = (id: string, over: Partial<WorkspaceFact> = {}): WorkspaceFact => ({
+    id,
+    kind: 'decision',
+    statement: `Payments rule ${id}.`,
+    subject: 'payments',
+    verifiedBy: 'ada@acme.test',
+    ...over,
+  });
+
+  async function connected(facts: WorkspaceFact[]): Promise<SessionContextDeps> {
+    const deps = await machine();
+    await writeWorkspaceMemory(deps.home, {
+      hash: 'm1',
+      facts,
+      withheld: 0,
+      syncedAt: NOW.toISOString(),
+    });
+    return deps;
+  }
+
+  it('is said before a write to what it is about, naming who confirmed it', async () => {
+    const deps = await connected([settled('f1'), settled('f2', { subject: 'billing' })]);
+
+    const said = await decisionsAt(
+      {
+        sessionId: 's1',
+        subjects: [
+          { action: 'filesystem.write', target: `${deps.cwd}/src/payments/charge.ts` },
+        ],
+      },
+      deps,
+    );
+
+    expect(said).toContain('Your workspace settled this about payments');
+    expect(said).toContain('confirmed by ada@acme.test');
+    expect(said).not.toContain('billing');
+  });
+
+  it('is never said for a read, which has not decided anything yet', async () => {
+    const deps = await connected([settled('f1')]);
+
+    const said = await decisionsAt(
+      {
+        sessionId: 's1',
+        subjects: [
+          { action: 'filesystem.read', target: `${deps.cwd}/src/payments/charge.ts` },
+        ],
+      },
+      deps,
+    );
+
+    expect(said ?? '').not.toContain('Your workspace');
+  });
+
+  it('is found in the words of a prompt, once per session and a few at most', async () => {
+    const deps = await connected(
+      Array.from({ length: MOST_FACTS_PER_CALL + 2 }, (_, at) => settled(`f${at}`)),
+    );
+    const lookup = { sessionId: 's1', prompt: 'why do payment refunds fail' };
+
+    const first = await decisionsAt(lookup, deps);
+    const facts = (text: string | null): string[] =>
+      (text ?? '').split('\n').filter((line) => line.startsWith('Your workspace'));
+
+    expect(facts(first)).toHaveLength(MOST_FACTS_PER_CALL);
+    expect(facts(await decisionsAt(lookup, deps))).toHaveLength(2);
+    expect(await decisionsAt(lookup, deps)).toBeNull();
+  });
+
+  it('tells the agent at session start to ask before it changes code', async () => {
+    const deps = await connected([settled('f1')]);
+
+    const said = await answerSessionStart({ sessionId: 's1' }, deps);
+    const text = (
+      JSON.parse(said) as { hookSpecificOutput: { additionalContext: string } }
+    ).hookSpecificOutput.additionalContext;
+
+    expect(text).toContain('Your workspace has settled 1 decision(s)');
+    expect(text).toContain('"brief"');
+  });
+
+  it('says nothing about a workspace when this machine never pulled one', async () => {
+    const deps = await machine();
+    const said = await answerSessionStart({ sessionId: 's1' }, deps);
+
+    expect(said).not.toContain('Your workspace');
   });
 });
 
