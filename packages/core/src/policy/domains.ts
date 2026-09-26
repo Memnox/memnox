@@ -1,6 +1,8 @@
 import { DECISION_EFFECT, type DecisionEffect } from '../constants/decision.constants';
 import type { Policy } from './policy';
 import { TOOL_CLASS } from '../discovery/classify';
+import { LOCAL_NAMESPACES } from '../constants/action-class.constants';
+import { CAPABILITY } from '../domain/capability';
 import {
   ACTION,
   CHANGING_HTTP_METHODS,
@@ -19,6 +21,10 @@ export const POLICY_DOMAIN = {
   MCP: 'mcp',
   NETWORK: 'network',
   CLI: 'cli',
+  /** Moving money, deploying and handing out authority, wherever the tool is. */
+  CONSEQUENTIAL: 'consequential',
+  /** Any change in an environment named like production. */
+  PRODUCTION: 'production',
 } as const;
 
 export type PolicyDomain = (typeof POLICY_DOMAIN)[keyof typeof POLICY_DOMAIN];
@@ -36,6 +42,10 @@ export interface DomainChoice {
   arguments?: Record<string, string[]>;
   /** Narrows the rule to what the action does, so reads under the same name go through. */
   classes?: string[];
+  /** Narrows it finer: a transfer, a deploy, an authority change. */
+  capabilities?: string[];
+  /** Narrows it to the environments named, as the command or the call names them. */
+  environments?: string[];
 }
 
 /** What changes something, as every classifier spells it. Reads are left out on purpose. */
@@ -69,6 +79,12 @@ const REMOTE_CLIS: readonly string[] = [
 
 /** The verbs of the mostly local CLIs that publish something outward. */
 const OUTWARD_VERBS: readonly string[] = ['docker.push', 'npm.publish', 'npm.unpublish'];
+
+/** Everything that reaches outside this machine: every action but the local ones. */
+const OUTSIDE_THIS_MACHINE: string[] = [
+  '*',
+  ...[...LOCAL_NAMESPACES, 'package'].map((each) => `!${each}.*`),
+];
 
 export const DOMAIN_CHOICES: readonly DomainChoice[] = [
   {
@@ -161,6 +177,25 @@ export const DOMAIN_CHOICES: readonly DomainChoice[] = [
     // Not unknown: a verb no table knows is allowed and counted rather than blocked.
     classes: [...CHANGING_CLASSES],
   },
+  {
+    domain: POLICY_DOMAIN.CONSEQUENTIAL,
+    question: 'Moving money, deploying, or handing out authority, through any tool',
+    recommended: DECISION_EFFECT.ASK,
+    because:
+      'a refund, a deploy or a new admin is the kind of change that should be a person’s, however the agent reached it',
+    actions: OUTSIDE_THIS_MACHINE,
+    capabilities: [CAPABILITY.TRANSFER, CAPABILITY.DEPLOY, CAPABILITY.ADMIN],
+  },
+  {
+    domain: POLICY_DOMAIN.PRODUCTION,
+    question: 'Any change in an environment named like production',
+    recommended: DECISION_EFFECT.ASK,
+    because:
+      'reading production is how an incident gets understood, and changing it is where one gets made',
+    actions: OUTSIDE_THIS_MACHINE,
+    environments: ['prod*', 'production', 'live'],
+    classes: [...CHANGING_CLASSES],
+  },
 ];
 
 const REASONS: Readonly<Record<DecisionEffect, string>> = {
@@ -186,6 +221,12 @@ export function policiesFrom(
         ...(choice.targets === undefined ? {} : { targets: choice.targets }),
         ...(choice.arguments === undefined ? {} : { arguments: choice.arguments }),
         ...(choice.classes === undefined ? {} : { classes: choice.classes }),
+        ...(choice.capabilities === undefined
+          ? {}
+          : { capabilities: choice.capabilities }),
+        ...(choice.environments === undefined
+          ? {}
+          : { environments: choice.environments }),
       },
       decision: {
         effect,

@@ -43,7 +43,7 @@ describe('the domains somebody decides about', () => {
 describe('turning answers into rules', () => {
   it('writes one rule per domain that was not left on allow', () => {
     const policies = policiesFrom(recommendedAnswers());
-    expect(policies).toHaveLength(6);
+    expect(policies).toHaveLength(8);
     expect(policies.every((policy) => policy.decision.effect !== 'allow')).toBe(true);
   });
 

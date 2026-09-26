@@ -143,7 +143,10 @@ export function toClaudeCodePermissions(policies: readonly Policy[]): NativeTran
     const skipped =
       actions.length === 0
         ? { policy: policy.name, because: NAMES_NO_ACTION }
-        : policy.match.arguments !== undefined || policy.match.classes !== undefined
+        : policy.match.arguments !== undefined ||
+            policy.match.classes !== undefined ||
+            policy.match.capabilities !== undefined ||
+            policy.match.environments !== undefined
           ? { policy: policy.name, because: NARROWED_BY_ARGUMENTS }
           : writeClaudeRules(policy, actions, permissions);
     if (skipped !== null) untranslated.push(skipped);
