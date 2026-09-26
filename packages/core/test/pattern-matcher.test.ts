@@ -18,6 +18,13 @@ describe('matchesPattern', () => {
     expect(matchesPattern('*', 'anything.at.all')).toBe(true);
   });
 
+  it('matches wildcards across a line break, which arguments arrive carrying', () => {
+    expect(matchesPattern('*rm -rf*', 'cd /tmp\nsudo rm -rf /var')).toBe(true);
+    expect(matchesPattern('*', 'two\nlines')).toBe(true);
+    expect(matchesPattern('*', 'carriage\rreturn')).toBe(true);
+    expect(matchesPattern('deploy.*', 'deploy.release\n')).toBe(true);
+  });
+
   it('treats regex metacharacters in patterns literally', () => {
     expect(matchesPattern('file.write', 'fileXwrite')).toBe(false);
     expect(matchesPattern('a+b', 'a+b')).toBe(true);

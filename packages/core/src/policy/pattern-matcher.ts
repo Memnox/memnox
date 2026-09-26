@@ -15,12 +15,14 @@ function compile(pattern: string): RegExp {
     .split(WILDCARD)
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('.*');
-  const expression = new RegExp(`^${escaped}$`);
+  // `s` so a wildcard spans a newline too: an argument is matched unnormalized,
+  // and without it a multi-line command slipped past the rule naming it.
+  const expression = new RegExp(`^${escaped}$`, 's');
   if (compiled.size < MAX_CACHED_PATTERNS) compiled.set(pattern, expression);
   return expression;
 }
 
-/** Case-insensitive wildcards; "*" spans "." and "/" separators too. */
+/** Case-insensitive wildcards; "*" spans ".", "/" and line breaks too. */
 export function matchesPattern(pattern: string, value: string): boolean {
   return compile(pattern).test(value.toLowerCase());
 }
