@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 import type { Command } from 'commander';
 import {
+  capabilityOf,
   codeownersFor,
   DECISION_EFFECT,
   describeEvidence,
@@ -154,6 +155,7 @@ function decisionRows(event: MemnoxEvent): FlowRow[] {
     { label: 'agent', value: describeActor(event) },
     { label: 'surface', value: event.surface },
     { label: 'class', value: event.class },
+    { label: 'does', value: capabilityOf(event.operation, event.class) },
     { label: 'reason', value: event.reason },
     { label: 'rule', value: describeRule(event) },
   ];
