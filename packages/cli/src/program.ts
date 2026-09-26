@@ -36,6 +36,7 @@ import { registerRunCommand } from './commands/run.command';
 import { registerMcpCommand } from './commands/mcp.command';
 import { registerRepoCommand } from './commands/repo.command';
 import { registerTaskCommand } from './commands/task.command';
+import { registerModeCommand } from './commands/mode.command';
 import { unwrapEveryServer } from './mcp/wrap-servers';
 import { registerPolicyCommand } from './commands/policy.command';
 import { registerLoginCommand } from './commands/login.command';
@@ -99,6 +100,10 @@ export function buildProgram(context: CliContext): Command {
 /** What a person types at a terminal, first, so `help --all` opens with them too. */
 function registerTerminalCommands(program: Command, context: CliContext): void {
   registerScanCommand(program, context);
+  // How a person shapes the work: the mode, the task, and what a clone may do.
+  registerModeCommand(program, context);
+  registerTaskCommand(program, context);
+  registerRepoCommand(program, context);
   registerSetupCommand(program, context);
   registerStatusCommand(program, context);
   registerStopCommand(program, context);
@@ -129,8 +134,6 @@ function registerCommands(program: Command, context: CliContext): void {
   registerCollisionsCommand(program, context);
   registerDaemonCommand(program, context);
   registerMcpCommand(program, context);
-  registerRepoCommand(program, context);
-  registerTaskCommand(program, context);
   registerWhyCommand(program, context);
   registerTimelineCommand(program, context);
   registerPurgeCommand(program, context);

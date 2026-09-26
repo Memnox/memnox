@@ -28,7 +28,13 @@ export interface SessionTask {
   declaredAt: string;
   /** Roughly what this should take: evidence of surprise, never a ceiling on its own. */
   expectedActions?: number;
+  /** `investigate` holds the session to reading: a change outside this machine is refused. */
+  intent?: TaskIntent;
 }
+
+export const TASK_INTENT = { INVESTIGATE: 'investigate' } as const;
+
+export type TaskIntent = (typeof TASK_INTENT)[keyof typeof TASK_INTENT];
 
 export function taskDirFor(home: string): string {
   return join(home, MEMNOX_HOME, TASK_DIR);
@@ -40,10 +46,11 @@ export interface TaskDeclaration {
   statement: string;
   scope: DeclaredScope;
   expectedActions?: number;
+  intent?: TaskIntent;
 }
 
 export function taskFor(declaration: TaskDeclaration, now: string): SessionTask {
-  const { expectedActions } = declaration;
+  const { expectedActions, intent } = declaration;
   return {
     id: `tsk_${Date.parse(now).toString(36)}`,
     sessionId: declaration.sessionId,
@@ -51,6 +58,7 @@ export function taskFor(declaration: TaskDeclaration, now: string): SessionTask 
     scope: declaration.scope,
     declaredAt: now,
     ...(expectedActions === undefined ? {} : { expectedActions }),
+    ...(intent === undefined ? {} : { intent }),
   };
 }
 

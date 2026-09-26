@@ -77,6 +77,10 @@ export function registerRunCommand(
     .option('--services <list>', 'services the task covers, comma separated')
     .option('--envs <list>', 'environments the task covers, comma separated')
     .option('--expect <count>', 'roughly how many actions this should take')
+    .option(
+      '--investigate',
+      'the task is an investigation: nothing outside this machine changes',
+    )
     .option('--role <name>', 'the job this agent is enrolled under, matched by roles:')
     .action(async (command: readonly string[], options: RunOptions) =>
       runAgent(context, deps, command, options),

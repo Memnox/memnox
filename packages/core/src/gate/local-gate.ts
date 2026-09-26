@@ -4,7 +4,9 @@ import type { Alternative, MatchedPolicy } from '../domain/decision';
 import { DECISION_EFFECT } from '../constants/decision.constants';
 import { PolicyEngine, type Policy } from '../policy/index';
 import { matchesAny } from '../policy/pattern-matcher';
-import { scopeOf, type SessionTask } from '../session/session-task';
+import { scopeOf, TASK_INTENT, type SessionTask } from '../session/session-task';
+import { reachesOutside } from '../notice/turn';
+import { TOOL_CLASS } from '../discovery/classify';
 import { SCOPE_MATCH, type ScopeComparison } from '../domain/task';
 import { containmentAsk, type Containment, type ContainmentAsk } from './containment';
 import type { NoticePort } from '../notice/unusual-notice';
@@ -116,7 +118,9 @@ export class LocalGate {
         ? {}
         : { state: this.options.stateFacts }),
     });
-    const contained = this.contained(request, evaluation.effect);
+    const contained =
+      offIntent(this.options.task ?? null, request, evaluation.effect) ??
+      this.contained(request, evaluation.effect);
     return {
       effect: effectUnder(evaluation.effect, contained),
       reason: contained === null ? evaluation.reason : contained.reason,
@@ -155,4 +159,29 @@ function effectUnder(
 ): DecisionEffect {
   if (contained === null) return effect;
   return contained.refuses === true ? DECISION_EFFECT.DENY : DECISION_EFFECT.ASK;
+}
+
+const CHANGES: readonly string[] = [
+  TOOL_CLASS.WRITE,
+  TOOL_CLASS.DESTRUCTIVE,
+  TOOL_CLASS.COMMUNICATION,
+];
+
+/**
+ * A task declared as an investigation is held to reading: a change outside this machine
+ * is refused with the ask quoted, whatever the rules would have said, a refusal aside.
+ */
+function offIntent(
+  task: SessionTask | null,
+  request: ActionRequest,
+  effect: DecisionEffect,
+): ContainmentAsk | null {
+  if (task === null || task.intent !== TASK_INTENT.INVESTIGATE) return null;
+  if (effect === DECISION_EFFECT.DENY || !reachesOutside(request.action)) return null;
+  if (!CHANGES.includes(request.toolClass ?? '')) return null;
+  return {
+    reason: `"${task.statement}" is an investigation, and this changes something outside this machine.`,
+    signal: 'intent:investigate',
+    refuses: true,
+  };
 }

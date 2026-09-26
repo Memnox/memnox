@@ -19,6 +19,7 @@ import {
   taskFor,
   type DeclaredScope,
   type SessionTask,
+  TASK_INTENT,
 } from '@memnox/core';
 import {
   DEFAULT_AGENT_NAME,
@@ -87,6 +88,7 @@ export interface RunOptions {
   envs?: string;
   expect?: string;
   role?: string;
+  investigate?: boolean;
 }
 
 /** Everything the run set up before the agent took the terminal, and what the rail says about it. */
@@ -318,7 +320,9 @@ async function declareTask(
     ...listOf('services', options.services),
     ...listOf('environments', options.envs),
   };
-  if (options.task === undefined && isEmptyScope(scope)) return null;
+  if (options.task === undefined && isEmptyScope(scope) && options.investigate !== true) {
+    return null;
+  }
 
   const expected =
     options.expect === undefined ? undefined : Number.parseInt(options.expect, 10);
@@ -332,6 +336,7 @@ async function declareTask(
       statement: options.task ?? 'unstated',
       scope,
       ...(expected === undefined ? {} : { expectedActions: expected }),
+      ...(options.investigate === true ? { intent: TASK_INTENT.INVESTIGATE } : {}),
     },
     nowOf(deps).toISOString(),
   );

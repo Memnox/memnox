@@ -9,13 +9,19 @@ import { isAbsolute, join } from 'node:path';
 
 import type { Command } from 'commander';
 
-import { ownProcessEnv, REPOSITORY_TASK_HOURS, RepositoryTasks } from '@memnox/core';
+import {
+  ownProcessEnv,
+  REPOSITORY_TASK_HOURS,
+  RepositoryTasks,
+  TASK_INTENT,
+} from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
 
 interface SetOptions {
   paths?: string;
   hours?: string;
+  intent?: string;
 }
 
 export function registerTaskCommand(
@@ -31,6 +37,10 @@ export function registerTaskCommand(
     .description('Declare it, with the paths it should stay inside')
     .option('--paths <paths>', 'comma separated, relative to the repository')
     .option('--hours <hours>', `how long it stands (default ${REPOSITORY_TASK_HOURS})`)
+    .option(
+      '--intent <intent>',
+      'investigate: read anything, change nothing outside this machine',
+    )
     .action(async (statement: string, options: SetOptions) =>
       runSet(context, home(), statement, options),
     );
@@ -50,30 +60,57 @@ async function runSet(
   statement: string,
   options: SetOptions,
 ): Promise<void> {
-  const { flow } = context;
-  flow.open('memnox task set');
+  context.flow.open('memnox task set');
   const root = rootHere();
-  const paths = (options.paths ?? '')
-    .split(',')
-    .map((each) => each.trim())
-    .filter((each) => each !== '')
-    .map((each) => globFor(root, each));
+  const paths = pathsOf(root, options.paths);
   const hours = options.hours === undefined ? undefined : Number(options.hours);
   const task = await new RepositoryTasks(home).declare(
     root,
-    { statement, scope: paths.length === 0 ? {} : { paths } },
+    {
+      statement,
+      scope: paths.length === 0 ? {} : { paths },
+      ...intentOf(options.intent),
+    },
     {
       now: new Date().toISOString(),
       ...(hours === undefined || Number.isNaN(hours) ? {} : { hours }),
     },
   );
-  flow.rows('Declared', [
+  context.flow.rows('Declared', [
     { label: 'repository', value: root },
     { label: 'asked for', value: task.statement },
     ...(paths.length === 0 ? [] : [{ label: 'paths', value: paths.join(', ') }]),
+    ...(task.intent === undefined
+      ? []
+      : [
+          {
+            label: 'intent',
+            value: `${task.intent}: nothing outside this machine changes`,
+          },
+        ]),
     { label: 'until', value: task.until },
   ]);
-  flow.close('Actions outside these paths count as drift, and why quotes the ask.');
+  context.flow.close(
+    'Actions outside these paths count as drift, and why quotes the ask.',
+  );
+}
+
+function pathsOf(root: string, given: string | undefined): string[] {
+  return (given ?? '')
+    .split(',')
+    .map((each) => each.trim())
+    .filter((each) => each !== '')
+    .map((each) => globFor(root, each));
+}
+
+function intentOf(given: string | undefined): {
+  intent?: typeof TASK_INTENT.INVESTIGATE;
+} {
+  if (given === undefined) return {};
+  if (given !== TASK_INTENT.INVESTIGATE) {
+    throw new Error(`"${given}" is not an intent. The one there is: investigate.`);
+  }
+  return { intent: TASK_INTENT.INVESTIGATE };
 }
 
 async function runShow(context: CliContext, home: string): Promise<void> {

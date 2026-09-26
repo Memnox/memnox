@@ -4,7 +4,7 @@
  */
 import { DECISION_EFFECT } from '../constants/decision.constants';
 import { changesExternalState, TOOL_CLASS } from '../discovery/classify';
-import type { MemnoxEvent } from '../event/event';
+import { ACTOR_TYPE, type MemnoxEvent } from '../event/event';
 import { EXECUTION } from '../event/event';
 
 /** The few refusals named, because a list nobody scrolls is one nobody reads to the end. */
@@ -37,6 +37,10 @@ export interface SessionSummary {
   blockedCount: number;
   /** Put to a person, whatever they answered. */
   held: number;
+  /** Allowed by a person who was asked. */
+  approved: number;
+  /** Changes that ran outside this machine, over every system. Zero is the line people read. */
+  outsideChanges: number;
 }
 
 const FILE_NAMESPACES = ['file', 'filesystem'];
@@ -93,6 +97,11 @@ export function summarizeSession(events: readonly MemnoxEvent[]): SessionSummary
     })),
     blockedCount: blocked.length,
     held: ordered.filter((event) => event.effect === DECISION_EFFECT.ASK).length,
+    approved: ordered.filter(
+      (event) =>
+        event.actorType === ACTOR_TYPE.HUMAN && event.effect === DECISION_EFFECT.ALLOW,
+    ).length,
+    outsideChanges: systemsOf(ran).reduce((total, each) => total + each.changes, 0),
   };
 }
 
@@ -142,6 +151,8 @@ export function describeSummary(summary: SessionSummary): string {
     ...systems,
     ...(more > 0 ? [`${more} more system(s)`] : []),
     ...(summary.blockedCount > 0 ? [`${summary.blockedCount} stopped`] : []),
+    ...(summary.approved > 0 ? [`${summary.approved} approved`] : []),
+    `${summary.outsideChanges} change(s) outside this machine`,
   ];
   return `session ${summary.sessionId}: ${parts.join('; ')}. memnox report --session ${summary.sessionId}`;
 }
