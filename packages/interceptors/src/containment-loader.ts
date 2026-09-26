@@ -7,7 +7,6 @@ import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
-  DISCOVERED_AGENT_KIND,
   ENV_AGENT_NAME,
   PROBATION_KIND,
   ProbationRegister,
@@ -16,10 +15,10 @@ import {
   SessionContainments,
   trustCommandFor,
   type Containment,
+  agentOfMarkers,
 } from '@memnox/core';
 
 import { repositoryRootOf } from './seam-runtime';
-import { DEFAULT_AGENT_NAME } from './tool-hook.constants';
 
 /** Where a write lands without asking: temp, however the platform spells it, and devices. */
 const SCRATCH: readonly string[] = [
@@ -29,13 +28,6 @@ const SCRATCH: readonly string[] = [
   '/private/var/folders',
   '/dev',
 ];
-
-/** The agent an environment marker names, for a hooked agent that sets no Memnox variable. */
-const MARKER_AGENTS: Readonly<Record<string, string>> = {
-  CLAUDECODE: DEFAULT_AGENT_NAME,
-  CODEX_SANDBOX: DISCOVERED_AGENT_KIND.CODEX_CLI,
-  CURSOR_AGENT: DISCOVERED_AGENT_KIND.CURSOR,
-};
 
 export interface ContainmentSources {
   home: string;
@@ -96,11 +88,6 @@ export async function containmentFor(
 async function clonedByAnAgent(home: string, root: string, now: Date): Promise<boolean> {
   const entries = await new ProbationRegister(home).all();
   return probationOf(entries, PROBATION_KIND.REPOSITORY, root, now) !== null;
-}
-
-function agentOfMarkers(env: NodeJS.ProcessEnv): string | null {
-  const marker = Object.keys(MARKER_AGENTS).find((name) => (env[name] ?? '') !== '');
-  return marker === undefined ? null : (MARKER_AGENTS[marker] ?? null);
 }
 
 /** The platform's temp as well as the usual spellings, resolved, since macOS links /tmp. */

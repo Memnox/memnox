@@ -1,5 +1,6 @@
 import {
   FileAllowances,
+  parentAgentsOf,
   ENV_AGENT_NAME,
   ENV_POLICIES,
   LocalGate,
@@ -50,6 +51,9 @@ export async function loadLocalGate(
   return new LocalGate(set.policies, {
     agentName: environment.agentName ?? `${MCP_ACTION_PREFIX}:${serverName}`,
     allowances: () => allowances.inForceNow(new Date().toISOString()),
+    ...(environment.agentName === undefined
+      ? {}
+      : { parents: parentAgentsOf(process.env, environment.agentName) }),
   });
 }
 

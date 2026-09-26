@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 
 import {
   FileAllowances,
+  parentAgentsOf,
   LocalGate,
   openNotice,
   SessionTasks,
@@ -56,6 +57,8 @@ export async function loadHookGate(
       stateFacts: stateLabelsOf(overlays, now()),
       ...(containment === null ? {} : { containment }),
       allowances: await new FileAllowances(home).inForce(now()),
+      // An agent another agent started is held to that agent's rules as well as its own.
+      parents: parentAgentsOf(process.env, config.agentName ?? DEFAULT_AGENT_NAME),
     },
     sources,
   );

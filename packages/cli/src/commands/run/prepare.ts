@@ -20,6 +20,9 @@ import {
   type DeclaredScope,
   type SessionTask,
   TASK_INTENT,
+  ENV_PARENT_AGENTS,
+  parentAgentsOf,
+  SESSION_VAR,
 } from '@memnox/core';
 import {
   DEFAULT_AGENT_NAME,
@@ -159,11 +162,31 @@ function startingPoint(input: PrepareRunInput): StartingPoint {
       : untrustedHint((deps.familiarity ?? familiarityOf)(home, root));
   const env = input.environment(home, sessionId);
   if (options.role !== undefined) env[ENV_AGENT_ROLE] = options.role;
-  const agent =
-    env[ENV_AGENT_NAME] ?? AGENT_OF_BINARY[basename(binary)] ?? basename(binary);
+  const agent = agentOfRun(env, binary);
   // Every seam the agent's children reach reads this, so none of them reports it anonymous.
   env[ENV_AGENT_NAME] = agent;
+  const parents = parentsOfRun(agent);
+  if (parents.length > 0) env[ENV_PARENT_AGENTS] = parents.join(',');
   return { binary, home, sessionId, agent, env, cwd, root, hint };
+}
+
+/**
+ * The agent this run starts. Inside another run the inherited name is the parent's, so the
+ * child is named by its own binary; outside one, a name somebody set is kept.
+ */
+function agentOfRun(env: NodeJS.ProcessEnv, binary: string): string {
+  const own = AGENT_OF_BINARY[basename(binary)] ?? basename(binary);
+  if (process.env[SESSION_VAR] !== undefined) return own;
+  return env[ENV_AGENT_NAME] ?? own;
+}
+
+/** The agents above this run: the chain it inherited, and the run or agent it was started in. */
+function parentsOfRun(agent: string): string[] {
+  const outer =
+    process.env[SESSION_VAR] === undefined ? undefined : process.env[ENV_AGENT_NAME];
+  const above = parentAgentsOf(process.env, agent);
+  const chain = outer === undefined ? above : [...above, outer];
+  return [...new Set(chain)].filter((each) => each !== agent);
 }
 
 /** The records and the wall, set once the proxy is known. */

@@ -1,7 +1,7 @@
 import type { DecisionEffect } from '../constants/decision.constants';
 import type { ActionRequest } from '../domain/action-event';
 import type { Alternative, MatchedPolicy } from '../domain/decision';
-import { DECISION_EFFECT } from '../constants/decision.constants';
+import { DECISION_EFFECT, EFFECT_PRECEDENCE } from '../constants/decision.constants';
 import { PolicyEngine, type Policy } from '../policy/index';
 import { matchesAny } from '../policy/pattern-matcher';
 import { scopeOf, TASK_INTENT, type SessionTask } from '../session/session-task';
@@ -38,6 +38,8 @@ export interface LocalGateOptions {
   stateFacts?: readonly string[];
   /** The session's repository, and whether it or its agent is on a shorter leash. */
   containment?: Containment;
+  /** The agents that started this one, outermost first. Their rules bind it too. */
+  parents?: readonly string[];
   /** Scopes a person allowed for a while, which turn an ask inside them into an allow. */
   allowances?: readonly Allowance[] | (() => readonly Allowance[]);
 }
@@ -137,13 +139,37 @@ export class LocalGate {
     };
   }
 
+  /**
+   * As this agent, and as every agent that started it, the strictest answer winning, so a
+   * child never does what its parent may not.
+   */
   private evaluated(
     request: ActionRequest,
     at: Date,
     drift: ScopeComparison,
   ): ReturnType<PolicyEngine['evaluate']> {
+    const own = this.evaluatedAs(this.options.agentName, request, at, drift);
+    let strictest = own;
+    for (const parent of this.options.parents ?? []) {
+      const theirs = this.evaluatedAs(parent, request, at, drift);
+      if (EFFECT_PRECEDENCE[theirs.effect] <= EFFECT_PRECEDENCE[strictest.effect])
+        continue;
+      strictest = {
+        ...theirs,
+        reason: `${parent}, which started this agent, may not do this: ${theirs.reason}`,
+      };
+    }
+    return strictest;
+  }
+
+  private evaluatedAs(
+    agentName: string,
+    request: ActionRequest,
+    at: Date,
+    drift: ScopeComparison,
+  ): ReturnType<PolicyEngine['evaluate']> {
     return this.engine.evaluate(request, {
-      agentName: this.options.agentName,
+      agentName,
       now: at,
       ...(this.options.agentRole === undefined
         ? {}
