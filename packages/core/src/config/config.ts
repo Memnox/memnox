@@ -5,6 +5,11 @@ import {
 } from '../constants/enforcement.constants';
 import { isEnforcementMode } from '../domain/enforcement';
 import { DEFAULT_NOTICE_WARMUP_DAYS } from '../notice/notice.constants';
+import {
+  APPROVAL_ROUTE,
+  isApprovalRoute,
+  type ApprovalRoute,
+} from '../constants/approval-route.constants';
 
 /** Everything this product writes lives under here, so no command writes where another does not look. */
 export const MEMNOX_HOME = '.memnox';
@@ -36,6 +41,11 @@ export interface MemnoxConfig {
   noticeUnusual: boolean;
   /** Days after setup when unusual actions are only recorded, so day one asks nothing. */
   noticeWarmupDays: number;
+  /**
+   * Where a question goes when the agent cannot show its own prompt: `session` asks in
+   * the agent's session, `dm` in Slack or Discord through the workspace, `both` in each.
+   */
+  approvals: ApprovalRoute;
 }
 
 export const DEFAULT_CONFIG: MemnoxConfig = {
@@ -46,6 +56,7 @@ export const DEFAULT_CONFIG: MemnoxConfig = {
   approvedAgents: [],
   noticeUnusual: true,
   noticeWarmupDays: DEFAULT_NOTICE_WARMUP_DAYS,
+  approvals: APPROVAL_ROUTE.SESSION,
 };
 
 const KEYS = [
@@ -56,6 +67,7 @@ const KEYS = [
   'approvedAgents',
   'noticeUnusual',
   'noticeWarmupDays',
+  'approvals',
 ] as const;
 export type ConfigKey = (typeof KEYS)[number];
 
@@ -95,6 +107,7 @@ export function parseConfig(raw: string): MemnoxConfig {
     if (key === 'noticeWarmupDays' && isWholeDays(value)) {
       config.noticeWarmupDays = Number(value);
     }
+    if (key === 'approvals' && isApprovalRoute(value)) config.approvals = value;
   }
   return config;
 }
@@ -142,6 +155,10 @@ export function renderConfig(config: MemnoxConfig): string {
     '# Days after setup when those are only recorded, so day one is not a wall of asks.',
     `noticeWarmupDays = ${config.noticeWarmupDays}`,
     '',
+    '# session | dm | both. Where a question goes when the agent cannot show its own',
+    '# prompt: asked in the agent session, in Slack or Discord, or in both at once.',
+    `approvals = "${config.approvals}"`,
+    '',
   ].join('\n');
 }
 
@@ -169,6 +186,14 @@ export function validateConfigValue(key: ConfigKey, value: string): ConfigParse 
     return { value };
   }
   if (key === 'approvedAgents') return { value };
+  if (key === 'approvals') {
+    return isApprovalRoute(value)
+      ? { value }
+      : {
+          value,
+          error: `approvals must be one of ${Object.values(APPROVAL_ROUTE).join(', ')}`,
+        };
+  }
   if (key === 'noticeWarmupDays') {
     return isWholeDays(value)
       ? { value }
@@ -192,6 +217,8 @@ export function applyConfigValue(
   if (key === 'approvedAgents') return { ...config, approvedAgents: splitList(value) };
   if (key === 'noticeUnusual') return { ...config, noticeUnusual: value === 'true' };
   if (key === 'noticeWarmupDays') return { ...config, noticeWarmupDays: Number(value) };
+  // validateConfigValue has already refused anything that is not a route.
+  if (key === 'approvals') return { ...config, approvals: value as ApprovalRoute };
   return { ...config, telemetry: value === 'true' };
 }
 

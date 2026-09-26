@@ -3,6 +3,7 @@ export * from './constants/action.constants';
 export * from './constants/session.constants';
 export * from './constants/decision.constants';
 export * from './constants/enforcement.constants';
+export * from './constants/approval-route.constants';
 export * from './constants/risk.constants';
 export * from './domain/action-class';
 export * from './domain/capability';

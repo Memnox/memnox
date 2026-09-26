@@ -21,6 +21,16 @@ export interface PendingApproval {
   answeredAt?: string;
   /** Who answered, because "who approved this" is the first postmortem question. */
   answeredBy?: string;
+  /**
+   * Where it may be answered: `session` stays on this machine, `dm` and `both` reach the
+   * workspace. Absent is every call raised before the field, which the workspace saw.
+   */
+  route?: 'session' | 'dm' | 'both';
+}
+
+/** Whether the workspace is sent this call, so a person can answer it from chat. */
+export function goesToWorkspace(pending: PendingApproval): boolean {
+  return pending.route !== 'session';
 }
 
 export type AnswerOutcome =
@@ -54,6 +64,11 @@ export class PendingApprovals {
     };
     await this.records.write(pending.id, pending);
     return pending;
+  }
+
+  /** Rewrites a call already raised, as it is given. */
+  keep(pending: PendingApproval): Promise<void> {
+    return this.records.write(pending.id, pending);
   }
 
   /** Null when it was answered and cleared, or never raised. */

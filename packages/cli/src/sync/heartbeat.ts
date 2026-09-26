@@ -6,6 +6,8 @@ import {
   ENFORCEMENT_MODE,
   fleetBudgets,
   HOLD_ANSWER,
+  goesToWorkspace,
+  isApprovalRoute,
   isEnforcementMode,
   loadOrCreateConfig,
   MEMNOX_HOME,
@@ -105,6 +107,8 @@ interface HeartbeatReply {
   fleetSpend?: { name: string; spent: number }[];
   /** What the workspace has this machine set to. Applied only when it changes. */
   mode?: string;
+  /** Where the workspace wants questions to go: `session`, `dm` or `both`. Likewise. */
+  approvals?: string;
 }
 
 /** What one beat reports, gathered before the call so the call is only the call. */
@@ -278,6 +282,7 @@ async function beat(home: string, account: Account, pull: PullResult): Promise<v
 
   await applyAnswers(approvals, response.body?.answers ?? [], moment);
   await applyMode({ home, account, running: state.running, told: response.body?.mode });
+  await applyApprovalRoute(home, response.body?.approvals);
 
   // Written even when the reply is empty, so a fleet count nobody can confirm falls back to this machine's.
   if (state.asking.length > 0) {
@@ -304,7 +309,8 @@ async function readBeatState(input: {
   return {
     running: await runningMode(home),
     applied: pull.outcome === PULL_OUTCOME.APPLIED ? pull.hash : await heldHash(home),
-    holding: await input.approvals.list(input.moment),
+    // A question somebody asked to keep in the session never leaves the machine.
+    holding: (await input.approvals.list(input.moment)).filter(goesToWorkspace),
     asking: fleetBudgets(await readBudgets(home)).filter(
       (budget) => windowHoursOf(budget) > 0,
     ),
@@ -385,6 +391,24 @@ async function applyMode(input: {
     await saveConfig(home, { ...config, mode: told });
   } catch {
     // Silent, because a machine that cannot be graduated must still beat.
+  }
+}
+
+/**
+ * Where questions go, when the workspace sets it. Set here or there, whichever changed
+ * last: applied on a change only, so an edit to `config.toml` holds until the workspace
+ * says something different. Read afresh, since `applyMode` may have just written the account.
+ */
+async function applyApprovalRoute(home: string, told: string | undefined): Promise<void> {
+  if (told === undefined || !isApprovalRoute(told)) return;
+  try {
+    const account = await readAccount(home);
+    if (account === null || told === account.cloudApprovals) return;
+    await writeAccount(home, { ...account, cloudApprovals: told });
+    const config = await loadOrCreateConfig(home);
+    if (config.approvals !== told) await saveConfig(home, { ...config, approvals: told });
+  } catch {
+    // Silent, for the reason a mode is: a machine that cannot be told must still beat.
   }
 }
 

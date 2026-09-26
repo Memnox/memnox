@@ -39,7 +39,7 @@ interface Beat {
 describe('a mode set in the workspace', () => {
   let home: string;
   let beats: Beat[];
-  let reply: { mode?: string };
+  let reply: { mode?: string; approvals?: string };
 
   const account = (over: Partial<Account> = {}): Account => ({
     version: 1,
@@ -119,6 +119,17 @@ describe('a mode set in the workspace', () => {
     await onePass(home);
 
     expect((await loadOrCreateConfig(home)).mode).toBe(ENFORCEMENT_MODE.OBSERVE);
+  });
+
+  it('sends questions to a DM when the workspace says so, and keeps a later local edit', async () => {
+    await writeAccount(home, account());
+    reply = { approvals: 'dm' };
+    await onePass(home);
+    expect((await loadOrCreateConfig(home)).approvals).toBe('dm');
+
+    await saveConfig(home, { ...(await loadOrCreateConfig(home)), approvals: 'session' });
+    await onePass(home);
+    expect((await loadOrCreateConfig(home)).approvals).toBe('session');
   });
 
   /* The one that matters. The reply says the same thing every minute; only a

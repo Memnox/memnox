@@ -7,6 +7,7 @@ import type {
   EnvironmentSnapshot,
   SnapshotAgent,
 } from '@memnox/core';
+import { APPROVAL_ROUTE, loadOrCreateConfig, saveConfig } from '@memnox/core';
 import type { CliContext } from '../cli-context';
 import { confirmOnTerminal, type Confirm } from '../confirm';
 import { describeCount } from '../plural';
@@ -138,6 +139,7 @@ async function runSetup(deps: SetupDeps, options: SetupOptions): Promise<void> {
   const reported = await deps.reportScan(deps.home()).catch(() => false);
   // The profile line is the one change asked for by name, so `--yes` does not make it.
   if (deps.interactive()) await offerPathLine(deps);
+  if (deps.interactive()) await offerApprovalRoute(deps);
   renderSummary(context, { account, results, reported, wired });
 }
 
@@ -172,6 +174,20 @@ async function offerPathLine(deps: SetupDeps): Promise<void> {
     'Add the interceptors to your login PATH, so an editor started from the dock meets them too?',
   );
   if (wanted) await runPathLine(deps.context, false);
+}
+
+/**
+ * Asked once, and only on a connected machine, since a DM needs the workspace. Left alone
+ * where somebody already chose, here or in the workspace, because setup is run again.
+ */
+async function offerApprovalRoute(deps: SetupDeps): Promise<void> {
+  const config = await loadOrCreateConfig(deps.home());
+  if (config.approvals !== APPROVAL_ROUTE.SESSION) return;
+  const wanted = await deps.confirm(
+    'When an agent cannot ask you in its own session, send the question to your Slack or Discord DM too?',
+  );
+  if (wanted)
+    await saveConfig(deps.home(), { ...config, approvals: APPROVAL_ROUTE.BOTH });
 }
 
 /** Scans, and says what it found; null when there is nothing to offer. */

@@ -56,6 +56,7 @@ describe('the config file', () => {
       approvedAgents: ['claude-code', 'cursor'],
       noticeUnusual: false,
       noticeWarmupDays: 0,
+      approvals: 'both' as const,
     };
     expect(parseConfig(renderConfig(config))).toEqual(config);
   });

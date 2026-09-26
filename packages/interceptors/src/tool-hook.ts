@@ -16,6 +16,14 @@ import {
   type EventSink,
   FileGrants,
   grantKeyFor,
+  APPROVAL_ROUTE,
+  holdInChat,
+  HOLD_ANSWER,
+  openQuestionFor,
+  PendingApprovals,
+  type ApprovalRoute,
+  type ChatQuestion,
+  type PendingApproval,
 } from '@memnox/core';
 
 import { HookAuthorizer } from './hook-authorizer';
@@ -59,6 +67,7 @@ export interface ToolHookSeams {
   mode?: EnforcementMode;
   /** Null records nothing. */
   sink?: EventSink | null;
+  route?: ApprovalRoute;
 }
 
 /** What the hook decided, and what it says to the host, or null for no reply. */
@@ -90,11 +99,14 @@ export async function answerToolCall(
   context: ToolHookContext,
   seams: ToolHookSeams = {},
 ): Promise<ToolAnswer | null> {
-  const call = toolCallOf(payload, context.home);
-  if (call === null) return null;
+  const found = toolCallOf(payload, context.home);
+  if (found === null) return null;
   const mode = seams.mode ?? (await readMachineMode(context.home));
   // Off means nothing is ruled on or recorded, which is what somebody turning it off wants.
   if (mode === ENFORCEMENT_MODE.OFF) return null;
+  const route = seams.route ?? (await readApprovalRoute(context.home));
+  // A person who wants questions in their DM wants them there, not in a prompt here.
+  const call = route === APPROVAL_ROUTE.DM ? { ...found, nativeAsk: false } : found;
 
   const authorizer = seams.authorizer ?? (await authorizerFor(context, call.sessionId));
   const ruled = await ruleOnTool(call, {
@@ -103,7 +115,9 @@ export async function answerToolCall(
     env: context.env,
     home: context.home,
   });
-  const ruling = await withSessionGrant(ruled, sessionFor(call, context), context.home);
+  const sessionId = sessionFor(call, context);
+  const granted = await withSessionGrant(ruled, sessionId, context.home);
+  const ruling = await withChatAnswer(granted, sessionId, context);
   // The breaker counts drift for a session only the hooks see, which reports nothing else.
   if (ruling.effect === DECISION_EFFECT.ALLOW && ruling.outOfScope === true) {
     await reportToDaemon(context.home, {
@@ -118,11 +132,77 @@ export async function answerToolCall(
     const sink = seams.sink === undefined ? openLedger(context.home) : seams.sink;
     await keep(sink, call, ruling, context);
   }
+  const asked = putsQuestion(call, ruling, context.personThere);
+  const held =
+    ruling.effect === DECISION_EFFECT.ASK && !asked
+      ? await heldFor(ruling, sessionId, route, context)
+      : null;
   return {
     call,
     ruling,
-    reply: toolReply(call, ruling, context.personThere),
-    asked: putsQuestion(call, ruling, context.personThere),
+    reply: toolReply(call, ruling, context.personThere, held),
+    asked,
+  };
+}
+
+/** Where questions go, from `config.toml`; in the session where nothing says otherwise. */
+export async function readApprovalRoute(home: string): Promise<ApprovalRoute> {
+  try {
+    return parseConfig(await readFile(configPathFor(home), 'utf8')).approvals;
+  } catch {
+    return APPROVAL_ROUTE.SESSION;
+  }
+}
+
+/** The question written down for a person, or null where it could not be, which refuses as before. */
+async function heldFor(
+  ruling: ToolRuling,
+  sessionId: string,
+  route: ApprovalRoute,
+  context: ToolHookContext,
+): Promise<PendingApproval | null> {
+  const question = questionOf(ruling, sessionId, context.agent);
+  return holdInChat(
+    new PendingApprovals(context.home),
+    question,
+    route,
+    context.now().toISOString(),
+  ).catch(() => null);
+}
+
+/**
+ * The retry after a person answered a held question: a yes lets it through, "for this
+ * session" stops the asking, and a no refuses it with their word rather than a rule's.
+ */
+async function withChatAnswer(
+  ruling: ToolRuling,
+  sessionId: string,
+  context: ToolHookContext,
+): Promise<ToolRuling> {
+  if (ruling.effect !== DECISION_EFFECT.ASK) return ruling;
+  const approvals = new PendingApprovals(context.home);
+  const question = questionOf(ruling, sessionId, context.agent);
+  const held = await openQuestionFor(
+    approvals,
+    question,
+    context.now().toISOString(),
+  ).catch(() => null);
+  if (held?.answer === undefined) return ruling;
+  await approvals.clear(held.id).catch(() => undefined);
+  const by = held.answeredBy ?? 'a person';
+  if (held.answer === HOLD_ANSWER.SESSION)
+    await grantSession(ruling, sessionId, context.home);
+  if (held.answer === HOLD_ANSWER.ONCE || held.answer === HOLD_ANSWER.SESSION) {
+    return {
+      ...ruling,
+      effect: DECISION_EFFECT.ALLOW,
+      reason: `${by} allowed this (${held.id})`,
+    };
+  }
+  return {
+    ...ruling,
+    effect: DECISION_EFFECT.DENY,
+    reason: `${by} said no to this (${held.id})`,
   };
 }
 
@@ -150,6 +230,34 @@ async function withSessionGrant(
     effect: DECISION_EFFECT.ALLOW,
     reason: `a person already allowed ${ruling.action} in this session`,
   };
+}
+
+/** What a held question is about, from the ruling that raised it. */
+function questionOf(ruling: ToolRuling, sessionId: string, agent: string): ChatQuestion {
+  return {
+    sessionId,
+    agent,
+    action: ruling.action,
+    ...(ruling.target === undefined ? {} : { target: ruling.target }),
+    class: ruling.class,
+    reason: ruling.reason,
+  };
+}
+
+/** "For this session", kept where the next call looks for it. Best effort, like every grant. */
+async function grantSession(
+  ruling: ToolRuling,
+  sessionId: string,
+  home: string,
+): Promise<void> {
+  await new FileGrants(home)
+    .grant({
+      sessionId,
+      operation: grantKeyFor(ruling.action, ruling.target),
+      fingerprint: ruling.target ?? ruling.action,
+      class: ruling.class,
+    })
+    .catch(() => undefined);
 }
 
 /** The session `memnox run` set, then the host's own, the way every row here is filed. */

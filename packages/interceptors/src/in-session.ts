@@ -3,7 +3,18 @@
  * a decision already taken where the agent meets it, and a person's yes learned from the
  * agent's own prompt. Every part is best effort, since none of it may stop the agent.
  */
-import { DECISION_EFFECT, SessionTasks, TASK_INTENT, taskFromPrompt } from '@memnox/core';
+import { userInfo } from 'node:os';
+
+import {
+  DECISION_EFFECT,
+  HOLD_ANSWER,
+  openInSession,
+  PendingApprovals,
+  replyOf,
+  SessionTasks,
+  TASK_INTENT,
+  taskFromPrompt,
+} from '@memnox/core';
 
 import { EDIT_HOST } from './agent-edits';
 import type { EditHookContext } from './edit-claims';
@@ -112,6 +123,14 @@ export async function beforePause(
     }
     if (pause.moment !== SESSION_MOMENT.PROMPT || pause.prompt === undefined) return null;
     const sessionId = context.runSession ?? pause.sessionId;
+    const answered = await answerInChat(
+      context.home,
+      sessionId,
+      pause.prompt,
+      context.now(),
+    );
+    // An answer is not a new ask, so it never replaces the task the session is working on.
+    if (answered !== null) return answered;
     const noted = await taskOfPrompt(
       context.home,
       sessionId,
@@ -150,6 +169,42 @@ async function taskOfPrompt(
   if (task === null) return null;
   await tasks.declare(task);
   return task.intent === TASK_INTENT.INVESTIGATE ? INVESTIGATION_NOTE : null;
+}
+
+/**
+ * The person's reply to a question Memnox is holding in this session, recorded as their
+ * answer, and what the agent is told so it tries again or stops. Null where it is not one.
+ */
+export async function answerInChat(
+  home: string,
+  sessionId: string,
+  prompt: string,
+  now: Date,
+  person: () => string = personName,
+): Promise<string | null> {
+  if (sessionId === '') return null;
+  const approvals = new PendingApprovals(home);
+  const moment = now.toISOString();
+  const reply = replyOf(prompt, await openInSession(approvals, sessionId, moment));
+  if (reply === null) return null;
+  const outcome = await approvals.answer(reply.id, reply.answer, person(), moment);
+  const held = outcome === null ? null : 'answered' in outcome ? outcome.answered : null;
+  if (held === null) return null;
+  const what = held.request.operation;
+  if (reply.answer === HOLD_ANSWER.DENY) {
+    return `Memnox: the person said no to ${what} (${held.id}). Do not try it, or the same thing another way.`;
+  }
+  const scope =
+    reply.answer === HOLD_ANSWER.SESSION ? 'for the rest of this session' : 'once';
+  return `Memnox: the person allowed ${what} ${scope} (${held.id}). Try the same call again now.`;
+}
+
+function personName(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return 'a person';
+  }
 }
 
 /** Said to the agent when the ask reads as an investigation, so a refusal is no surprise. */

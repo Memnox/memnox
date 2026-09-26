@@ -8,6 +8,7 @@ import {
   EVENT_SCHEMA_VERSION,
   EVENT_SURFACE,
   EXECUTION,
+  heldText,
   localRuleRef,
   newEventId,
   TOOL_CLASS,
@@ -16,6 +17,7 @@ import {
   type EnforcementMode,
   type EventSurface,
   type MemnoxEvent,
+  type PendingApproval,
   type ToolClass,
 } from '@memnox/core';
 
@@ -194,12 +196,13 @@ export function toolReply(
   call: ToolCall,
   ruling: ToolRuling,
   personThere: boolean,
+  held: PendingApproval | null = null,
 ): ToolReply | null {
   if (ruling.effect === DECISION_EFFECT.ALLOW) {
     return call.allowReply === undefined ? null : { stdout: call.allowReply };
   }
   const asking = putsQuestion(call, ruling, personThere);
-  const reason = reasonFor(ruling, asking);
+  const reason = reasonFor(ruling, asking, held);
   if (call.host === EDIT_HOST.WINDSURF)
     return { stderr: reason, exitCode: WINDSURF_BLOCK };
   const decision = asking ? DECISION_EFFECT.ASK : DECISION_EFFECT.DENY;
@@ -227,12 +230,17 @@ export function putsQuestion(
 }
 
 /** The rule's reason and its way forward, and why a question became a refusal. */
-function reasonFor(ruling: ToolRuling, asking: boolean): string {
+function reasonFor(
+  ruling: ToolRuling,
+  asking: boolean,
+  held: PendingApproval | null,
+): string {
   const parts = [`Memnox: ${ruling.reason}`];
   if (ruling.rule !== undefined) parts.push(`(rule ${ruling.rule})`);
   if (ruling.alternative !== undefined)
     parts.push(describeAlternative(ruling.alternative));
-  if (ruling.effect === DECISION_EFFECT.ASK && !asking) parts.push(NO_WAY_TO_ASK);
+  if (ruling.effect === DECISION_EFFECT.ASK && !asking)
+    parts.push(held === null ? NO_WAY_TO_ASK : heldText(held));
   return parts.join(' ');
 }
 
