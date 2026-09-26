@@ -56,6 +56,8 @@ interface MachineStatus {
   waiting: number;
   paused: number;
   workspace: string | null;
+  /** The workspace let this machine go: revoked it, or removed it. Absent is no. */
+  removed?: boolean;
   /** Agents silent in the ledger for a month that still hold reach, by the name a person types. */
   dormant: { name: string; reach: string }[];
   /** Agents and servers still on probation, and when each ends on its own. */
@@ -123,6 +125,7 @@ export async function readStatus(home: string, project: string): Promise<Machine
     waiting: health.waitingApprovals,
     paused: health.pausedSessions,
     workspace: workspaceOf(account),
+    removed: account !== null && account.revokedAt !== undefined,
     dormant: dormant.map((agent) => ({
       name: agent.name,
       reach: describeReach(agent.reach),
@@ -200,6 +203,8 @@ function renderStatus(context: CliContext, status: MachineStatus): void {
   }
   if (status.workspace === null) {
     flow.hint('"memnox login" connects this machine to your team.');
+  } else if (status.removed === true) {
+    flow.hint('"memnox login" connects this machine to a team again.');
   }
 }
 
@@ -289,7 +294,11 @@ function activityRows(context: CliContext, status: MachineStatus): FlowRow[] {
       value:
         status.workspace === null
           ? 'not connected, so nothing leaves this machine'
-          : status.workspace,
+          : status.removed === true
+            ? style.warn(
+                `removed from ${status.workspace}, so nothing leaves this machine`,
+              )
+            : status.workspace,
     },
   ];
 }

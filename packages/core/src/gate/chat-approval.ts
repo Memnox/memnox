@@ -1,7 +1,7 @@
 /**
  * A question for a person when the agent cannot show a prompt of its own: held as a call,
- * put in the session or a DM, and answered by the person's next prompt. Only the person
- * types a prompt, so a yes the agent writes itself never counts.
+ * always asked in the session and in their DM where they asked for that. Only the person
+ * types a prompt or answers a DM, so a yes the agent writes itself never counts.
  */
 import { digest } from '../domain/digest';
 import { HOLD_ANSWER, type HoldAnswer, type HoldRequest } from './hold';
@@ -11,11 +11,6 @@ import {
   APPROVAL_ROUTE,
   type ApprovalRoute,
 } from '../constants/approval-route.constants';
-
-/** Whether the person's own reply in the session can answer, rather than only a DM. */
-export function answersInSession(route: ApprovalRoute): boolean {
-  return route !== APPROVAL_ROUTE.DM;
-}
 
 /** Long enough for somebody to come back from a meeting, short enough to be about now. */
 export const CHAT_APPROVAL_MS = 30 * 60 * 1000;
@@ -129,21 +124,62 @@ export async function openInSession(
 ): Promise<PendingApproval[]> {
   const open = await approvals.list(moment);
   return open.filter(
+    (each) => each.request.sessionId === sessionId && each.answer === undefined,
+  );
+}
+
+/** Answered where the agent was not listening, and not yet told: from a DM, mostly. */
+export async function answeredUntold(
+  approvals: PendingApprovals,
+  sessionId: string,
+  moment: string,
+): Promise<PendingApproval[]> {
+  const open = await approvals.list(moment);
+  return open.filter(
     (each) =>
       each.request.sessionId === sessionId &&
-      each.answer === undefined &&
-      answersInSession(each.route ?? APPROVAL_ROUTE.BOTH),
+      each.answer !== undefined &&
+      each.toldAgentAt === undefined,
   );
+}
+
+/** Kept so the agent hears each answer once, however many turns end after it. */
+export async function markTold(
+  approvals: PendingApprovals,
+  held: readonly PendingApproval[],
+  moment: string,
+): Promise<void> {
+  for (const each of held) await approvals.keep({ ...each, toldAgentAt: moment });
+}
+
+/** Whether this session has a question sent to a DM that nobody has answered yet. */
+export async function waitingOnDm(
+  approvals: PendingApprovals,
+  sessionId: string,
+  moment: string,
+): Promise<boolean> {
+  const open = await openInSession(approvals, sessionId, moment);
+  return open.some((each) => each.route === APPROVAL_ROUTE.BOTH);
+}
+
+/** What the agent is told once a person answered, so it carries on or stops. */
+export function answeredText(held: PendingApproval): string {
+  const what = held.request.operation;
+  const by = held.answeredBy ?? 'the person';
+  if (held.answer === HOLD_ANSWER.ONCE || held.answer === HOLD_ANSWER.SESSION) {
+    const scope =
+      held.answer === HOLD_ANSWER.SESSION ? 'for the rest of this session' : 'once';
+    return `Memnox: ${by} allowed ${what} ${scope} (${held.id}). Try the same call again now and carry on.`;
+  }
+  return `Memnox: ${by} said no to ${what} (${held.id}). Do not try it, or the same thing another way. Carry on without it, or say what you need instead.`;
 }
 
 /** What the agent is told when its question is held, so it knows who to ask and how. */
 export function heldText(held: PendingApproval): string {
-  const route = held.route ?? APPROVAL_ROUTE.BOTH;
-  const where =
-    route === APPROVAL_ROUTE.DM
-      ? 'It was sent to the person in Slack or Discord.'
-      : route === APPROVAL_ROUTE.BOTH
-        ? `Ask the person to reply "allow", "allow for this session" or "deny" (${held.id}) here, or in Slack or Discord.`
-        : `Ask the person to reply "allow", "allow for this session" or "deny" (${held.id}) here.`;
-  return `A person has to allow this, so Memnox is holding it as ${held.id}. ${where} Try the same call again once they have answered. Doing it another way is the same action.`;
+  const ask = `Ask the person to reply "allow", "allow for this session" or "deny" (${held.id}) here.`;
+  const also =
+    held.route === APPROVAL_ROUTE.BOTH
+      ? ' It was also sent to their Slack or Discord. If they answer there, Memnox tells you when this turn ends, so say you are waiting and end your turn.'
+      : ' Try the same call again once they have answered.';
+  return `A person has to allow this, so Memnox is holding it as ${held.id}. ${ask}${also} Doing it another way is the same action.`;
 }

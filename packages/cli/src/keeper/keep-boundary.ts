@@ -100,7 +100,7 @@ export async function keepOnce(
   for (const target of seams.targets ?? EDIT_HOOK_TARGETS) {
     const change = await keepHook(home, kept, target);
     if (change !== null) changes.push(change);
-    if ((await hookIn(join(home, target.file), [])) !== HOOK.NONE)
+    if ((await hookIn(join(home, target.file), {})) !== HOOK.NONE)
       hooked.add(target.name);
   }
   if (kept.mcp) {
@@ -168,7 +168,7 @@ async function keepHook(
   // No directory is an agent that is not installed, and creating one would invent it.
   if (!existsSync(dirname(path))) return null;
   if (kept.declined.includes(target.name)) return null;
-  const found = await hookIn(path, target.currentEvents ?? [], target.agent);
+  const found = await hookIn(path, target, target.agent);
   if (found === HOOK.CURRENT) return null;
   if (!(await target.install(home))) return null;
   if (found === HOOK.OUTDATED) return { kind: KEPT_CHANGE.UPGRADED, agent: target.name };
@@ -186,9 +186,10 @@ type HookFound = (typeof HOOK)[keyof typeof HOOK];
 /** Any entry running the hook counts, because rewriting to reorder would fight the owner. */
 async function hookIn(
   path: string,
-  events: readonly string[],
+  target: Pick<EditHookTarget, 'currentEvents' | 'currentText'>,
   agent?: string,
 ): Promise<HookFound> {
+  const events = target.currentEvents ?? [];
   let text: string;
   try {
     text = await readFile(path, 'utf8');
@@ -198,7 +199,8 @@ async function hookIn(
   }
   if (
     holdsPolicyHook(text, agent) &&
-    events.every((event) => text.includes(`"${event}"`))
+    events.every((event) => text.includes(`"${event}"`)) &&
+    (target.currentText ?? []).every((mark) => text.includes(mark))
   ) {
     return HOOK.CURRENT;
   }

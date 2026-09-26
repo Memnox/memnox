@@ -17,6 +17,7 @@ import {
   installSettingsHook,
   removeClaudeHook,
   removeSettingsHook,
+  TURN_END_TIMEOUT_MARK,
   type HookEvent,
 } from './claude-hook';
 import { isInPlace, REWRITE, rewriteJsonFile } from './json-config';
@@ -208,6 +209,8 @@ export interface EditHookTarget {
   remove: (home: string) => Promise<boolean>;
   /** Events a current hook must carry, so an install from before one was added is upgraded. */
   currentEvents?: readonly string[];
+  /** Text a current hooks file holds besides its events, such as a timeout added later. */
+  currentText?: readonly string[];
 }
 
 /** Where the boundary is handed to a session: Claude Code, Codex and Gemini CLI have it. */
@@ -222,6 +225,7 @@ export const EDIT_HOOK_TARGETS: readonly EditHookTarget[] = [
     install: installClaudeHook,
     remove: removeClaudeHook,
     currentEvents: STARTS_A_SESSION,
+    currentText: [TURN_END_TIMEOUT_MARK],
   },
   {
     name: 'Codex',

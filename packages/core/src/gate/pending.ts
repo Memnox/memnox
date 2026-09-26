@@ -22,10 +22,12 @@ export interface PendingApproval {
   /** Who answered, because "who approved this" is the first postmortem question. */
   answeredBy?: string;
   /**
-   * Where it may be answered: `session` stays on this machine, `dm` and `both` reach the
-   * workspace. Absent is every call raised before the field, which the workspace saw.
+   * Where it may be answered: `session` stays on this machine, `both` reaches the
+   * workspace too. Absent is every call raised before the field, which the workspace saw.
    */
-  route?: 'session' | 'dm' | 'both';
+  route?: 'session' | 'both';
+  /** When the agent was told the answer, so it is told once. */
+  toldAgentAt?: string;
 }
 
 /** Whether the workspace is sent this call, so a person can answer it from chat. */

@@ -7,7 +7,7 @@ import {
   fleetBudgets,
   HOLD_ANSWER,
   goesToWorkspace,
-  isApprovalRoute,
+  approvalRouteOf,
   isEnforcementMode,
   loadOrCreateConfig,
   MEMNOX_HOME,
@@ -16,6 +16,7 @@ import {
   NodeSnapshotStore,
   PendingApprovals,
   protectionStopped,
+  markRevoked,
   readAccount,
   readAcceptedSkills,
   readBudgets,
@@ -144,9 +145,13 @@ export async function onePass(home: string): Promise<Pass> {
   const account = await readAccount(home);
   // Not logged in: no call is made at all, which is the whole promise.
   if (account === null) return {};
+  // Removed from its workspace: a revoked machine is never restored, so nothing is sent.
+  if (account.revokedAt !== undefined) return { revoked: true };
 
   try {
-    return await passFor(home, account);
+    const pass = await passFor(home, account);
+    if (pass.revoked === true) await markRevoked(home, new Date());
+    return pass;
   } catch (err) {
     if (err instanceof CloudUnreachable) return { unreachable: true };
     throw err;
@@ -400,13 +405,15 @@ async function applyMode(input: {
  * says something different. Read afresh, since `applyMode` may have just written the account.
  */
 async function applyApprovalRoute(home: string, told: string | undefined): Promise<void> {
-  if (told === undefined || !isApprovalRoute(told)) return;
+  const route = told === undefined ? null : approvalRouteOf(told);
+  if (route === null) return;
   try {
     const account = await readAccount(home);
-    if (account === null || told === account.cloudApprovals) return;
-    await writeAccount(home, { ...account, cloudApprovals: told });
+    if (account === null || route === account.cloudApprovals) return;
+    await writeAccount(home, { ...account, cloudApprovals: route });
     const config = await loadOrCreateConfig(home);
-    if (config.approvals !== told) await saveConfig(home, { ...config, approvals: told });
+    if (config.approvals !== route)
+      await saveConfig(home, { ...config, approvals: route });
   } catch {
     // Silent, for the reason a mode is: a machine that cannot be told must still beat.
   }

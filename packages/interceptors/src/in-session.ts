@@ -6,14 +6,17 @@
 import { userInfo } from 'node:os';
 
 import {
+  answeredText,
+  answeredUntold,
   DECISION_EFFECT,
-  HOLD_ANSWER,
+  markTold,
   openInSession,
   PendingApprovals,
   replyOf,
   SessionTasks,
   TASK_INTENT,
   taskFromPrompt,
+  waitingOnDm,
 } from '@memnox/core';
 
 import { EDIT_HOST } from './agent-edits';
@@ -116,38 +119,45 @@ export async function beforePause(
   env: NodeJS.ProcessEnv,
 ): Promise<string | null> {
   try {
+    const sessionId = context.runSession ?? pause.sessionId;
     if (pause.moment === SESSION_MOMENT.AFTER_TOOL) {
       await learnFromAnswer(payload, { ...context, env });
       await markIfInstructed(payload, context, env);
-      return null;
+      return await answersArrived({ ...clockOf(context, sessionId), waitMs: 0 });
+    }
+    if (pause.moment === SESSION_MOMENT.TURN_END) {
+      // Claude Code's Stop hook is written with a timeout that covers the long wait.
+      const wait =
+        pause.host === EDIT_HOST.PRE_TOOL_USE ? TURN_END_WAIT_MS : SHORT_WAIT_MS;
+      return await answersArrived({ ...clockOf(context, sessionId), waitMs: wait });
     }
     if (pause.moment !== SESSION_MOMENT.PROMPT || pause.prompt === undefined) return null;
-    const sessionId = context.runSession ?? pause.sessionId;
-    const answered = await answerInChat(
-      context.home,
-      sessionId,
-      pause.prompt,
-      context.now(),
-    );
-    // An answer is not a new ask, so it never replaces the task the session is working on.
-    if (answered !== null) return answered;
-    const noted = await taskOfPrompt(
-      context.home,
-      sessionId,
-      pause.prompt,
-      context.now(),
-    );
-    const lookup = { sessionId, prompt: pause.prompt };
-    const decided = await decisionsAt(
-      pause.cwd === undefined ? lookup : { ...lookup, cwd: pause.cwd },
-      depsOf(context, env),
-    );
-    const said = [noted, decided].filter((each): each is string => each !== null);
-    return said.length === 0 ? null : said.join('\n');
+    return await atPrompt({ ...pause, prompt: pause.prompt }, sessionId, context, env);
   } catch (err) {
     log(`session context failed at a pause: ${String(err)}`);
     return null;
   }
+}
+
+/** A prompt is an answer to a held question, or a new ask read for its task and decisions. */
+async function atPrompt(
+  pause: SessionEvent & { prompt: string },
+  sessionId: string,
+  context: EditHookContext,
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  const { prompt } = pause;
+  const answered = await answerInChat(context.home, sessionId, prompt, context.now());
+  // An answer is not a new ask, so it never replaces the task the session is working on.
+  if (answered !== null) return answered;
+  const noted = await taskOfPrompt(context.home, sessionId, prompt, context.now());
+  const lookup = { sessionId, prompt };
+  const decided = await decisionsAt(
+    pause.cwd === undefined ? lookup : { ...lookup, cwd: pause.cwd },
+    depsOf(context, env),
+  );
+  const said = [noted, decided].filter((each): each is string => each !== null);
+  return said.length === 0 ? null : said.join('\n');
 }
 
 /**
@@ -190,13 +200,54 @@ export async function answerInChat(
   const outcome = await approvals.answer(reply.id, reply.answer, person(), moment);
   const held = outcome === null ? null : 'answered' in outcome ? outcome.answered : null;
   if (held === null) return null;
-  const what = held.request.operation;
-  if (reply.answer === HOLD_ANSWER.DENY) {
-    return `Memnox: the person said no to ${what} (${held.id}). Do not try it, or the same thing another way.`;
+  await markTold(approvals, [held], moment);
+  return answeredText(held);
+}
+
+/** Long enough to answer a DM from a phone, and inside the hook timeout setup writes. */
+const TURN_END_WAIT_MS = 9 * 60 * 1000;
+/** Where the host keeps its default hook timeout, a wait must end well inside it. */
+const SHORT_WAIT_MS = 45 * 1000;
+const ANSWER_POLL_MS = 1000;
+
+/**
+ * Answers that arrived where the agent was not listening, a DM mostly, told once. At a
+ * turn end with a DM question open it waits, bounded, so the agent hears it and goes on.
+ */
+export async function answersArrived(input: {
+  home: string;
+  sessionId: string;
+  now: () => Date;
+  waitMs: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<string | null> {
+  const { home, sessionId, now, waitMs } = input;
+  const sleep = input.sleep ?? sleepFor;
+  if (sessionId === '') return null;
+  const approvals = new PendingApprovals(home);
+  const deadline = now().getTime() + waitMs;
+  for (;;) {
+    const moment = now().toISOString();
+    const arrived = await answeredUntold(approvals, sessionId, moment);
+    if (arrived.length > 0) {
+      await markTold(approvals, arrived, moment);
+      return arrived.map(answeredText).join('\n');
+    }
+    const waiting = await waitingOnDm(approvals, sessionId, moment);
+    if (!waiting || now().getTime() >= deadline) return null;
+    await sleep(ANSWER_POLL_MS);
   }
-  const scope =
-    reply.answer === HOLD_ANSWER.SESSION ? 'for the rest of this session' : 'once';
-  return `Memnox: the person allowed ${what} ${scope} (${held.id}). Try the same call again now.`;
+}
+
+function clockOf(
+  context: EditHookContext,
+  sessionId: string,
+): { home: string; sessionId: string; now: () => Date } {
+  return { home: context.home, sessionId, now: context.now };
+}
+
+function sleepFor(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function personName(): string {

@@ -7,7 +7,7 @@ import { isEnforcementMode } from '../domain/enforcement';
 import { DEFAULT_NOTICE_WARMUP_DAYS } from '../notice/notice.constants';
 import {
   APPROVAL_ROUTE,
-  isApprovalRoute,
+  approvalRouteOf,
   type ApprovalRoute,
 } from '../constants/approval-route.constants';
 
@@ -42,8 +42,8 @@ export interface MemnoxConfig {
   /** Days after setup when unusual actions are only recorded, so day one asks nothing. */
   noticeWarmupDays: number;
   /**
-   * Where a question goes when the agent cannot show its own prompt: `session` asks in
-   * the agent's session, `dm` in Slack or Discord through the workspace, `both` in each.
+   * Where a question goes when the agent cannot show its own prompt: always the agent
+   * session, and with `both` the person's Slack or Discord DM as well.
    */
   approvals: ApprovalRoute;
 }
@@ -107,7 +107,8 @@ export function parseConfig(raw: string): MemnoxConfig {
     if (key === 'noticeWarmupDays' && isWholeDays(value)) {
       config.noticeWarmupDays = Number(value);
     }
-    if (key === 'approvals' && isApprovalRoute(value)) config.approvals = value;
+    if (key === 'approvals')
+      config.approvals = approvalRouteOf(value) ?? config.approvals;
   }
   return config;
 }
@@ -155,8 +156,8 @@ export function renderConfig(config: MemnoxConfig): string {
     '# Days after setup when those are only recorded, so day one is not a wall of asks.',
     `noticeWarmupDays = ${config.noticeWarmupDays}`,
     '',
-    '# session | dm | both. Where a question goes when the agent cannot show its own',
-    '# prompt: asked in the agent session, in Slack or Discord, or in both at once.',
+    '# session | both. A question the agent cannot show its own prompt for is always',
+    '# asked in the agent session; both also sends it to your Slack or Discord DM.',
     `approvals = "${config.approvals}"`,
     '',
   ].join('\n');
@@ -187,7 +188,7 @@ export function validateConfigValue(key: ConfigKey, value: string): ConfigParse 
   }
   if (key === 'approvedAgents') return { value };
   if (key === 'approvals') {
-    return isApprovalRoute(value)
+    return approvalRouteOf(value) !== null
       ? { value }
       : {
           value,
@@ -217,8 +218,8 @@ export function applyConfigValue(
   if (key === 'approvedAgents') return { ...config, approvedAgents: splitList(value) };
   if (key === 'noticeUnusual') return { ...config, noticeUnusual: value === 'true' };
   if (key === 'noticeWarmupDays') return { ...config, noticeWarmupDays: Number(value) };
-  // validateConfigValue has already refused anything that is not a route.
-  if (key === 'approvals') return { ...config, approvals: value as ApprovalRoute };
+  if (key === 'approvals')
+    return { ...config, approvals: approvalRouteOf(value) ?? config.approvals };
   return { ...config, telemetry: value === 'true' };
 }
 

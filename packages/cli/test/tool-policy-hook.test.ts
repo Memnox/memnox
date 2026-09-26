@@ -181,6 +181,10 @@ describe('the hook every agent runs rules on every tool call', () => {
     expect(before?.matcher).toBe(EVERY_TOOL);
     expect(before?.hooks[0]?.command).toContain('--policy');
 
+    // The turn end waits on a DM answer, which the default 60 seconds would cut off.
+    const [stop] = settings.hooks['Stop'] ?? [];
+    expect((stop?.hooks[0] as { timeout?: number } | undefined)?.timeout).toBe(600);
+
     expect(await removeClaudeHook(home)).toBe(true);
     expect(await readFile(claude(home), 'utf8')).not.toContain('memnox-edit-hook');
   });

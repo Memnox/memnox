@@ -31,6 +31,7 @@ export const EVERY_TOOL = '*';
 interface HookCommand {
   type: string;
   command: string;
+  timeout?: number;
 }
 
 interface HookEntry {
@@ -46,7 +47,15 @@ type Settings = Record<string, unknown> & {
 export interface HookEvent {
   event: string;
   matcher?: string;
+  /** Seconds the host lets the hook run, where the default would cut a wait short. */
+  timeout?: number;
 }
+
+/** Seconds, over the turn end's own wait for a DM answer, so the host never cuts it off. */
+const TURN_END_TIMEOUT_S = 600;
+
+/** In the settings file only once the turn end carries it, which is how an old install is found. */
+export const TURN_END_TIMEOUT_MARK = `"timeout": ${TURN_END_TIMEOUT_S}`;
 
 /**
  * Before a write, to take the lines; after a tool call, a turn or a prompt, where a
@@ -57,7 +66,7 @@ export function claudeEvents(editMatcher: string = MATCHER): HookEvent[] {
     { event: EDIT_HOOK_EVENT.PRE_TOOL_USE, matcher: editMatcher },
     { event: EDIT_HOOK_EVENT.SESSION_END },
     { event: EDIT_HOOK_EVENT.POST_TOOL_USE, matcher: EVERY_TOOL },
-    { event: EDIT_HOOK_EVENT.STOP },
+    { event: EDIT_HOOK_EVENT.STOP, timeout: TURN_END_TIMEOUT_S },
     { event: EDIT_HOOK_EVENT.USER_PROMPT_SUBMIT },
     // Where the session is told its boundary once, as added context.
     { event: EDIT_HOOK_EVENT.SESSION_START },
@@ -80,7 +89,13 @@ export function withEditHook(
       ...(hooks[each.event] ?? []),
       {
         ...(each.matcher === undefined ? {} : { matcher: each.matcher }),
-        hooks: [{ type: 'command', command }],
+        hooks: [
+          {
+            type: 'command',
+            command,
+            ...(each.timeout === undefined ? {} : { timeout: each.timeout }),
+          },
+        ],
       },
     ];
   }

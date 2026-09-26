@@ -99,14 +99,12 @@ export async function answerToolCall(
   context: ToolHookContext,
   seams: ToolHookSeams = {},
 ): Promise<ToolAnswer | null> {
-  const found = toolCallOf(payload, context.home);
-  if (found === null) return null;
+  const call = toolCallOf(payload, context.home);
+  if (call === null) return null;
   const mode = seams.mode ?? (await readMachineMode(context.home));
   // Off means nothing is ruled on or recorded, which is what somebody turning it off wants.
   if (mode === ENFORCEMENT_MODE.OFF) return null;
   const route = seams.route ?? (await readApprovalRoute(context.home));
-  // A person who wants questions in their DM wants them there, not in a prompt here.
-  const call = route === APPROVAL_ROUTE.DM ? { ...found, nativeAsk: false } : found;
 
   const authorizer = seams.authorizer ?? (await authorizerFor(context, call.sessionId));
   const ruled = await ruleOnTool(call, {

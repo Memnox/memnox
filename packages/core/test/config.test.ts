@@ -61,6 +61,11 @@ describe('the config file', () => {
     expect(parseConfig(renderConfig(config))).toEqual(config);
   });
 
+  it('reads the DM-only route an earlier build wrote as both, since the session is always asked', () => {
+    expect(parseConfig('approvals = "dm"\n').approvals).toBe('both');
+    expect(parseConfig('approvals = "email"\n').approvals).toBe('session');
+  });
+
   it('ignores comments, blank lines and section headers', () => {
     const parsed = parseConfig('# a note\n\n[section]\nmode = "enforce"\n');
     expect(parsed.mode).toBe('enforce');

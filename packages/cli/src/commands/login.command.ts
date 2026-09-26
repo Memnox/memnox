@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 
 import type { Command } from 'commander';
 
-import { forgetAccount, readAccount } from '@memnox/core';
+import { forgetAccount, readAccount, type Account } from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
 import { connectMachine, DEFAULT_BASE_URL, type ConnectSeams } from '../sync/connect';
@@ -109,14 +109,11 @@ async function runWhoami(
     return;
   }
   if (asJson) {
-    // Never the token or the key: this output gets pasted into issues.
-    context.out.json({
-      enrolled: true,
-      workspaceId: account.workspaceId,
-      machineId: account.machineId,
-      baseUrl: account.baseUrl,
-      enrolledAt: account.enrolledAt,
-    });
+    context.out.json(whoamiJson(account));
+    return;
+  }
+  if (account.revokedAt !== undefined) {
+    showRemoved(context, account, account.revokedAt);
     return;
   }
   flow.rows('Enrolled', [
@@ -126,4 +123,32 @@ async function runWhoami(
     { label: 'since', value: account.enrolledAt },
   ]);
   flow.close(`This machine belongs to ${account.workspaceId}.`);
+}
+
+/** Never the token or the key: this output gets pasted into issues. */
+function whoamiJson(account: Account): Record<string, unknown> {
+  const removed = account.revokedAt;
+  return {
+    enrolled: removed === undefined,
+    ...(removed === undefined ? {} : { removedAt: removed }),
+    workspaceId: account.workspaceId,
+    machineId: account.machineId,
+    baseUrl: account.baseUrl,
+    enrolledAt: account.enrolledAt,
+  };
+}
+
+/** Said as removed rather than enrolled: a credential the workspace refuses is not membership. */
+function showRemoved(context: CliContext, account: Account, removed: string): void {
+  const { flow } = context;
+  flow.rows('Removed', [
+    { label: 'workspace', value: account.workspaceId },
+    { label: 'machine', value: account.machineId },
+    { label: 'control', value: account.baseUrl },
+    { label: 'removed', value: removed },
+  ]);
+  flow.close(
+    `${account.workspaceId} no longer accepts this machine. The rules it last pulled still apply here.`,
+  );
+  flow.hint('"memnox login" connects it again.');
 }

@@ -12,7 +12,7 @@ import {
   type ApprovalRoute,
 } from '@memnox/core';
 import { HookAuthorizer } from '../src/hook-authorizer';
-import { answerInChat } from '../src/in-session';
+import { answerInChat, answersArrived } from '../src/in-session';
 import { answerToolCall, readApprovalRoute } from '../src/tool-hook';
 
 /* An agent that could not show its own prompt had every ask refused outright, with a note
@@ -133,27 +133,109 @@ describe('a question the agent cannot show a prompt for', () => {
   });
 });
 
-describe('a person who wants questions in their DM', () => {
-  it('is never asked through the agent prompt, and a yes typed in the session does not count', async () => {
+describe('a person who also takes questions in their DM', () => {
+  it('is still asked through the agent prompt where there is one', async () => {
     const machine = await home();
-    const first = await ask(machine, APPROVAL_ROUTE.DM, true);
-
-    expect(first?.asked).toBe(false);
-    expect(first?.reply?.stdout).toContain('sent to the person in Slack or Discord');
-    expect(await answerInChat(machine, 's1', 'yes', NOW, person)).toBeNull();
+    const first = await ask(machine, APPROVAL_ROUTE.BOTH, true);
+    expect(first?.asked).toBe(true);
+    expect(await new PendingApprovals(machine).list(NOW.toISOString())).toEqual([]);
   });
 
-  it('runs on the retry once the DM answer lands', async () => {
+  it('is still answered by a yes typed in the session', async () => {
     const machine = await home();
-    await ask(machine, APPROVAL_ROUTE.DM);
+    const first = await ask(machine, APPROVAL_ROUTE.BOTH);
+    expect(first?.reply?.stdout).toContain('also sent to their Slack or Discord');
+    expect(await answerInChat(machine, 's1', 'yes', NOW, person)).toContain('allowed');
+    // Told in the session, so the turn end has nothing more to say.
+    expect(
+      await answersArrived({ home: machine, sessionId: 's1', now: () => NOW, waitMs: 0 }),
+    ).toBeNull();
+  });
+
+  it('tells the agent at the turn end once the DM answer lands, and the retry runs', async () => {
+    const machine = await home();
+    await ask(machine, APPROVAL_ROUTE.BOTH);
     const approvals = new PendingApprovals(machine);
     const [held] = await approvals.list(NOW.toISOString());
     if (held === undefined) throw new Error('the question was held');
-    await approvals.answer(held.id, 'once', 'moise in Slack', NOW.toISOString());
 
-    expect((await ask(machine, APPROVAL_ROUTE.DM))?.ruling.effect).toBe(
+    let clock = NOW.getTime();
+    // The answer arrives from the workspace while the turn end is waiting.
+    const sleep = async (ms: number): Promise<void> => {
+      clock += ms;
+      await approvals.answer(
+        held.id,
+        'once',
+        'moise in Slack',
+        new Date(clock).toISOString(),
+      );
+    };
+    const said = await answersArrived({
+      home: machine,
+      sessionId: 's1',
+      now: () => new Date(clock),
+      waitMs: 60_000,
+      sleep: sleep,
+    });
+
+    expect(said).toContain('moise in Slack allowed gh.');
+    expect(said).toContain('Try the same call again now and carry on');
+    expect((await ask(machine, APPROVAL_ROUTE.BOTH))?.ruling.effect).toBe(
       DECISION_EFFECT.ALLOW,
     );
+  });
+
+  it('tells a no once, and the agent is told to carry on without it', async () => {
+    const machine = await home();
+    await ask(machine, APPROVAL_ROUTE.BOTH);
+    const approvals = new PendingApprovals(machine);
+    const [held] = await approvals.list(NOW.toISOString());
+    if (held === undefined) throw new Error('the question was held');
+    await approvals.answer(held.id, 'deny', 'moise in Discord', NOW.toISOString());
+
+    const said = await answersArrived({
+      home: machine,
+      sessionId: 's1',
+      now: () => NOW,
+      waitMs: 0,
+    });
+    expect(said).toContain('moise in Discord said no');
+    expect(
+      await answersArrived({ home: machine, sessionId: 's1', now: () => NOW, waitMs: 0 }),
+    ).toBeNull();
+  });
+
+  it('gives up waiting at the deadline, and never waits on a session-only question', async () => {
+    const machine = await home();
+    await ask(machine, APPROVAL_ROUTE.BOTH);
+    let clock = NOW.getTime();
+    const sleep = async (ms: number): Promise<void> => {
+      clock += ms;
+    };
+    expect(
+      await answersArrived({
+        home: machine,
+        sessionId: 's1',
+        now: () => new Date(clock),
+        waitMs: 5_000,
+        sleep: sleep,
+      }),
+    ).toBeNull();
+    expect(clock - NOW.getTime()).toBe(5_000);
+
+    const local = await home();
+    await ask(local, APPROVAL_ROUTE.SESSION);
+    let slept = 0;
+    await answersArrived({
+      home: local,
+      sessionId: 's1',
+      now: () => NOW,
+      waitMs: 60_000,
+      sleep: async () => {
+        slept += 1;
+      },
+    });
+    expect(slept).toBe(0);
   });
 });
 

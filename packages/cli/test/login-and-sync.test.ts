@@ -2,7 +2,8 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readAccount, writeAccount, accountPathFor } from '@memnox/core';
+import { markRevoked, readAccount, writeAccount, accountPathFor } from '@memnox/core';
+import { onePass } from '../src/sync/heartbeat';
 import {
   applyBundle,
   documentFrom,
@@ -87,6 +88,44 @@ describe('the account file', () => {
     expect(keys.privateKey).toContain('PRIVATE KEY');
     expect(keys.publicKey).toContain('PUBLIC KEY');
     expect(keys.publicKey).not.toContain('PRIVATE');
+  });
+
+  /* Revoking or removing a machine used to reach it as one log line from a
+     daemon that then stopped, while whoami went on saying it was enrolled and
+     every later pass called the control plane with a credential that would
+     never work again. */
+  it('remembers the first time the workspace let this machine go', async () => {
+    await writeAccount(
+      home,
+      accountFrom(
+        { baseUrl: 'https://api.example' },
+        machineKeypair(),
+        { machineId: 'mch_1', token: 't', mode: 'observe', workspaceId: 'ws_1' },
+        '2026-09-05T12:00:00.000Z',
+      ),
+    );
+
+    await markRevoked(home, new Date('2026-09-26T08:00:00.000Z'));
+    await markRevoked(home, new Date('2026-09-27T08:00:00.000Z'));
+
+    expect((await readAccount(home))?.revokedAt).toBe('2026-09-26T08:00:00.000Z');
+  });
+
+  it('calls nothing once the workspace has let this machine go', async () => {
+    await writeAccount(home, {
+      ...accountFrom(
+        { baseUrl: 'https://api.example' },
+        machineKeypair(),
+        { machineId: 'mch_1', token: 't', mode: 'observe', workspaceId: 'ws_1' },
+        '2026-09-05T12:00:00.000Z',
+      ),
+      revokedAt: '2026-09-26T08:00:00.000Z',
+    });
+    const calls = vi.spyOn(globalThis, 'fetch');
+
+    expect(await onePass(home)).toEqual({ revoked: true });
+    expect(calls).not.toHaveBeenCalled();
+    calls.mockRestore();
   });
 
   // A half-written file is not an account; logging in again replaces it.

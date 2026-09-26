@@ -525,31 +525,33 @@ terminal and remember a command.
 **What Memnox does.**
 
 * **The agent's own prompt comes first.** Where it has one and you are there, that is where
-  you are asked, as before.
-* **Otherwise the question is held and the agent asks you.** The agent is told what is waiting
-  and relays it. Reply in the same conversation:
+  you are asked.
+* **Otherwise the agent asks you in the session, always.** The question is held and the agent
+  relays it. Reply in the same conversation:
   * `yes` or `allow` runs it once;
   * `allow for this session` stops the asking for the rest of the session;
   * `no` or `deny` refuses it, and the agent is told not to try another way.
 
   Where two questions are waiting, name the one you mean, such as `allow apr_mf3k2_1a2b3c4d`.
-  The agent then tries the same call again, and it runs.
 * **Only you can answer.** Your reply is read from the prompt you type, never from anything
   the agent writes, and a long message that happens to contain "no" is read as a message,
   not an answer.
-* **Or in Slack or Discord.** On a machine connected to the workspace, the question can go to
-  your DM instead, or as well, and the first answer to arrive wins.
+* **Your DM too, if you turn it on.** The question is also sent to your Slack or Discord DM,
+  and the first answer to arrive wins. You do not have to come back to the terminal: when
+  you answer in the DM, the agent is told what you decided and carries on, or stops if you
+  said no. It hears it after its next tool call, or when it finishes its turn, where Memnox
+  waits up to nine minutes for your answer. Claude Code gets the full wait; other agents
+  hear an answer that arrives within their hook's time.
 
-**How to set it.** In either place, and whichever changed last wins:
+**How to turn the DM on.** In either place, and whichever changed last wins:
 
-* On this machine: `memnox setup` asks once when the machine is connected, or set it yourself
-  with `memnox config set approvals session`, `dm` or `both`.
-* In the workspace: the workspace can set the route for its machines, and it arrives with the
-  next heartbeat. An edit you make locally afterwards holds until the workspace changes it
-  again.
+* In the workspace: **Settings, Account, Also ask me in my DM.** Every machine you own picks
+  it up on its next heartbeat. A DM needs your chat account linked in Settings.
+* On this machine: `memnox setup` asks once when the machine is connected, or set it with
+  `memnox config set approvals both`, and `session` to turn it off.
 
-`session` keeps every question on the machine, and nothing about it leaves. A question waits
-for thirty minutes, and after that it is refused.
+With the DM off, nothing about the question leaves your machine. A question waits for thirty
+minutes, and after that it is refused.
 
 ---
 

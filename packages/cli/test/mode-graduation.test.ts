@@ -123,9 +123,9 @@ describe('a mode set in the workspace', () => {
 
   it('sends questions to a DM when the workspace says so, and keeps a later local edit', async () => {
     await writeAccount(home, account());
-    reply = { approvals: 'dm' };
+    reply = { approvals: 'both' };
     await onePass(home);
-    expect((await loadOrCreateConfig(home)).approvals).toBe('dm');
+    expect((await loadOrCreateConfig(home)).approvals).toBe('both');
 
     await saveConfig(home, { ...(await loadOrCreateConfig(home)), approvals: 'session' });
     await onePass(home);

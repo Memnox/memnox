@@ -37,6 +37,11 @@ export interface Account {
   cloudMode?: EnforcementMode;
   /** The last approval route the workspace set, kept for the same reason as the mode. */
   cloudApprovals?: ApprovalRoute;
+  /**
+   * When the control plane first refused this credential: revoked, or removed from the
+   * workspace. Kept so this machine can say who let it go, and stops calling for good.
+   */
+  revokedAt?: string;
 }
 
 export function accountPathFor(home: string): string {
@@ -75,6 +80,16 @@ export async function writeAccount(home: string, account: Account): Promise<void
   await writeJsonFile(path, account);
   // Set explicitly: an existing file keeps its old mode through a write.
   await chmod(path, OWNER_ONLY);
+}
+
+/**
+ * Records that the control plane refused this machine's credential, once. The
+ * first refusal is the one kept: a later pass saying it again is not news.
+ */
+export async function markRevoked(home: string, at: Date): Promise<void> {
+  const account = await readAccount(home);
+  if (account === null || account.revokedAt !== undefined) return;
+  await writeAccount(home, { ...account, revokedAt: at.toISOString() });
 }
 
 /**
