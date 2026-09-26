@@ -1,5 +1,11 @@
 # @memnox/core
 
+## 0.13.3
+
+### Patch Changes
+
+- A refusal names a real way forward under the rules `memnox protect --yes` writes. A force push was told `Instead: git.push-force: Ask somebody`, pointing back at itself, because the PATH wrapper and `memnox policy test` kept the generated rule's note where `memnox-shell` already used the verb table's. Both now say `push a branch and open a PR`.
+
 ## 0.13.2
 
 ### Patch Changes
