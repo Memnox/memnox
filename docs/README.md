@@ -6,6 +6,7 @@ disagree, the code is right and the page is a bug.
 - [Quickstart](quickstart.md) — from nothing to a governed agent
 - [Commands](commands.md) — every command, every flag
 - [Harnesses](harnesses.md) — Hermes, OpenClaw, Ruflo, and combined capability
+- [Use cases](use-cases.md): what Memnox does for you, one situation at a time
 - [Policies](policies.md) — the rule file, and what each field means
 - [Risk bands](risk-bands.md) — how a band is decided, rule by rule
 - [Event schema](event-schema.md) — the frozen v1 row
