@@ -80,6 +80,7 @@ export class TtyLeasePrompt implements LeasePrompt {
       return await race(rl, { held, wanted, moment, waitMs });
     } finally {
       rl.close();
+      streams.close?.();
     }
   }
 }

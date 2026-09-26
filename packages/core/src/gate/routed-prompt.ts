@@ -41,7 +41,8 @@ export class RoutedHoldPrompt implements HoldPrompt {
     const askedAt = new Date(now()).toISOString();
 
     const pending = await this.deps.approvals.raise(request, askedAt, timeoutMs);
-    this.announce(pending.id, request, timeoutMs);
+    // The card names the id itself, so a separate line would say it twice.
+    if (this.deps.tty === undefined) this.announce(pending.id, request, timeoutMs);
 
     // Both routes at once and the first answer wins, so neither approver waits on the other.
     const answers: Promise<HoldAsked | null>[] = [
@@ -55,7 +56,14 @@ export class RoutedHoldPrompt implements HoldPrompt {
       }).then((answer) => (answer === null ? null : { answer })),
     ];
     if (this.deps.tty !== undefined) {
-      answers.push(this.askTty(this.deps.tty, request, timeoutMs, pending.id));
+      answers.push(
+        this.askTty(
+          this.deps.tty,
+          { ...request, approvalId: pending.id },
+          timeoutMs,
+          pending.id,
+        ),
+      );
     }
 
     const answer = await firstAnswer(answers);

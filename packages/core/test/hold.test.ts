@@ -154,11 +154,31 @@ describe('holding a call for a person', () => {
 describe('the terminal prompt', () => {
   it('names the agent, the call and the reason, and offers three answers', () => {
     const question = questionFor(REQUEST);
-    expect(question).toContain('claude-code wants to merge_pull_request github');
+    expect(question).toContain('Claude-code wants to merge_pull_request');
+    expect(question).toContain('merge_pull_request github');
     expect(question).toContain('production is frozen');
-    expect(question).toContain('[a] allow once');
-    expect(question).toContain('[s] allow for this session');
-    expect(question).toContain('[d] deny');
+    expect(question).toContain('1. Yes, once');
+    expect(question).toContain('2. Yes, for the rest of this session');
+    expect(question).toContain('3. No');
+  });
+
+  it('shows the command as typed, the reason once, and where else to answer', () => {
+    const reason = 'sometimes it really is the build directory, so a person should look';
+    const question = questionFor({
+      ...REQUEST,
+      operation: 'filesystem.delete',
+      target: '/tmp/build',
+      command: 'rm -rf /tmp/build',
+      reason,
+      evidence: [`    rule  shell-ask: ${reason}`],
+      approvalId: 'apr_1',
+    });
+
+    expect(question).toContain('wants to delete files');
+    expect(question).toContain('rm -rf /tmp/build');
+    expect(question.split('build directory')).toHaveLength(2);
+    expect(question).toContain('Rule  shell-ask');
+    expect(question).toContain('memnox approve apr_1');
   });
 
   it('returns null when there is no controlling terminal', async () => {
@@ -171,6 +191,9 @@ describe('the terminal prompt', () => {
   });
 
   it.each([
+    ['1', HOLD_ANSWER.ONCE],
+    ['2', HOLD_ANSWER.SESSION],
+    ['3', HOLD_ANSWER.DENY],
     ['a', HOLD_ANSWER.ONCE],
     ['y', HOLD_ANSWER.ONCE],
     ['s', HOLD_ANSWER.SESSION],
@@ -213,8 +236,10 @@ describe('the terminal prompt', () => {
 
   // Offered only when there is a command to edit; a tool call has no line to fix.
   it('offers the edit only when there is a command', () => {
-    expect(questionFor(REQUEST)).not.toContain('[e]');
-    expect(questionFor({ ...REQUEST, command: 'git push --force' })).toContain('[e]');
+    expect(questionFor(REQUEST)).not.toContain('Edit the command');
+    expect(questionFor({ ...REQUEST, command: 'git push --force' })).toContain(
+      '3. Edit the command first',
+    );
   });
 
   it('shows the evidence that produced the verdict', () => {
@@ -232,5 +257,103 @@ describe('the terminal prompt', () => {
     });
     // Nobody types anything; a walk-away must never become a yes.
     expect(await prompt.ask(REQUEST, 20)).toBeNull();
+  });
+});
+
+describe('the terminal prompt, one key at a time', () => {
+  const terminal = () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const raw: boolean[] = [];
+    let drawn = '';
+    output.on('data', (chunk: Buffer) => {
+      drawn += chunk.toString();
+    });
+    const streams = {
+      input,
+      output,
+      columns: 90,
+      setRawMode: (on: boolean) => {
+        raw.push(on);
+      },
+    };
+    return { streams, input, raw, drawn: () => drawn };
+  };
+
+  it('moves the arrow and takes what enter lands on', async () => {
+    const { streams, input, raw } = terminal();
+    const asking = new TtyHoldPrompt({ open: () => streams }).ask(REQUEST, 5000);
+
+    input.write('\u001b[B');
+    input.write('\r');
+
+    expect(await asking).toEqual({ answer: HOLD_ANSWER.SESSION });
+    // Raw mode is always given back, or the person's shell is left broken.
+    expect(raw).toEqual([true, false]);
+  });
+
+  it('takes a number on its own, with no enter', async () => {
+    const { streams, input } = terminal();
+    const asking = new TtyHoldPrompt({ open: () => streams }).ask(REQUEST, 5000);
+
+    input.write('1');
+
+    expect(await asking).toEqual({ answer: HOLD_ANSWER.ONCE });
+  });
+
+  it.each([
+    ['escape', '\u001b'],
+    ['ctrl-c', '\u0003'],
+  ])('reads %s as no, never as a yes by accident', async (_name, key) => {
+    const { streams, input } = terminal();
+    const asking = new TtyHoldPrompt({ open: () => streams }).ask(REQUEST, 5000);
+
+    input.write(key);
+
+    expect(await asking).toEqual({ answer: HOLD_ANSWER.DENY });
+  });
+
+  it('leaves one line in the scrollback saying what was decided', async () => {
+    const { streams, input, drawn } = terminal();
+    const asking = new TtyHoldPrompt({ open: () => streams }).ask(
+      { ...REQUEST, command: 'git push --force' },
+      5000,
+    );
+
+    input.write('4');
+    await asking;
+
+    expect(drawn()).toContain('╭─ Memnox');
+    expect(drawn()).toContain('Memnox · git push --force · refused');
+  });
+
+  it('gives the edit a line with the command already in it', async () => {
+    const { streams, input } = terminal();
+    const asking = new TtyHoldPrompt({ open: () => streams }).ask(
+      { ...REQUEST, command: 'railway volume delete pg-prod' },
+      5000,
+    );
+
+    input.write('3');
+    await new Promise((resolve) => setImmediate(resolve));
+    input.write('\u0015railway volume delete pg-staging\n');
+
+    expect(await asking).toEqual({
+      answer: HOLD_ANSWER.EDIT,
+      command: 'railway volume delete pg-staging',
+    });
+  });
+
+  it('refuses when the clock runs out with nobody at the keys', async () => {
+    const { streams, raw } = terminal();
+    let clock = 0;
+    const asking = new TtyHoldPrompt({ open: () => streams, now: () => clock }).ask(
+      REQUEST,
+      1500,
+    );
+    clock = 2000;
+
+    expect(await asking).toBeNull();
+    expect(raw).toEqual([true, false]);
   });
 });

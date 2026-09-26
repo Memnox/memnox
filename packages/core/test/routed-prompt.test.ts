@@ -78,6 +78,29 @@ describe('a held call is written down before anybody is asked', () => {
     expect(await asking).toEqual({ answer: HOLD_ANSWER.ONCE });
   }, 30_000);
 
+  /* The card on the terminal names the id itself, so a line above it saying the same is
+     the noise it used to be. */
+  it('puts the id in the terminal question rather than a line of its own', async () => {
+    const approvals = new PendingApprovals(await home());
+    const said: string[] = [];
+    const seen: (string | undefined)[] = [];
+    const prompt = new RoutedHoldPrompt({
+      approvals,
+      announce: (message) => said.push(message),
+      tty: {
+        ask: async (asked) => {
+          seen.push(asked.approvalId);
+          return { answer: HOLD_ANSWER.ONCE };
+        },
+      },
+      pollMs: POLL_MS,
+    });
+
+    expect(await prompt.ask(request, PATIENT_MS)).toEqual({ answer: HOLD_ANSWER.ONCE });
+    expect(said).toEqual([]);
+    expect(seen[0]).toMatch(/^apr_/);
+  }, 30_000);
+
   it('carries a refusal back as a refusal', async () => {
     const approvals = new PendingApprovals(await home());
     const prompt = new RoutedHoldPrompt({

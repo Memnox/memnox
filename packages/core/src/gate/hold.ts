@@ -59,6 +59,8 @@ export interface HoldRequest {
    * web request, a server's tool for an MCP call. The operation when absent.
    */
   grantKey?: string;
+  /** Where the question also waits, so a second terminal or the workspace can answer it. */
+  approvalId?: string;
 }
 
 export interface HoldAsked {
