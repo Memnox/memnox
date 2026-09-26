@@ -56,6 +56,33 @@ describe('the interceptor runtime', () => {
     expect(outcome.message).toContain('rewrites history somebody may have pulled');
   });
 
+  it("names the verb table's way forward where a generated rule only says to ask", async () => {
+    const generated = new LocalGate(
+      [
+        {
+          name: 'git-deny',
+          match: { actions: ['git.push-force'] },
+          decision: {
+            effect: DECISION_EFFECT.DENY,
+            reason: 'it rewrites shared history',
+            alternative: {
+              action: 'git.push-force',
+              note: 'Ask somebody, or change this rule if it is wrong for your work.',
+            },
+          },
+        } as never,
+      ],
+      { agentName: 'claude-code' },
+    );
+
+    const outcome = await ruleOnCommand('git', ['push', '--force', 'origin', 'main'], {
+      gate: generated,
+    });
+
+    expect(outcome.message).toContain('push a branch and open a PR');
+    expect(outcome.message).not.toContain('Ask somebody');
+  });
+
   it('holds an ASK and proceeds when a person allows it', async () => {
     const hold = new HoldService({ ask: async () => ({ answer: HOLD_ANSWER.ONCE }) });
     const outcome = await ruleOnCommand('rm', ['-rf', 'build'], {

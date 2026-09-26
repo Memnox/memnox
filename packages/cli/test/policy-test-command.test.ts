@@ -50,7 +50,34 @@ afterEach(() => {
   process.exitCode = 0;
 });
 
+const GENERATED = `
+version = 1
+
+[[policies]]
+name = "git-deny"
+[policies.match]
+actions = ["git.push-force"]
+[policies.decision]
+effect = "deny"
+reason = "it rewrites shared history"
+[policies.decision.alternative]
+action = "git.push-force"
+note = "Ask somebody, or change this rule if it is wrong for your work."
+`;
+
 describe('memnox policy test', () => {
+  /* The baseline "protect --yes" writes only says to ask somebody, so the verb table's own
+     way forward is what is shown, the same one a seam prints to the agent. */
+  it("names the verb table's way forward where a generated rule only says to ask", async () => {
+    const path = join(await mkdtemp(join(tmpdir(), 'memnox-pt-')), 'p.toml');
+    await writeFile(path, GENERATED);
+
+    const out = await run(['policy', 'test', 'git push --force origin main', '-f', path]);
+
+    expect(out.text).toContain('push a branch and open a PR');
+    expect(out.text).not.toContain('Ask somebody');
+  });
+
   it('denies a force push typed the way somebody actually types it', async () => {
     const out = await run(['policy', 'test', 'git push --force', '-f', await rules()]);
 

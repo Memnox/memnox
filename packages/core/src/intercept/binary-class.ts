@@ -26,6 +26,8 @@ export interface BinaryVerdict {
   because: string;
   /** The HTTP method a request uses, so a rule can let a read through and ask about a change. */
   method?: string;
+  /** The verb table's way forward, used where a rule only said to ask somebody. */
+  alternative?: string;
 }
 
 /** Flags that turn a survivable command into an unsurvivable one. */

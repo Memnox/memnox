@@ -27,7 +27,9 @@ import {
   verbTableFor,
   POLICY_REGISTRY_FILE,
   targetsRuledOn,
+  alternativeFor,
   type ActionRequest,
+  type Alternative,
   type LocalVerdict,
   type PolicySet,
 } from '@memnox/core';
@@ -221,17 +223,30 @@ async function runTest(
       EFFECT_PRECEDENCE[each.effect] > EFFECT_PRECEDENCE[worst.effect] ? each : worst,
     );
 
-  flow.rows(action, verdictRows(context, verdict));
+  // The verb table's way forward where a rule only said to ask, the same one a seam prints.
+  const fromTable = resolveShellLine(action, deps.env).actions.find(
+    (each) => each.alternative !== undefined,
+  );
+  const alternative = alternativeFor(
+    verdict.alternative,
+    fromTable?.alternative,
+    fromTable?.action ?? action,
+  );
+  flow.rows(action, verdictRows(context, verdict, alternative, fromTable?.action));
   flow.close(style.effect(verdict.effect, `${verdict.effect.toUpperCase()}  ${action}`));
   flow.hint('Nothing was run, and nothing on this machine changed.');
   if (verdict.effect !== DECISION_EFFECT.ALLOW) process.exitCode = EXIT.FAILED;
 }
 
 /** The verdict as a card: what was decided, why, by which rule, and what to do instead. */
-function verdictRows(context: CliContext, verdict: LocalVerdict): FlowRow[] {
-  const rule = verdict.matchedPolicies[0];
+function verdictRows(
+  context: CliContext,
+  verdict: LocalVerdict,
   // A refusal that names no way forward is a dead end the agent cannot act on.
-  const alternative = verdict.alternative;
+  alternative: Alternative | undefined,
+  refused: string | undefined,
+): FlowRow[] {
+  const rule = verdict.matchedPolicies[0];
   return [
     // Upper case, the way `why` renders it, since this is the word pasted into an issue.
     {
@@ -245,10 +260,7 @@ function verdictRows(context: CliContext, verdict: LocalVerdict): FlowRow[] {
       : [
           {
             label: 'instead',
-            value:
-              alternative.resource === undefined
-                ? alternative.action
-                : `${alternative.action} ${alternative.resource}`,
+            value: insteadOf(alternative, refused),
           },
         ]),
   ];
@@ -360,4 +372,19 @@ async function fixOneFile(
     },
   ]);
   return true;
+}
+
+/**
+ * What to do, in the rule's words, with the action beside it where it names another one.
+ * The verb table's way forward is filed under the refused action, which is no help to repeat.
+ */
+function insteadOf(alternative: Alternative, refused: string | undefined): string {
+  if (alternative.action === refused) return alternative.note;
+  const action =
+    alternative.resource === undefined
+      ? alternative.action
+      : `${alternative.action} ${alternative.resource}`;
+  return alternative.note === alternative.action
+    ? action
+    : `${alternative.note} (${action})`;
 }

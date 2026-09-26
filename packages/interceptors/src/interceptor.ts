@@ -2,6 +2,7 @@ import { basename, delimiter, join } from 'node:path';
 
 import {
   DECISION_EFFECT,
+  alternativeFor,
   describeAlternative,
   describeHold,
   digest,
@@ -226,8 +227,13 @@ async function askPerson(
 }
 
 function refusal(verdict: BinaryVerdict, decision: LocalVerdict): string {
-  // A refusal that names no way forward is a dead end the agent abandons the task over.
-  const alternative = decision.alternative;
+  // A refusal that names no way forward is a dead end the agent abandons the task over,
+  // so a generated rule's "ask somebody" gives way to the verb table's own, as in the shell.
+  const alternative = alternativeFor(
+    decision.alternative,
+    verdict.alternative,
+    verdict.action,
+  );
   const instead =
     alternative === undefined ? '' : `\n${describeAlternative(alternative)}`;
   // The MCP proxy's sentence, so an agent meeting
@@ -268,5 +274,6 @@ export function verdictFor(
     class: resolved.class as BinaryVerdict['class'],
     because: resolved.because,
     ...(resolved.target === undefined ? {} : { target: resolved.target }),
+    ...(resolved.alternative === undefined ? {} : { alternative: resolved.alternative }),
   };
 }
