@@ -162,6 +162,14 @@ export const CODE_TABLES: readonly VerbTable[] = [
       '--bare',
       '--no-replace-objects',
       '-P',
+      // Editors and agents poll with this one, so without it every background status is unknown.
+      '--no-optional-locks',
+      '--literal-pathspecs',
+      '--glob-pathspecs',
+      '--noglob-pathspecs',
+      '--icase-pathspecs',
+      '--no-lazy-fetch',
+      '--no-advice',
     ],
     verbs: [
       {
@@ -209,6 +217,8 @@ export const CODE_TABLES: readonly VerbTable[] = [
       { match: 'worktree list **', class: READ },
       { match: 'config **', class: WRITE, note: 'local' },
       { match: 'config --get **', class: READ },
+      { match: 'config --get-all **', class: READ },
+      { match: 'config --get-regexp **', class: READ },
       { match: 'config --list **', class: READ },
       { match: 'config -l **', class: READ },
       { match: 'remote **', class: WRITE, note: 'local' },
