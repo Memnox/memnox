@@ -147,6 +147,7 @@ describe('setup, the keeper and uninstall', () => {
         absent: [],
         directory: '',
         pathLine: '',
+        launchers: [],
       }),
       rules: async () => 0,
       service: async () => ({

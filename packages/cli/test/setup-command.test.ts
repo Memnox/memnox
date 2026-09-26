@@ -91,7 +91,13 @@ function fakeWiring(wired: string[]): WiringSeams {
   return {
     interceptors: async (at) => {
       wired.push(at);
-      return { installed: ['git'], absent: [], directory: '/tmp/bin', pathLine: '' };
+      return {
+        installed: ['git'],
+        absent: [],
+        directory: '/tmp/bin',
+        pathLine: '',
+        launchers: [],
+      };
     },
     service: async () => ({
       state: { supported: true, installed: true, path: '/tmp/svc', manager: 'launchd' },

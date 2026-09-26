@@ -142,7 +142,8 @@ describe('installing the interceptors', () => {
     expect(report.pathLine).toContain(interceptorDirFor(dir));
 
     const names = await readdir(report.directory);
-    expect(names.sort()).toEqual([...report.installed].sort());
+    // The interceptors, and a launcher for each agent CLI this machine has.
+    expect(names.sort()).toEqual([...report.installed, ...report.launchers].sort());
 
     const mode = (await stat(join(report.directory, 'git'))).mode & 0o777;
     expect(mode).toBe(0o700);

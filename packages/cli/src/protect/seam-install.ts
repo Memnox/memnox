@@ -51,6 +51,14 @@ export async function runInterceptors(context: CliContext): Promise<void> {
   flow.rows('Installed', [
     { label: 'where', value: report.directory },
     { label: 'wrapped', value: report.installed.join(', ') },
+    ...(report.launchers.length === 0
+      ? []
+      : [
+          {
+            label: 'launched',
+            value: `${report.launchers.join(', ')} start under memnox run when typed by name`,
+          },
+        ]),
     // Named rather than skipped, so somebody installing that CLI later knows to re-run this.
     ...(report.absent.length === 0
       ? []

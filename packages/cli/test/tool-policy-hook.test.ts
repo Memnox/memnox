@@ -40,7 +40,13 @@ const machine = () => mkdtemp(join(tmpdir(), 'memnox-tool-policy-'));
 
 /* Nothing real is installed: no wrappers, no service, no MCP rewrite, no agent hooks. */
 const offline: WiringSeams = {
-  interceptors: async () => ({ installed: [], absent: [], directory: '', pathLine: '' }),
+  interceptors: async () => ({
+    installed: [],
+    absent: [],
+    directory: '',
+    pathLine: '',
+    launchers: [],
+  }),
   service: async () => ({
     state: { supported: false, installed: false, path: '', manager: 'none' },
   }),

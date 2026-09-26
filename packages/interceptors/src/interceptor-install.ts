@@ -34,9 +34,51 @@ function scriptFor(binary: string, interceptBinary: string): string {
   ].join('\n');
 }
 
+/** Agent CLIs a person starts by name, each started under `memnox run` from here on. */
+export const AGENT_LAUNCHERS: readonly string[] = ['claude', 'codex', 'gemini'];
+
+/** Subcommands that start no session, so they run straight through with nothing set up. */
+const NO_SESSION = [
+  '--version',
+  '-v',
+  '--help',
+  '-h',
+  'mcp',
+  'config',
+  'update',
+  'doctor',
+  'login',
+  'logout',
+];
+
+/**
+ * Typing the agent's name starts it under `memnox run`, so the proxy and the wall come with
+ * it and nobody has to remember the command. Inside a session, or with Memnox gone, or
+ * with `MEMNOX_LAUNCH=off`, it runs the real one with this directory off PATH.
+ */
+function launcherFor(agent: string): string {
+  const passThrough = NO_SESSION.map((each) => `"${each}"`).join(' | ');
+  return [
+    '#!/bin/sh',
+    `# Memnox launcher for ${agent}. Remove this file, or run "memnox uninstall", to undo.`,
+    'here=$(cd "$(dirname "$0")" && pwd)',
+    'case "$1" in',
+    `  ${passThrough}) direct=1 ;;`,
+    'esac',
+    `if [ -z "$MEMNOX_SESSION" ] && [ "$MEMNOX_LAUNCH" != "off" ] && [ -z "$direct" ] && command -v memnox >/dev/null 2>&1; then`,
+    `  exec memnox run -- ${agent} "$@"`,
+    'fi',
+    `PATH=$(printf '%s\n' "$PATH" | tr ':' '\n' | grep -vxF "$here" | paste -sd: -)`,
+    `exec ${agent} "$@"`,
+    '',
+  ].join('\n');
+}
+
 export interface InterceptorInstallReport {
   directory: string;
   installed: string[];
+  /** Agent CLIs that now start under `memnox run` when typed by name. */
+  launchers: string[];
   /**
    * Known to the rules, absent from this machine. Named so the list is never a mystery.
    */
@@ -83,9 +125,22 @@ export async function installInterceptors(
     installed.push(binary);
   }
 
+  const launchers: string[] = [];
+  for (const agent of AGENT_LAUNCHERS) {
+    if (resolveReal(agent, path, exists) === null) continue;
+    const scriptPath = join(directory, agent);
+    await writeFile(scriptPath, launcherFor(agent), {
+      encoding: 'utf8',
+      mode: OWNER_ONLY,
+    });
+    await chmod(scriptPath, OWNER_ONLY);
+    launchers.push(agent);
+  }
+
   return {
     directory,
     installed,
+    launchers,
     absent,
     pathLine: `export PATH="${directory}:$PATH"`,
   };

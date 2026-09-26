@@ -21,6 +21,7 @@ describe('wiring a machine that has just been set up', () => {
     absent: ['aws'],
     directory: '/tmp/bin',
     pathLine: '',
+    launchers: [],
   });
   const started: WiringSeams['service'] = async () => ({
     state: { supported: true, installed: true, path: '/tmp/svc', manager: 'launchd' },
