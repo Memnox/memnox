@@ -39,8 +39,10 @@ always gets the same answer, and `memnox why` can always tell you which rule gav
 16. [Find out what happened](#15-find-out-what-happened)
 17. [Undo what an agent did](#16-undo-what-an-agent-did)
 18. [Check that everything is working](#17-check-that-everything-is-working)
-19. [What Memnox cannot do yet](#what-memnox-cannot-do-yet)
-20. [Command reference](#command-reference)
+19. [Answer in the conversation, or in your DM](#18-answer-in-the-conversation-or-in-your-dm)
+20. [Your rules stay yours](#19-your-rules-stay-yours)
+21. [What Memnox cannot do yet](#what-memnox-cannot-do-yet)
+22. [Command reference](#command-reference)
 
 ---
 
@@ -511,6 +513,60 @@ memnox doctor --wiring    # whether every seam is installed
 memnox doctor --prove     # ask every seam to refuse something, and see what came back
 memnox doctor --servers   # start every MCP server and see which ones answer
 ```
+
+---
+
+## 18. Answer in the conversation, or in your DM
+
+**The situation.** An action needs your yes, but the agent cannot show a permission prompt of
+its own: it runs headless, or it is an agent without one. You should not have to open another
+terminal and remember a command.
+
+**What Memnox does.**
+
+* **The agent's own prompt comes first.** Where it has one and you are there, that is where
+  you are asked, as before.
+* **Otherwise the question is held and the agent asks you.** The agent is told what is waiting
+  and relays it. Reply in the same conversation:
+  * `yes` or `allow` runs it once;
+  * `allow for this session` stops the asking for the rest of the session;
+  * `no` or `deny` refuses it, and the agent is told not to try another way.
+
+  Where two questions are waiting, name the one you mean, such as `allow apr_mf3k2_1a2b3c4d`.
+  The agent then tries the same call again, and it runs.
+* **Only you can answer.** Your reply is read from the prompt you type, never from anything
+  the agent writes, and a long message that happens to contain "no" is read as a message,
+  not an answer.
+* **Or in Slack or Discord.** On a machine connected to the workspace, the question can go to
+  your DM instead, or as well, and the first answer to arrive wins.
+
+**How to set it.** In either place, and whichever changed last wins:
+
+* On this machine: `memnox setup` asks once when the machine is connected, or set it yourself
+  with `memnox config set approvals session`, `dm` or `both`.
+* In the workspace: the workspace can set the route for its machines, and it arrives with the
+  next heartbeat. An edit you make locally afterwards holds until the workspace changes it
+  again.
+
+`session` keeps every question on the machine, and nothing about it leaves. A question waits
+for thirty minutes, and after that it is refused.
+
+---
+
+## 19. Your rules stay yours
+
+**The situation.** An agent that could edit its own rule file, or run `memnox allow` for
+itself, would have every permission it wanted.
+
+**What Memnox does.** Before any rule is read, it refuses an agent that:
+
+* writes to or deletes anything under `~/.memnox`, or any `memnox.policies` file, whether
+  with its own edit tool or with a shell line such as `sed -i`, `cp` or `>>`;
+* runs a `memnox` command that loosens protection or answers for you, such as `allow`,
+  `mode off`, `stop`, `approve`, `trust` or `uninstall`, directly or through `npx`.
+
+No rule or allowance can let these through. The agent can still run commands that only
+read, such as `memnox why`, `memnox report`, `memnox mode` and `memnox policy test`.
 
 ---
 
