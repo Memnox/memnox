@@ -11,3 +11,4 @@ export * from './routed-prompt';
 export * from './terminal';
 export * from './refusal-text';
 export * from './policy-sources';
+export * from './allowances';

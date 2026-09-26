@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 
 import {
+  FileAllowances,
   LocalGate,
   openNotice,
   SessionTasks,
@@ -54,6 +55,7 @@ export async function loadHookGate(
       task,
       stateFacts: stateLabelsOf(overlays, now()),
       ...(containment === null ? {} : { containment }),
+      allowances: await new FileAllowances(home).inForce(now()),
     },
     sources,
   );

@@ -9,6 +9,7 @@ import { reachesOutside } from '../notice/turn';
 import { TOOL_CLASS } from '../discovery/classify';
 import { SCOPE_MATCH, type ScopeComparison } from '../domain/task';
 import { containmentAsk, type Containment, type ContainmentAsk } from './containment';
+import { allowanceFor, describeAllowance, type Allowance } from './allowances';
 import type { NoticePort } from '../notice/unusual-notice';
 import { loadPolicyFiles, type OptionalPolicySources } from './policy-file';
 
@@ -37,6 +38,8 @@ export interface LocalGateOptions {
   stateFacts?: readonly string[];
   /** The session's repository, and whether it or its agent is on a shorter leash. */
   containment?: Containment;
+  /** Scopes a person allowed for a while, which turn an ask inside them into an allow. */
+  allowances?: readonly Allowance[] | (() => readonly Allowance[]);
 }
 
 export interface LocalVerdict {
@@ -107,28 +110,21 @@ export class LocalGate {
     const drift = scopeOf(this.options.task ?? null, request, (patterns, value) =>
       matchesAny([...patterns], value),
     );
-    const evaluation = this.engine.evaluate(request, {
-      agentName: this.options.agentName,
-      now: at,
-      ...(this.options.agentRole === undefined
-        ? {}
-        : { agentRole: this.options.agentRole }),
-      ...(drift.match === SCOPE_MATCH.UNDECLARED ? {} : { scope: drift.match }),
-      ...(this.options.stateFacts === undefined
-        ? {}
-        : { state: this.options.stateFacts }),
-    });
+    const evaluation = this.evaluated(request, at, drift);
     const contained =
       offIntent(this.options.task ?? null, request, evaluation.effect) ??
       this.contained(request, evaluation.effect);
+    const effect = effectUnder(evaluation.effect, contained);
+    const allowed = this.allowedWithin(request, effect, at);
     return {
-      effect: effectUnder(evaluation.effect, contained),
-      reason: contained === null ? evaluation.reason : contained.reason,
+      effect: allowed === null ? effect : DECISION_EFFECT.ALLOW,
+      reason: reasonOf(allowed, contained, evaluation.reason),
       signals: [
         ...evaluation.matchedPolicies.map(
           (policy) => `${SIGNAL_POLICY_PREFIX}${policy.name}`,
         ),
         ...(contained === null ? [] : [contained.signal]),
+        ...(allowed === null ? [] : [`allowance:${allowed.id}`]),
       ],
       matchedPolicies: evaluation.matchedPolicies,
       ...(evaluation.shadowEffect === undefined
@@ -139,6 +135,37 @@ export class LocalGate {
         : { alternative: evaluation.alternative }),
       ...(drift.match === SCOPE_MATCH.UNDECLARED ? {} : { scope: drift }),
     };
+  }
+
+  private evaluated(
+    request: ActionRequest,
+    at: Date,
+    drift: ScopeComparison,
+  ): ReturnType<PolicyEngine['evaluate']> {
+    return this.engine.evaluate(request, {
+      agentName: this.options.agentName,
+      now: at,
+      ...(this.options.agentRole === undefined
+        ? {}
+        : { agentRole: this.options.agentRole }),
+      ...(drift.match === SCOPE_MATCH.UNDECLARED ? {} : { scope: drift.match }),
+      ...(this.options.stateFacts === undefined
+        ? {}
+        : { state: this.options.stateFacts }),
+    });
+  }
+
+  /** Last, and only over an ask: a scope a person allowed for a while. */
+  private allowedWithin(
+    request: ActionRequest,
+    effect: DecisionEffect,
+    at: Date,
+  ): Allowance | null {
+    if (effect !== DECISION_EFFECT.ASK) return null;
+    return allowanceFor(allowancesOf(this.options.allowances), request, {
+      agentName: this.options.agentName,
+      now: at.toISOString(),
+    });
   }
 
   /** Only an allow is ever tightened; a rule that asks or denies already said more. */
@@ -184,4 +211,19 @@ function offIntent(
     signal: 'intent:investigate',
     refuses: true,
   };
+}
+
+/** A long-lived gate reads them at each decision, since one granted later must count. */
+function allowancesOf(given: LocalGateOptions['allowances']): readonly Allowance[] {
+  if (given === undefined) return [];
+  return typeof given === 'function' ? given() : given;
+}
+
+function reasonOf(
+  allowed: Allowance | null,
+  contained: ContainmentAsk | null,
+  ruled: string,
+): string {
+  if (allowed !== null) return describeAllowance(allowed);
+  return contained === null ? ruled : contained.reason;
 }
