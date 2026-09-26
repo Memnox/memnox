@@ -41,18 +41,26 @@ always gets the same answer, and `memnox why` can always tell you which rule gav
 18. [Check that everything is working](#17-check-that-everything-is-working)
 19. [Answer in the conversation, or in your DM](#18-answer-in-the-conversation-or-in-your-dm)
 20. [Your rules stay yours](#19-your-rules-stay-yours)
-21. [What Memnox cannot do yet](#what-memnox-cannot-do-yet)
-22. [Command reference](#command-reference)
+21. [Everything from inside the session](#20-everything-from-inside-the-session)
+22. [What Memnox cannot do yet](#what-memnox-cannot-do-yet)
+23. [Command reference](#command-reference)
 
 ---
 
 ## Getting started
 
 ```sh
-npx memnox              # see what your agents can reach on this machine
-memnox protect --yes    # write a sensible baseline of rules
-memnox run -- claude    # start an agent with every protection in place
+npx memnox               # see what your agents can reach on this machine
+memnox setup             # connect, put every agent under Memnox, start the daemon
+memnox protect --yes     # write a sensible baseline of rules
+memnox protect --enforce # make the rules bite, once you have read what observe kept
+memnox run -- claude     # start an agent with every protection in place
 ```
+
+A new machine starts in **observe**: every verdict is worked out and recorded, and nothing
+is refused or held. Read a week of it with `memnox timeline` and `memnox why --allowed`,
+then turn enforcement on with `memnox protect --enforce` (or `memnox config set mode
+enforce`, which is the same switch). `memnox protect --observe` turns it back off.
 
 `memnox run` is the recommended way to start an agent, because it puts Memnox in front of
 everything: the shell, the network through a local proxy, and a kernel wall when you ask
@@ -565,10 +573,151 @@ itself, would have every permission it wanted.
 * writes to or deletes anything under `~/.memnox`, or any `memnox.policies` file, whether
   with its own edit tool or with a shell line such as `sed -i`, `cp` or `>>`;
 * runs a `memnox` command that loosens protection or answers for you, such as `allow`,
-  `mode off`, `stop`, `approve`, `trust` or `uninstall`, directly or through `npx`.
+  `mode off`, `stop`, `approve`, `trust`, `rewind` or `uninstall`, directly or through `npx`.
 
 No rule or allowance can let these through. The agent can still run commands that only
 read, such as `memnox why`, `memnox report`, `memnox mode` and `memnox policy test`.
+
+---
+
+## 20. Everything from inside the session
+
+**The situation.** You set Memnox up once and you want to stay in the conversation with
+your agent from then on. You should not have to leave it to find out why something was
+refused, to answer a question, or to undo a mess.
+
+**What Memnox does.** Once `memnox setup` has run, every agent you start normally is under
+Memnox with nothing more to type. Before each tool call the agent's own hook asks Memnox,
+and the answer comes back inside the conversation. `setup` also gives each agent a small
+MCP server called `memnox-session`, so the agent can answer questions about Memnox for you.
+
+### When enforcement starts
+
+`memnox protect --enforce` reaches a session that is already open, but not all of it:
+
+* **At once, on the next tool call:** the hook and the shell wrappers read the mode on
+  every call, so file reads, writes, shell commands and web fetches are refused or held
+  straight away.
+* **At the next session:** MCP servers the agent had already connected keep the mode they
+  started with, and the agent was told at the start of the session that nothing is
+  refused. Restart the agent after switching so both catch up.
+
+### What the agent is told when a session starts
+
+Claude Code, Codex and Gemini CLI are given a short note at the start of every session:
+the mode, what the rules for this repository refuse and ask about, where the repository
+boundary is, anything on probation, and that a question can be answered once or for the
+session. A decision somebody already took, such as a team rule, is added when your prompt
+names the path or action it covers. So the agent plans around your rules rather than
+walking into them. Cursor and Windsurf get no such note, since their hooks cannot add one.
+
+### Ask Memnox through the agent
+
+Ask in plain words. The agent calls a `memnox-session` tool and tells you the answer.
+
+| You say | Tool | What you get |
+|---|---|---|
+| "Why was that refused?" | `why` | the rule, its reason, the file and line it lives on, and what to do instead |
+| "Where does Memnox stand?" | `status` | the mode, what is held, and what happened today |
+| "What have you done this session?" | `replay` | every step of the session, oldest first |
+| "Would `git push --force` be allowed here?" | `decisions` | the rules and remembered decisions that cover it, with nothing run |
+| "What did we decide about payment retries, and who said so?" | `memory` | what your workspace settled about it, each with who confirmed it, when and where it came from |
+| "Brief me on `src/payments` before you start" | `brief` | the decisions that bear on those paths, who owns them, which agent already holds them and what landed there lately |
+| "Undo what you did this session" | `rewind` | the working tree put back, after you approve it |
+
+Every tool but `rewind` only reads. None of them can allow, approve, trust, change the
+mode or edit a rule, because an agent that could call one would approve itself.
+
+### What your workspace has settled, before the agent starts
+
+Once this machine is connected to a workspace (`memnox login` or `memnox setup`), the
+daemon pulls what the workspace has settled every minute beside the rules: decisions,
+policies, who may approve what, who owns what, and how people and teams stand. Each one
+says who confirmed it, when, and where it came from. The agent meets it three ways:
+
+* **At the start of a session** it is told the workspace has settled things and to ask
+  before it changes code. Claude Code, Codex and Gemini CLI hear it from their hook, and
+  Cursor and Windsurf from `memnox-session` when they connect to it, since their hooks
+  cannot add anything to a session.
+* **When your prompt names a subject or a path**, what was settled about it is added to
+  the conversation, a few at a time and each once per session. So is anything settled
+  about a file just before the agent's first write to it, which is the moment it matters.
+  A read adds nothing, since reading has not decided anything yet.
+* **When you or the agent ask**, through `memory` and `brief` above. `brief` asks the
+  workspace live and falls back to what this machine last pulled, and says which.
+
+What reaches the machine is the settled facts themselves, one line each, filtered to what
+a machine may see: never the conversations, documents or transcripts they were read from,
+and never anything marked restricted. A brief can quote a short excerpt of a message a
+decision was settled in, with who said it (the author of a message, the speaker of a
+meeting turn), fetched when asked and never kept. Matching is by shared words
+and paths, done on this machine, and every answer names what it matched on. None of it
+decides anything: a settled fact informs the agent and never allows or refuses an action.
+
+### Undo from the session
+
+Say "rewind this session's changes". The agent calls `rewind`, your agent's own permission
+prompt asks you, and where the agent supports it Memnox asks you a second time with the
+milestone and when it was taken. Say no and nothing moves. Say yes and:
+
+* the working tree goes back to before the session's first write;
+* the files as they were a moment ago are kept first, and the answer names them, so
+  "rewind to `<that id>`" undoes the rewind;
+* no commit, branch or stash is touched.
+
+To go further back, name a session ("rewind to before `ses_8f29`") or a milestone id. The
+agent can list the ids by running `memnox rewind --list`, but running `memnox rewind`
+itself from its shell is refused, so a rewind always goes through your approval. A rewind is refused with nobody
+at the machine to approve it, in the middle of a merge or rebase, and outside a git
+repository. Every request is a row in the ledger, whichever way it went.
+
+### Every use case, seen from the session
+
+What happens in the conversation, and what is still a person's at a terminal or in the
+workspace. The terminal column is kept short on purpose: anything that loosens what an
+agent may do is refused when the agent tries it ([section 19](#19-your-rules-stay-yours)).
+
+| Use case | In the session | Yours at a terminal |
+|---|---|---|
+| [1. Investigate production](#1-investigate-production-without-changing-it) | a change is refused with "Instead: report", and the agent keeps investigating and reports what it would change | `memnox mode investigate` and `memnox mode off` |
+| [2. Work on its own](#2-let-an-agent-work-on-its-own-and-walk-away) | the ordinary work goes through; money, deploys, authority and production are asked about; "what have you done?" answers from `replay` | `memnox mode autonomous`, and `memnox report --session last` for the whole picture |
+| [3. Declare the task](#3-tell-memnox-what-the-task-is) | an action off the task is drift, and a refusal quotes your task back; the agent can read it with `memnox task show` | `memnox task set` and `memnox run --task` |
+| [4. Allow a scope](#4-allow-a-scope-for-a-while) | anything the scope covers goes through without a question until it ends; the agent can read it with `memnox allow --list` | `memnox allow` and `--revoke` |
+| [5. Asked once](#5-be-asked-once-not-every-time) | you answer in the agent's own prompt, and a second yes to the same action ends the asking for the session | nothing |
+| [6. Rules about what an action does](#6-write-rules-about-what-an-action-does) | "would this be allowed?" answers from `decisions` or `memnox policy test` | writing the rules, `memnox protect` |
+| [7. Reads and changes](#7-reads-and-changes-told-apart-everywhere) | on its own for every command, SQL statement, MCP call and web request | nothing |
+| [8. Secrets](#8-keep-secrets-secret-without-blocking-work) | a key file or `printenv` is refused, templates are readable, a request carrying a key is refused | nothing |
+| [9. What the agent can do](#9-see-what-an-agent-can-actually-do) | the agent can run `memnox explain` itself | nothing |
+| [10. Hear about changes](#10-hear-when-something-changes) | nothing: these arrive as desktop notices, outside any session | keep the daemon running |
+| [11. Dangerous sequences](#11-catch-dangerous-sequences-not-only-dangerous-actions) | a send after reading a secret, or anything outward after text that read like instructions, is asked about there and then | nothing |
+| [12. A stranger's repository](#12-open-a-strangers-repository-safely) | a repository the agent clones starts on probation on its own; the agent can run `memnox repo list` | `memnox repo trust`, and `memnox run --untrusted` for the kernel wall |
+| [13. Agents started by agents](#13-agents-started-by-other-agents) | on its own: a child is held to its parent, and a refusal says which one | nothing |
+| [14. Two agents, one file](#14-two-agents-one-file) | the second writer is told who holds the path and can wait, take it on the record, or stand down; reads never wait | nothing |
+| [15. What happened](#15-find-out-what-happened) | `why`, `replay` and `status` | `memnox report`, `memnox timeline` |
+| [16. Undo](#16-undo-what-an-agent-did) | milestones are taken on their own, and `rewind` puts the tree back once you approve | `memnox rewind` where nobody can approve in the session |
+| [17. Check the wiring](#17-check-that-everything-is-working) | `status` | `memnox doctor --wiring` and `--prove` |
+| [18. Answer in the conversation](#18-answer-in-the-conversation-or-in-your-dm) | a held question is relayed by the agent, and you reply `yes`, `allow for this session` or `no` | turning the DM on |
+| [19. Your rules stay yours](#19-your-rules-stay-yours) | editing a rule file or running a loosening `memnox` command is refused before any rule is read | every loosening command |
+
+A circuit breaker pause is also a person's: the agent is stopped in the session and told
+why, and `memnox resume` is yours to run.
+
+### How much each agent gets
+
+Every agent's hook is not the same, so neither is what Memnox can do inside its session.
+
+| Agent | Ruled on before it runs | A question in the session | Note at the start |
+|---|---|---|---|
+| Claude Code | every tool | its own prompt, and a yes teaches Memnox | yes |
+| Codex | every tool its hook reports | relayed by the agent, since it has no prompt of its own | yes |
+| Gemini CLI | every tool | relayed by the agent | yes |
+| Cursor | commands, MCP calls, file reads and writes; web fetches are not hooked | its own prompt for commands and MCP calls; anything else from `memnox approve`, the workspace or a DM | no |
+| Windsurf | commands, MCP calls, file reads and writes; web fetches are not hooked | not in the conversation, since Memnox never sees what you type to it; from `memnox approve`, the workspace or a DM | no |
+
+In Claude Code's `bypassPermissions` mode there is no prompt to ask in, so a question is
+relayed in the session instead. With nobody there to answer, a question is refused when it
+times out, so an unattended run treats every ask as a refusal unless somebody answers it
+from `memnox approve`, the workspace or a DM.
 
 ---
 
