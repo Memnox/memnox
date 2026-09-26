@@ -43,3 +43,15 @@ export const MOST_PRUNED_PER_PASS = 200;
 export const CONTEXT_DIR = 'context';
 export const CONTEXT_SESSIONS_DIR = 'sessions';
 export const CONTEXT_PRUNED_FILE = 'pruned.json';
+
+/** Under the Memnox home: the workspace memory as this machine last pulled it. */
+export const WORKSPACE_MEMORY_FILE = 'memory.json';
+
+/** Beside it: when the control plane last said it was unchanged, a few bytes rewritten a minute. */
+export const WORKSPACE_MEMORY_SYNCED_FILE = 'memory-synced.json';
+
+/** Settled facts handed over at one prompt or before one write. */
+export const MOST_FACTS_PER_CALL = 3;
+
+/** Settled facts a session tool answers with, so one lookup never fills a window. */
+export const MOST_FACTS_ANSWERED = 12;
