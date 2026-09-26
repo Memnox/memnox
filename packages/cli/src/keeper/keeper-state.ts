@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { MEMNOX_HOME, type EnvironmentSnapshot } from '@memnox/core';
 
 import type { DriftBaseline } from '../scan/machine-drift';
+import type { AuthorityRecord } from './keep-authority';
 
 export const KEEPER_STATE_FILE = 'keeper.json';
 
@@ -18,6 +19,8 @@ interface KeeperState {
   firstSeen: Record<string, string>;
   /** Agents already called dormant, so each is mentioned once for each stretch of silence. */
   dormantNoticed: string[];
+  /** What each agent could do at the last pass, so authority that grew is said once. */
+  authority?: AuthorityRecord;
 }
 
 export const FRESH_STATE: KeeperState = {

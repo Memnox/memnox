@@ -11,6 +11,8 @@ import { driftItems, driftRecords, keeperScanSeams, type DriftItem } from './kee
 import { newlyDormant, readDormant, type NamedDormant } from './keep-dormant';
 import { readKeeperState, writeKeeperState } from './keeper-state';
 import { readKept } from './kept';
+import { authorityItems, authorityRecordOf } from './keep-authority';
+import { policySetInForce } from '../policy-path';
 
 interface WatchOutcome {
   /** What drifted since the last look. Empty on the first, which only sets the baseline. */
@@ -34,7 +36,11 @@ export async function watchOnce(
   const seams = scan ?? keeperScanSeams(home, () => now);
   const state = await readKeeperState(home);
   const look = await lookAtMachine(seams, { probe: false, save: false });
-  const items = driftItems(driftSince(state.baseline, look));
+  const authority = authorityRecordOf(look, (await policySetInForce(home)).policies);
+  const items = [
+    ...driftItems(driftSince(state.baseline, look)),
+    ...authorityItems(state.authority ?? null, authority),
+  ];
   const firstSeen = firstSeenAfter(state.firstSeen, look.snapshot, now);
   const dormant = await readDormant(home, {
     snapshot: look.snapshot,
@@ -48,6 +54,7 @@ export async function watchOnce(
     baseline: baselineOf(look),
     firstSeen,
     dormantNoticed: noticed,
+    authority,
   });
   return { items, dormant: fresh };
 }

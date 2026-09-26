@@ -37,6 +37,8 @@ export const DRIFT_GROUP = {
   SELF_UPDATE: 'self-update',
   DEFINITION: 'definition',
   SERVER_GONE: 'server-gone',
+  /** An agent may now do more in a system, a CLI logged in, or a credential names production. */
+  AUTHORITY: 'authority',
 } as const;
 
 export type DriftGroup = (typeof DRIFT_GROUP)[keyof typeof DRIFT_GROUP];
@@ -194,6 +196,10 @@ function noticeFor(group: DriftGroup, items: readonly DriftItem[]): string {
       return `${names} newly reachable by an agent here. "memnox explain ${first.name}" says which.`;
     case DRIFT_GROUP.NEW_SERVER:
       return `New MCP server: ${names}${countsOf(items)}. "memnox scan --mcp ${first.name}" shows what it brings.`;
+    case DRIFT_GROUP.AUTHORITY:
+      return items.length === 1
+        ? `${first.summary.split('. before:')[0] ?? first.summary}. "memnox explain ${first.name}" shows what it may do now.`
+        : `Authority grew for ${names}. "memnox timeline --since 1h" shows what moved.`;
     case DRIFT_GROUP.SERVER_GONE:
       return `MCP server gone: ${names}. An agent that relied on it will now fail. "memnox doctor" checks what is left.`;
     case DRIFT_GROUP.NEW_WRITE_TOOL:
