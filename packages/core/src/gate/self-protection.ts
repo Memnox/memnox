@@ -33,6 +33,8 @@ const LOOSENING: readonly string[] = [
   'mcp',
   'budget',
   'policy',
+  // A rewind moves a person's files, so it is asked through the session tool, never run from a shell.
+  'rewind',
 ];
 
 /** Reads that share a subcommand with a loosening one. */
@@ -47,6 +49,7 @@ const READING: readonly string[] = [
   'config get',
   'agents list',
   'mcp list',
+  'rewind --list',
 ];
 
 const WRITES: readonly string[] = [ACTION.FILESYSTEM_WRITE, ACTION.FILESYSTEM_DELETE];

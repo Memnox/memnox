@@ -47,6 +47,8 @@ describe('what governs an agent is never the agent’s to change', () => {
     'stop',
     'approve apr_1',
     'uninstall',
+    'rewind --last',
+    'rewind --to ms_1',
   ])('denies `memnox %s` typed by an agent', (line) => {
     const [binary, ...args] = ['memnox', ...line.split(' ')];
     const resolved = resolveAction(binary as string, args);
@@ -58,12 +60,16 @@ describe('what governs an agent is never the agent’s to change', () => {
     expect(verdict.effect).toBe('deny');
   });
 
-  it.each(['why', 'mode', 'policy test "git push"', 'report', 'allow --list'])(
-    'lets `memnox %s` through, since it only reads',
-    (line) => {
-      expect(loosens(line)).toBe(false);
-    },
-  );
+  it.each([
+    'why',
+    'mode',
+    'policy test "git push"',
+    'report',
+    'allow --list',
+    'rewind --list',
+  ])('lets `memnox %s` through, since it only reads', (line) => {
+    expect(loosens(line)).toBe(false);
+  });
 
   it('resolves `npx memnox stop` the same as `memnox stop`', () => {
     expect(resolveAction('npx', ['memnox', 'stop'])).toMatchObject({
