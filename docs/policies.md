@@ -96,6 +96,22 @@ egress proxy, and `UNKNOWN` where nothing could read it. A rule narrowed by `cla
 `arguments` is not written into Claude Code's native permissions, which can only name the
 whole tool and would ask about every read.
 
+### What a change does
+
+`capabilities` narrows a rule finer than `classes`: `transfer` moves money (a refund, a
+payout, a captured payment), `deploy` puts something in front of users (a deploy, a
+release, `kubectl apply`, `terraform apply`), `admin` hands out authority (IAM, secrets,
+roles, invites), `execute` runs code somewhere else (`kubectl exec`, `railway ssh`), and
+`delete`, `send`, `write` and `read` as they say. It is read from the action's name and
+class, so an MCP tool and a CLI verb name it the same way, and a local command such as
+`git apply` stays a `write`.
+
+```toml
+[policies.match]
+actions = [ "*" ]
+capabilities = [ "transfer", "deploy" ]
+```
+
 ### Where a command lands
 
 A command's environment is the one it names, as it names it: railway's `--environment`,

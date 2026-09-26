@@ -5,6 +5,7 @@ export * from './constants/decision.constants';
 export * from './constants/enforcement.constants';
 export * from './constants/risk.constants';
 export * from './domain/action-class';
+export * from './domain/capability';
 export * from './domain/time';
 export * from './domain/line-buffer';
 export * from './domain/exit-code';

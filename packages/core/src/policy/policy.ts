@@ -29,6 +29,12 @@ export interface PolicyMatch {
    * action nothing classified counts as unknown, which a rule lists to reach it.
    */
   classes?: string[];
+  /**
+   * What a change does, finer than its class: `transfer` moves money, `deploy` puts
+   * something in front of users, `admin` hands out authority, and `execute`, `delete`,
+   * `send`, `write` and `read` as they say.
+   */
+  capabilities?: string[];
   /** Every named argument must match; matched only by the in-process gate. */
   arguments?: Record<string, string[]>;
   /** An action that does not state its size still matches, because it cannot prove it is under. */

@@ -113,7 +113,8 @@ function writeClaudeRules(
   for (const action of actions) {
     for (const target of policy.match.targets ?? [undefined]) {
       // A native rule cannot leave anything out or name a workspace, so those stay Memnox's.
-      if (target !== undefined && (target.startsWith('!') || target.includes('{'))) continue;
+      if (target !== undefined && (target.startsWith('!') || target.includes('{')))
+        continue;
       const native = nativeRuleFor(action, target);
       if (native === null) continue;
       // Claude Code skips an unanchored MCP allow glob, so writing one would do nothing.

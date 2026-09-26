@@ -146,6 +146,7 @@ const PATTERN_FIELDS = [
   'workingDirectories',
   'branches',
   'classes',
+  'capabilities',
 ] as const satisfies readonly (keyof PolicyMatch)[];
 
 type PatternField = (typeof PATTERN_FIELDS)[number];

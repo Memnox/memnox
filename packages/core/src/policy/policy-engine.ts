@@ -9,6 +9,7 @@ import {
   EFFECT_PRECEDENCE,
 } from '../constants/decision.constants';
 import { normalizeActionRequest } from '../domain/action-identity';
+import { capabilityOf } from '../domain/capability';
 import { matchesAny, withWorkspace } from './pattern-matcher';
 import { TOOL_CLASS } from '../discovery/classify';
 import { matchesAnyTimeWindow } from './time-window';
@@ -185,6 +186,10 @@ export class PolicyEngine {
       matchesAny(policy.match.workingDirectories, request.workingDirectory) &&
       matchesAny(policy.match.branches, request.branch) &&
       matchesAny(policy.match.classes, request.toolClass ?? TOOL_CLASS.UNKNOWN) &&
+      matchesAny(
+        policy.match.capabilities,
+        capabilityOf(request.action, request.toolClass),
+      ) &&
       matchesAllArguments(policy.match.arguments, request.arguments) &&
       matchesAmount(policy.match.aboveAmount, request.amount) &&
       matchesScope(policy.match.scope, context.scope) &&

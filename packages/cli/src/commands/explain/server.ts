@@ -2,6 +2,7 @@
 
 import type { DiscoveryReport, McpTool, Policy } from '@memnox/core';
 import {
+  capabilityOf,
   classifyToolCall,
   DECISION_EFFECT,
   EFFECT_PRECEDENCE,
@@ -134,14 +135,19 @@ function renderTools(context: CliContext, server: ExplainedServer): void {
   const verdicts = server.verdicts ?? {};
   flow.table(
     'Holds',
-    ['Tool', 'Effect', 'Verdict', 'Rule'],
+    ['Tool', 'Effect', 'Does', 'Verdict', 'Rule'],
     server.tools.map((tool) => {
       const verdict = verdicts[tool.name];
+      const does = capabilityOf(
+        `mcp.${server.name}.${tool.name}`,
+        classifyToolCall(tool.name).class,
+      );
       return [
         tool.name,
         tool.effect === TOOL_EFFECT.DESTRUCTIVE
           ? style.warn(tool.effect)
           : style.dim(tool.effect),
+        does,
         verdict === undefined
           ? ''
           : style.effect(verdict.effect, verdict.effect.toUpperCase()),
