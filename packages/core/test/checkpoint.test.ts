@@ -165,7 +165,8 @@ describe('checkpoints kept in a real repository', () => {
     }
     const listed = await new Milestones(new NodeGit(root), new NodeWorktree(root)).list();
     expect(listed.map((one) => one.sessionId)).toEqual(['ses_3', 'ses_2']);
-  });
+    // Writes several milestones into a real repository, so it is git-bound throughout.
+  }, 15_000);
 
   it('restores a session to before its first write', async () => {
     const root = await repository();

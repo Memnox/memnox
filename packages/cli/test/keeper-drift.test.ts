@@ -229,7 +229,8 @@ describe('the keeper writing what it changed to the ledger', () => {
     expect(row?.reason).toContain('before: never hooked');
     expect(row?.class).toBe(TOOL_CLASS.WRITE);
     expect(noticed).toHaveLength(1);
-  });
+    // Waits on a real config write reaching the keeper, which the disk paces.
+  }, 15_000);
 
   it('scans once for a burst of config writes', async () => {
     const home = await keptHome();

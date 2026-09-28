@@ -258,7 +258,8 @@ describe('memnox setup', () => {
     const { connects } = await run({ connected: false, yes: false });
 
     expect(connects).toHaveLength(1);
-  });
+    // Spawns a control-plane exchange on a temp home; the slowest test in the suite.
+  }, 15_000);
 
   /* Setup used to open with the device flow, so "no account, no network" was
      true of every command but the one the site told people to run. */
