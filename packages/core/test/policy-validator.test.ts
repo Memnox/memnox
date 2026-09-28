@@ -82,6 +82,30 @@ describe('validatePolicyDocument', () => {
   it('rejects non-object input', () => {
     expect(() => validatePolicyDocument('nope')).toThrow(PolicyValidationError);
   });
+
+  it.each([
+    ['a null entry', null],
+    ['a non-numeric UTC offset', { startHour: 9, endHour: 17, utcOffsetMinutes: 'abc' }],
+    [
+      'an out-of-range UTC offset',
+      { startHour: 9, endHour: 17, utcOffsetMinutes: 99999 },
+    ],
+  ])('rejects %s with the full window path', (_case, window) => {
+    const invalid = {
+      version: 1,
+      policies: [
+        {
+          name: 'x',
+          match: { actions: ['a'], windows: [window] },
+          decision: { effect: 'deny' },
+        },
+      ],
+    };
+    expect(() => validatePolicyDocument(invalid)).toThrow(PolicyValidationError);
+    expect(() => validatePolicyDocument(invalid)).toThrow(
+      /policies\[0\]\.match\.windows\[0\]/,
+    );
+  });
 });
 
 describe('project declaration', () => {

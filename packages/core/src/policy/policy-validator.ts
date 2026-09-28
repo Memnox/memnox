@@ -392,15 +392,20 @@ function asOptionalWindows(
     issues.push(`${path} must be a non-empty array`);
     return undefined;
   }
-  const windows = input as TimeWindow[];
-  const invalid = windows.findIndex((window) => !isValidTimeWindow(window));
-  if (invalid >= 0) {
-    issues.push(
-      `${path}[${invalid}] needs startHour 0-23, endHour 1-24, and days 0-6 when present`,
-    );
-    return undefined;
+  const windows: TimeWindow[] = [];
+  for (const [index, entry] of input.entries()) {
+    const itemPath = `${path}[${index}]`;
+    const raw = asRecord(entry, itemPath, issues);
+    if (!raw) continue;
+    if (!isValidTimeWindow(raw)) {
+      issues.push(
+        `${itemPath} needs startHour 0-23, endHour 1-24, days 0-6 when present, and utcOffsetMinutes -840 to 840 when present`,
+      );
+      continue;
+    }
+    windows.push(raw);
   }
-  return windows;
+  return windows.length === input.length ? windows : undefined;
 }
 
 function asOptionalQuorum(

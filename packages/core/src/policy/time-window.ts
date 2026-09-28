@@ -6,6 +6,8 @@ import { HOUR_MS, HOURS_IN_A_DAY, MINUTE_MS, minutesToMs } from '../domain/time'
  */
 const MINUTES_PER_HOUR = HOUR_MS / MINUTE_MS;
 const DAYS_PER_WEEK = 7;
+const MAX_UTC_OFFSET_MINUTES = 14 * MINUTES_PER_HOUR;
+const MIN_UTC_OFFSET_MINUTES = -MAX_UTC_OFFSET_MINUTES;
 
 /** A recurring wall-clock window. Offsets are fixed minutes from UTC, with no zone database. */
 export interface TimeWindow {
@@ -19,21 +21,41 @@ export interface TimeWindow {
   utcOffsetMinutes?: number;
 }
 
-export function isValidTimeWindow(window: TimeWindow): boolean {
+export function isValidTimeWindow(window: unknown): window is TimeWindow {
+  if (!window || typeof window !== 'object' || Array.isArray(window)) return false;
+  // The object boundary is checked above; each field stays unknown until validated.
+  const raw = window as Record<string, unknown>;
+  const startHour = raw['startHour'];
+  const endHour = raw['endHour'];
+  const days = raw['days'];
+  const utcOffsetMinutes = raw['utcOffsetMinutes'];
   const hoursValid =
-    Number.isInteger(window.startHour) &&
-    Number.isInteger(window.endHour) &&
-    window.startHour >= 0 &&
-    window.startHour < HOURS_IN_A_DAY &&
-    window.endHour > 0 &&
-    window.endHour <= HOURS_IN_A_DAY;
+    typeof startHour === 'number' &&
+    typeof endHour === 'number' &&
+    Number.isInteger(startHour) &&
+    Number.isInteger(endHour) &&
+    startHour >= 0 &&
+    startHour < HOURS_IN_A_DAY &&
+    endHour > 0 &&
+    endHour <= HOURS_IN_A_DAY;
   const daysValid =
-    window.days === undefined ||
-    (window.days.length > 0 &&
-      window.days.every(
-        (day) => Number.isInteger(day) && day >= 0 && day < DAYS_PER_WEEK,
+    days === undefined ||
+    (Array.isArray(days) &&
+      days.length > 0 &&
+      days.every(
+        (day: unknown) =>
+          typeof day === 'number' &&
+          Number.isInteger(day) &&
+          day >= 0 &&
+          day < DAYS_PER_WEEK,
       ));
-  return hoursValid && daysValid;
+  const offsetValid =
+    utcOffsetMinutes === undefined ||
+    (typeof utcOffsetMinutes === 'number' &&
+      Number.isInteger(utcOffsetMinutes) &&
+      utcOffsetMinutes >= MIN_UTC_OFFSET_MINUTES &&
+      utcOffsetMinutes <= MAX_UTC_OFFSET_MINUTES);
+  return hoursValid && daysValid && offsetValid;
 }
 
 /** Deterministic: the instant is an argument, never read from the clock here. */

@@ -70,6 +70,24 @@ describe('isValidTimeWindow', () => {
     expect(isValidTimeWindow({ days: [7], startHour: 9, endHour: 17 })).toBe(false);
     expect(isValidTimeWindow({ days: [], startHour: 9, endHour: 17 })).toBe(false);
   });
+
+  it('validates UTC offset minute bounds', () => {
+    expect(isValidTimeWindow({ startHour: 9, endHour: 17, utcOffsetMinutes: -840 })).toBe(
+      true,
+    );
+    expect(isValidTimeWindow({ startHour: 9, endHour: 17, utcOffsetMinutes: 840 })).toBe(
+      true,
+    );
+    expect(isValidTimeWindow({ startHour: 9, endHour: 17, utcOffsetMinutes: -841 })).toBe(
+      false,
+    );
+    expect(isValidTimeWindow({ startHour: 9, endHour: 17, utcOffsetMinutes: 841 })).toBe(
+      false,
+    );
+    expect(isValidTimeWindow({ startHour: 9, endHour: 17, utcOffsetMinutes: 1.5 })).toBe(
+      false,
+    );
+  });
 });
 
 describe('time-scoped policies', () => {
