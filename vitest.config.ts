@@ -17,6 +17,9 @@ export default defineConfig({
     include: ['packages/*/test/**/*.test.ts'],
     // A test that falls back to a default seam must land in a temp dir, never in ~/.memnox.
     setupFiles: ['./test-setup/isolated-home.ts'],
+    // A floor under the tests nobody has marked: a third of the suite does real filesystem
+    // work, and vitest's 5s default was crossed on CI by a test that costs 1.1s locally.
+    testTimeout: 10_000,
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
