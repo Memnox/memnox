@@ -1,5 +1,11 @@
+import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { maskingTranscript } from '../src/commands/run/transcript';
+import { defaultStart } from '../src/commands/run/start';
+import { maskEach, maskingTranscript } from '../src/commands/run/transcript';
 
 /* The transcript is read back by `memnox claims` and `memnox trace`, so a credential the
    agent printed used to reach a screen from disk long after the session ended. */
@@ -20,10 +26,11 @@ async function through(chunks: readonly (string | Buffer)[]): Promise<string> {
 describe('the transcript a session keeps', () => {
   it.each([
     ['an AWS key id', 'aws_access_key_id AKIAABCDEFGHIJKLMNOP\n', 'AKIAABCDEFGHIJKLMNOP'],
+    /* Bare and full length, so this meets the JWT rule rather than the `token:` one. */
     [
       'a JWT',
-      'token: eyJhbGciOi.eyJzdWIiOiIx.SflKxwRJSMeKKF2QT4\n',
-      'eyJhbGciOi.eyJzdWIiOiIx.SflKxwRJSMeKKF2QT4',
+      'request failed with eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk\n',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk',
     ],
     ['a password flag', 'psql --password=hunter2hunter -h db\n', 'hunter2hunter'],
     [
@@ -69,5 +76,75 @@ describe('the transcript a session keeps', () => {
   it('holds a line until its newline, so nothing is masked half-formed', async () => {
     const kept = await through(['ready\n', 'still going']);
     expect(kept).toBe('ready\nstill going');
+  });
+});
+
+/* One buffer shared between stdout and stderr joined a half-written line to a chunk from
+   the other stream, which split a token across what the rules see. */
+describe('a mask per stream', () => {
+  function collector(): { log: Writable; text: () => string } {
+    const chunks: Buffer[] = [];
+    const log = new Writable({
+      write(chunk: Buffer, _encoding, done): void {
+        chunks.push(chunk);
+        done();
+      },
+    });
+    return { log, text: () => Buffer.concat(chunks).toString('utf8') };
+  }
+
+  it('does not let one stream break a line the other is still writing', async () => {
+    const { log, text } = collector();
+    const out = new PassThrough();
+    const err = new PassThrough();
+    const masks = maskEach(log, [out, err]);
+
+    out.write('psql --password=hunt');
+    err.write('connecting to db\n');
+    out.write('er2hunter -h db\n');
+    out.end();
+    err.end();
+    await Promise.all(masks.map((mask) => once(mask, 'end')));
+
+    expect(text()).not.toContain('er2hunter');
+    expect(text()).toContain('[redacted]');
+    expect(text()).toContain('connecting to db');
+  });
+});
+
+describe('output that never sends a newline', () => {
+  it('is written out rather than held for ever', () => {
+    const mask = maskingTranscript();
+    const seen: Buffer[] = [];
+    mask.on('data', (piece: Buffer) => seen.push(piece));
+
+    // A progress bar rewriting itself: 200 KiB and not one newline.
+    for (let written = 0; written < 200 * 1024; written += 1024) {
+      mask.write(Buffer.from('#'.repeat(1024), 'utf8'));
+    }
+
+    expect(Buffer.concat(seen).length).toBeGreaterThan(0);
+    mask.end();
+  });
+});
+
+/* `exit` fires while stdout can still be draining, so the tail of a noisy session was
+   cut off and a late chunk could reach a mask that had already been ended. */
+describe('the transcript a finished run leaves behind', () => {
+  it('keeps the last line of output the agent printed', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-transcript-'));
+    const transcript = join(home, 'sessions', 'ses_1.log');
+
+    const code = await defaultStart(
+      process.execPath,
+      ['-e', 'for (let i = 0; i < 4000; i += 1) console.log(`line ${i} of output`);'],
+      { ...process.env },
+      transcript,
+    );
+
+    const kept = await readFile(transcript, 'utf8');
+    expect(code).toBe(0);
+    expect(kept).toContain('line 3999 of output');
+    await rm(home, { recursive: true, force: true });
   });
 });
