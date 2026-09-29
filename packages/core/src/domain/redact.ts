@@ -30,9 +30,13 @@ const SHAPES: readonly RegExp[] = [
  */
 const QUOTED_VALUE = '(["\'])((?:(?!\\2)[^\\n])*)\\2';
 
-/** `--token=XYZ`, `TOKEN=XYZ`, `"api_key": "XYZ"` and `password: XYZ`, the name kept. */
+/**
+ * `--token=XYZ`, `TOKEN=XYZ`, `"api_key": "XYZ"` and `password: XYZ`, the name kept.
+ * The bare branch captures its opening quote rather than leaving it in the name, because
+ * a name that ate the quote would let that branch win before the quoted one is tried.
+ */
 const NAMED_VALUE = new RegExp(
-  `((?:^|[\\s"'{,;&|(])-{0,2}${SECRET_NAME}["']?\\s*[=:]\\s*)(?:${QUOTED_VALUE}|["']?([^\\s"',;&|)]+))`,
+  `((?:^|[\\s"'{,;&|(])-{0,2}${SECRET_NAME}["']?\\s*[=:]\\s*)(?:${QUOTED_VALUE}|(["']?)([^\\s"',;&|)]+))`,
   'gi',
 );
 
@@ -81,8 +85,16 @@ export function redactSecrets(text: string): string {
     .replace(AUTH_SCHEME, (_match, scheme: string) => `${scheme} ${REDACTED}`)
     .replace(
       NAMED_VALUE,
-      (whole, name: string, quote?: string, quoted?: string, bare?: string) =>
-        masked(whole, name, quote, valueOf(quote, quoted, bare)),
+      (
+        whole,
+        name: string,
+        quote?: string,
+        quoted?: string,
+        stray?: string,
+        bare?: string,
+      ) =>
+        // A quote with no closing partner stays where it was, so malformed input reads as before.
+        masked(whole, `${name}${stray ?? ''}`, quote, valueOf(quote, quoted, bare)),
     )
     .replace(
       FLAG_THEN_VALUE,

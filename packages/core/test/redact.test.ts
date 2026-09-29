@@ -46,6 +46,10 @@ describe('what leaves the machine, with its credentials masked', () => {
     ['--password="don\'t tell"', '--password="[redacted]"'],
     ['--password=\'say "hi" now\'', "--password='[redacted]'"],
     ['mysql --password="a b" --host db', 'mysql --password="[redacted]" --host db'],
+    /* A quote with no closing partner keeps its place: the bare branch has to capture it
+       rather than the name, or that branch wins and a quoted passphrase splits again. */
+    ['password="abc', 'password="[redacted]'],
+    ["password='abc", "password='[redacted]"],
   ])('masks every word of %s', (input, output) => {
     expect(redactSecrets(input)).toBe(output);
   });
