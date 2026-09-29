@@ -34,6 +34,28 @@ describe('what leaves the machine, with its credentials masked', () => {
     expect(redactSecrets(input)).toBe(output);
   });
 
+  /* A quoted value used to mask only to its first space, which reads as handled and
+     leaves the rest of a passphrase in the row. */
+  it.each([
+    ['--password="correct horse battery staple"', '--password="[redacted]"'],
+    ["--password='correct horse battery staple'", "--password='[redacted]'"],
+    ['cmd --token "my secret value"', 'cmd --token "[redacted]"'],
+    ['mysql --password "a b c"', 'mysql --password "[redacted]"'],
+    ['{"api_key": "abc def ghi"}', '{"api_key": "[redacted]"}'],
+    ['PASSWORD="my pass phrase"', 'PASSWORD="[redacted]"'],
+    ['--password="don\'t tell"', '--password="[redacted]"'],
+    ['--password=\'say "hi" now\'', "--password='[redacted]'"],
+    ['mysql --password="a b" --host db', 'mysql --password="[redacted]" --host db'],
+  ])('masks every word of %s', (input, output) => {
+    expect(redactSecrets(input)).toBe(output);
+  });
+
+  it('leaves a quoted value that holds no secret alone', () => {
+    expect(redactSecrets('SECRET="x" OTHER="plain text here"')).toBe(
+      'SECRET="[redacted]" OTHER="plain text here"',
+    );
+  });
+
   it.each([
     'git commit -m "fix the token refresh race"',
     'rm -rf build',
