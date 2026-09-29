@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { interceptorDirFor } from '@memnox/interceptors';
 import type { CliContext } from '../../cli-context';
 import type { FlowRow } from '../../flow';
+import { maskingTranscript } from './transcript';
 
 /** What is actually in the interceptor directory. Empty when there is no directory. */
 export function interceptorsIn(home: string): readonly string[] {
@@ -58,21 +59,24 @@ export function defaultStart(
     // Teed rather than intercepted: the terminal sees it unchanged and a local copy stays for claims.
     mkdirSync(join(transcript, '..'), { recursive: true, mode: 0o700 });
     const log = createWriteStream(transcript, { mode: 0o600 });
+    const masked = maskingTranscript();
+    masked.pipe(log);
     const child = spawn(command, [...args], {
       stdio: ['inherit', 'pipe', 'pipe'],
       env,
     });
     child.stdout?.pipe(process.stdout);
-    child.stdout?.pipe(log);
     child.stderr?.pipe(process.stderr);
-    child.stderr?.pipe(log);
-    child.on('exit', (code) => {
-      log.end();
-      resolve(code ?? 1);
-    });
-    child.on('error', () => {
-      log.end();
-      resolve(127);
-    });
+    // Neither stream ends the mask: the other one is still writing to it.
+    child.stdout?.pipe(masked, { end: false });
+    child.stderr?.pipe(masked, { end: false });
+    // Resolving before the mask has flushed would cut the last lines off the transcript.
+    const settle = (code: number): void => {
+      log.once('close', () => resolve(code));
+      log.once('error', () => resolve(code));
+      masked.end();
+    };
+    child.on('exit', (code) => settle(code ?? 1));
+    child.on('error', () => settle(127));
   });
 }
