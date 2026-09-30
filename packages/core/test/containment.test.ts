@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   CONTAINED,
   CONTAINMENT_SIGNAL,
@@ -74,6 +78,54 @@ describe('the repository boundary', () => {
   it('says nothing where the session has no repository', () => {
     expect(
       containmentAsk({ action: 'filesystem.write', target: '/etc/hosts' }, {}),
+    ).toBeNull();
+  });
+});
+
+describe('the repository boundary through a symlink', () => {
+  const made: string[] = [];
+  afterEach(() => {
+    for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function fixture(): { repo: string; outside: string; bounded: Containment } {
+    const base = mkdtempSync(join(tmpdir(), 'memnox-link-'));
+    made.push(base);
+    const repo = join(base, 'repo');
+    const outside = join(base, 'outside');
+    mkdirSync(join(repo, 'src', 'real'), { recursive: true });
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'hosts'), '');
+    symlinkSync(outside, join(repo, 'escape'));
+    symlinkSync(join(repo, 'src', 'real'), join(repo, 'alias'));
+    return { repo, outside, bounded: { root: repo, cwd: repo, scratch: [] } };
+  }
+
+  it('asks before a write through a link in the repository that points outside it', () => {
+    const { repo, bounded } = fixture();
+    const asked = containmentAsk(
+      { action: 'filesystem.write', target: join(repo, 'escape', 'hosts') },
+      bounded,
+    );
+    expect(asked?.signal).toBe(CONTAINMENT_SIGNAL.BOUNDARY);
+  });
+
+  it('asks before a new file is created through that link', () => {
+    const { bounded } = fixture();
+    const asked = containmentAsk(
+      { action: 'filesystem.write', target: 'escape/new/deeper.txt' },
+      bounded,
+    );
+    expect(asked?.signal).toBe(CONTAINMENT_SIGNAL.BOUNDARY);
+  });
+
+  it('lets a link that points elsewhere inside the repository stay inside', () => {
+    const { repo, bounded } = fixture();
+    expect(
+      containmentAsk(
+        { action: 'filesystem.write', target: join(repo, 'alias', 'fresh.ts') },
+        bounded,
+      ),
     ).toBeNull();
   });
 });
