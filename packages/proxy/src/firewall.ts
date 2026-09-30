@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 import {
   changingTools,
@@ -137,6 +138,7 @@ export interface FirewallProcessDeps {
   spawn?: (command: string, args: string[]) => ChildProcess;
   input?: NodeJS.EventEmitter;
   exit?: (code: number) => void;
+  output?: (payload: string) => void;
 }
 
 function defaultSpawn(command: string, args: readonly string[]): ChildProcess {
@@ -149,6 +151,9 @@ export class McpFirewall {
   private readonly log: (message: string) => void;
   private readonly ledger: EventSink | null;
   private child: ChildProcess | null = null;
+  private output: (payload: string) => void = (payload) => {
+    process.stdout.write(payload);
+  };
   private readonly authorizer: CallAuthorizer;
   /** Set once the agent is ending the session, so its server stopping is not reported. */
   private ending = false;
@@ -288,6 +293,7 @@ export class McpFirewall {
     const exit = deps.exit ?? ((code: number) => process.exit(code));
     const child = (deps.spawn ?? defaultSpawn)(executable, args);
     this.child = child;
+    if (deps.output !== undefined) this.output = deps.output;
     child.on('exit', (code) => {
       const status = code === null ? 0 : code;
       const finish = (): void => {
@@ -326,8 +332,10 @@ export class McpFirewall {
 
   private pipeClient(input: NodeJS.EventEmitter, child: ChildProcess): void {
     const clientToServer = new LineBuffer();
+    // A pipe cuts at any byte, so a character split across two chunks must be held until whole.
+    const decoder = new StringDecoder('utf8');
     input.on('data', (chunk: Buffer) => {
-      for (const line of clientToServer.push(chunk.toString('utf8'))) {
+      for (const line of clientToServer.push(decoder.write(chunk))) {
         void this.session.fromClient(line);
       }
     });
@@ -344,8 +352,9 @@ export class McpFirewall {
       throw new Error('firewall could not attach to the wrapped server output');
     }
     const serverToClient = new LineBuffer();
+    const decoder = new StringDecoder('utf8');
     child.stdout.on('data', (chunk: Buffer) => {
-      for (const line of serverToClient.push(chunk.toString('utf8'))) {
+      for (const line of serverToClient.push(decoder.write(chunk))) {
         this.session.fromServer(line);
       }
     });
@@ -419,7 +428,9 @@ export class McpFirewall {
         stdin.write(payload);
         return true;
       },
-      toClient: (payload) => process.stdout.write(payload),
+      toClient: (payload) => {
+        this.output(payload);
+      },
     };
   }
 }
