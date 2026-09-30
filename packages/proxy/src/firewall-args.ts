@@ -4,8 +4,9 @@ import { AGENT_FLAG } from '@memnox/core';
 const COMMAND_SEPARATOR = '--';
 const NAME_FLAG = '--name';
 const DEFAULT_SERVER_NAME = 'mcp-server';
+const FLAG_PREFIX = '--';
 
-interface FirewallArgs {
+export interface FirewallArgs {
   /** The wrapped MCP server command, e.g. ["npx", "-y", "@some/mcp-server"]. */
   command: string[];
   serverName: string;
@@ -13,22 +14,42 @@ interface FirewallArgs {
   agent?: string;
 }
 
+/** A flag that takes a value was given none, so the caller names it rather than guessing. */
+interface MissingFlagValue {
+  missingValueFor: string;
+}
+
+/** The value after `flag`, undefined when absent, or the flag itself when its value is missing. */
+function flagValue(
+  flags: readonly string[],
+  flag: string,
+): { value: string | undefined } | MissingFlagValue {
+  const index = flags.indexOf(flag);
+  if (index === -1) return { value: undefined };
+  const value = flags[index + 1];
+  // A value that looks like a flag is the next flag, and taking it would misread everything after.
+  if (value === undefined || value.startsWith(FLAG_PREFIX))
+    return { missingValueFor: flag };
+  return { value };
+}
+
 /** Null means the invocation cannot run and the caller should print usage. */
-export function parseFirewallArgs(argv: readonly string[]): FirewallArgs | null {
+export function parseFirewallArgs(
+  argv: readonly string[],
+): FirewallArgs | MissingFlagValue | null {
   const separator = argv.indexOf(COMMAND_SEPARATOR);
   if (separator === -1 || separator === argv.length - 1) return null;
 
   const flags = argv.slice(0, separator);
-  const nameIndex = flags.indexOf(NAME_FLAG);
-  const agentIndex = flags.indexOf(AGENT_FLAG);
-  const agent = agentIndex === -1 ? undefined : flags[agentIndex + 1];
+  const name = flagValue(flags, NAME_FLAG);
+  if ('missingValueFor' in name) return name;
+  const agentFlag = flagValue(flags, AGENT_FLAG);
+  if ('missingValueFor' in agentFlag) return agentFlag;
+  const agent = agentFlag.value;
 
   return {
     ...(agent === undefined || agent === '' ? {} : { agent }),
     command: argv.slice(separator + 1),
-    serverName:
-      nameIndex === -1
-        ? DEFAULT_SERVER_NAME
-        : (flags[nameIndex + 1] ?? DEFAULT_SERVER_NAME),
+    serverName: name.value ?? DEFAULT_SERVER_NAME,
   };
 }
