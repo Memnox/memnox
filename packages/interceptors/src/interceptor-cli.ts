@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 
@@ -32,6 +31,7 @@ import { loadHookGate } from './hook-gate-loader';
 import {
   INTERCEPT_BINARY,
   invokedFor,
+  isExecutableFile,
   realPath,
   resolveReal,
   ruleOnCommand,
@@ -303,7 +303,7 @@ async function anotherAgentHasIt(
  */
 function hand(command: Command, home: string): Promise<number> {
   const path = realPath(process.env['PATH'] ?? '', home);
-  const real = resolveReal(command.binary, path, existsSync);
+  const real = resolveReal(command.binary, path, isExecutableFile);
   if (real === null) {
     process.stderr.write(
       `memnox: ${command.binary} is not on PATH behind the interceptor\n`,

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -10,6 +10,7 @@ import {
   interceptorDirFor,
   INTERCEPT_BINARY,
   invokedFor,
+  isExecutableFile,
   realPath,
   removeInterceptors,
   resolveReal,
@@ -156,6 +157,27 @@ describe('finding the real binary', () => {
     const exists = (p: string): boolean => p === '/usr/bin/git';
     expect(resolveReal('git', '/nope:/usr/bin', exists)).toBe('/usr/bin/git');
     expect(resolveReal('nothing', '/usr/bin', exists)).toBeNull();
+  });
+
+  it('walks past a directory or a file without the execute bit, as a shell does', async () => {
+    const root = await home();
+    try {
+      const shadowDir = join(root, 'dir');
+      const shadowFile = join(root, 'file');
+      const real = join(root, 'real');
+      await mkdir(join(shadowDir, 'git'), { recursive: true });
+      await mkdir(shadowFile);
+      await writeFile(join(shadowFile, 'git'), '#!/bin/sh\n', { mode: 0o644 });
+      await mkdir(real);
+      await writeFile(join(real, 'git'), '#!/bin/sh\n', { mode: 0o755 });
+
+      const path = [shadowDir, shadowFile, real].join(':');
+      expect(resolveReal('git', path, isExecutableFile)).toBe(join(real, 'git'));
+      const shadowsOnly = [shadowDir, shadowFile].join(':');
+      expect(resolveReal('git', shadowsOnly, isExecutableFile)).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
