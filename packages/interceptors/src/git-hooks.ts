@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { ACTION } from '@memnox/core';
+import { ACTION, ownProcessEnv } from '@memnox/core';
 
 /**
  * Defence in depth. An interceptor is bypassed by anything that calls the real binary
@@ -46,7 +47,7 @@ function bodyFor(hook: GitHook, binary: string): string {
     HOOK_MARKER,
     '# Remove this file, or run "memnox uninstall", to undo.',
     '',
-    `MEMNOX="${binary}"`,
+    `MEMNOX=${shellQuoted(binary)}`,
     'command -v "$MEMNOX" >/dev/null 2>&1 || MEMNOX=memnox',
     '',
     ...(hook === 'pre-push' ? FORCE_PUSH_ONLY : []),
@@ -76,8 +77,36 @@ function verdictLines(action: string): string[] {
   ];
 }
 
-function hooksDirOf(repoDir: string): string {
-  return join(repoDir, '.git', 'hooks');
+/** Single quotes, so a `"`, `$` or backtick in the install path stays a character. */
+function shellQuoted(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function gitOutput(repoDir: string, args: readonly string[]): string | null {
+  try {
+    return execFileSync('git', [...args], {
+      cwd: repoDir,
+      // The real git: the one on PATH may be the interceptor, which would ask this again.
+      env: ownProcessEnv(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    // Not a repository, or the key is unset, which is an answer rather than a failure.
+    return null;
+  }
+}
+
+/** Asked of git, since a worktree or submodule has a `.git` file rather than a directory. */
+function hooksDirOf(repoDir: string): string | null {
+  const path = gitOutput(repoDir, ['rev-parse', '--git-path', 'hooks']);
+  return path === null || path === '' ? null : resolve(repoDir, path);
+}
+
+/** Set by Husky, lefthook and the like, whose directory is theirs to write rather than ours. */
+function hookFrameworkDirOf(repoDir: string): string | null {
+  const path = gitOutput(repoDir, ['config', '--get', 'core.hooksPath']);
+  return path === null || path === '' ? null : path;
 }
 
 /** The `memnox` this process is, when it can be worked out; the bare name otherwise. */
@@ -109,10 +138,19 @@ export async function installGitHooks(
   repoDir: string,
   binary: string = defaultBinary(),
 ): Promise<HookInstallReport> {
-  const hooksDir = hooksDirOf(repoDir);
-  await mkdir(hooksDir, { recursive: true });
-
   const report: HookInstallReport = { installed: [], skipped: [] };
+  const hooksDir = hooksDirOf(repoDir);
+  if (hooksDir === null) return report;
+
+  const framework = hookFrameworkDirOf(repoDir);
+  if (framework !== null) {
+    // Their directory is regenerated or committed by them, so a person wires Memnox in instead.
+    const because = `core.hooksPath sends git to ${framework}, which a hook framework owns`;
+    report.skipped = HOOKS.map((hook) => ({ hook, because }));
+    return report;
+  }
+
+  await mkdir(hooksDir, { recursive: true });
   for (const hook of HOOKS) {
     const path = join(hooksDir, hook);
     const existing = await existingHook(path);
@@ -131,6 +169,7 @@ export async function installGitHooks(
 export async function removeGitHooks(repoDir: string): Promise<GitHook[]> {
   const hooksDir = hooksDirOf(repoDir);
   const removed: GitHook[] = [];
+  if (hooksDir === null) return removed;
   for (const hook of HOOKS) {
     const path = join(hooksDir, hook);
     const existing = await existingHook(path);
