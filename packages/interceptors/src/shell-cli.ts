@@ -5,14 +5,14 @@ import {
   DECISION_EFFECT,
   digest,
   ENV_AGENT_NAME,
-  exitCodeForSignal,
+  exitCodeForChild,
+  exitCodeForSpawnError,
   holderPid,
   localRuleRef,
   openLedger,
   overlaysInForce,
   provenanceOf,
   SESSION_VAR,
-  SIGNAL_NUMBER,
 } from '@memnox/core';
 
 import { checkpointBeforeLine } from './checkpoint-seam';
@@ -58,19 +58,6 @@ function commandOf(invocation: ShellInvocation): string[] {
   return invocation.argv ?? [];
 }
 
-function isNumberedSignal(signal: NodeJS.Signals): signal is keyof typeof SIGNAL_NUMBER {
-  return signal in SIGNAL_NUMBER;
-}
-
-/**
- * A signal is `128 + n`, as a shell reports one;
- * no code and no signal means it never ran.
- */
-function signalledExit(signal: NodeJS.Signals | null): number {
-  if (signal === null || !isNumberedSignal(signal)) return SHELL_EXIT_WITHHELD;
-  return exitCodeForSignal(signal);
-}
-
 /**
  * Resolves to the exit code, so the row carries
  * what happened rather than only what was decided.
@@ -79,11 +66,12 @@ function run(executable: string, args: readonly string[]): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(executable, args, { stdio: 'inherit' });
     child.on('exit', (code, signal) => {
-      resolve(code === null ? signalledExit(signal) : code);
+      resolve(exitCodeForChild(code, signal));
     });
     child.on('error', (err: unknown) => {
       log(`could not run the command: ${String(err)}`);
-      resolve(SHELL_EXIT_WITHHELD);
+      // Nothing refused it, so it must not read as 77 and stop an agent retrying.
+      resolve(exitCodeForSpawnError(err));
     });
   });
 }
