@@ -21,6 +21,8 @@ import {
 import { isCallAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
 import {
+  invalidRequest,
+  isJsonRpcMessage,
   parseIncoming,
   serializeBatch,
   serializeMessage,
@@ -159,8 +161,8 @@ export class FirewallSession {
   async fromClient(line: string): Promise<void> {
     const incoming = parseIncoming(line);
     if (incoming === null) return this.forwardRaw(`${line}\n`);
-    if (!Array.isArray(incoming)) {
-      const ruled = this.ruleOn(incoming as JsonRpcMessage);
+    if (isJsonRpcMessage(incoming)) {
+      const ruled = this.ruleOn(incoming);
       const ruling = ruled instanceof Promise ? await ruled : ruled;
       if (ruling.forward !== undefined) this.forward(ruling.forward);
       if (ruling.answer !== undefined)
@@ -175,10 +177,18 @@ export class FirewallSession {
    * batch with it and each allowed one is still a row of its own. In turn rather than at
    * once, because two calls that both need a person must reach them in the order sent.
    */
-  private async batchFromClient(batch: readonly JsonRpcMessage[]): Promise<void> {
+  private async batchFromClient(batch: readonly unknown[]): Promise<void> {
     const onward: JsonRpcMessage[] = [];
     const answers: JsonRpcMessage[] = [];
-    for (const message of batch) {
+    for (const item of batch) {
+      // A null or a nested array has no method to rule on and no id to answer against,
+      // and reading one as a message threw where nothing was there to catch it.
+      if (!isJsonRpcMessage(item)) {
+        this.deps.log('refused an item in a batch that was not a request object');
+        answers.push(invalidRequest());
+        continue;
+      }
+      const message = item;
       const ruled = this.ruleOn(message);
       const ruling = ruled instanceof Promise ? await ruled : ruled;
       if (ruling.forward !== undefined) onward.push(ruling.forward);
@@ -272,13 +282,16 @@ export class FirewallSession {
   fromServer(line: string): void {
     const incoming = parseIncoming(line);
     if (incoming === null) return this.deps.channel.toClient(`${line}\n`);
-    if (!Array.isArray(incoming))
-      return this.deps.channel.toClient(
-        serializeMessage(this.replyFor(incoming as JsonRpcMessage)),
-      );
+    if (isJsonRpcMessage(incoming))
+      return this.deps.channel.toClient(serializeMessage(this.replyFor(incoming)));
     // Split, so a batched reply still meets the call it answers rather than passing unframed.
+    // What is not a message answers no call, and goes back as the server sent it.
     this.deps.channel.toClient(
-      serializeBatch(incoming.map((message) => this.replyFor(message))),
+      serializeBatch(
+        incoming.map((item) =>
+          isJsonRpcMessage(item) ? this.replyFor(item) : (item as JsonRpcMessage),
+        ),
+      ),
     );
   }
 

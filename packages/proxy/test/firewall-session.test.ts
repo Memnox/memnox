@@ -402,6 +402,43 @@ describe('a JSON-RPC batch', () => {
     expect(channel.server).toHaveLength(1);
   });
 
+  it('answers an item that is not a request object, rather than throwing on it', async () => {
+    const { session, channel } = batched();
+
+    // `fromClient` is called with `void`, so a throw here took the whole proxy down.
+    await expect(session.fromClient('[null]\n')).resolves.toBeUndefined();
+
+    expect(channel.server).toEqual([]);
+    const answered = sentToClient(channel);
+    expect(answered[0]?.error).toEqual({ code: -32600, message: 'Invalid Request' });
+    expect(answered[0]?.id).toBeNull();
+  });
+
+  it('refuses a call nested in an inner array rather than forwarding it unruled', async () => {
+    const { session, channel, authorizer } = batched();
+
+    await session.fromClient(`[${JSON.stringify([call(1, 'delete_repo')])}]\n`);
+
+    expect(authorizer.asked).toEqual([]);
+    expect(channel.server).toEqual([]);
+    expect(sentToClient(channel)[0]?.error).toEqual({
+      code: -32600,
+      message: 'Invalid Request',
+    });
+  });
+
+  it('answers each bad item and still rules on the good ones beside them', async () => {
+    const { session, channel, authorizer } = batched();
+
+    await session.fromClient(`["a string",${JSON.stringify(call(1, 'read_file'))},42]\n`);
+
+    expect(authorizer.asked).toEqual(['read_file']);
+    expect(channel.server).toHaveLength(1);
+    expect(sentToClient(channel).map((each) => each.error?.['code'])).toEqual([
+      -32600, -32600,
+    ]);
+  });
+
   it('splits a batched reply, so instruction-shaped content in one is still quoted', async () => {
     const { session, channel } = batched();
     await session.fromClient(line([call(1, 'read_file'), call(2, 'read_dir')]));
