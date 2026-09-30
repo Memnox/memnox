@@ -34,6 +34,7 @@ import {
   askDaemon,
   INTERCEPT_BINARY,
   interceptorDirFor,
+  isExecutableFile,
   realPath,
   resolveReal,
 } from '@memnox/interceptors';
@@ -313,7 +314,7 @@ function isInterceptBinaryOn(path: string): boolean {
 function presentBinaries(home: string, env: NodeJS.ProcessEnv): string[] {
   const path = realPath(env['PATH'] ?? '', home);
   return interceptedBinaries().filter(
-    (binary) => resolveReal(binary, path, existsSync) !== null,
+    (binary) => resolveReal(binary, path, isExecutableFile) !== null,
   );
 }
 

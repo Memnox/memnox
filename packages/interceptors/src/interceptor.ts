@@ -1,3 +1,4 @@
+import { accessSync, constants, statSync } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
 
 import {
@@ -240,6 +241,19 @@ function refusal(verdict: BinaryVerdict, decision: LocalVerdict): string {
   // both seams learns one thing about retrying.
   const { guidance } = refusalShapeFor(DECISION_EFFECT.DENY, decision.reason);
   return `Denied by Memnox: ${decision.reason}\n(${verdict.because})${instead}\n${guidance}`;
+}
+
+/** Whether a PATH candidate is something a shell would run: a file with the execute bit. */
+export function isExecutableFile(candidate: string): boolean {
+  try {
+    // A directory or a file without the bit named like the binary earlier
+    // on PATH would otherwise win and fail the spawn with EACCES.
+    if (!statSync(candidate).isFile()) return false;
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Where the real binary lives, found along PATH with our own directory removed. */
