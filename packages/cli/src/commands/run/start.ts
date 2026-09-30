@@ -110,16 +110,21 @@ function teedExitCode(
     log.once('close', settle);
     log.once('error', settle);
     for (const mask of masks) mask.once('end', done);
-    // `close` rather than `exit`: the streams can still be draining when the process goes.
-    child.on('close', (exit) => {
-      code = exit ?? 1;
+    // A missing command fires `error` and then `close` with -2, so the child counts
+    // once here and the first code it named is the one kept.
+    let named = false;
+    const childDone = (next: number): void => {
+      if (named) return;
+      named = true;
+      code = next;
       done();
-    });
+    };
+    // `close` rather than `exit`: the streams can still be draining when the process goes.
+    child.on('close', (exit) => childDone(exit ?? 1));
     child.on('error', () => {
-      code = 127;
       // Nothing will end these now, and a mask left open is a run that never returns.
       for (const mask of masks) if (!mask.writableEnded) mask.end();
-      done();
+      childDone(127);
     });
   });
 }

@@ -148,3 +148,23 @@ describe('the transcript a finished run leaves behind', () => {
     await rm(home, { recursive: true, force: true });
   });
 });
+
+/* A command that does not exist fires `error` and then `close` with -2. The child counted
+   twice, so the file could close before a mask had flushed, and -2 replaced the 127. */
+describe('a command that is not there', () => {
+  it('answers 127 and leaves a transcript behind', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'memnox-missing-'));
+    const transcript = join(home, 'sessions', 'ses_1.log');
+
+    const code = await defaultStart(
+      'memnox-no-such-binary',
+      [],
+      { ...process.env },
+      transcript,
+    );
+
+    expect(code).toBe(127);
+    await expect(readFile(transcript, 'utf8')).resolves.toBe('');
+    await rm(home, { recursive: true, force: true });
+  });
+});
