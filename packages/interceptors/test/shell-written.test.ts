@@ -103,6 +103,22 @@ describe('what a shell command wrote, read after it ran', () => {
     expect(await brokenByShell(call, context, 's1')).toBeNull();
   });
 
+  // The diff header is parsed by its prefix, so a person's own prefix settings must not move it.
+  it.each([
+    ['diff.noprefix', 'true'],
+    ['diff.dstPrefix', 'new/'],
+  ])('still reads the added lines where %s is set', async (key, value) => {
+    const { repo, context } = await repository();
+    execFileSync('git', ['config', key, value], { cwd: repo, stdio: 'ignore' });
+    await keepBeforeShell(call, command(repo), context);
+    await writeFile(
+      join(repo, 'src', 'http', 'Resource.java'),
+      'class Resource {\n  void archive() { orderRepository.update(b); }\n}\n',
+    );
+
+    expect(await brokenByShell(call, context, 's1')).toContain('writes-only-in-actions');
+  });
+
   it('says nothing where the command added only what the fingerprint allows', async () => {
     const { repo, context } = await repository();
     await keepBeforeShell(call, command(repo), context);
