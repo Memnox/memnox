@@ -23,7 +23,10 @@ describe('parseFirewallArgs', () => {
       '--port=1',
     ]);
 
-    expect(args?.command).toEqual(['node', 'server.js', '--port=1']);
+    expect(args).toEqual({
+      serverName: 'db',
+      command: ['node', 'server.js', '--port=1'],
+    });
   });
 
   it('accepts a bare command with no flags of ours', () => {
@@ -34,18 +37,19 @@ describe('parseFirewallArgs', () => {
   });
 
   it('falls back to a default name when --name is absent', () => {
-    expect(parseFirewallArgs(['--', 'npx'])?.serverName).toBe(DEFAULT_NAME);
-  });
-
-  it('falls back to a default name when --name is given no value', () => {
-    expect(parseFirewallArgs(['--name', '--', 'npx'])?.serverName).toBe(DEFAULT_NAME);
+    expect(parseFirewallArgs(['--', 'npx'])).toEqual({
+      serverName: DEFAULT_NAME,
+      command: ['npx'],
+    });
   });
 
   it('treats --name after the separator as the wrapped command, not ours', () => {
     const args = parseFirewallArgs(['--', 'npx', '--name', 'theirs']);
 
-    expect(args?.serverName).toBe(DEFAULT_NAME);
-    expect(args?.command).toEqual(['npx', '--name', 'theirs']);
+    expect(args).toEqual({
+      serverName: DEFAULT_NAME,
+      command: ['npx', '--name', 'theirs'],
+    });
   });
 
   it('reads the agent the wrapped line was written for', () => {
@@ -61,16 +65,20 @@ describe('parseFirewallArgs', () => {
       'theirs',
     ]);
 
-    expect(args?.agent).toBe('cursor');
-    expect(args?.command).toEqual(['npx', '--agent', 'theirs']);
-    expect(parseFirewallArgs(['--name', 'slack', '--', 'npx'])?.agent).toBeUndefined();
+    expect(args).toEqual({
+      agent: 'cursor',
+      serverName: 'slack',
+      command: ['npx', '--agent', 'theirs'],
+    });
+    expect(parseFirewallArgs(['--name', 'slack', '--', 'npx'])).not.toHaveProperty(
+      'agent',
+    );
   });
 
   it('splits on the first separator so a later -- belongs to the command', () => {
     const args = parseFirewallArgs(['--name', 'x', '--', 'npx', '--', 'inner']);
 
-    expect(args?.serverName).toBe('x');
-    expect(args?.command).toEqual(['npx', '--', 'inner']);
+    expect(args).toEqual({ serverName: 'x', command: ['npx', '--', 'inner'] });
   });
 });
 
@@ -85,5 +93,28 @@ describe('parseFirewallArgs — unusable invocations', () => {
 
   it('rejects empty arguments', () => {
     expect(parseFirewallArgs([])).toBeNull();
+  });
+});
+
+describe('parseFirewallArgs, a flag given no value', () => {
+  it('names --name rather than taking the next flag as its value', () => {
+    expect(parseFirewallArgs(['--name', '--agent', 'x', '--', 'cmd'])).toEqual({
+      missingValueFor: '--name',
+    });
+  });
+
+  it('names --name when it is the last of our arguments', () => {
+    expect(parseFirewallArgs(['--name', '--', 'npx'])).toEqual({
+      missingValueFor: '--name',
+    });
+  });
+
+  it('names --agent the same way', () => {
+    expect(parseFirewallArgs(['--agent', '--name', 'x', '--', 'cmd'])).toEqual({
+      missingValueFor: '--agent',
+    });
+    expect(parseFirewallArgs(['--name', 'x', '--agent', '--', 'cmd'])).toEqual({
+      missingValueFor: '--agent',
+    });
   });
 });
