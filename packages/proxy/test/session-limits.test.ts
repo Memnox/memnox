@@ -45,7 +45,11 @@ function limits(over: Partial<SessionLimits> = {}): SessionLimits {
 /** The child reduced to what the proxy touches; see `firewall-lifecycle.test.ts`. */
 function fakeChild(): ChildProcess {
   return Object.assign(new EventEmitter(), {
-    stdin: { writable: true, write: () => true, end: () => undefined },
+    stdin: Object.assign(new EventEmitter(), {
+      writable: true,
+      write: () => true,
+      end: () => undefined,
+    }),
     stdout: new EventEmitter(),
   }) as unknown as ChildProcess;
 }
