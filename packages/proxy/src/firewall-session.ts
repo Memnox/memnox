@@ -86,7 +86,10 @@ function describeMessage(message: JsonRpcMessage): string {
  * Holds no process, so tests drive it directly.
  */
 export class FirewallSession {
-  private readonly listRequestIds = new Set<MessageId>();
+  /** Open listing requests, and whether each carried a cursor and so continues a listing. */
+  private readonly listRequestIds = new Map<MessageId, boolean>();
+  /** The pages of a listing so far, since one page alone is not everything the server holds. */
+  private listedSoFar: McpToolDeclaration[] = [];
   /**
    * Open tool calls, with the verdict that let each
    * out, since the row is written when it returns.
@@ -142,7 +145,7 @@ export class FirewallSession {
 
     const id = identify(message);
     if (message.method === METHOD_TOOLS_LIST && id !== null) {
-      this.listRequestIds.add(id);
+      this.listRequestIds.set(id, hasCursor(message.params));
       return this.forward(message);
     }
     if (message.method !== METHOD_TOOLS_CALL) return this.forward(message);
@@ -214,9 +217,10 @@ export class FirewallSession {
     if (!message) return this.deps.channel.toClient(`${line}\n`);
 
     const id = identify(message);
-    if (id !== null && this.listRequestIds.has(id)) {
+    const continued = id === null ? undefined : this.listRequestIds.get(id);
+    if (id !== null && continued !== undefined) {
       this.listRequestIds.delete(id);
-      this.deps.onListing?.(declarationsIn(message));
+      this.collectListing(message, continued);
       return this.deps.channel.toClient(serializeMessage(this.filterListing(message)));
     }
 
@@ -244,6 +248,21 @@ export class FirewallSession {
     this.deps.channel.toClient(
       serializeMessage(this.withNotes(frameResult(message, result))),
     );
+  }
+
+  /** Handed on once the last page arrives, so page two never erases page one. */
+  private collectListing(message: JsonRpcMessage, continued: boolean): void {
+    // A failed page is not an empty server, so it abandons the listing rather than ending it.
+    if (message.result === undefined) {
+      this.listedSoFar = [];
+      return;
+    }
+    const page = declarationsIn(message);
+    this.listedSoFar = continued ? [...this.listedSoFar, ...page] : page;
+    if (hasCursor(message.result, 'nextCursor')) return;
+    const tools = this.listedSoFar;
+    this.listedSoFar = [];
+    this.deps.onListing?.(tools);
   }
 
   private record(
@@ -336,6 +355,12 @@ function declarationsIn(message: JsonRpcMessage): McpToolDeclaration[] {
       };
     })
     .filter((tool) => tool.name !== '');
+}
+
+function hasCursor(holder: unknown, key = 'cursor'): boolean {
+  if (typeof holder !== 'object' || holder === null) return false;
+  const cursor: unknown = Reflect.get(holder, key);
+  return typeof cursor === 'string' && cursor !== '';
 }
 
 function toolNameOf(tool: unknown): string {
