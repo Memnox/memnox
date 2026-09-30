@@ -16,8 +16,25 @@ export interface JsonRpcMessage {
  */
 export { LineBuffer } from '@memnox/core';
 
-/** One message, or the array a JSON-RPC batch arrives as. */
-export type JsonRpcIncoming = JsonRpcMessage | readonly JsonRpcMessage[];
+/** One message, or the array a JSON-RPC batch arrives as, whose items are still unknown. */
+export type JsonRpcIncoming = JsonRpcMessage | readonly unknown[];
+
+/** JSON-RPC's own code for something that is not a request object at all. */
+const INVALID_REQUEST = -32600;
+
+/** Narrowed at the boundary: an array or a null inside a batch is neither a message nor an id. */
+export function isJsonRpcMessage(value: unknown): value is JsonRpcMessage {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The answer owed to an item that was never a request. Null id, because it carried none. */
+export function invalidRequest(): JsonRpcMessage {
+  return {
+    jsonrpc: '2.0',
+    id: null,
+    error: { code: INVALID_REQUEST, message: 'Invalid Request' },
+  };
+}
 
 /**
  * Tells a batch from a single message, because casting an array to one gives it no
@@ -34,17 +51,14 @@ export function parseIncoming(line: string): JsonRpcIncoming | null {
     return null;
   }
   // An empty batch is not a message either; it goes on raw and the peer answers for it.
-  if (Array.isArray(parsed))
-    return parsed.length === 0 ? null : (parsed as JsonRpcMessage[]);
-  return typeof parsed === 'object' && parsed !== null
-    ? (parsed as JsonRpcMessage)
-    : null;
+  if (Array.isArray(parsed)) return parsed.length === 0 ? null : (parsed as unknown[]);
+  return isJsonRpcMessage(parsed) ? parsed : null;
 }
 
 /** Null for a batch, which has no single identity to act on. */
 export function parseMessage(line: string): JsonRpcMessage | null {
   const parsed = parseIncoming(line);
-  return parsed === null || Array.isArray(parsed) ? null : (parsed as JsonRpcMessage);
+  return parsed !== null && isJsonRpcMessage(parsed) ? parsed : null;
 }
 
 export function serializeMessage(message: JsonRpcMessage): string {
