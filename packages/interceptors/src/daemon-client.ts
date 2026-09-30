@@ -110,6 +110,13 @@ function speak(
     socket.on('data', (chunk: string) => {
       for (const line of reader.push(chunk)) finish(decodeResponse(line));
     });
+    // A reply the daemon closed on without a newline is still the reply.
+    socket.on('end', () => {
+      for (const line of reader.push('\n')) finish(decodeResponse(line));
+      finish(null);
+    });
+    // The timer is unref'd, so a close nobody answers would drain the loop with this pending.
+    socket.on('close', () => finish(null));
     // Not running is the ordinary case, not an error worth printing.
     socket.on('error', () => finish(null));
   });
