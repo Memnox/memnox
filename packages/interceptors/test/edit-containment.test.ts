@@ -11,7 +11,12 @@ import {
   ProbationRegister,
   SessionContainments,
 } from '@memnox/core';
-import { EDIT_HOST, EDIT_MOMENT, type AgentEdits } from '../src/agent-edits';
+import {
+  agentEditsOf,
+  EDIT_HOST,
+  EDIT_MOMENT,
+  type AgentEdits,
+} from '../src/agent-edits';
 import { containmentFor } from '../src/containment-loader';
 import type { EditHookContext } from '../src/edit-claims';
 import { containedEdit, NOT_FROM_CHAT } from '../src/edit-containment';
@@ -60,6 +65,31 @@ describe('a hooked agent writing outside its repository', () => {
     expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
       'outside /work/shop',
     );
+  });
+
+  it('is asked about when a Codex patch moves a file out of the repository', async () => {
+    const found = agentEditsOf({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'apply_patch',
+      session_id: 's1',
+      cwd: REPO,
+      tool_input: {
+        command: [
+          '*** Begin Patch',
+          '*** Update File: notes.md',
+          '*** Move to: ../../.ssh/authorized_keys',
+          '@@',
+          '+ssh-ed25519 AAAA',
+          '*** End Patch',
+        ].join('\n'),
+      },
+    });
+    if (found === null) throw new Error('no edits');
+    const reply = await containedEdit(found, true, context(await home()), () => REPO);
+    const parsed = JSON.parse(reply ?? '{}') as {
+      hookSpecificOutput: { permissionDecision: string };
+    };
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('ask');
   });
 
   it('is refused in the host’s own words where nobody can be asked', async () => {
