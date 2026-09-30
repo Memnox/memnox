@@ -213,7 +213,8 @@ export class FirewallSession {
     const message = parseMessage(line);
     if (!message) return this.deps.channel.toClient(`${line}\n`);
 
-    const id = identify(message);
+    // Client and server number ids independently, so only a response may settle an open request.
+    const id = isResponse(message) ? identify(message) : null;
     if (id !== null && this.listRequestIds.has(id)) {
       this.listRequestIds.delete(id);
       this.deps.onListing?.(declarationsIn(message));
@@ -342,6 +343,13 @@ function toolNameOf(tool: unknown): string {
   if (typeof tool !== 'object' || tool === null) return '';
   const name: unknown = Reflect.get(tool, 'name');
   return String(name ?? '');
+}
+
+function isResponse(message: JsonRpcMessage): boolean {
+  return (
+    message.method === undefined &&
+    (message.result !== undefined || message.error !== undefined)
+  );
 }
 
 function identify(message: JsonRpcMessage): MessageId | null {
