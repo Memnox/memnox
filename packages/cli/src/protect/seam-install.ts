@@ -95,10 +95,10 @@ export async function runHooks(context: CliContext, repoDir: string): Promise<vo
   }
   flow.list('Git hooks', [
     ...report.installed.map((hook) => ({ tone: TONE.OK, text: `installed  ${hook}` })),
-    // A hook somebody else wrote is never overwritten; theirs is the one that matters.
-    ...report.skipped.map((hook) => ({
+    // Somebody else's hook or hook directory is never written over, so the reason is named.
+    ...report.skipped.map((each) => ({
       tone: TONE.DIM,
-      text: `kept  ${hook}, because it is yours`,
+      text: `skipped  ${each.hook}, because ${each.because}`,
     })),
   ]);
   flow.close(`${report.installed.length} hook(s) installed in ${repoDir}.`);
