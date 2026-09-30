@@ -8,6 +8,8 @@ import {
   DECISION_EFFECT,
   ENV_AGENT_NAME,
   EXIT,
+  exitCodeForChild,
+  exitCodeForSpawnError,
   holderPid,
   isBrowserLauncher,
   openLedger,
@@ -319,11 +321,13 @@ function hand(command: Command, home: string): Promise<number> {
       stdio: 'inherit',
       env: { ...process.env, PATH: path },
     });
-    child.on('error', () => resolve(EXIT.FAILED));
-    child.on('exit', (code) => {
+    child.on('error', (err: unknown) => {
+      process.stderr.write(`memnox: could not run ${command.binary}: ${String(err)}\n`);
+      resolve(exitCodeForSpawnError(err));
+    });
+    child.on('exit', (code, signal) => {
       for (const each of FORWARDED) process.off(each, ignore);
-      // A signalled child has no code, which a blocking spawn reported as 1 too.
-      resolve(code ?? EXIT.FAILED);
+      resolve(exitCodeForChild(code, signal));
     });
   });
 }
