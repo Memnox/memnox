@@ -8,12 +8,19 @@ import {
   RISK_ORDER,
 } from '../constants/risk.constants';
 
-/** Actions split on both "." and "_" so "mcp.delete_repo" yields [mcp, delete, repo]. */
-const ACTION_SEGMENT_SEPARATOR = /[._]/;
+/**
+ * Actions split on ".", "_", "-" and camelCase boundaries, because verb table actions are
+ * joined with dashes and MCP tools are often camelCase, so "gh.repo-delete" and
+ * "mcp.deleteRepo" both yield the verb "delete".
+ */
+const ACTION_SEGMENT_SEPARATOR = /[._-]|(?<=[a-z0-9])(?=[A-Z])/;
 
 /** Rule-based on purpose: risk must be explainable and reproducible. */
 export function classifyRisk(action: string, environment?: string): RiskLevel {
-  const segments = action.toLowerCase().split(ACTION_SEGMENT_SEPARATOR);
+  const segments = action
+    .split(ACTION_SEGMENT_SEPARATOR)
+    .map((segment) => segment.toLowerCase())
+    .filter((segment) => segment !== '');
   let level: RiskLevel = RISK_LEVEL.MEDIUM;
 
   if (segments.some((segment) => DESTRUCTIVE_VERBS.includes(segment))) {
