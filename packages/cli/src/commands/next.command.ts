@@ -20,9 +20,9 @@ import {
 } from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
-import { resolveWindowStart } from '../days-back';
 import { TONE } from '../flow';
 import { withEvents } from '../event-store';
+import { since as windowStart } from '../duration';
 import { policySetInForce } from '../policy-path';
 import { runAllow } from '../protect/written-rules';
 import {
@@ -40,9 +40,6 @@ const DEFAULT_WINDOW_DAYS = 7;
 
 /** The worst few interruptions, because a table nobody scrolls is one nobody finishes. */
 const INTERRUPTIONS_SHOWN = 5;
-
-/** What `--since` falls back to when it was given something that is not a number. */
-const DEFAULT_SINCE_DAYS = 30;
 
 type Interruptions = ReturnType<typeof interruptions>;
 
@@ -124,7 +121,7 @@ async function readDelegable(
   moment: Date,
   since: string,
 ): Promise<Delegable> {
-  const start = resolveWindowStart(since, moment, DEFAULT_SINCE_DAYS);
+  const start = windowStart(since, moment);
   const week = new Date(moment.getTime() - daysToMs(DEFAULT_WINDOW_DAYS)).toISOString();
 
   const events = await withEvents(home, (store) =>
