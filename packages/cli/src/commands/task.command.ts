@@ -17,6 +17,7 @@ import {
 } from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
+import { positiveInteger } from '../positive-integer';
 
 interface SetOptions {
   paths?: string;
@@ -61,9 +62,9 @@ async function runSet(
   options: SetOptions,
 ): Promise<void> {
   context.flow.open('memnox task set');
+  const hours = hoursOf(options.hours);
   const root = rootHere();
   const paths = pathsOf(root, options.paths);
-  const hours = options.hours === undefined ? undefined : Number(options.hours);
   const task = await new RepositoryTasks(home).declare(
     root,
     {
@@ -73,7 +74,7 @@ async function runSet(
     },
     {
       now: new Date().toISOString(),
-      ...(hours === undefined || Number.isNaN(hours) ? {} : { hours }),
+      ...hours,
     },
   );
   context.flow.rows('Declared', [
@@ -93,6 +94,11 @@ async function runSet(
   context.flow.close(
     'Actions outside these paths count as drift, and why quotes the ask.',
   );
+}
+
+// Read before the repository is, so a mistyped flag is refused before anything is declared.
+function hoursOf(raw: string | undefined): { hours?: number } {
+  return raw === undefined ? {} : { hours: positiveInteger(raw, '--hours') };
 }
 
 function pathsOf(root: string, given: string | undefined): string[] {

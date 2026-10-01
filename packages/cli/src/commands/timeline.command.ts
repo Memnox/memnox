@@ -18,6 +18,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { DAY_MS, since } from '../duration';
 import { withEvents } from '../event-store';
+import { positiveInteger } from '../positive-integer';
 
 /**
  * `memnox timeline`: what the agents on this machine did, in order, or exported as a
@@ -159,7 +160,10 @@ function buildFilter(options: TimelineOptions, moment: Date): EventQuery {
     );
   }
   // Config changes are part of what happened here, so the timeline asks for them.
-  const filter: EventQuery = { limit: Number(options.limit), withConfig: true };
+  const filter: EventQuery = {
+    limit: positiveInteger(options.limit, '--limit'),
+    withConfig: true,
+  };
   if (options.session !== undefined) filter.sessionId = options.session;
   if (options.agent !== undefined) filter.agent = options.agent;
   if (options.since !== undefined) filter.since = since(options.since, moment);
@@ -196,10 +200,10 @@ async function runPurge(
   const { flow } = context;
   flow.open('memnox purge');
   const config = await loadOrCreateConfig(home());
-  const days = options.days === undefined ? config.retentionDays : Number(options.days);
-  if (!Number.isInteger(days) || days <= 0) {
-    throw new Error('--days takes a whole number of days above zero.');
-  }
+  const days =
+    options.days === undefined
+      ? config.retentionDays
+      : positiveInteger(options.days, '--days');
 
   const cutoff = new Date(now().getTime() - days * DAY_MS).toISOString();
   await withEvents(home(), async (store) => {

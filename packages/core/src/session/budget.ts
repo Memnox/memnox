@@ -177,7 +177,9 @@ export function validateBudget(budget: Partial<Budget>): string[] {
   if (budget.actions === undefined || budget.actions.length === 0) {
     problems.push('a budget must name the actions it covers');
   }
-  if (budget.limit === undefined || budget.limit <= 0) {
+  if (budget.limit !== undefined && !Number.isFinite(budget.limit)) {
+    problems.push('a budget limit must be a number, like 50');
+  } else if (budget.limit === undefined || budget.limit <= 0) {
     problems.push('a budget of zero is a deny rule; write it as one');
   }
   return problems;
