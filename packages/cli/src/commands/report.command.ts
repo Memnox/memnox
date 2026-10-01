@@ -12,18 +12,15 @@ import {
 } from '@memnox/core';
 
 import type { CliContext } from '../cli-context';
-import { resolveWindowStart } from '../days-back';
 import { TONE, type FlowRow } from '../flow';
 import { withEvents } from '../event-store';
 import { renderSessionSummary } from '../report/session-view';
+import { since as windowStart } from '../duration';
 
 /**
  * `memnox report`: what the agents did in a window, and what of it was wasted, because
  * each failure looks like an ordinary bad afternoon and only the total says otherwise.
  */
-
-/** What `--since` falls back to when it was given something that is not a number. */
-const DEFAULT_WINDOW_DAYS = 1;
 
 export function registerReportCommand(
   program: Command,
@@ -94,7 +91,7 @@ async function runReport(
 ): Promise<void> {
   const moment = now();
   const until = moment.toISOString();
-  const since = resolveWindowStart(options.since, moment, DEFAULT_WINDOW_DAYS);
+  const since = windowStart(options.since, moment);
 
   const events = await withEvents(home(), (store) =>
     store.query({ since, limit: LEDGER_WINDOW_LIMIT }),

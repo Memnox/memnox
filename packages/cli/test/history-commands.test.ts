@@ -12,6 +12,8 @@ import {
   registerPurgeCommand,
   registerTimelineCommand,
 } from '../src/commands/timeline.command';
+import { registerNextCommand } from '../src/commands/next.command';
+import { registerReportCommand } from '../src/commands/report.command';
 import { since } from '../src/duration';
 
 const NOW = new Date('2026-09-05T12:00:00.000Z');
@@ -201,6 +203,49 @@ describe('--since', () => {
 
   it('refuses a duration nobody could parse, and shows the shapes it takes', () => {
     expect(() => since('a while', NOW)).toThrow(/30m, 2h, 7d/);
+  });
+});
+
+describe('report and next --since', () => {
+  const rows = [
+    event({ id: 'recent', at: '2026-09-05T11:00:00.000Z', effect: 'allow' }),
+    event({ id: 'older', at: '2026-09-05T08:00:00.000Z', effect: 'allow' }),
+  ];
+
+  async function report(window: string): Promise<{ since: string; actions: number }> {
+    const out = await run(
+      registerReportCommand as Register,
+      ['report', '--since', window, '--json'],
+      await machine(rows),
+    );
+    // Cast is safe: the command printed an OperationsReport and these are two of its fields.
+    return JSON.parse(out.text) as { since: string; actions: number };
+  }
+
+  it('reads 2h as two hours rather than two days', async () => {
+    const read = await report('2h');
+    expect(read.since).toBe('2026-09-05T10:00:00.000Z');
+    expect(read.actions).toBe(1);
+  });
+
+  it('takes an ISO timestamp', async () => {
+    const read = await report('2026-09-01T00:00:00.000Z');
+    expect(read.since).toBe('2026-09-01T00:00:00.000Z');
+    expect(read.actions).toBe(2);
+  });
+
+  it('refuses a bad window with the message timeline gives', async () => {
+    await expect(report('abc')).rejects.toThrow(/30m, 2h, 7d or an ISO timestamp/);
+  });
+
+  it('refuses a bad window on next too, rather than reading the default', async () => {
+    await expect(
+      run(
+        registerNextCommand as Register,
+        ['next', '--since', 'abc', '--json'],
+        await machine(rows),
+      ),
+    ).rejects.toThrow(/30m, 2h, 7d or an ISO timestamp/);
   });
 });
 
