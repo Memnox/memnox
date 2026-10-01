@@ -38,6 +38,23 @@ describe('classifying one command from argv', () => {
     expect(classifyBinary('rm', ['note.txt'])?.because).toBe('a delete');
   });
 
+  it.each([
+    [['-r', '-f', 'x']],
+    [['-rfv', 'x']],
+    [['--recursive', '--force', 'x']],
+    [['-R', '--force', 'x']],
+  ])('describes rm %s the same as rm -rf', (args) => {
+    expect(classifyBinary('rm', args)?.because).toBe(
+      classifyBinary('rm', ['-rf', 'x'])?.because,
+    );
+    expect(classifyBinary('rm', args)?.because).toBe('a recursive, forced delete');
+  });
+
+  it('does not call a delete forced when only one of the two flags is there', () => {
+    expect(classifyBinary('rm', ['-r', 'x'])?.because).toBe('a delete');
+    expect(classifyBinary('rm', ['--', '-rf'])?.because).toBe('a delete');
+  });
+
   it('names the host a request reaches, never the whole line', () => {
     const verdict = classifyBinary('curl', [
       '-H',
