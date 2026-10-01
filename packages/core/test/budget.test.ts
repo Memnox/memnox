@@ -152,6 +152,12 @@ describe('reporting', () => {
     );
   });
 
+  it('refuses a limit that is not a number, since NaN slips past "above zero"', () => {
+    expect(
+      validateBudget({ name: 'x', actions: ['a'], limit: Number.NaN }).join(' '),
+    ).toContain('must be a number');
+  });
+
   it('refuses one that names no actions', () => {
     expect(validateBudget({ name: 'x', limit: 5 }).join(' ')).toContain('actions');
   });

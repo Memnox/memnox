@@ -21,6 +21,7 @@ import {
 import type { CliContext } from '../cli-context';
 import { TONE } from '../flow';
 import { withEvents } from '../event-store';
+import { positiveInteger } from '../positive-integer';
 
 /**
  * `memnox budget`: how much an agent may do in a window, as against what it may do,
@@ -127,15 +128,16 @@ async function runSet(
   const { flow } = context;
   flow.open('memnox budget set');
 
+  const unit = asUnit(options.unit);
   const entry: Budget = {
     name,
     actions: options.actions
       .split(',')
       .map((each) => each.trim())
       .filter((each) => each.length > 0),
-    limit: Number(options.limit),
+    limit: limitOf(options.limit, unit),
     window: asWindow(options.window),
-    unit: asUnit(options.unit),
+    unit,
   };
   const problems = validateBudget(entry);
   if (problems.length > 0) throw new Error(problems.join('\n'));
@@ -205,6 +207,11 @@ function asWindow(value: string): BudgetWindow {
   }
   // Safe: the line above proved it is one of the values.
   return value as BudgetWindow;
+}
+
+function limitOf(raw: string, unit: BudgetUnit): number {
+  // Calls are counted one at a time, while a reported cost can carry cents.
+  return unit === BUDGET_UNIT.CALLS ? positiveInteger(raw, '--limit') : Number(raw);
 }
 
 function asUnit(value: string): BudgetUnit {
