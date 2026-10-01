@@ -25,6 +25,9 @@ export const READ_ONLY_VERBS: readonly string[] = [
   'list',
   'query',
   'search',
+  'view',
+  'describe',
+  'show',
 ];
 
 /** Action verbs that change state reversibly. */
@@ -45,6 +48,10 @@ export const DESTRUCTIVE_VERBS: readonly string[] = [
   'truncate',
   'export',
   'purge',
+  'rm',
+  'remove',
+  'unpublish',
+  'terminate',
 ];
 
 /** Environments where risk is raised one level. */
