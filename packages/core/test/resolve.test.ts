@@ -28,6 +28,24 @@ describe('resolving one command line', () => {
     expect(bounded.class).toBe('write');
   });
 
+  it('reads every statement on its own, so a WHERE in one does not bound the next', () => {
+    const second = resolveAction('psql', [
+      '-c',
+      'DELETE FROM a WHERE id=1; DELETE FROM b',
+    ]);
+    expect(second.action).toBe('psql.delete-unbounded');
+    expect(second.class).toBe('destructive');
+
+    const split = resolveAction('psql', [
+      '-c',
+      'SELECT 1 WHERE true',
+      '-c',
+      'UPDATE users SET admin=true',
+    ]);
+    expect(split.action).toBe('psql.update-unbounded');
+    expect(split.class).toBe('destructive');
+  });
+
   it('names the host when the client is pointed at somebody else’s data', () => {
     const resolved = resolveAction('psql', ['-c', 'SELECT 1'], {
       DATABASE_URL: 'postgres://u:pw@db.prod.internal/app',
