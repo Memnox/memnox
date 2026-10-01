@@ -316,6 +316,7 @@ const QUERY_FIELD = /^query=(.*)$/s;
  * always a POST with a field, and only the query text says whether it reads or changes.
  */
 export function refineVerb(table: VerbTable, argv: readonly string[], verb: Verb): Verb {
+  if (table.name === 'git' && argv[0] === 'push') return pushVerb(table, argv, verb);
   if (table.name !== 'gh' || argv[0] !== 'api') return verb;
   if (!argv.includes('graphql')) return restVerb(table, argv, verb);
   const query = argv
@@ -324,6 +325,21 @@ export function refineVerb(table: VerbTable, argv: readonly string[], verb: Verb
   // A query from a file or stdin cannot be read here, so it keeps the write it matched.
   if (query === undefined || query.startsWith('@')) return verb;
   return GRAPHQL_BY_KIND[GRAPHQL_MUTATION.test(query) ? 'mutation' : 'query'];
+}
+
+/**
+ * A refspec says what a flag would: `+main` forces and `:main` deletes, so leaving the flag
+ * out is not a way around a rule on `git.push-force` or `git.push-delete`.
+ */
+function pushVerb(table: VerbTable, argv: readonly string[], verb: Verb): Verb {
+  if (verb.class === TOOL_CLASS.DESTRUCTIVE) return verb;
+  const refspecs = argv.slice(1).filter((arg) => !arg.startsWith('-'));
+  const forced = refspecs.some((arg) => arg.startsWith('+'));
+  // A bare `:` pushes the matching branches, so only `:name` deletes one.
+  const deleted = refspecs.some((arg) => arg.startsWith(':') && arg.length > 1);
+  const match = forced ? 'push --force **' : deleted ? 'push --delete **' : null;
+  if (match === null) return verb;
+  return table.verbs.find((each) => each.match === match) ?? verb;
 }
 
 /** REST paths whose meaning a rule is written about, so `gh api` is not a way around it. */
