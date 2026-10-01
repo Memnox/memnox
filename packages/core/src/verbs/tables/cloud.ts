@@ -148,6 +148,16 @@ export const CLOUD_TABLES: readonly VerbTable[] = [
       '--v',
     ],
     globalSwitches: ['--insecure-skip-tls-verify', '-A', '--all-namespaces'],
+    resourceAliases: {
+      ns: 'namespace',
+      namespaces: 'namespace',
+      deploy: 'deployment',
+      deployments: 'deployment',
+      'deployment.apps': 'deployment',
+      'deployments.apps': 'deployment',
+      persistentvolumeclaim: 'pvc',
+      persistentvolumeclaims: 'pvc',
+    },
     verbs: [
       { match: 'delete namespace **', class: GONE },
       { match: 'delete deployment **', class: GONE },

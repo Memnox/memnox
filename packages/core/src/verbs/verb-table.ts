@@ -52,6 +52,11 @@ export interface VerbTable {
   environmentVariables?: string[];
   /** Switches that say production outright, as `vercel --prod` and `stripe --live`. */
   productionSwitches?: string[];
+  /**
+   * Other spellings of the resource a verb is aimed at, as kubectl's `ns` for `namespace`,
+   * and the sign that `type/name` right after the verb means `type name`.
+   */
+  resourceAliases?: Readonly<Record<string, string>>;
 }
 
 /** What `--prod` and `--live` say, which is a fact the CLI states rather than a name matched. */
@@ -217,7 +222,34 @@ export function verbArgv(table: VerbTable, argv: readonly string[]): string[] {
       split[index + 1] = (split[index + 1] as string).toUpperCase();
     }
   }
-  return withoutLeadingGlobals(table, split);
+  return withResourcesSpelledOut(table, withoutLeadingGlobals(table, split));
+}
+
+// A name holds no slash or colon, so a `cp ns/pod:/path` source or a file path stays whole.
+const TYPE_SLASH_NAME = /^([a-z][a-z0-9.-]*)\/([^/:]+)$/;
+
+/**
+ * `kubectl delete ns/prod` as `delete namespace prod`, so the short name everybody types
+ * cannot step around a rule written about the long one.
+ */
+function withResourcesSpelledOut(table: VerbTable, argv: readonly string[]): string[] {
+  const aliases = table.resourceAliases;
+  if (aliases === undefined || argv.length < 2) return [...argv];
+  const canonical = (word: string): string => aliases[word] ?? word;
+  const out = [argv[0] as string];
+  let index = 1;
+  // Only the run of objects right after the verb, so a `-f dir/app.yaml` value stays whole.
+  for (; index < argv.length; index += 1) {
+    const arg = argv[index] as string;
+    const slashed = TYPE_SLASH_NAME.exec(arg);
+    if (slashed === null) break;
+    out.push(canonical(slashed[1] as string), slashed[2] as string);
+  }
+  if (index === 1 && index < argv.length) {
+    out.push(canonical(argv[1] as string));
+    index = 2;
+  }
+  return [...out, ...argv.slice(index)];
 }
 
 function withoutLeadingGlobals(table: VerbTable, argv: readonly string[]): string[] {
