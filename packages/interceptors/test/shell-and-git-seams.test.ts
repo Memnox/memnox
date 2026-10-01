@@ -86,6 +86,23 @@ describe('the shell seam', () => {
     expect(stub.seen[0]?.sessionId).toBe('ses_1');
   });
 
+  it('rules on an argument with a space in it as one target', async () => {
+    const stub = new StubAuthorizer(allow);
+    await new ShellSeam({ authorizer: as(stub) }).gate(['rm', '-rf', 'my dir']);
+
+    const targets = stub.seen
+      .filter((request) => request.action !== 'shell.execute')
+      .map((request) => request.target);
+    expect(targets).toEqual(['my dir']);
+  });
+
+  it('rules on an argument with a separator in it as one command', async () => {
+    const stub = new StubAuthorizer(allow);
+    await new ShellSeam({ authorizer: as(stub) }).gate(['echo', 'a; rm x']);
+
+    expect(stub.seen.map((request) => request.action)).toEqual(['shell.execute']);
+  });
+
   it('refuses an empty command rather than running a shell', async () => {
     const stub = new StubAuthorizer(allow);
     const outcome = await new ShellSeam({ authorizer: as(stub) }).gate([]);

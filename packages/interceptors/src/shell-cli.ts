@@ -32,6 +32,7 @@ import {
 } from './shell-invocation';
 import {
   ShellSeam,
+  shellLineOf,
   SHELL_EXIT_OK,
   SHELL_EXIT_WITHHELD,
   type ShellDecision,
@@ -167,7 +168,7 @@ async function gateAndRun(
   const startedAt = Date.now();
   const seam = await buildSeam();
   const outcome = await seam.gate(command);
-  const line = command.join(' ');
+  const line = shellLineOf(command);
   if (outcome.message !== undefined) log(outcome.message);
   if (outcome.run === undefined) {
     // A refused command has no exit code to wait

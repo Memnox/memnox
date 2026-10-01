@@ -141,6 +141,22 @@ export function tokenizeQuoted(input: string): Token[] {
   return tokens;
 }
 
+const PLAIN_WORD = /^[\w@%+=:,./~-]+$/;
+
+/**
+ * Joins argv into one line that `tokenizeQuoted` splits back into the same words, so
+ * `rm -rf "my dir"` is ruled on one target and `echo "a; rm x"` stays one command.
+ */
+export function quoteShellWords(words: readonly string[]): string {
+  return words.map(quoteShellWord).join(' ');
+}
+
+function quoteShellWord(word: string): string {
+  if (PLAIN_WORD.test(word)) return word;
+  // Single quotes keep everything literal, and a quote inside is closed, double quoted and reopened.
+  return `'${word.replaceAll("'", `'"'"'`)}'`;
+}
+
 const WRITE_REDIRECT = /^(?:\d*|&)(>>?|>\|)(.*)$/;
 const READ_REDIRECT = /^\d*<(?![<&])(.*)$/;
 const DEVICES = /^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/;
