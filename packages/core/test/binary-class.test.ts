@@ -71,6 +71,26 @@ describe('classifying one command from argv', () => {
   });
 });
 
+describe('package managers, whose flags can come before the verb', () => {
+  it('reads the verb past a flag that takes a value', () => {
+    const verdict = classifyBinary('pnpm', ['--filter', 'web', 'add', 'left-pad']);
+    expect(verdict?.class).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(verdict?.action).toBe('package.install');
+    expect(verdict?.target).toBe('left-pad');
+  });
+
+  it('names the package as the target rather than a flag', () => {
+    expect(classifyBinary('yarn', ['add', '-D', 'foo'])?.target).toBe('foo');
+  });
+
+  it('treats a bare yarn or pnpm as the install it is', () => {
+    expect(classOf('yarn', [])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('pnpm', [])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('yarn', ['--cwd', 'web'])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('npm', [])).toBe(COMMAND_CLASS.NORMAL);
+  });
+});
+
 describe('git, which is most of what an agent does', () => {
   it('treats a force push as destructive and an ordinary one as network', () => {
     expect(classOf('git', ['push', '--force', 'origin', 'main'])).toBe(
