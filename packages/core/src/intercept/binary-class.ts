@@ -30,8 +30,6 @@ export interface BinaryVerdict {
   alternative?: string;
 }
 
-/** Flags that turn a survivable command into an unsurvivable one. */
-const RECURSIVE_FORCE = ['-rf', '-fr', '-Rf', '-fR', '--recursive'];
 const ROOTS = ['/', '/*', '~', '~/', '.', './'];
 
 function firstNonFlag(args: readonly string[]): string | undefined {
@@ -61,9 +59,22 @@ function describeRm(args: readonly string[], target: string | undefined): string
   if (target !== undefined && ROOTS.includes(target)) {
     return 'a recursive delete at a filesystem root';
   }
-  if (args.some((arg) => RECURSIVE_FORCE.includes(arg)))
-    return 'a recursive, forced delete';
+  const flags = rmFlags(args);
+  const recursive = flags.has('r') || flags.has('R') || flags.has('--recursive');
+  const forced = flags.has('f') || flags.has('--force');
+  if (recursive && forced) return 'a recursive, forced delete';
   return 'a delete';
+}
+
+// Short flags are collected letter by letter, so `-r -f` and `-rfv` read the same as `-rf`.
+function rmFlags(args: readonly string[]): Set<string> {
+  const flags = new Set<string>();
+  for (const arg of args) {
+    if (arg === '--') break;
+    if (arg.startsWith('--')) flags.add(arg);
+    else if (arg.startsWith('-')) for (const letter of arg.slice(1)) flags.add(letter);
+  }
+  return flags;
 }
 
 function classifyDd(args: readonly string[]): BinaryVerdict {
