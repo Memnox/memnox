@@ -111,6 +111,13 @@ describe('the seed tables', () => {
     }
   });
 
+  it('matches case only where the table says so, so git -D stays apart from -d', () => {
+    expect(classFor('redis-cli', 'FLUSHALL')).toBe('destructive');
+    expect(classFor('redis-cli', 'flushall')).toBe('destructive');
+    expect(classFor('git', 'branch -D feature')).toBe('destructive');
+    expect(classFor('git', 'BRANCH -d feature')).not.toBe('write');
+  });
+
   it('gives every table a headline somebody would repeat out loud', () => {
     for (const table of VERB_TABLES) {
       expect(table.headline.length).toBeGreaterThan(8);

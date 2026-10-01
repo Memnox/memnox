@@ -19,6 +19,34 @@ describe('resolving one command line', () => {
     expect(resolve('psql -c SELECT').class).toBe('read');
   });
 
+  it('reads a statement passed to mariadb, mycli and pgcli as their parent client would', () => {
+    const drop = resolveAction('mariadb', ['-e', 'DROP DATABASE x']);
+    expect(drop.action).toBe('mariadb.drop');
+    expect(drop.class).toBe('destructive');
+    expect(resolveAction('mariadb', ['--execute=SELECT 1']).class).toBe('read');
+    expect(resolveAction('mycli', ['-e', 'TRUNCATE t']).action).toBe('mycli.truncate');
+    expect(resolveAction('pgcli', ['-c', 'DROP TABLE t']).class).toBe('destructive');
+  });
+
+  it('reads a redis command in either case, after the connection flags', () => {
+    for (const line of [
+      'redis-cli FLUSHALL',
+      'redis-cli flushall',
+      'redis-cli -h cache.internal -p 6380 FlushDb',
+      'redis-cli -a secret --tls DEL session:1',
+      'redis-cli UNLINK k',
+    ]) {
+      expect(resolve(line).class, line).toBe('destructive');
+    }
+    expect(resolve('redis-cli SET k v').class).toBe('write');
+    expect(resolve('redis-cli CONFIG SET maxmemory 1gb').class).toBe('write');
+    expect(resolve('redis-cli get k').class).toBe('read');
+    expect(resolve('redis-cli KEYS *').class).toBe('read');
+    expect(resolve('redis-cli INFO').class).toBe('read');
+    // A bare session is a prompt that can run anything, so it is never read as a read.
+    expect(resolve('redis-cli').class).toBe('write');
+  });
+
   it('gives an unbounded statement its own action, so a rule can name it', () => {
     const [b, ...a] = ['psql', '-c', 'DELETE FROM users'];
     expect(resolveAction(b as string, a).action).toBe('psql.delete-unbounded');

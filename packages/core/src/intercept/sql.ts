@@ -10,7 +10,12 @@ import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
 /** Flags whose value is the statement itself, per client. */
 const STATEMENT_FLAGS: Readonly<Record<string, readonly string[]>> = {
   psql: ['-c', '--command'],
+  // pgcli speaks to the same server psql does, so a statement means the same thing.
+  pgcli: ['-c', '--command'],
   mysql: ['-e', '--execute'],
+  // MariaDB forked mysql and kept its grammar, and mycli wraps the same client flags.
+  mariadb: ['-e', '--execute'],
+  mycli: ['-e', '--execute'],
   mongosh: ['--eval'],
   sqlite3: [],
 };

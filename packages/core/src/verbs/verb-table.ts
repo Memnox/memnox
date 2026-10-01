@@ -52,6 +52,8 @@ export interface VerbTable {
   environmentVariables?: string[];
   /** Switches that say production outright, as `vercel --prod` and `stripe --live`. */
   productionSwitches?: string[];
+  /** Verb words match in any case, since redis takes `FLUSHALL` and `flushall` alike. */
+  caseInsensitive?: boolean;
 }
 
 /** What `--prod` and `--live` say, which is a fact the CLI states rather than a name matched. */
@@ -104,11 +106,17 @@ function specificity(pattern: string): number {
 }
 
 /** `delete-**` matches `delete-user`; `*` matches one argument; `**` matches the rest. */
-function wordMatches(word: string, argument: string | undefined): boolean {
+function wordMatches(
+  word: string,
+  argument: string | undefined,
+  anyCase: boolean,
+): boolean {
   if (argument === undefined) return false;
-  if (!word.endsWith('*')) return argument === word;
-  const prefix = word.replace(/\*+$/, '');
-  return argument.startsWith(prefix);
+  const typed = anyCase ? argument.toLowerCase() : argument;
+  const wanted = anyCase ? word.toLowerCase() : word;
+  if (!wanted.endsWith('*')) return typed === wanted;
+  const prefix = wanted.replace(/\*+$/, '');
+  return typed.startsWith(prefix);
 }
 
 /**
@@ -126,7 +134,11 @@ function flagIndexIn(flag: string, argv: readonly string[]): number {
   );
 }
 
-function matchesPattern(pattern: string, argv: readonly string[]): boolean {
+function matchesPattern(
+  pattern: string,
+  argv: readonly string[],
+  anyCase: boolean,
+): boolean {
   const words = pattern.split(/\s+/).filter((word) => word !== '');
   let index = 0;
   // Where the flag just matched sits, so the next word is read as its value, which is
@@ -150,11 +162,11 @@ function matchesPattern(pattern: string, argv: readonly string[]): boolean {
       continue;
     }
     if (valueOf !== -1) {
-      if (!wordMatches(word, argv[valueOf + 1])) return false;
+      if (!wordMatches(word, argv[valueOf + 1], anyCase)) return false;
       valueOf = -1;
       continue;
     }
-    if (!wordMatches(word, argv[index])) return false;
+    if (!wordMatches(word, argv[index], anyCase)) return false;
     index += 1;
   }
   return true;
@@ -246,7 +258,7 @@ function withoutLeadingGlobals(table: VerbTable, argv: readonly string[]): strin
 /** Null when nothing in the table covers this command, which is `unknown`, not safe. */
 export function matchVerb(table: VerbTable, argv: readonly string[]): VerbMatch | null {
   const candidates = table.verbs
-    .filter((verb) => matchesPattern(verb.match, argv))
+    .filter((verb) => matchesPattern(verb.match, argv, table.caseInsensitive === true))
     .sort((a, b) => specificity(b.match) - specificity(a.match));
 
   const best = candidates[0];
