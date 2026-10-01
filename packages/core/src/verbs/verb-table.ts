@@ -243,11 +243,46 @@ function withoutLeadingGlobals(table: VerbTable, argv: readonly string[]): strin
   return argv.slice(index);
 }
 
+/**
+ * The argv slot a pattern reads as the verb: the first literal after leading `*` slots, or
+ * the last of a literal prefix. Null when the pattern names no positional word.
+ */
+function verbSlot(pattern: string): { slot: number; wildcardLed: boolean } | null {
+  const words = pattern.split(/\s+/).filter((word) => word !== '');
+  const wildcardLed = words[0] === '*';
+  let slot: number | null = null;
+  for (const [index, word] of words.entries()) {
+    if (word === '**' || word === '$' || word.startsWith('-')) break;
+    if (word === '*') {
+      if (!wildcardLed || slot !== null) break;
+      continue;
+    }
+    slot = index;
+    if (wildcardLed) break;
+  }
+  return slot === null ? null : { slot, wildcardLed };
+}
+
+/**
+ * A `* * list` row loses to a verb found earlier in the line, because the later word is then
+ * an argument: `run services delete list` deletes a service named list.
+ */
+function withoutLaterVerbs(candidates: readonly Verb[]): Verb[] {
+  const slots = candidates.map((verb) => verbSlot(verb.match));
+  const earliest = Math.min(
+    ...slots.map((each) => (each === null ? Number.POSITIVE_INFINITY : each.slot)),
+  );
+  return candidates.filter((_, index) => {
+    const at = slots[index];
+    return at === null || at === undefined || !at.wildcardLed || at.slot <= earliest;
+  });
+}
+
 /** Null when nothing in the table covers this command, which is `unknown`, not safe. */
 export function matchVerb(table: VerbTable, argv: readonly string[]): VerbMatch | null {
-  const candidates = table.verbs
-    .filter((verb) => matchesPattern(verb.match, argv))
-    .sort((a, b) => specificity(b.match) - specificity(a.match));
+  const candidates = withoutLaterVerbs(
+    table.verbs.filter((verb) => matchesPattern(verb.match, argv)),
+  ).sort((a, b) => specificity(b.match) - specificity(a.match));
 
   const best = candidates[0];
   return best === undefined ? null : { verb: best, pattern: best.match };
