@@ -1,10 +1,18 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   authenticatedClis,
   findCredentials,
+  findEnvFiles,
+  looksLikeCredential,
   productionLooking,
   readEnvFile,
 } from '../src/discovery/credentials';
+import { NodeMachineReader } from '../src/discovery/node-machine';
+import { SENSITIVITY } from '../src/discovery/discovery.constants';
+import { classifySensitivity } from '../src/discovery/resource';
 import type { MachineReader } from '../src/discovery/ports';
 
 const HOME = '/home/dev';
@@ -113,6 +121,64 @@ describe('.env files', () => {
     const found = readEnvFile('.env', 'STRIPE_SECRET_KEY=sk_live_abc\n');
     expect(JSON.stringify(found)).not.toContain('sk_live_abc');
   });
+
+  it('reads past `export` and knows the credentials no suffix rule names', () => {
+    const found = readEnvFile(
+      '.env',
+      [
+        'export DATABASE_URL=postgres://u:pw@h/db',
+        'PASSWORD=hunter2',
+        'PGPASSWORD=hunter2',
+        'SECRET_KEY_BASE=abc',
+        'export   REDIS_URL=redis://:pw@h',
+      ].join('\n'),
+    );
+    expect(found).toEqual({ path: '.env', variables: 5, keyLike: 5 });
+  });
+
+  it.each(['PGPASSWORD', 'MYSQL_PWD', 'PASSWORD', 'SECRET_KEY_BASE', 'OPENAI_API_KEY'])(
+    '%s looks like a credential',
+    (name) => {
+      expect(looksLikeCredential(name)).toBe(true);
+    },
+  );
+
+  it.each(['PWD', 'OLDPWD', 'HOME', 'API_URL', 'PORT', 'KEYBOARD_LAYOUT'])(
+    '%s does not',
+    (name) => {
+      expect(looksLikeCredential(name)).toBe(false);
+    },
+  );
+
+  it('finds the env files people keep beside the work, on a real disk', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'memnox-env-'));
+    try {
+      await writeFile(join(dir, '.envrc'), 'export PGPASSWORD=x\nexport PATH_ADD=bin\n');
+      await writeFile(join(dir, '.env.production.local'), 'MYSQL_PWD=x\n');
+      await writeFile(join(dir, '.env.staging'), 'PASSWORD=x\n');
+      await writeFile(join(dir, '.env.test'), 'SECRET_KEY_BASE=x\n');
+
+      const found = await findEnvFiles(new NodeMachineReader(dir, 'dev'), [dir]);
+      const byName = Object.fromEntries(
+        found.map((each) => [each.path.slice(dir.length + 1), each.keyLike]),
+      );
+      expect(byName).toEqual({
+        '.envrc': 1,
+        '.env.production.local': 1,
+        '.env.staging': 1,
+        '.env.test': 1,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['/r/.envrc', '/r/.env.production.local', '/r/.env.staging'])(
+    '%s is sensitive wherever it is found',
+    (path) => {
+      expect(classifySensitivity(path)).toBe(SENSITIVITY.SENSITIVE);
+    },
+  );
 });
 
 describe('authenticated CLIs', () => {

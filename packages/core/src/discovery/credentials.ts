@@ -35,6 +35,10 @@ export const ENV_FILE_NAMES: readonly string[] = [
   '.env.local',
   '.env.development',
   '.env.production',
+  '.env.production.local',
+  '.env.staging',
+  '.env.test',
+  '.envrc',
 ];
 
 /** Credential files that live beside the work rather than in the home directory. */
@@ -164,7 +168,9 @@ export async function findCredentials(
 }
 
 /** Names that look like a key. The heuristic is on the name; the value is never read. */
-const KEY_LIKE = /_(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API|DSN|URI)S?$/i;
+// The word may be the whole name (`PASSWORD`), and `_PWD` stays anchored so `$PWD` is a directory.
+const KEY_LIKE =
+  /((^|_)(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API|DSN|URI)S?|_PWD)$/i;
 
 /**
  * Names that are a credential whatever they end in. `DATABASE_URL` carries a password
@@ -180,6 +186,13 @@ const KNOWN_CREDENTIAL_NAMES = new Set([
   'GH_TOKEN',
   'NPM_TOKEN',
   'VERCEL_TOKEN',
+  'PGPASSWORD',
+  'MYSQL_PWD',
+  'SECRET_KEY_BASE',
+  'STRIPE_API_KEY',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'OPENAI_API_KEY',
 ]);
 
 export function looksLikeCredential(name: string): boolean {
@@ -198,7 +211,14 @@ export function readEnvFile(path: string, contents: string): EnvFinding {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '' && !line.startsWith('#'))
-    .map((line) => line.split('=')[0]?.trim() ?? '')
+    // A sourced `.env` or `.envrc` writes `export NAME=`, and the keyword is not part of the name.
+    .map(
+      (line) =>
+        line
+          .replace(/^export\s+/, '')
+          .split('=')[0]
+          ?.trim() ?? '',
+    )
     .filter((name) => name !== '');
 
   return {

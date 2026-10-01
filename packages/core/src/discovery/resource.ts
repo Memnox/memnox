@@ -46,8 +46,8 @@ const CRITICAL_PATTERNS = [
   /(^|\/)\.pypirc$/,
 ];
 
-/** A `.env` file, with or without a suffix such as `.local`. */
-export const ENV_FILE_PATTERN = /(^|\/)\.env(\.[a-z0-9_-]+)?$/;
+/** A `.env` file, with or without suffixes such as `.production.local`, or a direnv `.envrc`. */
+export const ENV_FILE_PATTERN = /(^|\/)\.env(rc|(\.[a-z0-9_-]+)*)$/;
 
 const SENSITIVE_PATTERNS = [
   ENV_FILE_PATTERN,
