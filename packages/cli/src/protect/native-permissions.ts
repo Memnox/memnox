@@ -9,6 +9,7 @@ import {
   revertNative,
   revertOpenClaw,
   commandGlobFor,
+  NATIVE_MARKER,
   setYamlList,
   toClaudeCodePermissions,
   toHermesApprovals,
@@ -35,6 +36,8 @@ interface NativeTarget {
   path: string;
   /** YAML is edited a line at a time; JSON is written whole. */
   text?: true;
+  /** The lists a JSON target must hold as strings, since a hand edited file is untrusted. */
+  lists?: ListShape;
   /** What the write did, in counts, for the line the reader sees. */
   apply: (raw: string, policies: readonly Policy[]) => NativeWrite;
   revert: (raw: string) => string;
@@ -48,28 +51,45 @@ interface NativeWrite {
   notes?: string[];
 }
 
+/** Each object key mapped to the list fields inside it that must be strings when present. */
+type ListShape = Readonly<Record<string, readonly string[]>>;
+
+const CLAUDE_LISTS: ListShape = {
+  permissions: ['allow', 'ask', 'deny'],
+  [NATIVE_MARKER]: ['allow', 'ask', 'deny'],
+};
+
+const OPENCLAW_LISTS: ListShape = {
+  tools: ['allow', 'deny'],
+  [NATIVE_MARKER]: ['allow', 'deny'],
+};
+
 const TARGETS: readonly NativeTarget[] = [
   {
     product: 'Claude Code',
     path: join('.claude', 'settings.json'),
+    lists: CLAUDE_LISTS,
     apply: (raw, policies) => {
       const translation = toClaudeCodePermissions(policies);
       const { allow, ask, deny } = translation.permissions;
       return {
-        text: jsonText(applyNative(JSON.parse(raw) as NativeSettings, translation)),
+        text: jsonText(
+          applyNative(shaped<NativeSettings>(raw, CLAUDE_LISTS), translation),
+        ),
         summary: `${allow.length} allow, ${ask.length} ask and ${deny.length} deny`,
         untranslated: translation.untranslated,
       };
     },
-    revert: (raw) => jsonText(revertNative(JSON.parse(raw) as NativeSettings)),
+    revert: (raw) => jsonText(revertNative(shaped<NativeSettings>(raw, CLAUDE_LISTS))),
   },
   {
     product: 'OpenClaw',
     path: join('.openclaw', 'openclaw.json'),
+    lists: OPENCLAW_LISTS,
     apply: (raw, policies) => {
       const translation = toOpenClawTools(policies);
       const { allow, deny } = translation.tools;
-      const settings = JSON.parse(raw) as OpenClawSettings;
+      const settings = shaped<OpenClawSettings>(raw, OPENCLAW_LISTS);
       // Their allow list is theirs, so a denied tool stays in it for a revert to leave
       // alone; OpenClaw denies when both name a tool, and the reader is told so.
       const contested = deny.filter((tool) =>
@@ -87,7 +107,8 @@ const TARGETS: readonly NativeTarget[] = [
               ],
       };
     },
-    revert: (raw) => jsonText(revertOpenClaw(JSON.parse(raw) as OpenClawSettings)),
+    revert: (raw) =>
+      jsonText(revertOpenClaw(shaped<OpenClawSettings>(raw, OPENCLAW_LISTS))),
   },
   {
     product: 'Hermes',
@@ -141,8 +162,15 @@ export async function runNative(
     if (item.tone === TONE.OK) written += 1;
   }
   if (written === 0) {
+    // The reasons go in the refusal, because a throw never reaches the list that names them.
     throw new Error(
-      'Every permission file found was unreadable, so nothing was changed.',
+      [
+        'Every permission file found was unreadable, so nothing was changed.',
+        ...done
+          .flatMap((item) => item.detail ?? [])
+          .filter((line): line is string => line !== undefined && line !== '')
+          .map((line) => `  ${line}`),
+      ].join('\n'),
     );
   }
   renderNative(context, { done, written, reverting });
@@ -180,6 +208,15 @@ async function writeTarget(
       ],
     };
   }
+  const problem =
+    target.lists === undefined ? undefined : shapeProblem(JSON.parse(raw), target.lists);
+  if (problem !== undefined) {
+    return {
+      tone: TONE.DIM,
+      text: `${target.product} was left alone`,
+      detail: [`${path} ${problem}, so it was not changed`],
+    };
+  }
   await writeFile(`${path}${BACKUP_SUFFIX}`, raw, 'utf8');
   if (reverting) {
     await writeFile(path, target.revert(raw), 'utf8');
@@ -212,6 +249,36 @@ function isJson(raw: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** What is wrong with a parsed settings file, in words for the reader, or undefined when it fits. */
+function shapeProblem(value: unknown, lists: ListShape): string | undefined {
+  if (!isRecord(value)) return 'does not hold a JSON object';
+  for (const [key, fields] of Object.entries(lists)) {
+    const section = value[key];
+    if (section === undefined) continue;
+    if (!isRecord(section)) return `has a "${key}" that is not an object`;
+    for (const field of fields) {
+      const list = section[field];
+      if (list === undefined) continue;
+      if (!Array.isArray(list) || !list.every((each) => typeof each === 'string')) {
+        return `has a "${key}.${field}" that is not a list of strings`;
+      }
+    }
+  }
+  return undefined;
+}
+
+function shaped<T>(raw: string, lists: ListShape): T {
+  const parsed: unknown = JSON.parse(raw);
+  const problem = shapeProblem(parsed, lists);
+  if (problem !== undefined) throw new Error(`The settings file ${problem}.`);
+  // Every list the core functions read was checked as strings on the line above.
+  return parsed as T;
 }
 
 interface NativeSummary {
