@@ -107,9 +107,16 @@ const SQL_RULES: readonly SqlRule[] = [
   },
 ];
 
-/** Read from the statement rather than the tool, which is the only signal before the query runs. */
-export function inspectSql(raw: string): SqlFinding {
-  const sql = scrub(raw);
+// Lowest first, so a script is as dangerous as its worst statement.
+const RISK_RANK: readonly SqlRisk[] = [
+  SQL_RISK.UNKNOWN,
+  SQL_RISK.READS,
+  SQL_RISK.WRITES,
+  SQL_RISK.UNBOUNDED,
+  SQL_RISK.DROPS,
+];
+
+function inspectOne(sql: string): SqlFinding {
   const statement = (/^[A-Za-z]+/.exec(sql)?.[0] ?? 'unknown').toUpperCase();
   const rule = SQL_RULES.find((candidate) => candidate.applies(sql));
   if (rule === undefined) {
@@ -126,6 +133,21 @@ export function inspectSql(raw: string): SqlFinding {
     because: rule.because(statement),
     statement,
   };
+}
+
+/** Read from the statement rather than the tool, which is the only signal before the query runs. */
+export function inspectSql(raw: string): SqlFinding {
+  // Each statement on its own, because a WHERE in one bounds nothing in the next.
+  const statements = scrub(raw)
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  let worst = inspectOne(statements[0] ?? '');
+  for (const statement of statements.slice(1)) {
+    const finding = inspectOne(statement);
+    if (RISK_RANK.indexOf(finding.risk) > RISK_RANK.indexOf(worst.risk)) worst = finding;
+  }
+  return worst;
 }
 
 /**

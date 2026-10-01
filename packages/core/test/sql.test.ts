@@ -54,6 +54,17 @@ describe('reading the statement, not the tool', () => {
     );
   });
 
+  it('names the most dangerous statement in a script rather than the first', () => {
+    const finding = inspectSql('SELECT 1; DROP TABLE users');
+    expect(finding.statement).toBe('DROP');
+    expect(inspectSql('DELETE FROM a WHERE id = 1; DELETE FROM b').risk).toBe(
+      SQL_RISK.UNBOUNDED,
+    );
+    expect(inspectSql("UPDATE t SET x = ';' WHERE id = 1; SELECT 1").risk).toBe(
+      SQL_RISK.WRITES,
+    );
+  });
+
   it('is not fooled by a keyword inside a value', () => {
     const finding = inspectSql("INSERT INTO notes (body) VALUES ('DROP TABLE users')");
     expect(finding.risk).toBe(SQL_RISK.WRITES);
