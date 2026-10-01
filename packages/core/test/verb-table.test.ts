@@ -76,6 +76,36 @@ describe('matching a command against a verb table', () => {
     expect(classFor(cli, line)).toBe(expected);
   });
 
+  it.each([
+    ['rm -f web', 'docker.rm', 'destructive'],
+    ['volume rm data', 'docker.volume-rm', 'destructive'],
+    ['system prune', 'docker.system-prune', 'destructive'],
+    ['system prune --all', 'docker.system-prune', 'destructive'],
+    ['system prune -a', 'docker.system-prune-a', 'destructive'],
+    ['compose down -v', 'docker.compose-down-volumes', 'destructive'],
+    ['compose down --volumes', 'docker.compose-down-volumes', 'destructive'],
+    ['compose down', 'docker.compose-down', 'write'],
+    ['rmi img', 'docker.rmi', 'destructive'],
+    ['container rm web', 'docker.container-rm', 'destructive'],
+    ['image rm img', 'docker.image-rm', 'destructive'],
+    ['run --rm alpine', 'docker.run', 'write'],
+    ['image prune -f', 'docker.image-prune', 'destructive'],
+    ['login ghcr.io', 'docker.login', 'write'],
+  ])('docker %s resolves to %s, which is %s', (line, action, expected) => {
+    const table = verbTableFor('docker') as never;
+    expect(actionForCommand('docker', table, argv(line))).toBe(action);
+    expect(classFor('docker', line)).toBe(expected);
+  });
+
+  it('marks a docker login as touching secrets', () => {
+    expect(
+      hasTag(
+        classOf(verbTableFor('docker') as never, argv('login ghcr.io')),
+        VERB_TAG.SECRETS,
+      ),
+    ).toBe(true);
+  });
+
   it('marks reading a secret value as secrets, even though it is a read', () => {
     const verb = classOf(
       verbTableFor('aws') as never,
