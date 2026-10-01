@@ -158,6 +158,8 @@ function redirectOf(token: Token, next: Token | undefined): Redirect | null {
   const read = write === null ? READ_REDIRECT.exec(token.text) : null;
   if (write === null && read === null) return null;
   const joined = write === null ? (read?.[1] as string) : (write[2] as string);
+  // `<(cmd)` and `>(cmd)` are process substitution, a path the shell makes rather than a file.
+  if (joined.startsWith('(')) return null;
   if (joined !== '') return { writes: write !== null, target: joined, usesNext: false };
   return { writes: write !== null, target: next?.text ?? '', usesNext: true };
 }

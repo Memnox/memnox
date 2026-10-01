@@ -352,7 +352,7 @@ function hiddenCode(opaque: readonly OpaqueReason[]): ResolvedAction | null {
     class: TOOL_CLASS.DESTRUCTIVE,
     because:
       unreadable[0] === OPAQUE_REASON.REMOTE_SOURCE
-        ? 'it pipes a download straight into a shell, so what runs is only known once it has run'
+        ? 'it runs a download as code, so what runs is only known once it has run'
         : 'it decodes something and runs it, and what it decodes could not be read first',
   };
 }
