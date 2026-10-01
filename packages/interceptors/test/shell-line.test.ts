@@ -37,14 +37,7 @@ describe('what the shell rules on', () => {
   it('rules on every command in a chain, not only the first', async () => {
     const stub = new Recorder();
     await new ShellSeam({ authorizer: as(stub) }).gate([
-      'gh',
-      'pr',
-      'merge',
-      '12',
-      '&&',
-      'vercel',
-      'deploy',
-      '--prod',
+      'gh pr merge 12 && vercel deploy --prod',
     ]);
 
     const actions = stub.seen.map((request) => request.action);
