@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actionForCommand,
   classOf,
   destructiveVerbs,
   externalStateVerbs,
@@ -7,6 +8,7 @@ import {
   matchVerb,
   UNKNOWN_VERB,
   verbAction,
+  verbArgv,
   verbForAction,
   VERB_TAG,
 } from '../src/verbs/verb-table';
@@ -119,6 +121,33 @@ describe('matching a command against a verb table', () => {
     const verb = classOf(verbTableFor(cli) as never, argv(line));
     expect(verb.class).toBe('read');
     expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
+});
+
+describe('vercel, beyond deploy', () => {
+  const table = verbTableFor('vercel') as never;
+
+  it.each([
+    ['', 'write', null],
+    ['--debug', 'write', null],
+    ['rm my-app', 'destructive', null],
+    ['remove my-app --yes', 'destructive', null],
+    ['env pull .env.local', 'write', VERB_TAG.SECRETS],
+    ['env ls', 'read', VERB_TAG.SECRETS],
+    ['promote dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['rollback dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['redeploy dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['alias set dpl_1 acme.com', 'write', null],
+    ['dns rm rec_1', 'destructive', null],
+  ])('vercel %s is %s', (line, expected, tag) => {
+    const verb = classOf(table, verbArgv(table, argv(line)));
+    expect(verb.class).toBe(expected);
+    if (tag !== null) expect(hasTag(verb, tag)).toBe(true);
+  });
+
+  it('records a bare vercel under the deploy it runs, rather than unknown', () => {
+    expect(actionForCommand('vercel', table, argv(''))).toBe('vercel.deploy');
+    expect(classOf(table, argv('')).note).toBe('preview deploy');
   });
 });
 
