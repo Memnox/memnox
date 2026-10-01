@@ -82,6 +82,44 @@ describe('matching a command against a verb table', () => {
     expect(verb.class).toBe('read');
     expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
   });
+
+  // Neither CLI has a top level `list`, so the verb has to be found where the group puts it.
+  it.each([
+    ['gcloud', 'compute instances list', 'read'],
+    ['gcloud', 'compute networks subnets list', 'read'],
+    ['gcloud', 'run services describe api', 'read'],
+    ['gcloud', 'run services delete x', 'destructive'],
+    ['gcloud', 'container clusters delete x', 'destructive'],
+    ['gcloud', 'functions delete x', 'destructive'],
+    ['gcloud', 'storage rm gs://bucket/key', 'destructive'],
+    ['az', 'vm list', 'read'],
+    ['az', 'network vnet subnet list', 'read'],
+    ['az', 'storage account delete -n x', 'destructive'],
+    ['az', 'webapp delete -n x', 'destructive'],
+  ])('%s %s is %s', (cli, line, expected) => {
+    expect(classFor(cli, line)).toBe(expected);
+  });
+
+  // A name chosen by whoever made the resource must not turn a delete into a read.
+  it.each([
+    ['gcloud', 'run services delete list', 'destructive'],
+    ['gcloud', 'functions delete list', 'destructive'],
+    ['gcloud', 'storage rm gs://bucket/key list', 'destructive'],
+    ['az', 'webapp delete describe show', 'destructive'],
+    ['gcloud', 'compute instances list delete', 'read'],
+  ])('%s %s is %s, whatever the arguments are called', (cli, line, expected) => {
+    expect(classFor(cli, line)).toBe(expected);
+  });
+
+  it.each([
+    ['gcloud', 'secrets versions access latest --secret x'],
+    ['az', 'keyvault secret show --vault-name v -n x'],
+    ['az', 'storage account keys list -n x'],
+  ])('marks %s %s as a read of a secret', (cli, line) => {
+    const verb = classOf(verbTableFor(cli) as never, argv(line));
+    expect(verb.class).toBe('read');
+    expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
 });
 
 describe('the seed tables', () => {
