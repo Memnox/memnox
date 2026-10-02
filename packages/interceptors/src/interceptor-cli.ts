@@ -25,6 +25,7 @@ import {
 import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
 import { BrowserSeam } from './browser-seam';
 import { checkpointBeforeCommand } from './checkpoint-seam';
+import { relayEndingSignals, signalledExit } from './child-signals';
 import { reportToDaemon } from './daemon-client';
 import { readHookConfig } from './hook-config';
 import { loadHookGate } from './hook-gate-loader';
@@ -319,11 +320,13 @@ function hand(command: Command, home: string): Promise<number> {
       stdio: 'inherit',
       env: { ...process.env, PATH: path },
     });
+    const detach = relayEndingSignals(child);
     child.on('error', () => resolve(EXIT.FAILED));
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       for (const each of FORWARDED) process.off(each, ignore);
-      // A signalled child has no code, which a blocking spawn reported as 1 too.
-      resolve(code ?? EXIT.FAILED);
+      detach();
+      // A signal we cannot number is reported as 1, as a blocking spawn did.
+      resolve(code ?? signalledExit(signal, EXIT.FAILED));
     });
   });
 }

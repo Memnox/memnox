@@ -5,17 +5,16 @@ import {
   DECISION_EFFECT,
   digest,
   ENV_AGENT_NAME,
-  exitCodeForSignal,
   holderPid,
   localRuleRef,
   openLedger,
   overlaysInForce,
   provenanceOf,
   SESSION_VAR,
-  SIGNAL_NUMBER,
 } from '@memnox/core';
 
 import { checkpointBeforeLine } from './checkpoint-seam';
+import { relayEndingSignals, signalledExit } from './child-signals';
 import { record } from './record';
 import {
   buildAuthorizer,
@@ -58,19 +57,6 @@ function commandOf(invocation: ShellInvocation): string[] {
   return invocation.argv ?? [];
 }
 
-function isNumberedSignal(signal: NodeJS.Signals): signal is keyof typeof SIGNAL_NUMBER {
-  return signal in SIGNAL_NUMBER;
-}
-
-/**
- * A signal is `128 + n`, as a shell reports one;
- * no code and no signal means it never ran.
- */
-function signalledExit(signal: NodeJS.Signals | null): number {
-  if (signal === null || !isNumberedSignal(signal)) return SHELL_EXIT_WITHHELD;
-  return exitCodeForSignal(signal);
-}
-
 /**
  * Resolves to the exit code, so the row carries
  * what happened rather than only what was decided.
@@ -78,8 +64,11 @@ function signalledExit(signal: NodeJS.Signals | null): number {
 function run(executable: string, args: readonly string[]): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(executable, args, { stdio: 'inherit' });
+    const detach = relayEndingSignals(child);
     child.on('exit', (code, signal) => {
-      resolve(code === null ? signalledExit(signal) : code);
+      detach();
+      // No code and no signal we can number means it never ran.
+      resolve(code === null ? signalledExit(signal, SHELL_EXIT_WITHHELD) : code);
     });
     child.on('error', (err: unknown) => {
       log(`could not run the command: ${String(err)}`);
