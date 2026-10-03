@@ -16,6 +16,7 @@ import type { ActionRequest } from '../domain/action-event';
 import { matchesAny } from '../policy/pattern-matcher';
 import { verbForAction } from '../verbs/verb-table';
 import { verbTableFor } from '../verbs/tables';
+import { realPathOf } from './protected-paths';
 
 /** What an action does, as containment reads it: only a read is never asked about. */
 export const CONTAINED = {
@@ -170,8 +171,12 @@ function boundaryAsk(
     request.workingDirectory ?? containment.cwd ?? root,
     containment.home,
   );
-  if ((containment.scratch ?? []).some((dir) => isInside(dir, path))) return null;
-  if (!isInside(root, path)) {
+  // Compared where each really lands, so a link in the repository to /etc is not inside it.
+  const real = realPathOf(path);
+  const realRoot = realPathOf(root);
+  if ((containment.scratch ?? []).some((dir) => isInside(realPathOf(dir), real)))
+    return null;
+  if (!isInside(realRoot, real)) {
     return {
       reason: `${path} is outside ${root}, where this session works, so a write there asks first.`,
       signal: CONTAINMENT_SIGNAL.BOUNDARY,
@@ -179,7 +184,7 @@ function boundaryAsk(
   }
   const declared = containment.paths ?? [];
   if (declared.length === 0) return null;
-  if (matchesAny(declared, relative(root, path)) || matchesAny(declared, path))
+  if (matchesAny(declared, relative(realRoot, real)) || matchesAny(declared, real))
     return null;
   return {
     reason: `${relative(root, path)} is outside the paths this task declared (${declared.join(', ')}), so a write there asks first.`,

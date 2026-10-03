@@ -30,8 +30,6 @@ export interface BinaryVerdict {
   alternative?: string;
 }
 
-/** Flags that turn a survivable command into an unsurvivable one. */
-const RECURSIVE_FORCE = ['-rf', '-fr', '-Rf', '-fR', '--recursive'];
 const ROOTS = ['/', '/*', '~', '~/', '.', './'];
 
 function firstNonFlag(args: readonly string[]): string | undefined {
@@ -61,9 +59,22 @@ function describeRm(args: readonly string[], target: string | undefined): string
   if (target !== undefined && ROOTS.includes(target)) {
     return 'a recursive delete at a filesystem root';
   }
-  if (args.some((arg) => RECURSIVE_FORCE.includes(arg)))
-    return 'a recursive, forced delete';
+  const flags = rmFlags(args);
+  const recursive = flags.has('r') || flags.has('R') || flags.has('--recursive');
+  const forced = flags.has('f') || flags.has('--force');
+  if (recursive && forced) return 'a recursive, forced delete';
   return 'a delete';
+}
+
+// Short flags are collected letter by letter, so `-r -f` and `-rfv` read the same as `-rf`.
+function rmFlags(args: readonly string[]): Set<string> {
+  const flags = new Set<string>();
+  for (const arg of args) {
+    if (arg === '--') break;
+    if (arg.startsWith('--')) flags.add(arg);
+    else if (arg.startsWith('-')) for (const letter of arg.slice(1)) flags.add(letter);
+  }
+  return flags;
 }
 
 function classifyDd(args: readonly string[]): BinaryVerdict {
@@ -206,13 +217,24 @@ function carriesBody(arg: string): boolean {
 
 const PACKAGE_INSTALL_VERBS = ['install', 'add', 'i', 'ci'];
 
+/** Each manager's flags that take a value, so `pnpm --filter web add x` reads `add` as the verb. */
+const PACKAGE_VALUE_FLAGS: Readonly<Record<string, ReadonlySet<string>>> = {
+  npm: new Set(['-w', '--workspace', '-C', '--prefix']),
+  pnpm: new Set(['--filter', '-F', '-C', '--dir']),
+  yarn: new Set(['--cwd']),
+};
+
+/** Managers whose bare invocation installs from the lockfile rather than printing help. */
+const BARE_INSTALLS = new Set(['yarn', 'pnpm']);
+
 function classifyPackageManager(binary: string, args: readonly string[]): BinaryVerdict {
-  const verb = firstNonFlag(args);
-  const installing = verb !== undefined && PACKAGE_INSTALL_VERBS.includes(verb);
+  const [verb, target] = positionalArgs(args, PACKAGE_VALUE_FLAGS[binary] ?? new Set());
+  const installing =
+    verb === undefined ? BARE_INSTALLS.has(binary) : PACKAGE_INSTALL_VERBS.includes(verb);
   return {
     action: installing ? 'package.install' : ACTION.SHELL_EXECUTE,
     class: installing ? COMMAND_CLASS.PACKAGE_INSTALL : COMMAND_CLASS.NORMAL,
-    ...(args[1] === undefined ? {} : { target: args[1] }),
+    ...(target === undefined ? {} : { target }),
     because: installing
       ? `${binary} installs code that then runs on this machine`
       : `${binary} ${verb ?? ''}`.trim(),

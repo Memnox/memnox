@@ -38,6 +38,8 @@ const PATCH_LINE = {
   ADD: 'add',
   /** A file being removed, which claims the whole of it. */
   DELETE: 'delete',
+  /** Renames the file in progress, which writes the destination whole. */
+  MOVE: 'move',
   /** Ends the hunk in progress and starts another in the same file. */
   HUNK: 'hunk',
   /** Any other `***` line, which ends the file in progress. */
@@ -48,7 +50,7 @@ const PATCH_LINE = {
   REMOVED: 'removed',
   /** A line the patch adds. */
   ADDED: 'added',
-  /** Carries no content: a move directive, an end-of-file marker, or noise. */
+  /** Carries no content: an end-of-file marker, or noise. */
   IGNORED: 'ignored',
 } as const;
 
@@ -65,9 +67,10 @@ function classifyPatchLine(line: string): { kind: PatchLine; text: string } {
   if (line.startsWith(PATCH.DELETE)) {
     return { kind: PATCH_LINE.DELETE, text: line.slice(PATCH.DELETE.length).trim() };
   }
-  if (line.startsWith(PATCH.MOVE) || line === PATCH.END_OF_FILE) {
-    return { kind: PATCH_LINE.IGNORED, text: '' };
+  if (line.startsWith(PATCH.MOVE)) {
+    return { kind: PATCH_LINE.MOVE, text: line.slice(PATCH.MOVE.length).trim() };
   }
+  if (line === PATCH.END_OF_FILE) return { kind: PATCH_LINE.IGNORED, text: '' };
   if (line.startsWith(PATCH.HUNK)) return { kind: PATCH_LINE.HUNK, text: '' };
   if (line.startsWith(PATCH.MARKER)) return { kind: PATCH_LINE.MARKER, text: '' };
   if (line.startsWith('-')) return { kind: PATCH_LINE.REMOVED, text: line.slice(1) };
@@ -87,6 +90,8 @@ class PatchReader {
   private hunks: Replacement[] = [];
   /** True once something in this file could not be placed, which claims all of it. */
   private whole = false;
+  /** Where the file in progress is being renamed to, or null where it stays put. */
+  private movedTo: string | null = null;
   private removed: string[] = [];
   private added: string[] = [];
 
@@ -107,6 +112,9 @@ class PatchReader {
         this.endFile();
         // A deleted file has no hunks to narrow by, so the whole of it is claimed.
         this.files.push({ path: text });
+        return;
+      case PATCH_LINE.MOVE:
+        if (this.path !== null) this.movedTo = text;
         return;
       case PATCH_LINE.HUNK:
         return this.endHunk();
@@ -138,6 +146,7 @@ class PatchReader {
     this.created = created;
     this.hunks = [];
     this.whole = false;
+    this.movedTo = null;
   }
 
   /**
@@ -163,8 +172,11 @@ class PatchReader {
   private endFile(): void {
     this.endHunk();
     if (this.path === null) return;
-    this.files.push(this.fileSoFar(this.path));
+    if (this.movedTo === null) this.files.push(this.fileSoFar(this.path));
+    // A rename deletes the source and writes the destination, so both are claimed whole and both are checked.
+    else this.files.push({ path: this.path }, { path: this.movedTo });
     this.path = null;
+    this.movedTo = null;
   }
 
   /** A created file is a whole write; an edited one is its hunks, or the whole file. */
@@ -181,8 +193,8 @@ class PatchReader {
 }
 
 /**
- * The files in a Codex patch, each with what its
- * hunks replace; a deleted file is claimed whole.
+ * The files in a Codex patch, each with what its hunks replace; a deleted
+ * file is claimed whole, and a moved one names both its source and destination.
  */
 export function parsePatch(patch: string): PatchedFile[] {
   const reader = new PatchReader();

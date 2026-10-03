@@ -21,6 +21,7 @@ import {
   normalizeShellCommand,
   PROBATION_KIND,
   ProbationRegister,
+  quoteShellWords,
   type ActionRequest,
   type Alternative,
   type DecisionEffect,
@@ -124,13 +125,21 @@ function worse(current: Ruling, next: Ruling): Ruling {
   return nextSeverity > (SEVERITY[current.verdict.effect] ?? 0) ? next : current;
 }
 
+/**
+ * One element is a line already, as `-c` hands it over, and several are argv, quoted so
+ * the ruling sees the words the program will receive rather than the words a space made.
+ */
+export function shellLineOf(command: readonly string[]): string {
+  return command.length === 1 ? (command[0] as string) : quoteShellWords(command);
+}
+
 export class ShellSeam {
   constructor(private readonly deps: ShellSeamDeps) {}
 
   async gate(command: readonly string[]): Promise<ShellOutcome> {
     if (command.length === 0) return nothingToRun();
 
-    const line = command.join(' ');
+    const line = shellLineOf(command);
     const ruling = await this.rule(line);
     if (ruling.verdict.effect === DECISION_EFFECT.ASK) {
       const answered = await this.askAbout(line, ruling);

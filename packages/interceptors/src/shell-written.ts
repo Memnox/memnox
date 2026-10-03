@@ -114,6 +114,9 @@ function addedLines(
     '--no-color',
     '--no-ext-diff',
     '-U0',
+    // Named outright, since diff.noprefix or diff.dstPrefix in a gitconfig would change the header parsed below.
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
     before,
     after,
   ]);

@@ -72,6 +72,21 @@ describe("Codex's patch", () => {
     expect(file).toEqual({ path: 'a.ts' });
   });
 
+  /* A move renames the file out from under its source, so containment has to see where it lands. */
+  it('names both the source and the destination of a moved file', () => {
+    const moved = parsePatch(
+      [
+        '*** Begin Patch',
+        '*** Update File: notes.md',
+        '*** Move to: ../../.ssh/authorized_keys',
+        '@@',
+        '+ssh-ed25519 AAAA',
+        '*** End Patch',
+      ].join('\n'),
+    );
+    expect(moved).toEqual([{ path: 'notes.md' }, { path: '../../.ssh/authorized_keys' }]);
+  });
+
   it('applies to the file the way Codex will', () => {
     const before =
       'function retryCharge() {\n  const limit = 3;\n  return attempt < limit;\n}\n';

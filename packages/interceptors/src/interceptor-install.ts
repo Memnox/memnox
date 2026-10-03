@@ -1,10 +1,14 @@
-import { existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { interceptableBinaries } from '@memnox/core';
 
-import { interceptorDirFor, realPath, resolveReal } from './interceptor';
+import {
+  interceptorDirFor,
+  isExecutableFile,
+  realPath,
+  resolveReal,
+} from './interceptor';
 
 /**
  * Installing and removing the per-binary shims
@@ -107,7 +111,7 @@ export async function installInterceptors(
   // Our own directory removed, or a re-install would see its own shims and call the
   // binary present when the machine never had it.
   const path = realPath(seams.path ?? process.env['PATH'] ?? '', home);
-  const exists = seams.exists ?? existsSync;
+  const exists = seams.exists ?? isExecutableFile;
 
   const installed: string[] = [];
   const absent: string[] = [];

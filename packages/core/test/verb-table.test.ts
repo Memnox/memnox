@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actionForCommand,
   classOf,
   destructiveVerbs,
   externalStateVerbs,
@@ -7,6 +8,7 @@ import {
   matchVerb,
   UNKNOWN_VERB,
   verbAction,
+  verbArgv,
   verbForAction,
   VERB_TAG,
 } from '../src/verbs/verb-table';
@@ -74,6 +76,36 @@ describe('matching a command against a verb table', () => {
     expect(classFor(cli, line)).toBe(expected);
   });
 
+  it.each([
+    ['rm -f web', 'docker.rm', 'destructive'],
+    ['volume rm data', 'docker.volume-rm', 'destructive'],
+    ['system prune', 'docker.system-prune', 'destructive'],
+    ['system prune --all', 'docker.system-prune', 'destructive'],
+    ['system prune -a', 'docker.system-prune-a', 'destructive'],
+    ['compose down -v', 'docker.compose-down-volumes', 'destructive'],
+    ['compose down --volumes', 'docker.compose-down-volumes', 'destructive'],
+    ['compose down', 'docker.compose-down', 'write'],
+    ['rmi img', 'docker.rmi', 'destructive'],
+    ['container rm web', 'docker.container-rm', 'destructive'],
+    ['image rm img', 'docker.image-rm', 'destructive'],
+    ['run --rm alpine', 'docker.run', 'write'],
+    ['image prune -f', 'docker.image-prune', 'destructive'],
+    ['login ghcr.io', 'docker.login', 'write'],
+  ])('docker %s resolves to %s, which is %s', (line, action, expected) => {
+    const table = verbTableFor('docker') as never;
+    expect(actionForCommand('docker', table, argv(line))).toBe(action);
+    expect(classFor('docker', line)).toBe(expected);
+  });
+
+  it('marks a docker login as touching secrets', () => {
+    expect(
+      hasTag(
+        classOf(verbTableFor('docker') as never, argv('login ghcr.io')),
+        VERB_TAG.SECRETS,
+      ),
+    ).toBe(true);
+  });
+
   it('marks reading a secret value as secrets, even though it is a read', () => {
     const verb = classOf(
       verbTableFor('aws') as never,
@@ -81,6 +113,71 @@ describe('matching a command against a verb table', () => {
     );
     expect(verb.class).toBe('read');
     expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
+
+  // Neither CLI has a top level `list`, so the verb has to be found where the group puts it.
+  it.each([
+    ['gcloud', 'compute instances list', 'read'],
+    ['gcloud', 'compute networks subnets list', 'read'],
+    ['gcloud', 'run services describe api', 'read'],
+    ['gcloud', 'run services delete x', 'destructive'],
+    ['gcloud', 'container clusters delete x', 'destructive'],
+    ['gcloud', 'functions delete x', 'destructive'],
+    ['gcloud', 'storage rm gs://bucket/key', 'destructive'],
+    ['az', 'vm list', 'read'],
+    ['az', 'network vnet subnet list', 'read'],
+    ['az', 'storage account delete -n x', 'destructive'],
+    ['az', 'webapp delete -n x', 'destructive'],
+  ])('%s %s is %s', (cli, line, expected) => {
+    expect(classFor(cli, line)).toBe(expected);
+  });
+
+  // A name chosen by whoever made the resource must not turn a delete into a read.
+  it.each([
+    ['gcloud', 'run services delete list', 'destructive'],
+    ['gcloud', 'functions delete list', 'destructive'],
+    ['gcloud', 'storage rm gs://bucket/key list', 'destructive'],
+    ['az', 'webapp delete describe show', 'destructive'],
+    ['gcloud', 'compute instances list delete', 'read'],
+  ])('%s %s is %s, whatever the arguments are called', (cli, line, expected) => {
+    expect(classFor(cli, line)).toBe(expected);
+  });
+
+  it.each([
+    ['gcloud', 'secrets versions access latest --secret x'],
+    ['az', 'keyvault secret show --vault-name v -n x'],
+    ['az', 'storage account keys list -n x'],
+  ])('marks %s %s as a read of a secret', (cli, line) => {
+    const verb = classOf(verbTableFor(cli) as never, argv(line));
+    expect(verb.class).toBe('read');
+    expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
+});
+
+describe('vercel, beyond deploy', () => {
+  const table = verbTableFor('vercel') as never;
+
+  it.each([
+    ['', 'write', null],
+    ['--debug', 'write', null],
+    ['rm my-app', 'destructive', null],
+    ['remove my-app --yes', 'destructive', null],
+    ['env pull .env.local', 'write', VERB_TAG.SECRETS],
+    ['env ls', 'read', VERB_TAG.SECRETS],
+    ['promote dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['rollback dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['redeploy dpl_1', 'write', VERB_TAG.PRODUCTION],
+    ['alias set dpl_1 acme.com', 'write', null],
+    ['dns rm rec_1', 'destructive', null],
+  ])('vercel %s is %s', (line, expected, tag) => {
+    const verb = classOf(table, verbArgv(table, argv(line)));
+    expect(verb.class).toBe(expected);
+    if (tag !== null) expect(hasTag(verb, tag)).toBe(true);
+  });
+
+  it('records a bare vercel under the deploy it runs, rather than unknown', () => {
+    expect(actionForCommand('vercel', table, argv(''))).toBe('vercel.deploy');
+    expect(classOf(table, argv('')).note).toBe('preview deploy');
   });
 });
 

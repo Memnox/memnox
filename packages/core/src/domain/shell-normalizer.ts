@@ -5,6 +5,16 @@ import {
   tokenizeQuoted,
   type Token,
 } from './shell-words';
+import {
+  afterPrefix,
+  basename,
+  DOWNLOADERS,
+  downloads,
+  endsInInterpreter,
+  INTERPRETERS,
+  runsCode,
+  stripEnvTokens,
+} from './shell-runners';
 
 /** Indirection the normalizer could not resolve. Never silently ignored. */
 export const OPAQUE_REASON = {
@@ -12,7 +22,7 @@ export const OPAQUE_REASON = {
   EXPANSION: 'shell-expansion',
   /** A decoder whose input is not a literal, so nothing can be decoded. */
   UNDECODABLE: 'undecodable-payload',
-  /** Piping a download into an interpreter: the payload lives elsewhere. */
+  /** A download run as code, piped or substituted in: the payload lives elsewhere. */
   REMOTE_SOURCE: 'remote-source',
   /** Wrapper nesting past the bound; deeper layers went uninspected. */
   TOO_DEEP: 'nesting-too-deep',
@@ -57,9 +67,7 @@ export interface Redirects {
 }
 
 const MAX_DEPTH = 4;
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*$/;
 const EXPANSION = /\$\{?[A-Za-z_(]|`/;
-const INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash']);
 const CODE_FLAG_RUNNERS = new Map<string, string>([
   ['python', '-c'],
   ['python3', '-c'],
@@ -68,7 +76,6 @@ const CODE_FLAG_RUNNERS = new Map<string, string>([
   ['node', '-e'],
 ]);
 const DECODERS = new Set(['base64', 'openssl']);
-const DOWNLOADERS = new Set(['curl', 'wget', 'fetch']);
 
 /** Flattens a command into what it will really run; offline, never executes anything. */
 interface FoundCommand {
@@ -165,6 +172,9 @@ function walkCommand(part: string, tokens: Token[], line: Line, state: Walk): vo
 
   const binary = basename(words[0] ?? '');
   if (line.pipesIntoInterpreter && DOWNLOADERS.has(binary)) {
+    opaque.add(OPAQUE_REASON.REMOTE_SOURCE);
+  }
+  if (runsCode(binary) && substitutionsIn(part).some(downloads)) {
     opaque.add(OPAQUE_REASON.REMOTE_SOURCE);
   }
 
@@ -287,24 +297,9 @@ function outsideSingleQuotes(part: string): string {
   return out;
 }
 
-function stripEnvTokens(tokens: readonly Token[]): Token[] {
-  let index = 0;
-  while (index < tokens.length && ENV_ASSIGNMENT.test(tokens[index]?.text ?? ''))
-    index += 1;
-  return tokens.slice(index);
-}
-
-/** `curl x | sh`, where the last stage decides whether the pipeline executes. */
-function endsInInterpreter(pipeline: readonly string[]): boolean {
-  const last = pipeline[pipeline.length - 1];
-  if (last === undefined) return false;
-  const words = stripEnvTokens(tokenizeQuoted(last));
-  return INTERPRETERS.has(basename(words[0]?.text ?? ''));
-}
-
 /**
- * The bodies of `$(...)` and backticks in a command, outermost first, so what they run is
- * ruled on rather than only noted as something the line could not see through.
+ * The bodies of `$(...)`, `<(...)`, `>(...)` and backticks in a command, outermost first, so
+ * what they run is ruled on rather than only noted as something the line could not see through.
  */
 function substitutionsIn(part: string): string[] {
   const bodies: string[] = [];
@@ -314,7 +309,11 @@ function substitutionsIn(part: string): string[] {
       if (end === -1) break;
       bodies.push(part.slice(at + 1, end));
       at = end;
-    } else if (part[at] === '$' && part[at + 1] === '(' && part[at + 2] !== '(') {
+    } else if (
+      (part[at] === '$' || part[at] === '<' || part[at] === '>') &&
+      part[at + 1] === '(' &&
+      part[at + 2] !== '('
+    ) {
       let depth = 0;
       for (let end = at + 1; end < part.length; end += 1) {
         if (part[end] === '(') depth += 1;
@@ -328,35 +327,6 @@ function substitutionsIn(part: string): string[] {
     }
   }
   return bodies;
-}
-
-/** Words that only run the next one, and how many values each of their options takes. */
-const PREFIXES = new Map<string, ReadonlySet<string>>([
-  ['env', new Set(['-u', '--unset', '-C', '--chdir', '-S'])],
-  ['sudo', new Set(['-u', '-g', '-C', '-h', '-p', '-U', '-r', '-t', '-D'])],
-  ['doas', new Set(['-u', '-C'])],
-  ['command', new Set()],
-  ['nohup', new Set()],
-  ['time', new Set()],
-  ['nice', new Set(['-n'])],
-  ['ionice', new Set(['-c', '-n', '-p'])],
-  ['stdbuf', new Set(['-i', '-o', '-e'])],
-  ['xargs', new Set(['-n', '-I', '-L', '-P', '-s', '-d', '-E', '-a'])],
-]);
-
-/** The command a prefix runs, past its own options, its `NAME=value` words and its duration. */
-function afterPrefix(binary: string, words: readonly string[]): string | null {
-  const valued = PREFIXES.get(binary);
-  if (valued === undefined) return null;
-  let at = 1;
-  while (at < words.length) {
-    const word = words[at] ?? '';
-    if (valued.has(word)) at += 2;
-    else if (word.startsWith('-') || ENV_ASSIGNMENT.test(word)) at += 1;
-    else break;
-  }
-  const rest = words.slice(at);
-  return rest.length === 0 ? null : rest.join(' ');
 }
 
 /** `timeout 5 rm x`: the duration is the first word, then the command. */
@@ -455,11 +425,6 @@ function decodeBase64(value: string): string | null {
   } catch {
     return null; // Not valid base64, so treat it as an ordinary argument.
   }
-}
-
-function basename(word: string): string {
-  const parts = word.split('/');
-  return parts[parts.length - 1] ?? word;
 }
 
 function looksLikeFlag(word: string): boolean {

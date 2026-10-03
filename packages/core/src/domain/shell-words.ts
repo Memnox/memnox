@@ -141,6 +141,22 @@ export function tokenizeQuoted(input: string): Token[] {
   return tokens;
 }
 
+const PLAIN_WORD = /^[\w@%+=:,./~-]+$/;
+
+/**
+ * Joins argv into one line that `tokenizeQuoted` splits back into the same words, so
+ * `rm -rf "my dir"` is ruled on one target and `echo "a; rm x"` stays one command.
+ */
+export function quoteShellWords(words: readonly string[]): string {
+  return words.map(quoteShellWord).join(' ');
+}
+
+function quoteShellWord(word: string): string {
+  if (PLAIN_WORD.test(word)) return word;
+  // Single quotes keep everything literal, and a quote inside is closed, double quoted and reopened.
+  return `'${word.replaceAll("'", `'"'"'`)}'`;
+}
+
 const WRITE_REDIRECT = /^(?:\d*|&)(>>?|>\|)(.*)$/;
 const READ_REDIRECT = /^\d*<(?![<&])(.*)$/;
 const DEVICES = /^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/;
@@ -158,6 +174,8 @@ function redirectOf(token: Token, next: Token | undefined): Redirect | null {
   const read = write === null ? READ_REDIRECT.exec(token.text) : null;
   if (write === null && read === null) return null;
   const joined = write === null ? (read?.[1] as string) : (write[2] as string);
+  // `<(cmd)` and `>(cmd)` are process substitution, a path the shell makes rather than a file.
+  if (joined.startsWith('(')) return null;
   if (joined !== '') return { writes: write !== null, target: joined, usesNext: false };
   return { writes: write !== null, target: next?.text ?? '', usesNext: true };
 }

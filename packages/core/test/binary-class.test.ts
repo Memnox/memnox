@@ -38,6 +38,23 @@ describe('classifying one command from argv', () => {
     expect(classifyBinary('rm', ['note.txt'])?.because).toBe('a delete');
   });
 
+  it.each([
+    [['-r', '-f', 'x']],
+    [['-rfv', 'x']],
+    [['--recursive', '--force', 'x']],
+    [['-R', '--force', 'x']],
+  ])('describes rm %s the same as rm -rf', (args) => {
+    expect(classifyBinary('rm', args)?.because).toBe(
+      classifyBinary('rm', ['-rf', 'x'])?.because,
+    );
+    expect(classifyBinary('rm', args)?.because).toBe('a recursive, forced delete');
+  });
+
+  it('does not call a delete forced when only one of the two flags is there', () => {
+    expect(classifyBinary('rm', ['-r', 'x'])?.because).toBe('a delete');
+    expect(classifyBinary('rm', ['--', '-rf'])?.because).toBe('a delete');
+  });
+
   it('names the host a request reaches, never the whole line', () => {
     const verdict = classifyBinary('curl', [
       '-H',
@@ -51,6 +68,26 @@ describe('classifying one command from argv', () => {
 
   it('takes a bare host as well as a URL, because curl does', () => {
     expect(classifyBinary('curl', ['example.com/path'])?.target).toBe('example.com');
+  });
+});
+
+describe('package managers, whose flags can come before the verb', () => {
+  it('reads the verb past a flag that takes a value', () => {
+    const verdict = classifyBinary('pnpm', ['--filter', 'web', 'add', 'left-pad']);
+    expect(verdict?.class).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(verdict?.action).toBe('package.install');
+    expect(verdict?.target).toBe('left-pad');
+  });
+
+  it('names the package as the target rather than a flag', () => {
+    expect(classifyBinary('yarn', ['add', '-D', 'foo'])?.target).toBe('foo');
+  });
+
+  it('treats a bare yarn or pnpm as the install it is', () => {
+    expect(classOf('yarn', [])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('pnpm', [])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('yarn', ['--cwd', 'web'])).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    expect(classOf('npm', [])).toBe(COMMAND_CLASS.NORMAL);
   });
 });
 

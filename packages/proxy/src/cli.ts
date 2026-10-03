@@ -24,7 +24,7 @@ import {
   type UnusualNotice,
 } from '@memnox/core';
 
-import { parseFirewallArgs } from './firewall-args';
+import { parseFirewallArgs, type FirewallArgs } from './firewall-args';
 import { McpFirewall, type FirewallOptions } from './firewall';
 import { ENV_TOOLS_ALLOW, ENV_TOOLS_DENY } from './firewall.constants';
 import { loadLocalGate, localGateEnvironment } from './local-gate-loader';
@@ -62,13 +62,18 @@ async function main(): Promise<void> {
     process.stderr.write(`${USAGE}\n`);
     process.exit(EXIT.FAILED);
   }
+  if ('missingValueFor' in args) {
+    warn(`${args.missingValueFor} needs a value`);
+    process.stderr.write(`${USAGE}\n`);
+    process.exit(EXIT.FAILED);
+  }
 
   new McpFirewall(await firewallOptionsFor(args, homedir())).start();
 }
 
 /** Everything the proxy is wired to on this machine, read once where it starts. */
 async function firewallOptionsFor(
-  args: NonNullable<ReturnType<typeof parseFirewallArgs>>,
+  args: FirewallArgs,
   home: string,
 ): Promise<FirewallOptions> {
   const gate = await loadLocalGate(

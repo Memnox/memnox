@@ -20,7 +20,14 @@ import {
 
 import { isCallAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
 import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
-import { parseMessage, serializeMessage, type JsonRpcMessage } from './json-rpc';
+import {
+  invalidRequest,
+  isJsonRpcMessage,
+  parseIncoming,
+  serializeBatch,
+  serializeMessage,
+  type JsonRpcMessage,
+} from './json-rpc';
 import {
   digestArguments,
   frameResult,
@@ -73,8 +80,23 @@ export interface FirewallSessionDeps {
 
 type MessageId = string | number;
 
+/** What one client message leads to: something for the server, something for the client, or neither. */
+interface Ruling {
+  forward?: JsonRpcMessage;
+  answer?: JsonRpcMessage;
+}
+
 const SERVER_GONE_REASON =
   'the wrapped MCP server is no longer running, so restart the client to reconnect';
+
+/** The upstream died: transient, and the one refusal here that a retry can fix. */
+function serverGone(message: JsonRpcMessage): JsonRpcMessage {
+  return denial(message.id, SERVER_GONE_REASON, undefined, {
+    retryability: RETRYABILITY.LATER,
+    guidance:
+      'The server this call needed is not running. This is a failure, not a rule: retrying once it is back may succeed.',
+  });
+}
 
 function describeMessage(message: JsonRpcMessage): string {
   return message.method ?? 'response';
@@ -137,16 +159,64 @@ export class FirewallSession {
   }
 
   async fromClient(line: string): Promise<void> {
-    const message = parseMessage(line);
-    if (!message) return this.forwardRaw(`${line}\n`);
+    const incoming = parseIncoming(line);
+    if (incoming === null) return this.forwardRaw(`${line}\n`);
+    if (isJsonRpcMessage(incoming)) {
+      const ruled = this.ruleOn(incoming);
+      const ruling = ruled instanceof Promise ? await ruled : ruled;
+      if (ruling.forward !== undefined) this.forward(ruling.forward);
+      if (ruling.answer !== undefined)
+        this.deps.channel.toClient(serializeMessage(ruling.answer));
+      return;
+    }
+    return this.batchFromClient(incoming);
+  }
 
+  /**
+   * Every element is ruled on in turn, so one denied call does not carry the rest of the
+   * batch with it and each allowed one is still a row of its own. In turn rather than at
+   * once, because two calls that both need a person must reach them in the order sent.
+   */
+  private async batchFromClient(batch: readonly unknown[]): Promise<void> {
+    const onward: JsonRpcMessage[] = [];
+    const answers: JsonRpcMessage[] = [];
+    for (const item of batch) {
+      // A null or a nested array has no method to rule on and no id to answer against,
+      // and reading one as a message threw where nothing was there to catch it.
+      if (!isJsonRpcMessage(item)) {
+        this.deps.log('refused an item in a batch that was not a request object');
+        answers.push(invalidRequest());
+        continue;
+      }
+      const message = item;
+      const ruled = this.ruleOn(message);
+      const ruling = ruled instanceof Promise ? await ruled : ruled;
+      if (ruling.forward !== undefined) onward.push(ruling.forward);
+      if (ruling.answer !== undefined) answers.push(ruling.answer);
+    }
+    if (onward.length > 0) this.forwardBatch(onward);
+    if (answers.length > 0) this.deps.channel.toClient(serializeBatch(answers));
+  }
+
+  /**
+   * What one client message leads to, decided without touching either channel. Only a
+   * tools/call is answered later; everything else stays synchronous, because a message
+   * that needed no ruling used to reach the server within the same tick and still must.
+   */
+  private ruleOn(message: JsonRpcMessage): Ruling | Promise<Ruling> {
     const id = identify(message);
     if (message.method === METHOD_TOOLS_LIST && id !== null) {
       this.listRequestIds.add(id);
-      return this.forward(message);
+      return { forward: message };
     }
-    if (message.method !== METHOD_TOOLS_CALL) return this.forward(message);
+    if (message.method !== METHOD_TOOLS_CALL) return { forward: message };
+    return this.ruleOnCall(message, id);
+  }
 
+  private async ruleOnCall(
+    message: JsonRpcMessage,
+    id: MessageId | null,
+  ): Promise<Ruling> {
     const call = readToolCall(message.params);
     let verdict = await this.verdictFor(call);
     if (verdict.effect === DECISION_EFFECT.ASK)
@@ -157,14 +227,14 @@ export class FirewallSession {
       if (id === null) this.record(call, verdict, undefined);
       else this.openCalls.set(id, { call, verdict });
       this.collectNotes();
-      return this.forward(message);
+      return { forward: message };
     }
 
     this.deps.log(`denied tools/call "${call.name}": ${verdict.reason}`);
     this.record(call, verdict, undefined);
-    this.deps.channel.toClient(
-      serializeMessage(denial(message.id, verdict.reason, verdict.alternative)),
-    );
+    // A notification is never replied to, however it was ruled on. The row above is the record.
+    if (id === null) return {};
+    return { answer: denial(message.id, verdict.reason, verdict.alternative) };
   }
 
   /**
@@ -210,18 +280,32 @@ export class FirewallSession {
   }
 
   fromServer(line: string): void {
-    const message = parseMessage(line);
-    if (!message) return this.deps.channel.toClient(`${line}\n`);
+    const incoming = parseIncoming(line);
+    if (incoming === null) return this.deps.channel.toClient(`${line}\n`);
+    if (isJsonRpcMessage(incoming))
+      return this.deps.channel.toClient(serializeMessage(this.replyFor(incoming)));
+    // Split, so a batched reply still meets the call it answers rather than passing unframed.
+    // What is not a message answers no call, and goes back as the server sent it.
+    this.deps.channel.toClient(
+      serializeBatch(
+        incoming.map((item) =>
+          isJsonRpcMessage(item) ? this.replyFor(item) : (item as JsonRpcMessage),
+        ),
+      ),
+    );
+  }
 
+  /** One server message, framed and recorded against the call it answers. */
+  private replyFor(message: JsonRpcMessage): JsonRpcMessage {
     const id = identify(message);
     if (id !== null && this.listRequestIds.has(id)) {
       this.listRequestIds.delete(id);
       this.deps.onListing?.(declarationsIn(message));
-      return this.deps.channel.toClient(serializeMessage(this.filterListing(message)));
+      return this.filterListing(message);
     }
 
     const open = id === null ? undefined : this.openCalls.get(id);
-    if (open === undefined) return this.deps.channel.toClient(serializeMessage(message));
+    if (open === undefined) return message;
     const call = open.call;
     if (id !== null) this.openCalls.delete(id);
     // Whatever was held while it ran is let go now, not
@@ -241,9 +325,7 @@ export class FirewallSession {
       );
       this.deps.onInstruction?.(call);
     }
-    this.deps.channel.toClient(
-      serializeMessage(this.withNotes(frameResult(message, result))),
-    );
+    return this.withNotes(frameResult(message, result));
   }
 
   private record(
@@ -299,16 +381,18 @@ export class FirewallSession {
     );
     // A notification expects no reply.
     if (identify(message) === null) return;
-    // The upstream died: transient, and the one refusal here that a retry can fix.
-    this.deps.channel.toClient(
-      serializeMessage(
-        denial(message.id, SERVER_GONE_REASON, undefined, {
-          retryability: RETRYABILITY.LATER,
-          guidance:
-            'The server this call needed is not running. This is a failure, not a rule: retrying once it is back may succeed.',
-        }),
-      ),
+    this.deps.channel.toClient(serializeMessage(serverGone(message)));
+  }
+
+  /** The batch travels as one, so the whole of it is dropped or none of it is. */
+  private forwardBatch(batch: readonly JsonRpcMessage[]): void {
+    if (this.deps.channel.toServer(serializeBatch(batch))) return;
+
+    this.deps.log(
+      `wrapped server is not accepting input; dropped a batch of ${batch.length}`,
     );
+    const owed = batch.filter((message) => identify(message) !== null).map(serverGone);
+    if (owed.length > 0) this.deps.channel.toClient(serializeBatch(owed));
   }
 
   private forwardRaw(payload: string): void {

@@ -13,7 +13,7 @@ function fakeChild(): {
   const written: string[] = [];
   let ended = false;
 
-  const stdin = {
+  const stdin = Object.assign(new EventEmitter(), {
     writable: true,
     write: (payload: string) => {
       written.push(payload);
@@ -22,7 +22,7 @@ function fakeChild(): {
     end: () => {
       ended = true;
     },
-  };
+  });
 
   const child = Object.assign(emitter, {
     stdin,
@@ -69,5 +69,60 @@ describe('the process the firewall wraps', () => {
     child.emit('exit', 3);
 
     expect(exits).toEqual([3]);
+  });
+
+  it('exits as a shell would when a signal killed the wrapped server', () => {
+    const { child, exits } = build();
+
+    child.emit('exit', null, 'SIGKILL');
+
+    expect(exits).toEqual([137]);
+  });
+
+  it('says a server that could not start and exits 127, once', () => {
+    const { child } = fakeChild();
+    const logged: string[] = [];
+    const exits: number[] = [];
+    const firewall = new McpFirewall({
+      command: ['nodee', 'server.js'],
+      serverName: 'demo',
+      log: (message) => logged.push(message),
+    });
+    firewall.start({
+      spawn: () => child,
+      input: new EventEmitter(),
+      exit: (code) => exits.push(code),
+    });
+
+    child.emit(
+      'error',
+      Object.assign(new Error('spawn nodee ENOENT'), { code: 'ENOENT' }),
+    );
+    child.emit('exit', -2);
+
+    expect(exits).toEqual([127]);
+    expect(logged.join('\n')).toContain('could not start demo: spawn nodee ENOENT');
+  });
+
+  it('survives a broken pipe and stops writing to it, so the call is refused as server gone', async () => {
+    const { child, written } = fakeChild();
+    const input = new EventEmitter();
+    const logged: string[] = [];
+    const firewall = new McpFirewall({
+      command: ['node', 'server.js'],
+      serverName: 'demo',
+      log: (message) => logged.push(message),
+    });
+    firewall.start({ spawn: () => child, input, exit: () => undefined });
+
+    child.stdin?.emit(
+      'error',
+      Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }),
+    );
+    input.emit('data', Buffer.from('{"jsonrpc":"2.0","id":7,"method":"ping"}\n'));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(written).toEqual([]);
+    expect(logged.join('\n')).toContain('not accepting input; dropped');
   });
 });

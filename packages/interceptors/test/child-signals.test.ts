@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { exitCodeForChild } from '@memnox/core';
 import { describe, expect, it } from 'vitest';
 
-import { relayEndingSignals, signalledExit } from '../src/child-signals';
+import { relayEndingSignals } from '../src/child-signals';
 
 function alive(pid: number): boolean {
   try {
@@ -21,7 +22,7 @@ describe('relayEndingSignals', () => {
     const ended = new Promise<number>((resolve) => {
       child.on('exit', (code, signal) => {
         detach();
-        resolve(code ?? signalledExit(signal, 1));
+        resolve(exitCodeForChild(code, signal));
       });
     });
 
@@ -44,14 +45,5 @@ describe('relayEndingSignals', () => {
     wrapper.emit('SIGHUP');
 
     await expect(ended).resolves.toBe('SIGHUP');
-  });
-});
-
-describe('signalledExit', () => {
-  it('numbers a known signal the way a shell does and falls back otherwise', () => {
-    expect(signalledExit('SIGTERM', 1)).toBe(143);
-    expect(signalledExit('SIGHUP', 1)).toBe(129);
-    expect(signalledExit('SIGQUIT', 1)).toBe(1);
-    expect(signalledExit(null, 2)).toBe(2);
   });
 });

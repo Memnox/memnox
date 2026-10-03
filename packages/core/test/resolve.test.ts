@@ -28,6 +28,24 @@ describe('resolving one command line', () => {
     expect(bounded.class).toBe('write');
   });
 
+  it('reads every statement on its own, so a WHERE in one does not bound the next', () => {
+    const second = resolveAction('psql', [
+      '-c',
+      'DELETE FROM a WHERE id=1; DELETE FROM b',
+    ]);
+    expect(second.action).toBe('psql.delete-unbounded');
+    expect(second.class).toBe('destructive');
+
+    const split = resolveAction('psql', [
+      '-c',
+      'SELECT 1 WHERE true',
+      '-c',
+      'UPDATE users SET admin=true',
+    ]);
+    expect(split.action).toBe('psql.update-unbounded');
+    expect(split.class).toBe('destructive');
+  });
+
   it('names the host when the client is pointed at somebody else’s data', () => {
     const resolved = resolveAction('psql', ['-c', 'SELECT 1'], {
       DATABASE_URL: 'postgres://u:pw@db.prod.internal/app',
@@ -41,6 +59,30 @@ describe('resolving one command line', () => {
     expect(resolve('git push --force').action).toBe('git.push-force');
     expect(resolve('git push origin main').action).toBe('git.push');
     expect(resolve('kubectl get pods').class).toBe('read');
+  });
+
+  it('resolves a kubectl short resource name to the same action as the long one', () => {
+    const cases: [string, string][] = [
+      ['kubectl delete ns prod', 'kubectl.delete-namespace'],
+      ['kubectl delete namespaces prod', 'kubectl.delete-namespace'],
+      ['kubectl delete ns/prod', 'kubectl.delete-namespace'],
+      ['kubectl -n prod delete ns/a ns/b', 'kubectl.delete-namespace'],
+      ['kubectl delete deploy api', 'kubectl.delete-deployment'],
+      ['kubectl delete deployments api', 'kubectl.delete-deployment'],
+      ['kubectl delete pvc data', 'kubectl.delete-pvc'],
+      ['kubectl delete deployments.apps/api', 'kubectl.delete-deployment'],
+      ['kubectl delete persistentvolumeclaim data', 'kubectl.delete-pvc'],
+      ['kubectl delete persistentvolumeclaims/data', 'kubectl.delete-pvc'],
+    ];
+    for (const [line, action] of cases) {
+      expect(resolve(line).action, line).toBe(action);
+      expect(resolve(line).class, line).toBe('destructive');
+    }
+    expect(resolve('kubectl delete ns/a ns/b').target).toBe('b');
+    expect(resolve('kubectl delete pod ns').action).toBe('kubectl.delete');
+    expect(resolve('kubectl apply -f deploy/app.yaml').action).toBe('kubectl.apply');
+    expect(resolve('kubectl cp ns/web:/tmp/a ./a').target).toBe('./a');
+    expect(resolve('kubectl delete pvc/data').target).toBe('data');
   });
 
   it('carries the alternative the table wrote, never one invented later', () => {

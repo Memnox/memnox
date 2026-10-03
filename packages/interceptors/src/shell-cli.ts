@@ -5,6 +5,8 @@ import {
   DECISION_EFFECT,
   digest,
   ENV_AGENT_NAME,
+  exitCodeForChild,
+  exitCodeForSpawnError,
   holderPid,
   localRuleRef,
   openLedger,
@@ -14,7 +16,7 @@ import {
 } from '@memnox/core';
 
 import { checkpointBeforeLine } from './checkpoint-seam';
-import { relayEndingSignals, signalledExit } from './child-signals';
+import { relayEndingSignals } from './child-signals';
 import { record } from './record';
 import {
   buildAuthorizer,
@@ -31,6 +33,7 @@ import {
 } from './shell-invocation';
 import {
   ShellSeam,
+  shellLineOf,
   SHELL_EXIT_OK,
   SHELL_EXIT_WITHHELD,
   type ShellDecision,
@@ -67,12 +70,12 @@ function run(executable: string, args: readonly string[]): Promise<number> {
     const detach = relayEndingSignals(child);
     child.on('exit', (code, signal) => {
       detach();
-      // No code and no signal we can number means it never ran.
-      resolve(code === null ? signalledExit(signal, SHELL_EXIT_WITHHELD) : code);
+      resolve(exitCodeForChild(code, signal));
     });
     child.on('error', (err: unknown) => {
       log(`could not run the command: ${String(err)}`);
-      resolve(SHELL_EXIT_WITHHELD);
+      // Nothing refused it, so it must not read as 77 and stop an agent retrying.
+      resolve(exitCodeForSpawnError(err));
     });
   });
 }
@@ -156,7 +159,7 @@ async function gateAndRun(
   const startedAt = Date.now();
   const seam = await buildSeam();
   const outcome = await seam.gate(command);
-  const line = command.join(' ');
+  const line = shellLineOf(command);
   if (outcome.message !== undefined) log(outcome.message);
   if (outcome.run === undefined) {
     // A refused command has no exit code to wait

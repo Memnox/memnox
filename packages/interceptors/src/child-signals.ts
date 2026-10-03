@@ -1,5 +1,3 @@
-import { exitCodeForSignal, SIGNAL_NUMBER } from '@memnox/core';
-
 /** Signals sent to the wrapper alone, which the command it started never sees unless relayed. */
 const ENDING_SIGNALS = ['SIGTERM', 'SIGHUP'] as const;
 
@@ -32,14 +30,4 @@ export function relayEndingSignals(
   return () => {
     for (const { signal, listener } of listeners) source.off(signal, listener);
   };
-}
-
-function isNumberedSignal(signal: NodeJS.Signals): signal is keyof typeof SIGNAL_NUMBER {
-  return signal in SIGNAL_NUMBER;
-}
-
-/** A signal is `128 + n`, as a shell reports one; a signal we cannot number gets the fallback. */
-export function signalledExit(signal: NodeJS.Signals | null, fallback: number): number {
-  if (signal === null || !isNumberedSignal(signal)) return fallback;
-  return exitCodeForSignal(signal);
 }

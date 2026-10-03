@@ -13,6 +13,7 @@ export * from './domain/line-buffer';
 export * from './domain/exit-code';
 export * from './domain/action-event';
 export * from './domain/shell-normalizer';
+export { quoteShellWords } from './domain/shell-words';
 export * from './domain/enforcement';
 export * from './domain/canonical-json';
 export * from './domain/task';

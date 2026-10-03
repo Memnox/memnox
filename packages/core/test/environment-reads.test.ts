@@ -16,6 +16,10 @@ describe('a command that prints a variable', () => {
     ['printenv STRIPE_API_KEY', ['STRIPE_API_KEY']],
     ['echo $STRIPE_SECRET', ['STRIPE_SECRET']],
     ['echo "${DATABASE_URL}"', ['DATABASE_URL']],
+    ['echo $PGPASSWORD', ['PGPASSWORD']],
+    ['echo $MYSQL_PWD', ['MYSQL_PWD']],
+    ['echo $PASSWORD', ['PASSWORD']],
+    ['echo $SECRET_KEY_BASE', ['SECRET_KEY_BASE']],
   ])('%s prints %j', (line, names) => {
     expect(printed(line)).toEqual(names);
   });
@@ -24,6 +28,7 @@ describe('a command that prints a variable', () => {
     'env NODE_ENV=test node app.js',
     '/usr/bin/env node x.js',
     'echo $HOME',
+    'echo $PWD',
     'ls',
     'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com',
   ])('%s prints no credential', (line) => {

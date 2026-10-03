@@ -5,14 +5,21 @@ import type { MemnoxEvent } from '@memnox/core';
 import { McpFirewall } from '../src/firewall';
 
 function fakeChild(): ChildProcess {
-  const stdin = { writable: true, write: () => true, end: () => undefined };
+  const stdin = Object.assign(new EventEmitter(), {
+    writable: true,
+    write: () => true,
+    end: () => undefined,
+  });
   return Object.assign(new EventEmitter(), {
     stdin,
     stdout: new EventEmitter(),
   }) as unknown as ChildProcess;
 }
 
-async function exited(code: number): Promise<{ rows: MemnoxEvent[]; logged: string[] }> {
+async function exited(
+  code: number | null,
+  signal: NodeJS.Signals | null = null,
+): Promise<{ rows: MemnoxEvent[]; logged: string[] }> {
   const rows: MemnoxEvent[] = [];
   const logged: string[] = [];
   const child = fakeChild();
@@ -33,7 +40,7 @@ async function exited(code: number): Promise<{ rows: MemnoxEvent[]; logged: stri
       exit: () => resolve(),
     });
   });
-  child.emit('exit', code);
+  child.emit('exit', code, signal);
   await done;
   return { rows, logged };
 }
@@ -43,6 +50,12 @@ describe('a wrapped server that stops', () => {
     const { rows, logged } = await exited(1);
     expect(rows.map((row) => row.operation)).toEqual(['config.drift.server-down']);
     expect(logged.join('\n')).toContain('railway stopped with exit code 1');
+  });
+
+  it('is said and kept as a row when a signal killed it', async () => {
+    const { rows, logged } = await exited(null, 'SIGKILL');
+    expect(rows.map((row) => row.operation)).toEqual(['config.drift.server-down']);
+    expect(logged.join('\n')).toContain('railway stopped with exit code 137');
   });
 
   it('is not news when it ends cleanly', async () => {

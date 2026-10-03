@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,13 +10,14 @@ import { RecordedOutput } from '../src/cli-output';
 import { plainStyle } from '../src/style';
 import { registerUninstallCommand } from '../src/commands/uninstall.command';
 import { existsSync } from 'node:fs';
-import { pauseDirFor, pendingDirFor } from '@memnox/core';
+import { ownProcessEnv, pauseDirFor, pendingDirFor } from '@memnox/core';
 import { listRecords, writeRecord } from '../src/agents/onboarding';
 
 async function machine(): Promise<{ home: string; repo: string }> {
   const home = await mkdtemp(join(tmpdir(), 'memnox-uninst-'));
   const repo = await mkdtemp(join(tmpdir(), 'memnox-repo-'));
-  await mkdir(join(repo, '.git', 'hooks'), { recursive: true });
+  // A real repository, since the hooks directory is asked of git rather than assumed.
+  execFileSync('git', ['init', '-q'], { cwd: repo, env: ownProcessEnv() });
   return { home, repo };
 }
 

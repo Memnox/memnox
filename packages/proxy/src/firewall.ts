@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { constants } from 'node:os';
 
 import {
   changingTools,
   ENFORCEMENT_MODE,
+  EXIT,
   exitCodeForSignal,
   serverDownEvent,
   toolArrivalEvent,
@@ -139,6 +141,13 @@ export interface FirewallProcessDeps {
   exit?: (code: number) => void;
 }
 
+/** What a shell would report for the server's end, so a signal is never read as a clean exit. */
+function exitStatus(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  if (signal === null) return EXIT.OK;
+  return EXIT.SIGNALLED_BASE + constants.signals[signal];
+}
+
 function defaultSpawn(command: string, args: readonly string[]): ChildProcess {
   return spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
 }
@@ -152,6 +161,10 @@ export class McpFirewall {
   private readonly authorizer: CallAuthorizer;
   /** Set once the agent is ending the session, so its server stopping is not reported. */
   private ending = false;
+  /** Set once the server's stdin errors, since `writable` can lag behind a pipe already broken. */
+  private pipeBroken = false;
+  /** Set on the first exit, because a spawn error and an exit can both arrive for one child. */
+  private exiting = false;
   /** Filled by the first listing; built before the authorizer, which reads it. */
   private readonly manifest = new ToolManifest();
 
@@ -288,18 +301,29 @@ export class McpFirewall {
     const exit = deps.exit ?? ((code: number) => process.exit(code));
     const child = (deps.spawn ?? defaultSpawn)(executable, args);
     this.child = child;
-    child.on('exit', (code) => {
-      const status = code === null ? 0 : code;
-      const finish = (): void => {
-        // At once where nothing is held, since the exit code is the wrapped server's.
-        if (this.authorizer.close === undefined) return exit(status);
-        void this.close().then(() => exit(status));
-      };
+    const finish = (status: number): void => {
+      if (this.exiting) return;
+      this.exiting = true;
+      // At once where nothing is held, since the exit code is the wrapped server's.
+      if (this.authorizer.close === undefined) return exit(status);
+      void this.close().then(() => exit(status));
+    };
+    child.on('exit', (code, signal) => {
+      const status = exitStatus(code, signal);
       // A server that dies under a working agent is said, since everything using it now fails.
-      if (status === 0 || this.ending) return finish();
+      if (status === EXIT.OK || this.ending) return finish(status);
       const row = this.serverDown(status);
-      if (row === null) return finish();
-      void row.then(finish);
+      if (row === null) return finish(status);
+      void row.then(() => finish(status));
+    });
+    // Unheard, a misspelled server command is an unhandled exception rather than a reason.
+    child.on('error', (error) => {
+      this.log(`could not start ${this.options.serverName}: ${error.message}`);
+      finish(EXIT.NOT_FOUND);
+    });
+    // Unheard, an EPIPE from a server mid death would crash the proxy it was talking through.
+    child.stdin?.on('error', () => {
+      this.pipeBroken = true;
     });
     // A test that injects its own exit owns its own signals.
     if (deps.exit === undefined) this.releaseOnSignals(child, exit);
@@ -414,7 +438,7 @@ export class McpFirewall {
 
         // `writable` distinguishes a dead pipe from ordinary backpressure, which
         // write() also reports as false but Node buffers for us.
-        if (!stdin.writable) return false;
+        if (!stdin.writable || this.pipeBroken) return false;
 
         stdin.write(payload);
         return true;

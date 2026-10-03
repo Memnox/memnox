@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename } from 'node:path';
 
@@ -9,6 +8,8 @@ import {
   DECISION_EFFECT,
   ENV_AGENT_NAME,
   EXIT,
+  exitCodeForChild,
+  exitCodeForSpawnError,
   holderPid,
   isBrowserLauncher,
   openLedger,
@@ -26,13 +27,14 @@ import {
 import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
 import { BrowserSeam } from './browser-seam';
 import { checkpointBeforeCommand } from './checkpoint-seam';
-import { relayEndingSignals, signalledExit } from './child-signals';
+import { relayEndingSignals } from './child-signals';
 import { reportToDaemon } from './daemon-client';
 import { readHookConfig } from './hook-config';
 import { loadHookGate } from './hook-gate-loader';
 import {
   INTERCEPT_BINARY,
   invokedFor,
+  isExecutableFile,
   realPath,
   resolveReal,
   ruleOnCommand,
@@ -304,7 +306,7 @@ async function anotherAgentHasIt(
  */
 function hand(command: Command, home: string): Promise<number> {
   const path = realPath(process.env['PATH'] ?? '', home);
-  const real = resolveReal(command.binary, path, existsSync);
+  const real = resolveReal(command.binary, path, isExecutableFile);
   if (real === null) {
     process.stderr.write(
       `memnox: ${command.binary} is not on PATH behind the interceptor\n`,
@@ -321,12 +323,14 @@ function hand(command: Command, home: string): Promise<number> {
       env: { ...process.env, PATH: path },
     });
     const detach = relayEndingSignals(child);
-    child.on('error', () => resolve(EXIT.FAILED));
+    child.on('error', (err: unknown) => {
+      process.stderr.write(`memnox: could not run ${command.binary}: ${String(err)}\n`);
+      resolve(exitCodeForSpawnError(err));
+    });
     child.on('exit', (code, signal) => {
       for (const each of FORWARDED) process.off(each, ignore);
       detach();
-      // A signal we cannot number is reported as 1, as a blocking spawn did.
-      resolve(code ?? signalledExit(signal, EXIT.FAILED));
+      resolve(exitCodeForChild(code, signal));
     });
   });
 }
