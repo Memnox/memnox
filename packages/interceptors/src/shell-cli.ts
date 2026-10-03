@@ -25,6 +25,7 @@ import {
   pidSessionId,
 } from './seam-runtime';
 import {
+  commandShellArgs,
   parseShellInvocation,
   realShell,
   SHELL_MODE,
@@ -168,7 +169,7 @@ async function gateAndRun(
   await keepBeforeDestroying(line);
   const status =
     invocation.mode === SHELL_MODE.COMMAND
-      ? await run(shell, [...invocation.flags, '-c', invocation.line ?? ''])
+      ? await run(shell, commandShellArgs(invocation))
       : await runResolved(outcome.run);
   if (status === null) return SHELL_EXIT_OK;
   await keep({ decision: outcome.decision, line, exitCode: status, startedAt });

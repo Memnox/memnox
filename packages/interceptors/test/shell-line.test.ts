@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,7 @@ import type { HookAuthorizer } from '../src/hook-authorizer';
 import { HookAuthorizer as RealAuthorizer } from '../src/hook-authorizer';
 import { ShellSeam, SHELL_EXIT_OK, SHELL_EXIT_WITHHELD } from '../src/shell-seam';
 import {
+  commandShellArgs,
   FALLBACK_SHELL,
   realShell,
   parseShellInvocation,
@@ -119,6 +121,40 @@ describe('how a shell was invoked', () => {
 
   it('treats no command as a shell somebody wants to type into', () => {
     expect(parseShellInvocation([]).mode).toBe(SHELL_MODE.INTERACTIVE);
+  });
+
+  it('keeps the words after the -c line, which the line reads as $0 and $1', () => {
+    const invocation = parseShellInvocation(['-c', 'echo "$1"', '_', 'hi']);
+
+    expect(invocation.mode).toBe(SHELL_MODE.COMMAND);
+    expect(invocation.line).toBe('echo "$1"');
+    expect(invocation.positional).toEqual(['_', 'hi']);
+  });
+
+  it('reads a -- after the -c line as $0 rather than as the argv form', () => {
+    const invocation = parseShellInvocation(['-c', 'exec "$@"', '--', 'prog', 'a']);
+
+    expect(invocation.mode).toBe(SHELL_MODE.COMMAND);
+    expect(invocation.line).toBe('exec "$@"');
+    expect(invocation.positional).toEqual(['--', 'prog', 'a']);
+  });
+
+  it('takes the value of -o with it rather than reading it as a script', () => {
+    const invocation = parseShellInvocation(['-o', 'pipefail', '-c', 'cmd']);
+
+    expect(invocation.mode).toBe(SHELL_MODE.COMMAND);
+    expect(invocation.line).toBe('cmd');
+    expect(invocation.flags).toEqual(['-o', 'pipefail']);
+  });
+
+  it('hands the real shell the positionals unchanged, after the line', () => {
+    const argv = ['-e', '-c', 'echo "$1"', '_', 'hi'];
+    const invocation = parseShellInvocation(argv);
+
+    expect(commandShellArgs(invocation)).toEqual(argv);
+    // The literal is spawned rather than the parsed copy, which the line above proves equal.
+    const ran = spawnSync(FALLBACK_SHELL, argv, { encoding: 'utf8' });
+    expect(ran.stdout).toBe('hi\n');
   });
 });
 
