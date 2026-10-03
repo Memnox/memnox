@@ -16,6 +16,7 @@ import {
 } from '@memnox/core';
 
 import { checkpointBeforeLine } from './checkpoint-seam';
+import { relayEndingSignals } from './child-signals';
 import { record } from './record';
 import {
   buildAuthorizer,
@@ -66,7 +67,9 @@ function commandOf(invocation: ShellInvocation): string[] {
 function run(executable: string, args: readonly string[]): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(executable, args, { stdio: 'inherit' });
+    const detach = relayEndingSignals(child);
     child.on('exit', (code, signal) => {
+      detach();
       resolve(exitCodeForChild(code, signal));
     });
     child.on('error', (err: unknown) => {
