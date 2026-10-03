@@ -155,12 +155,12 @@ describe('how a shell was invoked', () => {
   });
 
   it('hands the real shell the positionals unchanged, after the line', () => {
-    const invocation = parseShellInvocation(['-e', '-c', 'echo "$1"', '_', 'hi']);
+    const argv = ['-e', '-c', 'echo "$1"', '_', 'hi'];
+    const invocation = parseShellInvocation(argv);
 
-    expect(commandShellArgs(invocation)).toEqual(['-e', '-c', 'echo "$1"', '_', 'hi']);
-    const ran = spawnSync(FALLBACK_SHELL, commandShellArgs(invocation), {
-      encoding: 'utf8',
-    });
+    expect(commandShellArgs(invocation)).toEqual(argv);
+    // The literal is spawned rather than the parsed copy, which the line above proves equal.
+    const ran = spawnSync(FALLBACK_SHELL, argv, { encoding: 'utf8' });
     expect(ran.stdout).toBe('hi\n');
   });
 });
