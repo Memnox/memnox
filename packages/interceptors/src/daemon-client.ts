@@ -86,7 +86,6 @@ function speak(
   message: DaemonRequest,
 ): Promise<DaemonResponse | null> {
   const path = socketPathFor(home);
-  const timeoutMs = timeout ?? DAEMON_TIMEOUT_MS;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -98,7 +97,7 @@ function speak(
       resolve(value);
     };
 
-    const timer = setTimeout(() => finish(null), timeoutMs);
+    const timer = setTimeout(() => finish(null), timeout ?? DAEMON_TIMEOUT_MS);
     timer.unref?.();
 
     const socket = connect(path, () => {
@@ -115,9 +114,8 @@ function speak(
       for (const line of reader.push('\n')) finish(decodeResponse(line));
       finish(null);
     });
-    // The timer is unref'd, so a close nobody answers would drain the loop with this pending.
+    // Not running is the ordinary case, and an unanswered close would drain the loop with this pending.
     socket.on('close', () => finish(null));
-    // Not running is the ordinary case, not an error worth printing.
     socket.on('error', () => finish(null));
   });
 }
