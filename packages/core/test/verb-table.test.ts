@@ -12,6 +12,7 @@ import {
   verbForAction,
   VERB_TAG,
 } from '../src/verbs/verb-table';
+import { resolveAction } from '../src/intercept/resolve';
 import { verbTableFor, verbTableNames, VERB_TABLES } from '../src/verbs/tables';
 
 const argv = (line: string): string[] => line.split(' ').filter((w) => w !== '');
@@ -342,5 +343,49 @@ describe('the name each verb is recorded under', () => {
   it('keeps the stem of a prefix, so a delete and a describe are told apart', () => {
     expect(verbForAction('aws.iam-delete', verbTableFor)?.class).toBe('destructive');
     expect(verbForAction('aws.describe', verbTableFor)?.class).toBe('read');
+  });
+});
+
+/* A force push was only seen through its flag, and `reflog expire` read as a read. */
+describe('git commands that destroy the way back', () => {
+  it.each([
+    ['reflog expire --expire=now --all', 'git.reflog-expire'],
+    ['reflog delete HEAD@{1}', 'git.reflog-delete'],
+    ['push origin --delete feature', 'git.push-delete'],
+    ['push -d origin feature', 'git.push-delete'],
+    ['push origin :feature', 'git.push-delete'],
+    ['clean --force -d', 'git.clean-force'],
+    ['branch --delete --force x', 'git.branch-delete-force'],
+    ['stash clear', 'git.stash-clear'],
+    ['stash drop stash@{0}', 'git.stash-drop'],
+    ['filter-branch --tree-filter x HEAD', 'git.filter-branch'],
+    ['filter-repo --path secrets', 'git.filter-repo'],
+    ['gc --prune=now', 'git.gc-prune-now'],
+  ])('git %s is destructive, as %s', (line, action) => {
+    const resolved = resolveAction('git', argv(line));
+    expect(resolved.class).toBe('destructive');
+    expect(resolved.action).toBe(action);
+  });
+
+  it('reads a plus refspec as the force push it is', () => {
+    const forced = resolveAction('git', argv('push --force origin main'));
+    expect(forced.action).toBe('git.push-force');
+    for (const line of [
+      'push origin +main',
+      'push origin +HEAD:main',
+      '-C repo push origin +main',
+    ]) {
+      expect(resolveAction('git', argv(line))).toMatchObject({
+        action: forced.action,
+        class: forced.class,
+      });
+    }
+  });
+
+  it('leaves an ordinary push, a reflog listing and a stash push as they were', () => {
+    expect(resolveAction('git', argv('push origin main')).action).toBe('git.push');
+    expect(resolveAction('git', argv('push origin :')).action).toBe('git.push');
+    expect(resolveAction('git', argv('reflog show')).class).toBe('read');
+    expect(resolveAction('git', argv('stash push -m wip')).class).toBe('write');
   });
 });
