@@ -107,8 +107,10 @@ function specificity(pattern: string): number {
 function wordMatches(word: string, argument: string | undefined): boolean {
   if (argument === undefined) return false;
   if (!word.endsWith('*')) return argument === word;
-  const prefix = word.replace(/\*+$/, '');
-  return argument.startsWith(prefix);
+  // A loop rather than /\*+$/, which backtracks quadratically on a long run of stars.
+  let end = word.length;
+  while (end > 0 && word[end - 1] === '*') end -= 1;
+  return argument.startsWith(word.slice(0, end));
 }
 
 /**
