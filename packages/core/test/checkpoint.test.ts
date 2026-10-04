@@ -48,6 +48,21 @@ describe('which commands destroy work', () => {
     [['git', 'restore', '.'], 'before git restore .'],
     [['mv', 'a', 'b', 'c', 'dest/'], 'before mv of 3 path(s)'],
     [['mv', 'src/*', 'old/'], 'before mv of 1 path(s)'],
+    // `intercept/writers.ts` already calls these destructive, so recovery was the half that disagreed.
+    [['shred', '-u', 'secrets.txt'], 'before shred secrets.txt'],
+    [['unlink', 'notes.md'], 'before unlink notes.md'],
+    [['rmdir', 'build'], 'before rmdir build'],
+    [['truncate', '-s', '0', 'app.log'], 'before truncate app.log'],
+    [['truncate', '--size=0', 'app.log'], 'before truncate app.log'],
+    [['truncate', '-s0', 'app.log'], 'before truncate app.log'],
+    [['git', 'checkout', '--force'], 'before git checkout --force'],
+    [
+      ['git', 'switch', '--discard-changes', 'main'],
+      'before git switch --discard-changes main',
+    ],
+    [['git', 'switch', '-f', 'main'], 'before git switch -f main'],
+    [['git', 'stash', 'drop'], 'before git stash drop'],
+    [['git', 'stash', 'clear'], 'before git stash clear'],
   ])('%j is kept before', (argv, note) => {
     expect(destructiveCommand(argv)?.note).toBe(note);
   });
@@ -60,6 +75,13 @@ describe('which commands destroy work', () => {
     [['git', 'reset', 'HEAD']],
     [['mv', 'a', 'b']],
     [['ls', '-la']],
+    // An extension leaves every byte already written where it was.
+    [['truncate', '-s', '+1M', 'app.log']],
+    [['truncate', 'app.log']],
+    [['git', 'switch', 'main']],
+    [['git', 'stash']],
+    [['git', 'stash', 'pop']],
+    [['shred']],
   ])('%j destroys nothing a milestone could keep', (argv) => {
     expect(destructiveCommand(argv)).toBeNull();
   });

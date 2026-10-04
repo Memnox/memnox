@@ -31,6 +31,22 @@ const WORKTREE_FLAGS: readonly string[] = ['-W', '--worktree'];
 
 const RECURSIVE_FLAG = /^-[a-zA-Z]*[rR]/;
 
+/** Removers that `rm` is not, which delete what they are given just the same. */
+const REMOVERS: readonly string[] = ['rmdir', 'unlink', 'shred'];
+
+const SIZE_FLAGS: readonly string[] = ['-s', '--size'];
+
+/** `+n` only extends a file, so nothing already written is lost. */
+const EXTENDS_FILE = /^\+/;
+
+const FORCE_FLAGS: readonly string[] = ['-f', '--force'];
+
+/** `switch` spells the same discard three ways. */
+const DISCARD_FLAGS: readonly string[] = [...FORCE_FLAGS, '--discard-changes'];
+
+/** The stash subcommands that throw an entry away rather than applying it. */
+const STASH_DESTROYS: readonly string[] = ['drop', 'clear'];
+
 function operandsOf(args: readonly string[]): string[] {
   const at = args.indexOf('--');
   const before = at === -1 ? args : args.slice(0, at);
@@ -43,6 +59,33 @@ function removal(args: readonly string[]): DestructiveCommand | null {
   if (operands.length === 0) return null;
   const recursive = args.some((arg) => RECURSIVE_FLAG.test(arg) || arg === '--recursive');
   return { note: `before ${recursive ? 'rm -r' : 'rm'} ${operands.join(' ')}`, operands };
+}
+
+/** `rmdir`, `unlink` and `shred`, which `intercept/writers.ts` already calls destructive. */
+function removedBy(binary: string, args: readonly string[]): DestructiveCommand | null {
+  const operands = operandsOf(args);
+  if (operands.length === 0) return null;
+  return { note: `before ${binary} ${operands.join(' ')}`, operands };
+}
+
+/** The size asked for, however it was spelled, or null when none was. */
+function sizeAsked(args: readonly string[]): string | null {
+  const glued = args.find((arg) => arg.startsWith('--size=') || /^-s./.test(arg));
+  if (glued !== undefined) return glued.replace(/^(--size=|-s)/, '');
+  const at = args.findIndex((arg) => SIZE_FLAGS.includes(arg));
+  return at === -1 ? null : (args[at + 1] ?? null);
+}
+
+function truncation(args: readonly string[]): DestructiveCommand | null {
+  const size = sizeAsked(args);
+  // No size shrinks nothing, and an extension leaves what is there alone.
+  if (size === null || EXTENDS_FILE.test(size)) return null;
+  const at = args.findIndex((arg) => SIZE_FLAGS.includes(arg));
+  // The size is a value rather than a path, so it is not one of the files named.
+  const named = at === -1 ? args : [...args.slice(0, at + 1), ...args.slice(at + 2)];
+  const operands = operandsOf(named);
+  if (operands.length === 0) return null;
+  return { note: `before truncate ${operands.join(' ')}`, operands };
 }
 
 function massMove(args: readonly string[]): DestructiveCommand | null {
@@ -67,7 +110,11 @@ function gitSubcommand(args: readonly string[]): readonly string[] {
 
 /** Every path, `.` included, is a tree-wide discard once `--` or a bare `.` names it. */
 function discardsFiles(rest: readonly string[]): boolean {
-  return rest.includes('--') || rest.includes('.') || rest.includes('-f');
+  return (
+    rest.includes('--') ||
+    rest.includes('.') ||
+    rest.some((arg) => FORCE_FLAGS.includes(arg))
+  );
 }
 
 function gitDestroys(args: readonly string[]): DestructiveCommand | null {
@@ -85,6 +132,11 @@ function gitDestroys(args: readonly string[]): DestructiveCommand | null {
     rest.includes('--staged') && !rest.some((arg) => WORKTREE_FLAGS.includes(arg));
   if (subcommand === 'restore' && !indexOnly)
     return { note: `before git restore ${rest.join(' ')}`.trim(), ...tree };
+  if (subcommand === 'switch' && rest.some((arg) => DISCARD_FLAGS.includes(arg)))
+    return { note: `before git switch ${rest.join(' ')}`.trim(), ...tree };
+  // The stash is not in the tree a milestone keeps, so this marks when rather than undoes it.
+  if (subcommand === 'stash' && STASH_DESTROYS.includes(rest[0] ?? ''))
+    return { note: `before git stash ${rest[0] ?? ''}`.trim(), ...tree };
   return null;
 }
 
@@ -92,9 +144,13 @@ function gitDestroys(args: readonly string[]): DestructiveCommand | null {
 export function destructiveCommand(argv: readonly string[]): DestructiveCommand | null {
   const [binary, ...args] = argv;
   if (binary === undefined) return null;
-  switch (basename(binary)) {
+  const name = basename(binary);
+  if (REMOVERS.includes(name)) return removedBy(name, args);
+  switch (name) {
     case 'rm':
       return removal(args);
+    case 'truncate':
+      return truncation(args);
     case 'mv':
       return massMove(args);
     case 'git':
