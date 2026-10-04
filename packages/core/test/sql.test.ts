@@ -106,6 +106,20 @@ describe('finding the statement on the command line', () => {
     expect(statementIn('psql', ['mydb'])).toBeNull();
     expect(statementIn('git', ['-c', 'DROP TABLE t'])).toBeNull();
   });
+
+  /* A drop-in client speaks its original's grammar, so the same statement was destructive
+     through one name and an ordinary shell line through the other. */
+  it.each([
+    ['mariadb', ['-e', 'DROP DATABASE prod'], 'DROP DATABASE prod'],
+    ['mycli', ['-e', 'DROP DATABASE prod'], 'DROP DATABASE prod'],
+    ['pgcli', ['-c', 'DROP TABLE users'], 'DROP TABLE users'],
+  ])(
+    '%s reads its statement the way the client it replaces does',
+    (binary, args, expected) => {
+      expect(isDatabaseClient(binary)).toBe(true);
+      expect(statementIn(binary, args as string[])).toBe(expected);
+    },
+  );
 });
 
 describe('which database it is pointed at', () => {

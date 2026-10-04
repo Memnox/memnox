@@ -46,6 +46,8 @@ export interface VerbTable {
   globalSwitches?: string[];
   /** Flags whose value is an HTTP method, which may be run on as `-XPOST` or lowercased. */
   methodFlags?: string[];
+  /** For a CLI whose own protocol ignores case, as `redis-cli FLUSHALL` and `flushall`. */
+  verbsIgnoreCase?: boolean;
   /** Flags that name the environment a command acts in, as railway's `--environment`. */
   environmentFlags?: string[];
   /** Variables that name it when no flag does, as `AWS_PROFILE`. */
@@ -312,8 +314,11 @@ function withoutLaterVerbs(candidates: readonly Verb[]): Verb[] {
 
 /** Null when nothing in the table covers this command, which is `unknown`, not safe. */
 export function matchVerb(table: VerbTable, argv: readonly string[]): VerbMatch | null {
+  // Only for matching: the target is still read from argv as it was typed.
+  const words =
+    table.verbsIgnoreCase === true ? argv.map((word) => word.toLowerCase()) : argv;
   const candidates = withoutLaterVerbs(
-    table.verbs.filter((verb) => matchesPattern(verb.match, argv)),
+    table.verbs.filter((verb) => matchesPattern(verb.match, words)),
   ).sort((a, b) => specificity(b.match) - specificity(a.match));
 
   const best = candidates[0];
