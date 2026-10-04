@@ -2,6 +2,7 @@
  * One command line, one action name, for every surface with an opinion about a command,
  * because two resolvers would mean a rule written from one screen failing at another.
  */
+import { npmPublishIn } from './npm-workalike';
 import { classifyBinary, classifyReader, COMMAND_CLASS } from './binary-class';
 import { classifyWriter } from './writers';
 import { loosens, MEMNOX_ACTION_PREFIX } from '../gate/self-protection';
@@ -75,6 +76,7 @@ export function resolveAction(
   return (
     resolveMemnox(binary, args) ??
     resolveSqlStatement(binary, args, env, options.stdin) ??
+    resolveNpmWorkalike(binary, args, env) ??
     resolveFromVerbTable(binary, args, env) ??
     resolveReader(binary, args, env) ??
     resolveWriter(binary, args, env) ??
@@ -130,6 +132,18 @@ function resolveSqlStatement(
     because: host === null ? sql.because : `${sql.because}, on ${host}`,
     ...(host === null ? {} : { target: host }),
   };
+}
+
+/** npm's workalikes publish to the same registry, so one rule covers all four. */
+function resolveNpmWorkalike(
+  binary: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): ResolvedAction | null {
+  const publishing = npmPublishIn(binary, args);
+  if (publishing === null) return null;
+  const ruled = resolveFromVerbTable('npm', publishing.words, env);
+  return ruled === null ? null : { ...ruled, because: publishing.because };
 }
 
 function resolveFromVerbTable(

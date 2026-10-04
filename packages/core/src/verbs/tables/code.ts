@@ -253,6 +253,27 @@ export const CODE_TABLES: readonly VerbTable[] = [
     ],
   },
   {
+    name: 'cargo',
+    credential: ['~/.cargo/credentials.toml', 'CARGO_REGISTRY_TOKEN'],
+    headline: 'can publish crates',
+    verbs: [
+      { match: 'yank **', class: GONE, note: 'nobody can depend on that version again' },
+      {
+        match: 'publish **',
+        class: WRITE,
+        tags: [PROD],
+        note: 'everyone can install it',
+      },
+      { match: 'owner **', class: WRITE },
+      {
+        match: 'install **',
+        class: WRITE,
+        note: 'builds and runs code from the registry',
+      },
+      { match: 'search **', class: READ },
+    ],
+  },
+  {
     name: 'npm',
     credential: ['~/.npmrc', 'NPM_TOKEN'],
     headline: 'can publish packages',
