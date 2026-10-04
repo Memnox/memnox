@@ -7,10 +7,16 @@ import { isAbsolute, join } from 'node:path';
 
 import { TOOL_CLASS, type ToolClass } from '../discovery/classify';
 
-/** Flags whose value is the statement itself, per client. */
+/**
+ * Flags whose value is the statement itself, per client. A drop-in client speaks its
+ * original's grammar, so the same statement is read the same way whichever name ran it.
+ */
 const STATEMENT_FLAGS: Readonly<Record<string, readonly string[]>> = {
   psql: ['-c', '--command'],
+  pgcli: ['-c', '--command'],
   mysql: ['-e', '--execute'],
+  mariadb: ['-e', '--execute'],
+  mycli: ['-e', '--execute'],
   mongosh: ['--eval'],
   sqlite3: [],
 };

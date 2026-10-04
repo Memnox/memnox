@@ -29,6 +29,53 @@ export const DATA_TABLES: readonly VerbTable[] = [
     ],
   },
   {
+    name: 'mariadb',
+    credential: ['~/.my.cnf', 'MYSQL_PWD', 'DATABASE_URL'],
+    headline: 'can reach a database',
+    verbs: [
+      { match: '-e **', class: WRITE, note: 'statement is read from the argument' },
+      { match: '**', class: WRITE, note: 'an interactive session can do anything' },
+    ],
+  },
+  {
+    name: 'mycli',
+    credential: ['~/.myclirc', '~/.my.cnf', 'MYSQL_PWD', 'DATABASE_URL'],
+    headline: 'can reach a database',
+    verbs: [
+      { match: '-e **', class: WRITE, note: 'statement is read from the argument' },
+      { match: '**', class: WRITE, note: 'an interactive session can do anything' },
+    ],
+  },
+  {
+    name: 'pgcli',
+    credential: ['~/.pgpass', '~/.config/pgcli/config', 'DATABASE_URL', 'PGPASSWORD'],
+    headline: 'can reach a database',
+    verbs: [
+      { match: '-c **', class: WRITE, note: 'statement is read from the argument' },
+      { match: '**', class: WRITE, note: 'an interactive session can do anything' },
+    ],
+  },
+  {
+    // Redis takes its command as argv rather than as a statement, and answers to any case.
+    name: 'redis-cli',
+    verbsIgnoreCase: true,
+    credential: ['REDIS_URL', 'REDISCLI_AUTH'],
+    headline: 'can reach a key-value store',
+    verbs: [
+      { match: 'flushall **', class: GONE, note: 'empties every database on the server' },
+      { match: 'flushdb **', class: GONE, note: 'empties the selected database' },
+      { match: 'del **', class: GONE },
+      { match: 'unlink **', class: GONE },
+      { match: 'config set **', class: WRITE },
+      { match: 'set **', class: WRITE },
+      { match: 'get **', class: READ },
+      { match: 'keys **', class: READ },
+      { match: 'scan **', class: READ },
+      { match: 'info **', class: READ },
+      { match: '**', class: WRITE, note: 'an interactive session can do anything' },
+    ],
+  },
+  {
     name: 'mongosh',
     credential: ['MONGODB_URI', 'DATABASE_URL'],
     headline: 'can reach a database',
