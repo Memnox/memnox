@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { TOOL_CLASS } from '../src/discovery/classify';
+import { COMMAND_CLASS } from '../src/intercept/binary-class';
 import { resolveAction, resolveShellLine } from '../src/intercept/resolve';
 import { takesLease } from '../src/coordination/writes';
 
@@ -162,4 +164,65 @@ describe('a line whose only dollar is quoted code', () => {
     expect(opaque).toEqual([]);
     expect(actions.filter((each) => each.class === 'write')).toEqual([]);
   });
+});
+
+/* Somebody who writes a rule on `npm.publish` reasonably believes publishing is covered.
+   Every spelling but npm's own reached the registry as an ordinary shell line. */
+describe('publishing, however it was run', () => {
+  const ruled = (words: string[]) => {
+    const [binary, ...rest] = words;
+    return resolveAction(binary ?? '', rest);
+  };
+
+  it.each([[['pnpm', 'publish']], [['yarn', 'npm', 'publish']], [['bun', 'publish']]])(
+    '%j resolves to the action npm publish does',
+    (words) => {
+      expect(ruled(words as string[]).action).toBe(ruled(['npm', 'publish']).action);
+    },
+  );
+
+  it('names the client that ran it, even though the action is npm.publish', () => {
+    expect(ruled(['pnpm', 'publish']).because).toContain('pnpm');
+  });
+
+  it.each([
+    [['pnpm', 'unpublish', 'pkg'], 'npm.unpublish', TOOL_CLASS.DESTRUCTIVE],
+    [
+      ['pnpm', 'dist-tag', 'add', 'pkg@1', 'latest'],
+      'npm.dist-tag-add',
+      TOOL_CLASS.WRITE,
+    ],
+    [['cargo', 'yank', '--version', '1.0.0'], 'cargo.yank', TOOL_CLASS.DESTRUCTIVE],
+    [['cargo', 'publish'], 'cargo.publish', TOOL_CLASS.WRITE],
+    [['cargo', 'install', 'ripgrep'], 'cargo.install', TOOL_CLASS.WRITE],
+    [['cargo', 'search', 'serde'], 'cargo.search', TOOL_CLASS.READ],
+    [['helm', 'uninstall', 'api'], 'helm.uninstall', TOOL_CLASS.DESTRUCTIVE],
+    [['helm', 'upgrade', 'api', './chart'], 'helm.upgrade', TOOL_CLASS.WRITE],
+    [['helm', 'list'], 'helm.list', TOOL_CLASS.READ],
+    [['pulumi', 'destroy'], 'pulumi.destroy', TOOL_CLASS.DESTRUCTIVE],
+    [['pulumi', 'up'], 'pulumi.up', TOOL_CLASS.WRITE],
+    [['pulumi', 'preview'], 'pulumi.preview', TOOL_CLASS.READ],
+  ])('%j is %s', (words, action, expected) => {
+    const resolved = ruled(words as string[]);
+    expect(resolved.action).toBe(action);
+    expect(resolved.class).toBe(expected);
+  });
+
+  it.each([
+    [['bun', 'install']],
+    [['uv', 'pip', 'install', 'ruff']],
+    [['pipx', 'install', 'black']],
+    [['gem', 'install', 'rails']],
+    [['brew', 'install', 'jq']],
+  ])('%j installs code that then runs here', (words) => {
+    expect(ruled(words as string[]).class).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+  });
+
+  /* Only the publishing verbs route onto npm's table: an install is its own thing. */
+  it.each([[['pnpm', 'add', 'x']], [['pnpm', 'install']], [['yarn', 'add', 'x']]])(
+    '%j is still a package install, not an npm table verb',
+    (words) => {
+      expect(ruled(words as string[]).class).toBe(COMMAND_CLASS.PACKAGE_INSTALL);
+    },
+  );
 });
