@@ -9,6 +9,22 @@ import { basename, dirname, join, resolve } from 'node:path';
 /** Claude Code's settings, which hold the hooks and could switch every one of them off. */
 const CLAUDE_SETTINGS = /(^|\/)\.claude\/settings(\.local)?\.json$|(^|\/)\.claude\.json$/;
 
+/**
+ * Every other file Memnox installs a hook into, as segments under a home directory. Shared
+ * with the installer in the CLI on purpose: a file a hook is written into and not protected
+ * here is a hook the agent can take back out.
+ */
+export const AGENT_HOOK_FILES: readonly (readonly string[])[] = [
+  ['.codex', 'hooks.json'],
+  ['.cursor', 'hooks.json'],
+  ['.gemini', 'settings.json'],
+  ['.codeium', 'windsurf', 'hooks.json'],
+];
+
+const HOOK_FILE_PATHS: readonly string[] = AGENT_HOOK_FILES.map((parts) =>
+  parts.join('/'),
+);
+
 /** The binaries a hook runs by name, so replacing one would answer for Memnox. */
 const MEMNOX_BINARY = /\/(bin|\.bin)\/memnox(-[\w-]+)?$/;
 
@@ -26,6 +42,8 @@ export function isProtectedPath(target: string): boolean {
     /^memnox\.policies\.(toml|ya?ml|json)$/.test(name) ||
     /\.policies\.toml$/.test(name)
   )
+    return true;
+  if (HOOK_FILE_PATHS.some((file) => path === file || path.endsWith(`/${file}`)))
     return true;
   return CLAUDE_SETTINGS.test(path) || MEMNOX_BINARY.test(path);
 }
@@ -66,8 +84,18 @@ export function touchesProtected(target: string, cwd?: string): boolean {
  * a determined agent can spell it so no pattern finds it, which is what the kernel wall
  * around its shell is for; this catches the plain spelling before anything runs.
  */
-const NAMES_PROTECTED =
-  /\.memnox\b|\.policies\.toml\b|\.claude\/settings(\.local)?\.json|\.claude\.json|disableAllHooks|allowUnsandboxedCommands/;
+const NAMES_PROTECTED = new RegExp(
+  [
+    '\\.memnox\\b',
+    '\\.policies\\.toml\\b',
+    '\\.claude\\/settings(\\.local)?\\.json',
+    '\\.claude\\.json',
+    // Built from the one list, so a hook file cannot be installed into and left unnamed here.
+    ...HOOK_FILE_PATHS.map((file) => file.replace(/\./g, '\\.')),
+    'disableAllHooks',
+    'allowUnsandboxedCommands',
+  ].join('|'),
+);
 
 export function namesProtected(line: string): string | null {
   return NAMES_PROTECTED.exec(line)?.[0] ?? null;

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DISCOVERED_AGENT_KIND } from '@memnox/core';
+import { AGENT_HOOK_FILES, DISCOVERED_AGENT_KIND } from '@memnox/core';
 import {
   CURSOR_EDIT_TOOLS,
   CURSOR_EVENT,
@@ -28,7 +28,10 @@ import { isInPlace, REWRITE, rewriteJsonFile } from './json-config';
  */
 
 /** Codex reads hooks from a file shaped like Claude Code's settings. */
-const CODEX_HOOKS = join('.codex', 'hooks.json');
+const [CODEX_PARTS, CURSOR_PARTS, GEMINI_PARTS, WINDSURF_PARTS] = AGENT_HOOK_FILES;
+
+// The one list `gate/protected-paths.ts` guards, so installing into a file protects it too.
+const CODEX_HOOKS = join(...(CODEX_PARTS ?? []));
 /**
  * Codex's `PreToolUse` with no matcher, which every tool meets: its shell, its patch tool
  * and its MCP calls are all ruled on, so no pattern syntax has to be guessed.
@@ -40,7 +43,7 @@ function codexEvents(): HookEvent[] {
 }
 
 /** Cursor's user-level hooks, which apply in every repository it opens. */
-const CURSOR_HOOKS = join('.cursor', 'hooks.json');
+const CURSOR_HOOKS = join(...(CURSOR_PARTS ?? []));
 const CURSOR_HOOKS_VERSION = 1;
 
 export async function installCodexHook(home: string): Promise<boolean> {
@@ -52,7 +55,7 @@ export async function installCodexHook(home: string): Promise<boolean> {
 }
 
 /** Gemini CLI reads hooks from its own settings, in the same shape under its own event names. */
-const GEMINI_SETTINGS = join('.gemini', 'settings.json');
+const GEMINI_SETTINGS = join(...(GEMINI_PARTS ?? []));
 const GEMINI_AGENT = 'gemini-cli';
 /** Every tool, for the moment after one returns; Gemini's matchers are regular expressions. */
 const GEMINI_EVERY_TOOL = '.*';
@@ -80,7 +83,7 @@ export async function removeGeminiHook(home: string): Promise<boolean> {
 }
 
 /** Windsurf's user-level hooks, which Cascade reads in every workspace. */
-const WINDSURF_HOOKS = join('.codeium', 'windsurf', 'hooks.json');
+const WINDSURF_HOOKS = join(...(WINDSURF_PARTS ?? []));
 const WINDSURF_AGENT = 'windsurf';
 
 /**

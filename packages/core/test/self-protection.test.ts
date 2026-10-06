@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LocalGate } from '../src/gate/local-gate';
+import {
+  AGENT_HOOK_FILES,
+  isProtectedPath,
+  namesProtected,
+} from '../src/gate/protected-paths';
 import { loosens } from '../src/gate/self-protection';
 import { resolveAction, resolveShellLine } from '../src/intercept/resolve';
 
@@ -95,6 +100,42 @@ describe('a shell line into a rule file', () => {
       }),
     );
     expect(refused.map((each) => each.effect)).toContain('deny');
+  });
+
+  /* Memnox installs its policy hook into each of these, and protected only Claude Code's.
+     So Cursor could edit its own hooks.json and take the hook back out. */
+  it.each([
+    'sed -i "" /memnox/d ~/.cursor/hooks.json',
+    'rm ~/.codex/hooks.json',
+    'echo {} > ~/.gemini/settings.json',
+    'cp /tmp/empty.json ~/.codeium/windsurf/hooks.json',
+  ])('denies `%s`', (line) => {
+    const { actions } = resolveShellLine(line, { HOME: '/Users/me' });
+    const refused = actions.map((each) =>
+      gate().evaluate({
+        action: each.action,
+        toolClass: each.class,
+        ...(each.target === undefined ? {} : { target: each.target }),
+      }),
+    );
+    expect(refused.map((each) => each.effect)).toContain('deny');
+  });
+});
+
+/* One list, imported by the installer and by the guard, so a file a hook is written into
+   cannot be left unprotected by the two drifting apart. */
+describe('every file a hook is installed into', () => {
+  it.each(AGENT_HOOK_FILES.map((parts) => [parts.join('/')]))(
+    '~/%s is a path only a person may write',
+    (file) => {
+      expect(isProtectedPath(`/Users/me/${file}`)).toBe(true);
+      expect(namesProtected(`vi /Users/me/${file}`)).not.toBeNull();
+    },
+  );
+
+  it('leaves a file beside one of them alone', () => {
+    expect(isProtectedPath('/Users/me/.cursor/rules.json')).toBe(false);
+    expect(isProtectedPath('/Users/me/.codex/notes.json')).toBe(false);
   });
 });
 
