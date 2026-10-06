@@ -96,17 +96,29 @@ export function proxyUrlFor(port: number, caller: EgressCaller = {}): string {
   return `http://${auth}${EGRESS_LOOPBACK}:${port}`;
 }
 
+/**
+ * Null for a percent sequence the caller mangled, which is a credential this seam does not
+ * recognise rather than a reason to stop: any local process can send `%zz` and did.
+ */
+function unescaped(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 /** Who a request came from, read off the credentials `proxyUrlFor` put in its URL. */
 export function callerOf(headers: IncomingMessage['headers']): EgressCaller {
   const header = headers[PROXY_AUTHORIZATION];
   if (typeof header !== 'string' || !header.startsWith('Basic ')) return {};
   const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
   const colon = decoded.indexOf(':');
-  const user = colon === -1 ? decoded : decoded.slice(0, colon);
-  const pass = colon === -1 ? '' : decoded.slice(colon + 1);
+  const user = unescaped(colon === -1 ? decoded : decoded.slice(0, colon));
+  const pass = unescaped(colon === -1 ? '' : decoded.slice(colon + 1));
   return {
-    ...(user === '' ? {} : { sessionId: decodeURIComponent(user) }),
-    ...(pass === '' ? {} : { agent: decodeURIComponent(pass) }),
+    ...(user === null || user === '' ? {} : { sessionId: user }),
+    ...(pass === null || pass === '' ? {} : { agent: pass }),
   };
 }
 
@@ -171,7 +183,11 @@ function firstDestinationRow(row: MemnoxEvent, host: string): MemnoxEvent {
 
 function buildServer(options: EgressProxyOptions, open: Set<Duplex>): Server {
   const server = createServer((request, response) => {
-    void answerRequest(options, request, response);
+    // An unhandled rejection ends the process, and this one can be the daemon itself.
+    void answerRequest(options, request, response).catch(() => {
+      if (!response.headersSent) response.writeHead(HTTP.BAD_REQUEST);
+      response.end();
+    });
   });
   server.on('connection', (socket) => {
     open.add(socket);
@@ -179,7 +195,8 @@ function buildServer(options: EgressProxyOptions, open: Set<Duplex>): Server {
     socket.on('close', () => open.delete(socket));
   });
   server.on('connect', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-    void answerConnect(options, { request, socket, head });
+    // Nothing has been written to a tunnel yet, so the socket is the only answer there is.
+    void answerConnect(options, { request, socket, head }).catch(() => socket.destroy());
   });
   return server;
 }
@@ -274,10 +291,17 @@ function forward(response: ServerResponse, attempt: HttpAttempt): void {
     return refuse(response, 'this proxy takes absolute-form requests only');
   }
 
+  // https goes through CONNECT; httpRequest throws on the spot for any other scheme.
+  if (target.protocol !== 'http:')
+    return refuse(
+      response,
+      `this proxy forwards http only, and that asked for ${target.protocol}`,
+    );
+
   const upstream = httpRequest(
     {
       protocol: target.protocol,
-      hostname: target.hostname,
+      hostname: withoutBrackets(target.hostname),
       port: target.port,
       path: `${target.pathname}${target.search}`,
       method,
@@ -289,21 +313,44 @@ function forward(response: ServerResponse, attempt: HttpAttempt): void {
     },
   );
   upstream.on('error', () => {
-    response.writeHead(HTTP.BAD_GATEWAY).end();
+    // A partial answer may already have gone out, and writing the head twice throws.
+    if (!response.headersSent) response.writeHead(HTTP.BAD_GATEWAY);
+    response.end();
   });
   if (body !== undefined) upstream.write(body);
   upstream.end();
 }
 
+/**
+ * Host and port, read through URL so `[2001:db8::1]:443` parses: splitting on the colon
+ * gave host `[2001` and a port of NaN, which `net.connect` threw on.
+ */
+function authorityOf(authority: string): { host: string; port: number } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(`http://${authority}`);
+  } catch {
+    return null;
+  }
+  const host = withoutBrackets(parsed.hostname);
+  if (host === '') return null;
+  return { host, port: Number(parsed.port === '' ? HTTPS_PORT : parsed.port) };
+}
+
+/** URL keeps an IPv6 host in brackets; the socket layer wants it without. */
+function withoutBrackets(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, '');
+}
+
 /** Bytes only. What travels inside is the blind spot this seam declares. */
 function tunnel(authority: string, socket: Duplex, head: Buffer): void {
-  const [host, rawPort] = authority.split(':');
-  if (host === undefined) {
+  const where = authorityOf(authority);
+  if (where === null) {
     socket.destroy();
     return;
   }
 
-  const upstream = connect(Number(rawPort ?? HTTPS_PORT), host, () => {
+  const upstream = connect(where.port, where.host, () => {
     socket.write(TUNNEL_OK);
     upstream.write(head);
     upstream.pipe(socket);
