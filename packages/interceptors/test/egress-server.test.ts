@@ -161,6 +161,147 @@ describe('the proxy as a server, on loopback only', () => {
     });
   }
 
+  /* The handlers ran as `void answerRequest(...)` with no catch and nothing registers an
+     unhandledRejection, so one malformed request ended the process — which can be the
+     daemon. Each case below is answered, and the server serves the next request after it. */
+  function allowAll(): EgressSeam {
+    return new EgressSeam({
+      authorizer: new HookAuthorizer({}),
+      ruled: async () => undefined,
+    });
+  }
+
+  function tunnelTo(
+    proxyPort: number,
+    authority: string,
+    auth: string,
+  ): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = request({
+        host: '127.0.0.1',
+        port: proxyPort,
+        method: 'CONNECT',
+        path: authority,
+        headers: { 'proxy-authorization': auth },
+      });
+      req.on('connect', (res, socket) => {
+        socket.write(
+          `GET /hello HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`,
+        );
+        let body = '';
+        socket.on('data', (chunk: Buffer) => (body += chunk.toString('utf8')));
+        socket.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  it('tunnels to an IPv6 loopback, whose authority holds colons of its own', async () => {
+    const server = createServer((_req, res) => res.end('upstream says hi'));
+    opened.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '::1', () => resolve()));
+    const address = server.address();
+    const port = typeof address === 'object' && address !== null ? address.port : 0;
+
+    const proxy = await startEgressProxy({
+      seam: allowAll(),
+      port: 0,
+      log: () => undefined,
+    });
+    opened.push(proxy);
+    const auth = basicOf(
+      proxyUrlFor(proxy.port, { sessionId: 'ses_1', agent: 'codex-cli' }),
+    );
+
+    const answer = await tunnelTo(proxy.port, `[::1]:${port}`, auth);
+
+    expect(answer.body).toContain('upstream says hi');
+  });
+
+  it('answers a mangled Proxy-Authorization, and serves the next request after it', async () => {
+    const port = await upstream();
+    const proxy = await startEgressProxy({
+      seam: allowAll(),
+      port: 0,
+      log: () => undefined,
+    });
+    opened.push(proxy);
+    // `%zz` is not a percent sequence, and any local process can send it.
+    const mangled = `Basic ${Buffer.from('%zz:a', 'utf8').toString('base64')}`;
+
+    const first = await get(proxy.port, `http://127.0.0.1:${port}/hello`, mangled);
+    const good = basicOf(
+      proxyUrlFor(proxy.port, { sessionId: 'ses_1', agent: 'codex-cli' }),
+    );
+    const second = await get(proxy.port, `http://127.0.0.1:${port}/hello`, good);
+
+    expect(first.status).toBeGreaterThan(0);
+    expect(second).toEqual({ status: 200, body: 'upstream says hi' });
+  });
+
+  it('refuses an https absolute-form request rather than throwing on it', async () => {
+    const port = await upstream();
+    const proxy = await startEgressProxy({
+      seam: allowAll(),
+      port: 0,
+      log: () => undefined,
+    });
+    opened.push(proxy);
+    const auth = basicOf(
+      proxyUrlFor(proxy.port, { sessionId: 'ses_1', agent: 'codex-cli' }),
+    );
+
+    const refused = await get(proxy.port, 'https://example.com/', auth);
+    const after = await get(proxy.port, `http://127.0.0.1:${port}/hello`, auth);
+
+    expect(refused.status).toBe(403);
+    expect(refused.body).toContain('http only');
+    expect(after).toEqual({ status: 200, body: 'upstream says hi' });
+  });
+
+  it('forwards to an IPv6 host in absolute form, brackets and all', async () => {
+    const server = createServer((_req, res) => res.end('upstream says hi'));
+    opened.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '::1', () => resolve()));
+    const address = server.address();
+    const port = typeof address === 'object' && address !== null ? address.port : 0;
+
+    const proxy = await startEgressProxy({
+      seam: allowAll(),
+      port: 0,
+      log: () => undefined,
+    });
+    opened.push(proxy);
+    const auth = basicOf(
+      proxyUrlFor(proxy.port, { sessionId: 'ses_1', agent: 'codex-cli' }),
+    );
+
+    const answer = await get(proxy.port, `http://[::1]:${port}/hello`, auth);
+
+    expect(answer).toEqual({ status: 200, body: 'upstream says hi' });
+  });
+
+  it('destroys the socket for a CONNECT authority it cannot read', async () => {
+    const proxy = await startEgressProxy({
+      seam: allowAll(),
+      port: 0,
+      log: () => undefined,
+    });
+    opened.push(proxy);
+    const auth = basicOf(
+      proxyUrlFor(proxy.port, { sessionId: 'ses_1', agent: 'codex-cli' }),
+    );
+
+    await expect(tunnelTo(proxy.port, ':::::', auth)).rejects.toThrow();
+
+    const port = await upstream();
+    expect(await get(proxy.port, `http://127.0.0.1:${port}/hello`, auth)).toEqual({
+      status: 200,
+      body: 'upstream says hi',
+    });
+  });
+
   it('forwards an allowed request, and tells the seam who asked', async () => {
     const port = await upstream();
     const rulings: EgressRuling[] = [];
