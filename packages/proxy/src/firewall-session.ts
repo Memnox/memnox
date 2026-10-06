@@ -297,6 +297,9 @@ export class FirewallSession {
 
   /** One server message, framed and recorded against the call it answers. */
   private replyFor(message: JsonRpcMessage): JsonRpcMessage {
+    // Client and server number their ids apart, so one the server started answers no call
+    // of ours however its id reads: taking it as a result retires the wrong open call.
+    if (!isResponse(message)) return message;
     const id = identify(message);
     if (id !== null && this.listRequestIds.has(id)) {
       this.listRequestIds.delete(id);
@@ -426,6 +429,14 @@ function toolNameOf(tool: unknown): string {
   if (typeof tool !== 'object' || tool === null) return '';
   const name: unknown = Reflect.get(tool, 'name');
   return String(name ?? '');
+}
+
+/** A response carries no method and does carry a result or an error. */
+function isResponse(message: JsonRpcMessage): boolean {
+  return (
+    message.method === undefined &&
+    (message.result !== undefined || message.error !== undefined)
+  );
 }
 
 function identify(message: JsonRpcMessage): MessageId | null {
