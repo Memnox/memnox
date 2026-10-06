@@ -42,19 +42,42 @@ export function digestArguments(
   return digest(payload);
 }
 
-/** Concatenated text of a tools/call result, which is what an agent would read. */
+/** The nested object at `key`, or null when the block does not carry one there. */
+function objectAt(block: unknown, key: string): unknown {
+  if (typeof block !== 'object' || block === null) return null;
+  return (block as Record<string, unknown>)[key] ?? null;
+}
+
+/** The string at `key`, or null when the block does not carry one there. */
+function stringAt(block: unknown, key: string): string | null {
+  if (typeof block !== 'object' || block === null) return null;
+  // A block from the wire, whose field is checked before it is used.
+  const value = (block as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Concatenated text of a tools/call result, which is what an agent would read. Every
+ * place the text can sit: a block's own `text`, the `text` of an embedded resource, and
+ * `structuredContent`. A block this missed was never quoted and never tainted the session.
+ */
 export function textOfResult(message: JsonRpcMessage): string {
   const result = message.result;
   if (result === undefined) return '';
-  const content = result['content'];
-  if (!Array.isArray(content)) return '';
   const parts: string[] = [];
-  for (const entry of content) {
-    if (typeof entry !== 'object' || entry === null) continue;
-    // A content block from the wire, whose `text` is checked before it is used.
-    const text = (entry as Record<string, unknown>)['text'];
-    if (typeof text === 'string') parts.push(text);
+  const content = result['content'];
+  if (Array.isArray(content)) {
+    for (const entry of content) {
+      const own = stringAt(entry, 'text');
+      if (own !== null) parts.push(own);
+      const embedded = objectAt(entry, 'resource');
+      const inside = stringAt(embedded, 'text');
+      if (inside !== null) parts.push(inside);
+    }
   }
+  const structured = result['structuredContent'];
+  // Stringified, because the shape is the server's and a value anywhere in it is read.
+  if (structured !== undefined) parts.push(JSON.stringify(structured));
   return parts.join('\n');
 }
 
