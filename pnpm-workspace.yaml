@@ -5,3 +5,15 @@ packages:
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+
+# source-map-js is a transitive dev dependency of vitest and tsup pulled below
+# GHSA-68fv-2mgg-jv7q; the audit fails the build at high, so hold it at the patched line.
+overrides:
+  source-map-js: '>=1.2.2'
+
+# braces is a transitive dev dependency of changesets, knip and vitest with no patched
+# release yet (GHSA-vfj7-8cjw-p6xm lists none and 3.0.3 is still the latest), so the only
+# way past the gate is to ignore it. Drop this line the day a fixed braces ships.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
