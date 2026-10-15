@@ -64,7 +64,7 @@ jobs:
             target="${dir#noise-builds/noise-}"
             cp "$dir/memnox-noise.$target.node" "native/noise/npm/$target/"
           done
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
