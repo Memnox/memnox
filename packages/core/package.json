@@ -50,8 +50,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
-    "smol-toml": "^1.8.0",
-    "yaml": "^2.4.0"
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0"
