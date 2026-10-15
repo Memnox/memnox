@@ -41,7 +41,7 @@ jobs:
           node-version: 22
       - run: sh native/noise/scripts/build-node.sh
       - run: cp native/noise/memnox-noise.*.node "memnox-noise.${{ matrix.target }}.node"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: noise-${{ matrix.target }}
           path: memnox-noise.${{ matrix.target }}.node
