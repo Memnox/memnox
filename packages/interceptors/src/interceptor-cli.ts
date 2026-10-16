@@ -32,6 +32,7 @@ import { brokeredEnvironment } from './broker-client';
 import { observeSession, pauseHolding, pauseMessage } from './breaker-seam';
 import { BrowserSeam } from './browser-seam';
 import { checkpointBeforeCommand } from './checkpoint-seam';
+import { relayEndingSignals } from './child-signals';
 import { reportToDaemon } from './daemon-client';
 import { readHookConfig } from './hook-config';
 import { loadHookGate } from './hook-gate-loader';
@@ -353,12 +354,14 @@ async function hand(command: Command, home: string): Promise<number> {
       env: withPathValue(env, path),
       windowsVerbatimArguments: plan.verbatim,
     });
+    const detach = relayEndingSignals(child);
     child.on('error', (err: unknown) => {
       process.stderr.write(`memnox: could not run ${command.binary}: ${String(err)}\n`);
       resolve(exitCodeForSpawnError(err));
     });
     child.on('exit', (code, signal) => {
       for (const each of FORWARDED) process.off(each, ignore);
+      detach();
       resolve(exitCodeForChild(code, signal));
     });
   });
