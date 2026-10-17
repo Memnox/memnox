@@ -28,7 +28,7 @@
     "machine-sim": "node scripts/machine-sim.mjs"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^4.1.10",
     "knip": "^5.46.0",
     "prettier": "^3.3.0",
