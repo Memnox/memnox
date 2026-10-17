@@ -15,7 +15,7 @@ import { MANAGED_SERVER, type ManagedServer, type RewriteResult } from './manage
  */
 
 /** The indentation this file already uses, so an insert matches what surrounds it. */
-function formattingOf(raw: string): FormattingOptions {
+export function formattingOf(raw: string): FormattingOptions {
   const indented = /^([ \t]+)\S/m.exec(raw);
   const found = indented?.[1] ?? '  ';
   const insertSpaces = !found.startsWith('\t');

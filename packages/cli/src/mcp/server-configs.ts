@@ -14,6 +14,7 @@ import {
   type ServerLaunch,
 } from '@memnox/core';
 import { backupPathFor } from '../memnox-paths';
+import { parseJsonc, withEntries } from './json-span';
 import { onPath } from '../on-path';
 
 export interface ConfigFile {
@@ -40,8 +41,6 @@ interface Relaunch {
 
 /** Answers whether a binary can be found, injected so a test needs no PATH. */
 export type BinaryResolver = (binary: string) => boolean;
-
-const JSON_INDENT = 2;
 
 /**
  * Whether the proxy can be started, checked before a config is touched, because an agent
@@ -74,14 +73,10 @@ async function readConfig(path: string): Promise<ConfigFile | null> {
     if (Object.keys(servers).length === 0 && urlOnly.length === 0) return null;
     return { path, raw, format, servers, urlOnly };
   }
-  let config: Record<string, unknown>;
-  try {
-    // Cast is checked by serversKeyOf below, which finds no servers in anything else.
-    config = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    // Never rewrite a file we could not parse: we would lose what it held.
-    return null;
-  }
+  // Read as JSONC: VS Code and Cline configs carry comments, and one `//` used to mean the
+  // file was skipped and its servers never wrapped. Never rewrite a file that will not parse.
+  const config = parseJsonc(raw);
+  if (config === null) return null;
   const key = serversKeyOf(config);
   if (key === null) return null;
   // Cast is safe: serversKeyOf only names a key holding the servers table.
@@ -102,7 +97,7 @@ async function readIfPresent(path: string): Promise<string | null> {
 
 /**
  * Writes the new launch lines, backing the file up first because the failure that matters
- * is an editor that will not start. JSON is written whole; TOML and YAML keep every other byte.
+ * is an editor that will not start. Every format keeps every byte it was not asked to change.
  */
 export async function writeRelaunches(
   home: string,
@@ -113,6 +108,8 @@ export async function writeRelaunches(
   for (const each of relaunches) changed[each.name] = each.after;
 
   const backup = backupPathFor(home, file.path);
+  // Read before it is replaced: it holds the entries as they were written before the wrap.
+  const previous = await readIfPresent(backup);
   await mkdir(dirname(backup), { recursive: true, mode: 0o700 });
   await copyFile(file.path, backup);
 
@@ -124,6 +121,9 @@ export async function writeRelaunches(
     );
     return;
   }
-  const next = { ...file.config, [file.key]: { ...file.servers, ...changed } };
-  await writeFile(file.path, `${JSON.stringify(next, null, JSON_INDENT)}\n`, 'utf8');
+  await writeFile(
+    file.path,
+    withEntries(file.raw, file.key, relaunches, previous),
+    'utf8',
+  );
 }
