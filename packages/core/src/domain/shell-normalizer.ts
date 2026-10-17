@@ -11,7 +11,7 @@ import {
   DOWNLOADERS,
   downloads,
   endsInInterpreter,
-  INTERPRETERS,
+  SHELLS,
   runsCode,
   stripEnvTokens,
 } from './shell-runners';
@@ -331,14 +331,6 @@ function substitutionsIn(part: string): string[] {
   return bodies;
 }
 
-/** `timeout 5 rm x`: the duration is the first word, then the command. */
-function afterTimeout(words: readonly string[]): string | null {
-  let at = 1;
-  while (at < words.length && (words[at] ?? '').startsWith('-')) at += 1;
-  const rest = words.slice(at + 1);
-  return rest.length === 0 ? null : rest.join(' ');
-}
-
 /** `find . -delete` removes what it finds, and `-exec rm {} ;` runs rm on each. */
 function findRuns(words: readonly string[]): string | null {
   const exec = words.findIndex(
@@ -378,15 +370,13 @@ function unwrap(
   words: readonly string[],
   opaque: Set<OpaqueReason>,
 ): string | null {
-  if (binary === 'eval' || binary === 'exec') {
-    return words.slice(1).join(' ');
-  }
-  if (binary === 'timeout') return afterTimeout(words);
+  // `eval` runs its words as a line; `exec` and `timeout` are prefixes like any other.
+  if (binary === 'eval') return words.slice(1).join(' ');
   if (binary === 'find') return findRuns(words);
   if (binary === 'git') return gitAliasRuns(words);
   const prefixed = afterPrefix(binary, words);
   if (prefixed !== null) return prefixed;
-  if (INTERPRETERS.has(binary)) {
+  if (SHELLS.has(binary)) {
     const index = codeFlagAt(words);
     if (index !== -1 && index + 1 < words.length) return words[index + 1] ?? null;
     return null;

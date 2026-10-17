@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TOOL_CLASS } from '../src/discovery/classify';
+import { normalizeShellCommand } from '../src/domain/shell-normalizer';
+import { CODE_RUNNERS, SHELLS } from '../src/domain/shell-runners';
 import { resolveAction, resolveShellLine } from '../src/intercept/resolve';
 import { takesLease } from '../src/coordination/writes';
 
@@ -208,5 +210,36 @@ describe('database clients that were invisible', () => {
   it('still calls an interactive session a write, as it does for mysql', () => {
     expect(ruled(['mariadb']).class).toBe(TOOL_CLASS.WRITE);
     expect(ruled(['redis-cli']).class).toBe(TOOL_CLASS.WRITE);
+  });
+});
+
+/* The normalizer and the resolver each kept their own list of prefixes and interpreters,
+   and a third copy read `timeout` on its own. So `doas python3 -c x` was unwrapped by one
+   and missed by the other, and the paths a hidden interpreter could write went uncounted. */
+describe('a prefix in front of an interpreter', () => {
+  const HOME_ENV = { HOME: '/home/dev', PWD: '/home/dev' };
+  const reached = (line: string): string[] =>
+    resolveShellLine(line, HOME_ENV)
+      .actions.filter((action) => action.target === '/srv/data')
+      .map((action) => action.class);
+
+  it.each([
+    ['doas python3 -c x /srv/data', 'python3 -c x /srv/data'],
+    ['stdbuf -o0 bash -c x /srv/data', 'bash -c x /srv/data'],
+    ['sudo -u root python3 -c x /srv/data', 'python3 -c x /srv/data'],
+    ['timeout 10 python3 -c x /srv/data', 'python3 -c x /srv/data'],
+    ['timeout -s KILL 5 bash -c x /srv/data', 'bash -c x /srv/data'],
+    ['ionice -c3 node -e x /srv/data', 'node -e x /srv/data'],
+    ['FOO=1 doas node -e x /srv/data', 'node -e x /srv/data'],
+  ])('`%s` is ruled on as `%s` is, by both paths', (prefixed, bare) => {
+    expect(reached(prefixed)).toEqual(reached(bare));
+    expect(reached(prefixed)).toEqual([TOOL_CLASS.WRITE]);
+    expect(normalizeShellCommand(prefixed).commands).toEqual(
+      normalizeShellCommand(bare).commands,
+    );
+  });
+
+  it('keeps one list of what runs code, with every shell in it', () => {
+    for (const shell of SHELLS) expect(CODE_RUNNERS.has(shell)).toBe(true);
   });
 });

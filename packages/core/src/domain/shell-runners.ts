@@ -5,7 +5,28 @@
 import { tokenizeQuoted, type Token } from './shell-words';
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*$/;
-export const INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash']);
+/** Shells, whose `-c` argument is shell code and is walked as one more line. */
+export const SHELLS = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash']);
+/**
+ * Everything that runs code it is handed, shells among them. Its code cannot be read from
+ * here, so any path on the line could be one it writes.
+ */
+export const CODE_RUNNERS = new Set([
+  ...SHELLS,
+  'fish',
+  'python',
+  'python3',
+  'node',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'php',
+  'pwsh',
+  'osascript',
+  'lua',
+  'tclsh',
+]);
 export const DOWNLOADERS = new Set(['curl', 'wget', 'fetch']);
 /** How many prefixes deep a piped interpreter is looked for: `sudo env bash` is two. */
 const PREFIX_LAYERS = 4;
@@ -31,10 +52,15 @@ const PREFIXES = new Map<string, ReadonlySet<string>>([
   ['ionice', new Set(['-c', '-n', '-p'])],
   ['stdbuf', new Set(['-i', '-o', '-e'])],
   ['xargs', new Set(['-n', '-I', '-L', '-P', '-s', '-d', '-E', '-a'])],
+  ['timeout', new Set(['-s', '--signal', '-k', '--kill-after'])],
+  ['exec', new Set(['-a'])],
 ]);
 
-/** The command a prefix runs, past its own options, its `NAME=value` words and its duration. */
-export function afterPrefix(binary: string, words: readonly string[]): string | null {
+/** Prefixes whose first word past their options is how long to run, not what runs. */
+const TAKES_DURATION = new Set(['timeout']);
+
+/** The words a prefix runs, past its own options, its `NAME=value` words and its duration. */
+function prefixRest(binary: string, words: readonly string[]): readonly string[] | null {
   const valued = PREFIXES.get(binary);
   if (valued === undefined) return null;
   let at = 1;
@@ -44,8 +70,32 @@ export function afterPrefix(binary: string, words: readonly string[]): string | 
     else if (word.startsWith('-') || ENV_ASSIGNMENT.test(word)) at += 1;
     else break;
   }
+  if (TAKES_DURATION.has(binary)) at += 1;
   const rest = words.slice(at);
-  return rest.length === 0 ? null : rest.join(' ');
+  return rest.length === 0 ? null : rest;
+}
+
+/** The command a prefix runs, as one line. */
+export function afterPrefix(binary: string, words: readonly string[]): string | null {
+  return prefixRest(binary, words)?.join(' ') ?? null;
+}
+
+/**
+ * The command under every prefix and leading `NAME=value`: `sudo -u root env X=1 python3`
+ * down to `python3`. One walk shared by the normalizer and the resolver, which each kept a
+ * list of their own and so disagreed about `doas`, `stdbuf`, `timeout` and an option value.
+ */
+export function underPrefixes(words: readonly string[]): readonly string[] {
+  let current = words;
+  for (let layer = 0; layer < PREFIX_LAYERS; layer += 1) {
+    let start = 0;
+    while (ENV_ASSIGNMENT.test(current[start] ?? '')) start += 1;
+    current = current.slice(start);
+    const rest = prefixRest(basename(current[0] ?? ''), current);
+    if (rest === null) break;
+    current = rest;
+  }
+  return current;
 }
 
 export function basename(word: string): string {
@@ -73,7 +123,7 @@ export function endsInInterpreter(pipeline: readonly string[]): boolean {
     words = tokenizeQuoted(rest).map((token) => token.text);
   }
   const binary = basename(words[0] ?? '');
-  if (INTERPRETERS.has(binary)) return true;
+  if (SHELLS.has(binary)) return true;
   // `curl api | python3 -m json.tool` reads the download as data, so only a bare language counts.
   return LANGUAGE_INTERPRETER.test(binary) && readsProgramFromStdin(words);
 }
@@ -90,9 +140,7 @@ function readsProgramFromStdin(words: readonly string[]): boolean {
 /** A shell, a language or `eval`, any of which runs a substituted download as its code. */
 export function runsCode(binary: string): boolean {
   return (
-    INTERPRETERS.has(binary) ||
-    LANGUAGE_INTERPRETER.test(binary) ||
-    RUNS_ARGUMENT.has(binary)
+    SHELLS.has(binary) || LANGUAGE_INTERPRETER.test(binary) || RUNS_ARGUMENT.has(binary)
   );
 }
 

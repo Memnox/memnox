@@ -20,6 +20,7 @@ import {
   type OpaqueReason,
 } from '../domain/shell-normalizer';
 import { ACTION } from '../constants/action.constants';
+import { basename, CODE_RUNNERS, underPrefixes } from '../domain/shell-runners';
 import { awkMayWrite } from './awk';
 import { shownWrites } from './shown-writes';
 
@@ -229,40 +230,6 @@ function hiddenCode(opaque: readonly OpaqueReason[]): ResolvedAction | null {
   };
 }
 
-/** Interpreters whose code can write anywhere, whatever the rest of the line says. */
-const INTERPRETERS: readonly string[] = [
-  'python',
-  'python3',
-  'node',
-  'deno',
-  'bun',
-  'ruby',
-  'perl',
-  'php',
-  'osascript',
-  'sh',
-  'bash',
-  'zsh',
-  'fish',
-  'dash',
-  'ksh',
-  'lua',
-  'tclsh',
-];
-
-/** Words that only run the next one, so the command is what follows them. */
-const PREFIXES: readonly string[] = [
-  'env',
-  'sudo',
-  'command',
-  'nohup',
-  'nice',
-  'timeout',
-  'exec',
-  'time',
-  'xargs',
-];
-
 /**
  * Whether any command in the raw line starts an interpreter. Read off the line as typed,
  * because the normalizer unwraps `python -c` and walks the code as shell, which hides it.
@@ -274,17 +241,9 @@ function runsInterpreter(
   if (parsed.some(({ argv }) => awkMayWrite(argv))) return true;
   return line.split(/[;&|()\n]+/).some((segment) => {
     const words = splitCommandLine(segment.trim());
-    let at = 0;
-    while (
-      at < words.length &&
-      (PREFIXES.includes(words[at] ?? '') ||
-        /^\w+=/.test(words[at] ?? '') ||
-        /^-/.test(words[at] ?? ''))
-    )
-      at += 1;
-    const binary = (words[at] ?? '').split('/').pop() ?? '';
+    const binary = basename(underPrefixes(words)[0] ?? '');
     if (binary === 'sqlite3') return !words.includes('-readonly');
-    return INTERPRETERS.includes(binary.replace(/[\d.]+$/, ''));
+    return CODE_RUNNERS.has(binary.replace(/[\d.]+$/, ''));
   });
 }
 
