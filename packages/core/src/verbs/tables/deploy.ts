@@ -154,7 +154,8 @@ export const DEPLOY_TABLES: readonly VerbTable[] = [
   },
   {
     name: 'heroku',
-    credential: ['~/.heroku'],
+    // The Heroku CLI writes its token to ~/.netrc; ~/.heroku holds no credential.
+    credential: ['~/.netrc'],
     headline: 'can deploy',
     verbs: [
       { match: 'apps:destroy **', class: GONE },

@@ -39,7 +39,7 @@ export const DATA_TABLES: readonly VerbTable[] = [
   },
   {
     name: 'mycli',
-    credential: ['~/.myclirc', '~/.my.cnf', 'MYSQL_PWD', 'DATABASE_URL'],
+    credential: ['~/.my.cnf', 'MYSQL_PWD', 'DATABASE_URL'],
     headline: 'can reach a database',
     verbs: [
       { match: '-e **', class: WRITE, note: 'statement is read from the argument' },
@@ -48,7 +48,7 @@ export const DATA_TABLES: readonly VerbTable[] = [
   },
   {
     name: 'pgcli',
-    credential: ['~/.pgpass', '~/.config/pgcli/config', 'DATABASE_URL', 'PGPASSWORD'],
+    credential: ['~/.pgpass', 'DATABASE_URL', 'PGPASSWORD'],
     headline: 'can reach a database',
     verbs: [
       { match: '-c **', class: WRITE, note: 'statement is read from the argument' },

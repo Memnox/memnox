@@ -9,7 +9,9 @@ import {
   looksLikeCredential,
   productionLooking,
   readEnvFile,
+  SCANNED_CREDENTIAL_FILES,
 } from '../src/discovery/credentials';
+import { VERB_TABLES } from '../src/verbs/tables';
 import { NodeMachineReader } from '../src/discovery/node-machine';
 import { SENSITIVITY } from '../src/discovery/discovery.constants';
 import { classifySensitivity } from '../src/discovery/resource';
@@ -224,5 +226,68 @@ describe('authenticated CLIs', () => {
       'prod-eu-1',
     );
     expect(productionLooking('contexts: docker-desktop')).toBeUndefined();
+  });
+});
+
+/* A CLI counted as logged in only when a found file ended with the path its table named,
+   and the tables named directories and files the scan never read: on most machines only
+   aws was reported, though the headline of a scan is what is logged in. */
+describe('which CLIs are logged in', () => {
+  const PG_SECRET = ['hunter', '2-pg'].join('');
+  const logged: Record<string, string> = {
+    [`${HOME}/.config/gcloud/credentials.db`]: 'SQLite format 3',
+    [`${HOME}/.netlify/config.json`]: '{"users":{"u1":{"auth":{"token":"nfp_secret"}}}}',
+    [`${HOME}/.netrc`]:
+      'machine api.heroku.com\n  login a@b.c\n  password herokusecret\n',
+    [`${HOME}/.pgpass`]: `db.example.com:5432:app:app:${PG_SECRET}\n`,
+    [`${HOME}/.my.cnf`]: '[client]\nuser=app\npassword=mysqlsecret\n',
+  };
+  const machine: MachineReader = {
+    exists: async (path) => logged[path] !== undefined,
+    read: async (path) => logged[path] ?? null,
+    list: async () => [],
+    homeDir: () => HOME,
+    userName: () => 'dev',
+  };
+
+  it.each(['gcloud', 'netlify', 'heroku', 'psql', 'mysql'])(
+    'reports %s when its credential file is there',
+    async (cli) => {
+      const found = authenticatedClis([cli], await findCredentials(machine));
+      expect(found.map((each) => each.name)).toEqual([cli]);
+    },
+  );
+
+  it('reads no value out of any of them', async () => {
+    const found = await findCredentials(machine);
+    const printed = JSON.stringify(authenticatedClis(['psql', 'mysql', 'heroku'], found));
+    for (const secret of [PG_SECRET, 'mysqlsecret', 'herokusecret', 'nfp_secret'])
+      expect(printed).not.toContain(secret);
+  });
+
+  it('does not take a sibling directory for the one a table names', async () => {
+    const sibling: MachineReader = {
+      ...machine,
+      exists: async (path) => path === `${HOME}/.netlify-old/config.json`,
+      read: async () => null,
+    };
+    expect(authenticatedClis(['netlify'], await findCredentials(sibling))).toEqual([]);
+  });
+
+  /* So the two lists cannot drift apart again: every file a table says logs its CLI in is
+     one the scan reads, or the directory one sits in. */
+  it.each(
+    VERB_TABLES.flatMap((table) =>
+      table.credential
+        .filter((source) => source.startsWith('~/'))
+        .map((source) => [table.name, source]),
+    ),
+  )('%s names %s, which the scan reads', (_cli, source) => {
+    const relative = source.slice('~/'.length);
+    expect(
+      SCANNED_CREDENTIAL_FILES.some(
+        (file) => file === relative || file.startsWith(`${relative}/`),
+      ),
+    ).toBe(true);
   });
 });

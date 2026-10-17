@@ -106,8 +106,14 @@ const SPECS: readonly CredentialSpec[] = [
   { kind: 'SSH key', paths: ['.ssh/id_ed25519', '.ssh/id_rsa', '.ssh/id_ecdsa'] },
   { kind: 'AWS', paths: ['.aws/credentials'], detail: buildSectionDetail('profiles') },
   { kind: 'AWS config', paths: ['.aws/config'], detail: buildSectionDetail('profiles') },
-  { kind: 'Google Cloud', paths: ['.config/gcloud/credentials.db'] },
-  { kind: 'Azure', paths: ['.azure/azureProfile.json'] },
+  {
+    kind: 'Google Cloud',
+    paths: [
+      '.config/gcloud/credentials.db',
+      '.config/gcloud/application_default_credentials.json',
+    ],
+  },
+  { kind: 'Azure', paths: ['.azure/azureProfile.json', '.azure/msal_token_cache.json'] },
   { kind: 'GitHub CLI', paths: ['.config/gh/hosts.yml'], detail: yamlHosts },
   { kind: 'Vercel', paths: ['.vercel/auth.json'] },
   { kind: 'Railway', paths: ['.railway/config.json'] },
@@ -121,6 +127,9 @@ const SPECS: readonly CredentialSpec[] = [
   { kind: 'PyPI', paths: ['.pypirc'] },
   { kind: 'Cargo', paths: ['.cargo/credentials', '.cargo/credentials.toml'] },
   { kind: 'Stripe', paths: ['.config/stripe/config.toml'] },
+  { kind: 'PostgreSQL', paths: ['.pgpass'] },
+  { kind: 'MySQL', paths: ['.my.cnf'] },
+  { kind: 'Pulumi', paths: ['.pulumi/credentials.json'] },
   { kind: 'Git credentials', paths: ['.git-credentials'] },
 ];
 
@@ -254,6 +263,22 @@ export function productionLooking(detail: string | undefined): string | undefine
 }
 
 /**
+ * Whether a table's `~` credential names this found file, as the file itself or as the
+ * directory it sits in: `~/.config/gcloud` is where gcloud keeps `credentials.db`, and a
+ * suffix match alone never saw it.
+ */
+function coversPath(source: string, path: string): boolean {
+  if (!source.startsWith('~')) return false;
+  const relative = source.slice(1);
+  return path.endsWith(relative) || path.includes(`${relative}/`);
+}
+
+/** Every file the scan reads as a credential, relative to home, for the tables to name. */
+export const SCANNED_CREDENTIAL_FILES: readonly string[] = SPECS.flatMap(
+  (spec) => spec.paths,
+);
+
+/**
  * A binary on PATH plus a credential it can read is an authenticated CLI, and that
  * pair is the whole finding: either alone is unremarkable.
  */
@@ -269,9 +294,7 @@ export function authenticatedClis(
     if (table === null) continue;
 
     const match = credentials.find((credential) =>
-      table.credential.some(
-        (source) => source.startsWith('~') && credential.path.endsWith(source.slice(1)),
-      ),
+      table.credential.some((source) => coversPath(source, credential.path)),
     );
     const variable = table.credential.find(
       (source) => !source.startsWith('~') && envNames.includes(source),
