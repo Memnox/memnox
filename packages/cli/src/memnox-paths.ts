@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { MEMNOX_HOME } from '@memnox/core';
+import { MEMNOX_HOME, TRANSCRIPT_SUFFIX, TRANSCRIPTS_DIR } from '@memnox/core';
 
 /**
  * Everything the CLI writes under `~/.memnox`, named in one place, because a path spelled
@@ -8,7 +8,6 @@ import { MEMNOX_HOME } from '@memnox/core';
 
 const GUARD_DIR = 'guard';
 const GUARD_PROFILE = 'memnox.sb';
-const TRANSCRIPT_DIR = 'transcripts';
 const BACKUP_DIR = 'backup';
 const LANDLOCK_RULESET = 'landlock.json';
 const SESSION_GUARD_DIR = 'sessions';
@@ -44,7 +43,7 @@ export function egressStatePath(home: string): string {
 }
 
 export function transcriptPathFor(home: string, sessionId: string): string {
-  return join(home, MEMNOX_HOME, TRANSCRIPT_DIR, `${sessionId}.log`);
+  return join(home, MEMNOX_HOME, TRANSCRIPTS_DIR, `${sessionId}${TRANSCRIPT_SUFFIX}`);
 }
 
 /** A config's own path, flattened: two clients may both ship a `settings.json`. */

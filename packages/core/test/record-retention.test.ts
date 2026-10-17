@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -7,7 +7,13 @@ import { Missions } from '../src/session/mission';
 import { SessionPauses } from '../src/session/pause';
 import { POST_KIND, SessionPosts } from '../src/session/posts';
 import { SessionTurns } from '../src/session/session-turns';
-import { dropOldRecords } from '../src/store/record-retention';
+import { MEMNOX_HOME } from '../src/config/config';
+import { RunTerminals } from '../src/discovery/run-terminal';
+import {
+  dropOldRecords,
+  TRANSCRIPT_SUFFIX,
+  TRANSCRIPTS_DIR,
+} from '../src/store/record-retention';
 
 const NOW = '2026-10-08T12:00:00.000Z';
 const CUTOFF = '2026-09-08T12:00:00.000Z';
@@ -86,5 +92,73 @@ describe('the records beside the ledger age out with it', () => {
     });
     expect(dropped.turns).toBe(1);
     expect(await new SessionTurns(home).read('ses_old')).not.toBeNull();
+  });
+});
+
+/* `trace` says transcripts share the ledger's retention, and nothing ever deleted one: raw
+   agent output kept for good, which is the privacy promise broken without a sound. */
+describe('transcripts age out with the ledger', () => {
+  async function transcript(sessionId: string, writtenAt: string): Promise<string> {
+    const dir = join(home, MEMNOX_HOME, TRANSCRIPTS_DIR);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${sessionId}${TRANSCRIPT_SUFFIX}`);
+    await writeFile(path, 'what the agent printed\n');
+    const at = new Date(writtenAt);
+    await utimes(path, at, at);
+    return path;
+  }
+
+  const exists = (path: string): Promise<boolean> =>
+    stat(path).then(
+      () => true,
+      () => false,
+    );
+
+  it('drops an old transcript and keeps a new one', async () => {
+    const old = await transcript('ses_old', OLD);
+    const fresh = await transcript('ses_new', NOW);
+
+    const dropped = await dropOldRecords({ home, cutoff: CUTOFF, now: NOW });
+
+    expect(dropped[TRANSCRIPTS_DIR]).toBe(1);
+    expect(await exists(old)).toBe(false);
+    expect(await exists(fresh)).toBe(true);
+  });
+
+  it('counts and deletes nothing on a dry run', async () => {
+    const old = await transcript('ses_old', OLD);
+
+    const dropped = await dropOldRecords({
+      home,
+      cutoff: CUTOFF,
+      now: NOW,
+      dryRun: true,
+    });
+
+    expect(dropped[TRANSCRIPTS_DIR]).toBe(1);
+    expect(await exists(old)).toBe(true);
+  });
+
+  it('keeps the transcript of a session whose run is still alive, however old', async () => {
+    const old = await transcript('ses_live', OLD);
+    await new RunTerminals(home).note({
+      sessionId: 'ses_live',
+      agent: 'claude-code',
+      // This test's own process: alive for as long as the assertion below runs.
+      pid: process.pid,
+      cwd: home,
+      startedAt: OLD,
+    });
+
+    const dropped = await dropOldRecords({ home, cutoff: CUTOFF, now: NOW });
+
+    expect(dropped[TRANSCRIPTS_DIR]).toBe(0);
+    expect(await exists(old)).toBe(true);
+  });
+
+  it('is nothing to do on a machine that never kept one', async () => {
+    expect(
+      (await dropOldRecords({ home, cutoff: CUTOFF, now: NOW }))[TRANSCRIPTS_DIR],
+    ).toBe(0);
   });
 });

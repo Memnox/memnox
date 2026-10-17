@@ -1,6 +1,8 @@
-import { rm, stat } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MEMNOX_HOME } from '../config/config';
+import { processAlive } from '../coordination/lease-store';
+import { RunTerminals } from '../discovery/run-terminal';
 import { GRANTS_DIR } from '../gate/session-grants';
 import { PENDING_DIR, PendingApprovals, type PendingApproval } from '../gate/pending';
 import { MISSION_DIR, type Mission } from '../session/mission';
@@ -16,6 +18,10 @@ import { readJsonFile } from './json-records';
  * that ran agents for a year does not carry a year of them. Nothing still in force goes: an
  * answerable question, a pause nobody lifted, an open mission.
  */
+
+/** Where `memnox run --transcript` keeps what an agent printed, one file per session. */
+export const TRANSCRIPTS_DIR = 'transcripts';
+export const TRANSCRIPT_SUFFIX = '.log';
 
 export interface RetentionInput {
   home: string;
@@ -68,7 +74,30 @@ export async function dropOldRecords(input: RetentionInput): Promise<RecordsDrop
     dropped[each.dir] = await dropIn(each, input);
   }
   dropped[GRANTS_DIR] = await dropUntouched(GRANTS_DIR, input);
+  dropped[TRANSCRIPTS_DIR] = await dropTranscripts(input);
   return dropped;
+}
+
+/**
+ * Raw agent output, which `trace` has always said shares the ledger's retention and nothing
+ * ever deleted. A session whose run is still alive keeps its transcript whatever its age,
+ * since the file is still being written.
+ */
+async function dropTranscripts(input: RetentionInput): Promise<number> {
+  const dir = join(input.home, MEMNOX_HOME, TRANSCRIPTS_DIR);
+  const runs = new RunTerminals(input.home);
+  let count = 0;
+  for (const name of await readdir(dir).catch((): string[] => [])) {
+    if (!name.endsWith(TRANSCRIPT_SUFFIX)) continue;
+    const path = join(dir, name);
+    const written = await stat(path).catch(() => null);
+    if (written === null || written.mtime.toISOString() >= input.cutoff) continue;
+    const run = await runs.read(name.slice(0, -TRANSCRIPT_SUFFIX.length));
+    if (run !== null && processAlive(run.pid)) continue;
+    count += 1;
+    if (input.dryRun !== true) await rm(path, { force: true });
+  }
+  return count;
 }
 
 async function dropIn(kept: Kept, input: RetentionInput): Promise<number> {
