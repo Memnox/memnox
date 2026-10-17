@@ -23,7 +23,7 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
       SURFACE_KIND.GIT,
       SURFACE_KIND.NETWORK,
     ],
-    mcpConfigPath: '.claude.json',
+    mcpConfigPaths: ['.claude.json'],
   },
   {
     kind: DISCOVERED_AGENT_KIND.CLAUDE_DESKTOP,
@@ -34,7 +34,11 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
     ],
     clients: ['Claude Desktop'],
     inherentSurfaces: [SURFACE_KIND.NETWORK],
-    mcpConfigPath: 'Library/Application Support/Claude/claude_desktop_config.json',
+    // macOS first, then Linux: one install has one of them.
+    mcpConfigPaths: [
+      'Library/Application Support/Claude/claude_desktop_config.json',
+      '.config/Claude/claude_desktop_config.json',
+    ],
   },
   {
     kind: DISCOVERED_AGENT_KIND.CURSOR,
@@ -42,7 +46,7 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
     configPaths: ['.cursor/mcp.json', '.cursor'],
     clients: ['Cursor'],
     inherentSurfaces: [SURFACE_KIND.SHELL, SURFACE_KIND.FILESYSTEM, SURFACE_KIND.NETWORK],
-    mcpConfigPath: '.cursor/mcp.json',
+    mcpConfigPaths: ['.cursor/mcp.json'],
   },
   {
     kind: DISCOVERED_AGENT_KIND.CLINE,
@@ -50,7 +54,7 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
     configPaths: ['.cline/settings.json'],
     clients: ['Cline'],
     inherentSurfaces: [SURFACE_KIND.SHELL, SURFACE_KIND.FILESYSTEM],
-    mcpConfigPath: '.cline/settings.json',
+    mcpConfigPaths: ['.cline/settings.json'],
   },
   {
     kind: DISCOVERED_AGENT_KIND.VS_CODE,
@@ -58,7 +62,7 @@ const DETECTOR_SPECS: readonly ConfigDetectorSpec[] = [
     configPaths: ['.vscode/mcp.json'],
     clients: ['VS Code'],
     inherentSurfaces: [SURFACE_KIND.FILESYSTEM, SURFACE_KIND.NETWORK],
-    mcpConfigPath: '.vscode/mcp.json',
+    mcpConfigPaths: ['.vscode/mcp.json'],
   },
 ];
 

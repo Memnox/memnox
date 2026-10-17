@@ -14,6 +14,7 @@ interface RawServer {
   command?: unknown;
   args?: unknown;
   env?: unknown;
+  url?: unknown;
 }
 
 /**
@@ -33,9 +34,37 @@ export function readMcpServers(raw: string | null): McpServerConfig[] {
   // Narrowed to an object above; its values are still unknown.
   const config = parsed as Record<string, unknown>;
   const key = serversKeyOf(config);
-  if (key === null) return [];
   // serversKeyOf only answers with a key whose value is an object.
-  return readServerEntries(config[key] as Record<string, unknown>);
+  const global =
+    key === null ? [] : readServerEntries(config[key] as Record<string, unknown>);
+  return withoutRepeats([...global, ...projectServers(config)]);
+}
+
+/**
+ * Claude Code keeps servers added inside a project under `projects["<path>"].mcpServers`,
+ * beside the user-wide ones, and they reach exactly as far.
+ */
+function projectServers(config: Record<string, unknown>): McpServerConfig[] {
+  const projects = config['projects'];
+  if (typeof projects !== 'object' || projects === null) return [];
+  return Object.values(projects).flatMap((project) => {
+    if (typeof project !== 'object' || project === null) return [];
+    // A project entry from somebody else's file: its servers are checked like any others.
+    const declared = (project as Record<string, unknown>)['mcpServers'];
+    if (typeof declared !== 'object' || declared === null) return [];
+    return readServerEntries(declared as Record<string, unknown>);
+  });
+}
+
+/** The same server declared in two projects is one server, counted once. */
+function withoutRepeats(servers: readonly McpServerConfig[]): McpServerConfig[] {
+  const seen = new Set<string>();
+  return servers.filter((server) => {
+    const key = JSON.stringify([server.name, server.command, server.args]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Every entry under a JSON servers key that carries a launch line. */
@@ -45,13 +74,16 @@ export function readServerEntries(declared: Record<string, unknown>): McpServerC
     if (typeof value !== 'object' || value === null) continue;
     // Somebody else's JSON: each field is checked before it is used.
     const server = value as RawServer;
-    if (typeof server.command !== 'string') continue;
-    configs.push({
-      name,
-      command: server.command,
-      args: stringsIn(server.args),
-      env: envNamesIn(server.env),
-    });
+    // A remote server has a URL and no launch line, and is recorded the way TOML and YAML
+    // record one, so a scan that reads JSON does not miss the commonest kind there is.
+    const launch =
+      typeof server.command === 'string'
+        ? { command: server.command, args: stringsIn(server.args) }
+        : typeof server.url === 'string'
+          ? { command: URL_SERVER_COMMAND, args: [server.url] }
+          : null;
+    if (launch === null) continue;
+    configs.push({ name, ...launch, env: envNamesIn(server.env) });
   }
   return configs;
 }

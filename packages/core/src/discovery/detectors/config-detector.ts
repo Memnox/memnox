@@ -19,8 +19,11 @@ export interface ConfigDetectorSpec {
   clients: readonly string[];
   /** Surfaces this product has by construction, whatever its config says. */
   inherentSurfaces: readonly SurfaceKind[];
-  /** Set when this product's config file is also where its MCP servers live. */
-  mcpConfigPath?: string;
+  /**
+   * Set when this product's config file is also where its MCP servers live. Several when
+   * the place differs by platform; the first that exists is read.
+   */
+  mcpConfigPaths?: readonly string[];
 }
 
 export class ConfigDetector implements AgentDetector {
@@ -62,10 +65,13 @@ export class ConfigDetector implements AgentDetector {
 
   /** The launch lines travel so the tools can be asked for over the protocol. */
   private async mcpSurfaces(reader: MachineReader, agentId: string): Promise<Surface[]> {
-    const mcpPath = this.spec.mcpConfigPath;
-    if (mcpPath === undefined) return [];
-    const full = join(reader.homeDir(), mcpPath);
-    const servers: McpServerLaunch[] = readMcpServers(await reader.read(full));
-    return buildMcpSurfaces(agentId, full, servers);
+    for (const mcpPath of this.spec.mcpConfigPaths ?? []) {
+      const full = join(reader.homeDir(), mcpPath);
+      const raw = await reader.read(full);
+      if (raw === null) continue;
+      const servers: McpServerLaunch[] = readMcpServers(raw);
+      return buildMcpSurfaces(agentId, full, servers);
+    }
+    return [];
   }
 }

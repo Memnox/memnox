@@ -154,7 +154,7 @@ const detector = new ConfigDetector({
   configPaths: ['.claude.json'],
   clients: ['Claude Code'],
   inherentSurfaces: ['shell'],
-  mcpConfigPath: '.claude.json',
+  mcpConfigPaths: ['.claude.json'],
 });
 
 const CONFIG = JSON.stringify({
