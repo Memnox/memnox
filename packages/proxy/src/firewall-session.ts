@@ -2,24 +2,24 @@ import {
   classifyToolCall,
   type McpToolDeclaration,
   DECISION_EFFECT,
-  describeAlternative,
   describeHold,
   digest,
   isAllowed as holdAllowed,
-  refusalShapeFor,
   renderNotes,
   RETRYABILITY,
   UNNAMED_AGENT,
   UNNAMED_SESSION,
-  type Alternative,
   type HoldRequest,
   type HoldService,
-  type RefusalShape,
   type SessionNote,
 } from '@memnox/core';
 
 import { isCallAllowed, type CallAuthorizer, type CallVerdict } from './call-authorizer';
-import { METHOD_TOOLS_CALL, METHOD_TOOLS_LIST } from './firewall.constants';
+import {
+  METHOD_CANCELLED,
+  METHOD_TOOLS_CALL,
+  METHOD_TOOLS_LIST,
+} from './firewall.constants';
 import {
   invalidRequest,
   isJsonRpcMessage,
@@ -28,6 +28,14 @@ import {
   serializeMessage,
   type JsonRpcMessage,
 } from './json-rpc';
+import {
+  cancelledId,
+  denial,
+  describeMessage,
+  identify,
+  isResponse,
+  type MessageId,
+} from './message-shape';
 import {
   digestArguments,
   frameResult,
@@ -78,13 +86,16 @@ export interface FirewallSessionDeps {
   onListing?: (tools: readonly McpToolDeclaration[]) => void;
 }
 
-type MessageId = string | number;
-
 /** What one client message leads to: something for the server, something for the client, or neither. */
 interface Ruling {
   forward?: JsonRpcMessage;
   answer?: JsonRpcMessage;
 }
+
+const CANCELLED_AFTER_SENDING =
+  'the client cancelled the call before its result came back';
+const CANCELLED_WHILE_HELD =
+  'the client cancelled the call while it was held, so it was never sent';
 
 const SERVER_GONE_REASON =
   'the wrapped MCP server is no longer running, so restart the client to reconnect';
@@ -96,10 +107,6 @@ function serverGone(message: JsonRpcMessage): JsonRpcMessage {
     guidance:
       'The server this call needed is not running. This is a failure, not a rule: retrying once it is back may succeed.',
   });
-}
-
-function describeMessage(message: JsonRpcMessage): string {
-  return message.method ?? 'response';
 }
 
 /**
@@ -117,6 +124,11 @@ export class FirewallSession {
     MessageId,
     { call: ToolCall; verdict: CallVerdict }
   >();
+
+  /** Calls still being ruled on, which a cancellation has to catch before they go. */
+  private readonly ruling = new Set<MessageId>();
+  /** Calls the client gave up on while they were held, so a late yes sends nothing. */
+  private readonly cancelled = new Set<MessageId>();
 
   /** Notes collected and not yet handed over, oldest first. */
   private waiting: SessionNote[] = [];
@@ -209,8 +221,33 @@ export class FirewallSession {
       this.listRequestIds.add(id);
       return { forward: message };
     }
+    if (message.method === METHOD_CANCELLED) {
+      this.cancel(cancelledId(message));
+      // The server still hears of it, so it can stop work it already started.
+      return { forward: message };
+    }
     if (message.method !== METHOD_TOOLS_CALL) return { forward: message };
     return this.ruleOnCall(message, id);
+  }
+
+  /**
+   * A call the client gave up on. One already sent is written down as cancelled, since its
+   * result may never come and nothing else would ever close it; one still held is marked,
+   * so the answer that arrives later sends nothing.
+   */
+  private cancel(id: MessageId | null): void {
+    if (id === null) return;
+    const open = this.openCalls.get(id);
+    if (open !== undefined) {
+      this.openCalls.delete(id);
+      this.record(
+        open.call,
+        { ...open.verdict, reason: CANCELLED_AFTER_SENDING },
+        undefined,
+      );
+      return;
+    }
+    if (this.ruling.has(id)) this.cancelled.add(id);
   }
 
   private async ruleOnCall(
@@ -218,9 +255,16 @@ export class FirewallSession {
     id: MessageId | null,
   ): Promise<Ruling> {
     const call = readToolCall(message.params);
+    if (id !== null) this.ruling.add(id);
     let verdict = await this.verdictFor(call);
     if (verdict.effect === DECISION_EFFECT.ASK)
       verdict = await this.askPerson(call, verdict);
+    if (id !== null) this.ruling.delete(id);
+    if (id !== null && this.cancelled.delete(id)) {
+      // The client stopped waiting, so whatever was decided goes nowhere and owes no reply.
+      this.record(call, { ...verdict, reason: CANCELLED_WHILE_HELD }, undefined);
+      return {};
+    }
     if (isCallAllowed(verdict)) {
       // One call is one row, written when its result
       // arrives; a notification gets no reply to wait for.
@@ -431,43 +475,4 @@ function toolNameOf(tool: unknown): string {
   if (typeof tool !== 'object' || tool === null) return '';
   const name: unknown = Reflect.get(tool, 'name');
   return String(name ?? '');
-}
-
-/** A response carries no method and does carry a result or an error. */
-function isResponse(message: JsonRpcMessage): boolean {
-  return (
-    message.method === undefined &&
-    (message.result !== undefined || message.error !== undefined)
-  );
-}
-
-function identify(message: JsonRpcMessage): MessageId | null {
-  return message.id === undefined || message.id === null ? null : message.id;
-}
-
-/**
- * An isError result rather than a protocol error, so the model reads the reason and the
- * alternative, and whether retrying could ever work, or it retries a rule forty times.
- */
-function denial(
-  id: JsonRpcMessage['id'],
-  reason: string,
-  alternative?: Alternative,
-  shape: RefusalShape = refusalShapeFor(DECISION_EFFECT.DENY, reason),
-): JsonRpcMessage {
-  const instead =
-    alternative === undefined ? '' : `\n${describeAlternative(alternative)}`;
-  return {
-    jsonrpc: '2.0',
-    id,
-    result: {
-      content: [
-        {
-          type: 'text',
-          text: `Denied by Memnox: ${reason}${instead}\n${shape.guidance}`,
-        },
-      ],
-      isError: true,
-    },
-  };
 }
