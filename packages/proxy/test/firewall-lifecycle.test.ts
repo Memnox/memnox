@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { McpFirewall } from '../src/firewall';
 
 /** A child process, reduced to the three things the proxy actually touches. */
@@ -124,5 +124,68 @@ describe('the process the firewall wraps', () => {
 
     expect(written).toEqual([]);
     expect(logged.join('\n')).toContain('not accepting input; dropped');
+  });
+});
+
+/* A pipe cuts a chunk at any byte, and decoding each chunk on its own turned a character
+   that straddled the cut into two replacement characters, forwarded as if nothing changed. */
+describe('a character split across two chunks', () => {
+  const PARTY = '🎉';
+  const line = `{"jsonrpc":"2.0","id":1,"method":"x","params":{"t":"${PARTY}"}}\n`;
+
+  function split(text: string): [Buffer, Buffer] {
+    const bytes = Buffer.from(text, 'utf8');
+    // Inside the emoji's four bytes, not between them.
+    const cut = bytes.indexOf(Buffer.from(PARTY, 'utf8')) + 2;
+    return [bytes.subarray(0, cut), bytes.subarray(cut)];
+  }
+
+  it('reaches the server whole when the client sent it in two pieces', () => {
+    const { child, written } = fakeChild();
+    const input = new EventEmitter();
+    const firewall = new McpFirewall({
+      command: ['node', 'server.js'],
+      serverName: 'demo',
+      log: () => {},
+    });
+    firewall.start({ spawn: () => child, input, exit: () => undefined });
+
+    const [first, second] = split(line);
+    input.emit('data', first);
+    input.emit('data', second);
+
+    expect(written.join('')).toContain(PARTY);
+    expect(written.join('')).not.toContain('�');
+  });
+
+  it('reaches the client whole when the server sent it in two pieces', () => {
+    const { child } = fakeChild();
+    const toClient: string[] = [];
+    // The firewall writes to the client through process.stdout itself.
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((payload) => {
+      toClient.push(String(payload));
+      return true;
+    });
+    try {
+      const firewall = new McpFirewall({
+        command: ['node', 'server.js'],
+        serverName: 'demo',
+        log: () => {},
+      });
+      firewall.start({
+        spawn: () => child,
+        input: new EventEmitter(),
+        exit: () => undefined,
+      });
+
+      const [first, second] = split(line);
+      (child.stdout as unknown as EventEmitter).emit('data', first);
+      (child.stdout as unknown as EventEmitter).emit('data', second);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(toClient.join('')).toContain(PARTY);
+    expect(toClient.join('')).not.toContain('\uFFFD');
   });
 });

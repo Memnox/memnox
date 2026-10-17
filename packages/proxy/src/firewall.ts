@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { constants } from 'node:os';
+import { StringDecoder } from 'node:string_decoder';
 
 import {
   changingTools,
@@ -350,8 +351,10 @@ export class McpFirewall {
 
   private pipeClient(input: NodeJS.EventEmitter, child: ChildProcess): void {
     const clientToServer = new LineBuffer();
+    // A pipe cuts wherever it likes, so a character split across two chunks is held whole.
+    const fromClient = new StringDecoder('utf8');
     input.on('data', (chunk: Buffer) => {
-      for (const line of clientToServer.push(chunk.toString('utf8'))) {
+      for (const line of clientToServer.push(fromClient.write(chunk))) {
         void this.session.fromClient(line);
       }
     });
@@ -368,8 +371,9 @@ export class McpFirewall {
       throw new Error('firewall could not attach to the wrapped server output');
     }
     const serverToClient = new LineBuffer();
+    const fromServer = new StringDecoder('utf8');
     child.stdout.on('data', (chunk: Buffer) => {
-      for (const line of serverToClient.push(chunk.toString('utf8'))) {
+      for (const line of serverToClient.push(fromServer.write(chunk))) {
         this.session.fromServer(line);
       }
     });
