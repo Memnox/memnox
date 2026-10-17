@@ -10,6 +10,35 @@ const SECRETS = VERB_TAG.SECRETS;
 
 export const DEPLOY_TABLES: readonly VerbTable[] = [
   {
+    name: 'helm',
+    credential: ['~/.kube/config', 'KUBECONFIG'],
+    headline: 'can change what runs in a cluster',
+    globalFlags: ['--kube-context', '-n', '--namespace', '--kubeconfig'],
+    verbs: [
+      { match: 'uninstall **', class: GONE, note: 'the release and its resources go' },
+      { match: 'delete **', class: GONE },
+      { match: 'rollback **', class: WRITE },
+      { match: 'upgrade **', class: WRITE, tags: [PROD] },
+      { match: 'install **', class: WRITE, tags: [PROD] },
+      { match: 'list **', class: READ },
+      { match: 'status **', class: READ },
+      { match: 'get **', class: READ },
+    ],
+  },
+  {
+    name: 'pulumi',
+    credential: ['~/.pulumi/credentials.json', 'PULUMI_ACCESS_TOKEN'],
+    headline: 'can change infrastructure',
+    globalFlags: ['-s', '--stack', '--cwd'],
+    verbs: [
+      { match: 'destroy **', class: GONE, note: 'every resource in the stack goes' },
+      { match: 'up **', class: WRITE, tags: [PROD] },
+      { match: 'config set **', class: WRITE, tags: [SECRETS] },
+      { match: 'preview **', class: READ },
+      { match: 'stack ls **', class: READ },
+    ],
+  },
+  {
     name: 'vercel',
     credential: ['~/.vercel/auth.json', 'VERCEL_TOKEN'],
     headline: 'can deploy to production',

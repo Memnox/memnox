@@ -227,8 +227,13 @@ const PACKAGE_VALUE_FLAGS: Readonly<Record<string, ReadonlySet<string>>> = {
 /** Managers whose bare invocation installs from the lockfile rather than printing help. */
 const BARE_INSTALLS = new Set(['yarn', 'pnpm']);
 
+/** `uv pip install x` puts the install one word further along than every other manager. */
+const PIP_FRONTED = new Set(['uv']);
+
 function classifyPackageManager(binary: string, args: readonly string[]): BinaryVerdict {
-  const [verb, target] = positionalArgs(args, PACKAGE_VALUE_FLAGS[binary] ?? new Set());
+  const words = positionalArgs(args, PACKAGE_VALUE_FLAGS[binary] ?? new Set());
+  const [verb, target] =
+    PIP_FRONTED.has(binary) && words[0] === 'pip' ? words.slice(1) : words;
   const installing =
     verb === undefined ? BARE_INSTALLS.has(binary) : PACKAGE_INSTALL_VERBS.includes(verb);
   return {
@@ -436,6 +441,11 @@ const CLASSIFIERS: Readonly<Record<string, Classifier>> = {
   yarn: classifyPackageManager,
   pip: classifyPackageManager,
   pip3: classifyPackageManager,
+  bun: classifyPackageManager,
+  uv: classifyPackageManager,
+  pipx: classifyPackageManager,
+  gem: classifyPackageManager,
+  brew: classifyPackageManager,
 };
 
 export function interceptedBinaries(): readonly string[] {
