@@ -20,7 +20,11 @@ import {
   type HookAuthorizer,
   type HookVerdict,
 } from './hook-authorizer';
-import { EGRESS_CONNECT_ACTION, EGRESS_REQUEST_ACTION } from './tool-hook.constants';
+import {
+  EGRESS_CONNECT_ACTION,
+  EGRESS_MAX_BODY_BYTES,
+  EGRESS_REQUEST_ACTION,
+} from './tool-hook.constants';
 
 /**
  * Whether one outbound request may go, by destination and by what it carries. Nothing is
@@ -51,6 +55,8 @@ export interface HttpAttempt {
   headers?: Readonly<Record<string, string>>;
   /** Read only for plain HTTP; a tunnelled body never reaches this seam. */
   body?: string;
+  /** More than this seam reads, so it was never inspected and must not go. */
+  bodyTooLarge?: boolean;
 }
 
 /**
@@ -107,6 +113,15 @@ export class EgressSeam {
       arguments: fields,
       ...this.session(caller),
     };
+
+    // Allowing it unread would be the one way out that inspection never sees.
+    if (attempt.bodyTooLarge === true) {
+      const refused = {
+        allowed: false,
+        message: `the body was larger than the ${EGRESS_MAX_BODY_BYTES} bytes this seam reads, so it could not be inspected and was not sent`,
+      };
+      return this.told(request, caller, refused);
+    }
 
     // Cheap and certain, and before anything is asked: this never leaves the machine.
     const inspection = inspectEgress({ destination: attempt.url, fields });

@@ -201,18 +201,28 @@ function buildServer(options: EgressProxyOptions, open: Set<Duplex>): Server {
   return server;
 }
 
-/** Bounded: a body this seam cannot hold is one it must not pretend to have read. */
-async function readBody(message: IncomingMessage): Promise<string | undefined> {
+/** The bytes as they were sent, or word that there were more than this seam holds. */
+interface ReadBody {
+  bytes: Buffer;
+  tooLarge: boolean;
+}
+
+/**
+ * Bounded: a body this seam cannot hold is one it must not pretend to have read. Past the
+ * limit it keeps draining without keeping, because leaving the loop early destroys the
+ * request, and the socket the refusal has to travel back on with it.
+ */
+async function readBody(message: IncomingMessage): Promise<ReadBody> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of message) {
     // A request with no encoding set yields Buffers, never strings.
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > EGRESS_MAX_BODY_BYTES) return undefined;
-    chunks.push(buffer);
+    if (size <= EGRESS_MAX_BODY_BYTES) chunks.push(buffer);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  const tooLarge = size > EGRESS_MAX_BODY_BYTES;
+  return { bytes: tooLarge ? Buffer.alloc(0) : Buffer.concat(chunks), tooLarge };
 }
 
 function refuse(response: ServerResponse, message: string): void {
@@ -235,15 +245,15 @@ async function answerRequest(
     method,
     url,
     headers: headersOf(request),
-    // Undefined means it was larger than this seam reads, not that it was empty.
-    ...(body === undefined ? {} : { body }),
+    // A decoded copy, for reading only: what goes upstream is the bytes, untouched.
+    ...(body.tooLarge ? { bodyTooLarge: true } : { body: body.bytes.toString('utf8') }),
   };
   const outcome = await options.seam.gateRequest(attempt, callerOf(request.headers));
   if (!outcome.allowed) {
     options.log(`denied ${method} ${destinationOf(url)}: ${outcome.message ?? ''}`);
     return refuse(response, outcome.message ?? 'no reason recorded');
   }
-  forward(response, attempt);
+  forward(response, attempt, body.bytes);
 }
 
 /** A CONNECT the client asked for: the request, and the socket and bytes already read. */
@@ -281,9 +291,12 @@ function headersOf(request: IncomingMessage): Record<string, string> {
   return headers;
 }
 
-/** Forwarded unchanged: this seam rules on a request, it never rewrites one. */
-function forward(response: ServerResponse, attempt: HttpAttempt): void {
-  const { url, method, body } = attempt;
+/**
+ * Forwarded unchanged: this seam rules on a request, it never rewrites one. So `bytes`
+ * rather than the attempt's body, which is a decoded copy and would rewrite binary.
+ */
+function forward(response: ServerResponse, attempt: HttpAttempt, bytes: Buffer): void {
+  const { url, method } = attempt;
   let target: URL;
   try {
     target = new URL(url);
@@ -317,7 +330,7 @@ function forward(response: ServerResponse, attempt: HttpAttempt): void {
     if (!response.headersSent) response.writeHead(HTTP.BAD_GATEWAY);
     response.end();
   });
-  if (body !== undefined) upstream.write(body);
+  if (bytes.length > 0) upstream.write(bytes);
   upstream.end();
 }
 
