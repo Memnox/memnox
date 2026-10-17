@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOOL_CLASS } from '../src/discovery/classify';
 import {
   actionForCommand,
   classOf,
@@ -387,5 +388,41 @@ describe('git commands that destroy the way back', () => {
     expect(resolveAction('git', argv('push origin :')).action).toBe('git.push');
     expect(resolveAction('git', argv('reflog show')).class).toBe('read');
     expect(resolveAction('git', argv('stash push -m wip')).class).toBe('write');
+  });
+});
+
+/* Each of these hands back a credential. They fell into the generic `* get-**` read with no
+   tag, or matched nothing and came out unknown, so a rule on secrets never saw them. */
+describe('aws commands that return a credential', () => {
+  const aws = (line: string) => classOf(verbTableFor('aws') as never, argv(line));
+
+  it.each([
+    'ssm get-parameter --name db --with-decryption',
+    'ssm get-parameters --names a b --with-decryption',
+    'ssm get-parameters-by-path --path /prod --with-decryption',
+    'ecr get-login-password',
+    'ecr get-authorization-token',
+    'sts assume-role --role-arn arn:aws:iam::1:role/x --role-session-name s',
+    'sts get-session-token',
+    'kms decrypt --ciphertext-blob fileb://blob',
+    'configure get aws_secret_access_key',
+    'configure export-credentials --format env',
+  ])('reads a secret: aws %s', (line) => {
+    const verb = aws(line);
+    expect(verb.class).toBe(TOOL_CLASS.READ);
+    expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
+
+  it('writes one: aws configure set aws_secret_access_key', () => {
+    const verb = aws('configure set aws_secret_access_key x');
+    expect(verb.class).toBe(TOOL_CLASS.WRITE);
+    expect(hasTag(verb, VERB_TAG.SECRETS)).toBe(true);
+  });
+
+  it('leaves an ordinary get and who-am-I untagged', () => {
+    expect(
+      hasTag(aws('ec2 get-console-output --instance-id i-1'), VERB_TAG.SECRETS),
+    ).toBe(false);
+    expect(hasTag(aws('sts get-caller-identity'), VERB_TAG.SECRETS)).toBe(false);
   });
 });
